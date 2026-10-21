@@ -2,6 +2,7 @@ package bus
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -17,9 +18,9 @@ import (
 	ab2store "github.com/ericfitz/agentbus2/internal/store"
 )
 
-func int64p(v int64) *int64 { return &v }
+func sendInt64p(v int64) *int64 { return &v }
 
-func cfgWith(f func(*core.Config)) *core.Config {
+func sendCfgWith(f func(*core.Config)) *core.Config {
 	c := core.Defaults()
 	f(&c)
 	return &c
@@ -107,7 +108,7 @@ func TestSendRejects(t *testing.T) {
 			{"11 tags", ab2bus.SendInput{Channel: "dev", Content: "x", Tags: tooMany}, ab2bus.CodeValidation},
 			{"bad tag", ab2bus.SendInput{Channel: "dev", Content: "x", Tags: []string{"Bad Tag"}}, ab2bus.CodeValidation},
 			{"multiline subject", ab2bus.SendInput{Channel: "dev", Content: "x", Subject: "a\nb"}, ab2bus.CodeValidation},
-			{"reply_to missing", ab2bus.SendInput{Channel: "dev", Content: "x", ReplyTo: int64p(99)}, ab2bus.CodeNotFound},
+			{"reply_to missing", ab2bus.SendInput{Channel: "dev", Content: "x", ReplyTo: sendInt64p(99)}, ab2bus.CodeNotFound},
 			{"session of another identity", ab2bus.SendInput{Channel: "dev", Content: "x", Session: other.ID}, ab2bus.CodeNotFound},
 			{"unknown session", ab2bus.SendInput{Channel: "dev", Content: "x", Session: "deadbeef"}, ab2bus.CodeNotFound},
 			{"lapsed session", ab2bus.SendInput{Channel: "dev", Content: "x", Session: lapsed.ID}, ab2bus.CodeSessionLapsed},
@@ -136,6 +137,33 @@ func TestSendRejects(t *testing.T) {
 		// An unregistered caller.
 		_, err := newBus(h, "ghost").Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "x"})
 		codeOf(t, err, ab2bus.CodeNotRegistered)
+	})
+}
+
+func TestSendValidationMessagesArePlain(t *testing.T) {
+	// A rule's validation error reaches the caller as it is, not re-wrapped as
+	// the JSON text of the first error inside the message of a second.
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		h.channel("dev", ab2store.KindOrdinary, "pat", nil)
+		b := h.as("pat")
+		for _, c := range []struct {
+			name string
+			in   ab2bus.SendInput
+			want string
+		}{
+			{"bad tag", ab2bus.SendInput{Channel: "dev", Content: "x", Tags: []string{"Bad Tag"}}, `"bad tag"`},
+			{"multiline subject", ab2bus.SendInput{Channel: "dev", Content: "x", Subject: "a\nb"}, "subject must be a single line"},
+		} {
+			_, err := b.Send(context.Background(), c.in)
+			var be *ab2bus.Error
+			if !errors.As(err, &be) || be.Code != ab2bus.CodeValidation {
+				t.Fatalf("%s: err = %v, want a validation error", c.name, err)
+			}
+			if strings.HasPrefix(be.Message, "{") || strings.Contains(be.Message, `\"code\"`) || !strings.Contains(be.Message, c.want) {
+				t.Errorf("%s: message = %q, want plain text containing %q", c.name, be.Message, c.want)
+			}
+		}
 	})
 }
 
@@ -236,6 +264,77 @@ func TestSendIdempotencyConflict(t *testing.T) {
 	})
 }
 
+func TestSendReplayFromRestartedSession(t *testing.T) {
+	// Decision 67: a restarted session of the same identity (a new session id)
+	// can retry a keyed send safely. The session is attribution of the first
+	// send, not payload, so it is not part of the receipt fingerprint.
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		h.channel("dev", ab2store.KindOrdinary, "pat", nil)
+		first := h.session("pat", "pat/first")
+		second := h.session("pat", "pat/second")
+		b := h.as("pat")
+		in := ab2bus.SendInput{Channel: "dev", Content: "once", IdempotencyKey: "k", Session: first.ID}
+		r1, err := b.Send(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		in.Session = second.ID
+		r2, err := b.Send(ctx, in)
+		if err != nil || r2 != r1 {
+			t.Fatalf("retry from a restarted session = %+v, %v; want the replay %+v", r2, err, r1)
+		}
+		in.Session = ""
+		r3, err := b.Send(ctx, in)
+		if err != nil || r3 != r1 {
+			t.Fatalf("retry with no session = %+v, %v; want the replay %+v", r3, err, r1)
+		}
+		got, err := b.History(ctx, ab2bus.HistoryInput{Channel: "dev"})
+		if err != nil || len(got) != 1 {
+			t.Fatalf("History = %v, %v; want the one message", got, err)
+		}
+		if got[0].Session != first.ID || got[0].Display != "pat/first" {
+			t.Errorf("message attributed to %q (%q), want the first send's session %q (pat/first)", got[0].Session, got[0].Display, first.ID)
+		}
+		// A different payload from the new session is still a conflict.
+		in.Session, in.Content = second.ID, "twice"
+		_, err = b.Send(ctx, in)
+		codeOf(t, err, ab2bus.CodeConflict)
+	})
+}
+
+func TestSendReplayEmptyMetadata(t *testing.T) {
+	// nil and an empty map are the same payload: a retry that spells "no
+	// metadata" the other way replays rather than conflicts.
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		h.channel("dev", ab2store.KindOrdinary, "pat", nil)
+		b := h.as("pat")
+		for _, c := range []struct {
+			name         string
+			first, retry map[string]string
+		}{
+			{"nil then empty", nil, map[string]string{}},
+			{"empty then nil", map[string]string{}, nil},
+		} {
+			key := "k-" + c.name
+			r1, err := b.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: c.name, IdempotencyKey: key, Metadata: c.first})
+			if err != nil {
+				t.Fatalf("%s: %v", c.name, err)
+			}
+			r2, err := b.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: c.name, IdempotencyKey: key, Metadata: c.retry})
+			if err != nil || r2 != r1 {
+				t.Errorf("%s: retry = %+v, %v; want the replay %+v", c.name, r2, err, r1)
+			}
+		}
+		// Real metadata is still payload.
+		_, err := b.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "nil then empty", IdempotencyKey: "k-nil then empty", Metadata: map[string]string{"k": "v"}})
+		codeOf(t, err, ab2bus.CodeConflict)
+	})
+}
+
 func TestSendReplayAfterRetention(t *testing.T) {
 	// Review Focus 7: receipts are checked before any mutable lookup.
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
@@ -258,7 +357,7 @@ func TestSendReplayAfterRetention(t *testing.T) {
 
 func TestSendRateLimited(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		h := newHarness(t, e, harnessOptions{cfg: cfgWith(func(c *core.Config) { c.SendMessagesPerSecond = 2 })})
+		h := newHarness(t, e, harnessOptions{cfg: sendCfgWith(func(c *core.Config) { c.SendMessagesPerSecond = 2 })})
 		ctx := context.Background()
 		h.channel("dev", ab2store.KindOrdinary, "pat", nil)
 		b := h.as("pat")
@@ -289,20 +388,26 @@ func TestSendRateLimited(t *testing.T) {
 }
 
 func TestSendChargesOncePerCommit(t *testing.T) {
-	// Review Focus 3.
+	// Review Focus 3: the injected fault re-runs the transaction body on
+	// Postgres (the retried run commits once: one message, one receipt, one
+	// hint, one charge) and fails the send on SQLite (nothing committed,
+	// nothing charged, nothing published).
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{
-			cfg:   cfgWith(func(c *core.Config) { c.SendMessagesPerSecond = 2 }),
+			cfg:   sendCfgWith(func(c *core.Config) { c.SendMessagesPerSecond = 2 }),
 			fault: &pgconnError40001,
 		})
 		ctx := context.Background()
-		h.channel("dev", ab2store.KindOrdinary, "pat", nil)
+		ch := h.channel("dev", ab2store.KindOrdinary, "pat", nil)
 		b := h.as("pat")
 		sub, cancel := h.notifier.Subscribe()
 		defer cancel()
-		send := func() error {
-			_, err := b.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "x", IdempotencyKey: fmt.Sprintf("k%d", time.Now().UnixNano())})
-			return err
+		sent := 0
+		send := func() (key string, res ab2bus.SendResult, err error) {
+			sent++
+			key = fmt.Sprintf("charge-%d", sent)
+			res, err = b.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "x", IdempotencyKey: key})
+			return
 		}
 		count := func() (msgs int) {
 			h.tx(func(ctx context.Context, tx ab2store.Tx) error {
@@ -312,42 +417,73 @@ func TestSendChargesOncePerCommit(t *testing.T) {
 			})
 			return
 		}
-		if e.Name == "postgres" {
-			if err := send(); err != nil {
-				t.Fatalf("first send: %v", err)
-			}
-			if err := send(); err != nil {
-				t.Fatalf("second send: %v", err)
-			}
-			codeOf(t, send(), ab2bus.CodeRateLimited)
-			if n := count(); n != 2 {
-				t.Fatalf("%d messages, want 2 (the retried run charged once)", n)
-			}
-			if got := drainHints(sub); len(got) != 1 {
-				// Memory notifier coalesces to one pending hint; at least one, and
-				// never one from the failed run: Publish runs after commit only.
-				t.Logf("pending hints: %v", got)
-			}
+		receipt := func(key string) (r ab2store.Receipt, ok bool) {
+			h.tx(func(ctx context.Context, tx ab2store.Tx) (err error) {
+				r, ok, err = tx.Receipt(ctx, "pat", key, h.core.NowMs())
+				return
+			})
 			return
 		}
-		err := send()
-		codeOf(t, err, ab2bus.CodeInternal)
-		if n := count(); n != 0 {
-			t.Fatalf("sqlite: %d messages after the injected fault, want 0", n)
-		}
-		if got := drainHints(sub); len(got) != 0 {
-			t.Fatalf("sqlite: a failed send published %v", got)
-		}
-		for i := 0; i < 2; i++ {
-			if err := send(); err != nil {
-				t.Fatalf("sqlite: send %d after the fault: %v (the failed send was charged)", i, err)
+		// committed asserts what one successful send leaves: exactly one hint
+		// {channel, seq}, a receipt whose stored result is that send's, and
+		// wantMsgs messages in all.
+		committed := func(name, key string, res ab2bus.SendResult, wantMsgs int) {
+			t.Helper()
+			if got := sendDrainHints(sub); len(got) != 1 || got[0] != (notify.Hint{ChannelID: ch.ID, Seq: res.Seq}) {
+				t.Errorf("%s: hints = %v, want one {%d %d}", name, got, ch.ID, res.Seq)
+			}
+			r, ok := receipt(key)
+			var stored ab2bus.SendResult
+			if !ok || json.Unmarshal(r.Result, &stored) != nil || stored != res {
+				t.Errorf("%s: receipt = %+v (found %v), want the stored result %+v", name, r, ok, res)
+			}
+			if n := count(); n != wantMsgs {
+				t.Errorf("%s: %d messages, want %d", name, n, wantMsgs)
 			}
 		}
+		// refused asserts a send that committed nothing.
+		refused := func(name, key string, wantMsgs int) {
+			t.Helper()
+			if got := sendDrainHints(sub); len(got) != 0 {
+				t.Errorf("%s: a failed send published %v", name, got)
+			}
+			if r, ok := receipt(key); ok {
+				t.Errorf("%s: a failed send left the receipt %+v", name, r)
+			}
+			if n := count(); n != wantMsgs {
+				t.Errorf("%s: %d messages, want %d", name, n, wantMsgs)
+			}
+		}
+
+		want := 0
+		if e.Name == "postgres" {
+			key, res, err := send()
+			if err != nil {
+				t.Fatalf("first send: %v", err)
+			}
+			want++
+			committed("faulted then retried send", key, res, want)
+		} else {
+			key, _, err := send()
+			codeOf(t, err, ab2bus.CodeInternal)
+			refused("faulted send", key, 0)
+		}
+		for want < 2 {
+			key, res, err := send()
+			if err != nil {
+				t.Fatalf("send %d: %v (an earlier run was charged)", sent, err)
+			}
+			want++
+			committed(fmt.Sprintf("send %d", sent), key, res, want)
+		}
+		key, _, err := send()
+		codeOf(t, err, ab2bus.CodeRateLimited)
+		refused("rate-limited send", key, want)
 	})
 }
 
-// drainHints returns the hints pending on sub without blocking.
-func drainHints(sub <-chan notify.Hint) []notify.Hint {
+// sendDrainHints returns the hints pending on sub without blocking.
+func sendDrainHints(sub <-chan notify.Hint) []notify.Hint {
 	var out []notify.Hint
 	for {
 		select {
@@ -372,14 +508,14 @@ func TestSendPublishesHint(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			got := drainHints(sub)
+			got := sendDrainHints(sub)
 			if len(got) != 1 || got[0] != (notify.Hint{ChannelID: ch.ID, Seq: res.Seq}) {
 				t.Fatalf("hints after send %d = %v, want one {%d %d}", i, got, ch.ID, res.Seq)
 			}
 		}
 		// A refused send publishes nothing.
 		_, _ = b.Send(ctx, ab2bus.SendInput{Channel: "dev"})
-		if got := drainHints(sub); len(got) != 0 {
+		if got := sendDrainHints(sub); len(got) != 0 {
 			t.Fatalf("a refused send published %v", got)
 		}
 	})
@@ -387,7 +523,7 @@ func TestSendPublishesHint(t *testing.T) {
 
 func TestSendOversized(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		h := newHarness(t, e, harnessOptions{cfg: cfgWith(func(c *core.Config) { c.MaxMessageKiB = 1 })})
+		h := newHarness(t, e, harnessOptions{cfg: sendCfgWith(func(c *core.Config) { c.MaxMessageKiB = 1 })})
 		h.channel("dev", ab2store.KindOrdinary, "pat", nil)
 		b := h.as("pat")
 		_, err := b.Send(context.Background(), ab2bus.SendInput{Channel: "dev", Content: strings.Repeat("x", 1100)})
@@ -400,7 +536,7 @@ func TestSendOversized(t *testing.T) {
 
 func TestSendConcurrentSeqOrder(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		h := newHarness(t, e, harnessOptions{cfg: cfgWith(func(c *core.Config) {
+		h := newHarness(t, e, harnessOptions{cfg: sendCfgWith(func(c *core.Config) {
 			c.SendMessagesPerSecond = 10000
 			c.SendKiBPerSecond = 60000
 		})})

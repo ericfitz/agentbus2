@@ -11,8 +11,11 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
-// sendFingerprint is the receipt payload of a send: the normalized fields,
-// so a retry with the subject or tags in another form fingerprints the same.
+// sendFingerprint is the receipt payload of a send: the normalized content
+// fields, so a retry with the subject, tags or metadata in another form
+// fingerprints the same. The session is attribution of the first send, not
+// payload, and is left out: a restarted session of the same identity (a new
+// session id) retries a keyed send and gets the stored result (Decision 67).
 type sendFingerprint struct {
 	Channel  string            `json:"channel"`
 	Subject  string            `json:"subject"`
@@ -21,7 +24,6 @@ type sendFingerprint struct {
 	ReplyTo  *int64            `json:"reply_to"`
 	Metadata map[string]string `json:"metadata"`
 	Tags     []string          `json:"tags"`
-	Session  string            `json:"session"`
 }
 
 // Send appends one message (v1 internal/bus/messages.go Send). The rate limit
@@ -46,11 +48,15 @@ func (s Service) Send(ctx context.Context, identity string, in bus.SendInput) (b
 		}
 		subject, err := rules.NormalizeSubject(in.Subject)
 		if err != nil {
-			return core.E(bus.CodeValidation, "%s", err.Error())
+			return err // a rule's *bus.Error, already validation
 		}
 		tags, err := rules.NormalizeTags(in.Tags)
 		if err != nil {
-			return core.E(bus.CodeValidation, "%s", err.Error())
+			return err
+		}
+		metadata := in.Metadata
+		if len(metadata) == 0 {
+			metadata = nil // nil and {} are the same payload, as for tags
 		}
 		display := ""
 		if in.Session != "" {
@@ -71,7 +77,7 @@ func (s Service) Send(ctx context.Context, identity string, in bus.SendInput) (b
 		}
 		fp := sendFingerprint{
 			Channel: in.Channel, Subject: subject, Content: in.Content, Type: in.Type,
-			ReplyTo: in.ReplyTo, Metadata: in.Metadata, Tags: tags, Session: in.Session,
+			ReplyTo: in.ReplyTo, Metadata: metadata, Tags: tags,
 		}
 		replayed, err = s.WithReceipt(ctx, tx, identity, in.IdempotencyKey, fp, &res, func() error {
 			ch, err := s.ChannelByName(ctx, tx, in.Channel)
@@ -87,7 +93,7 @@ func (s Service) Send(ctx context.Context, identity string, in bus.SendInput) (b
 			ai := core.AppendInput{
 				ChannelID: ch.ID, Channel: ch.Name, Display: display, Kind: ch.Kind,
 				Sender: identity, SessionID: in.Session, Type: in.Type, Subject: subject,
-				Content: in.Content, ReplyTo: in.ReplyTo, Metadata: in.Metadata, Tags: tags,
+				Content: in.Content, ReplyTo: in.ReplyTo, Metadata: metadata, Tags: tags,
 			}
 			n, err := s.EnvelopeSize(ai, identity)
 			if err != nil {

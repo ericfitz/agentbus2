@@ -16,24 +16,8 @@ import (
 // After. The result is trimmed in fetch order, so the rows nearest the
 // caller's cursor survive.
 func (s Service) History(ctx context.Context, identity string, in bus.HistoryInput) ([]bus.Message, error) {
-	count := in.Count
-	if count == 0 {
-		count = s.Cfg.ReceiveDefaultCount
-	}
-	if count < 1 {
-		return nil, core.E(bus.CodeValidation, "count must be at least 1")
-	}
-	count = min(count, s.Cfg.ReceiveMaxCount)
-	norm, err := rules.NormalizeTagPatterns(in.Tags)
-	if err != nil {
-		return nil, core.E(bus.CodeValidation, "%s", err.Error())
-	}
-	patterns := make([]store.TagPattern, len(norm))
-	for i, p := range norm {
-		patterns[i] = store.NewTagPattern(p)
-	}
 	var out []bus.Message
-	err = s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		out = nil
 		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
 			return err
@@ -44,6 +28,25 @@ func (s Service) History(ctx context.Context, identity string, in bus.HistoryInp
 		}
 		if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermRead); err != nil {
 			return err
+		}
+		// The inputs are checked after registration, the channel and the read
+		// permission, so a caller who may not read gets the auth code (v1 ran
+		// auth first).
+		count := in.Count
+		if count == 0 {
+			count = s.Cfg.ReceiveDefaultCount
+		}
+		if count < 1 {
+			return core.E(bus.CodeValidation, "count must be at least 1")
+		}
+		count = min(count, s.Cfg.ReceiveMaxCount)
+		norm, err := rules.NormalizeTagPatterns(in.Tags)
+		if err != nil {
+			return err // a rule's *bus.Error, already validation
+		}
+		patterns := make([]store.TagPattern, len(norm))
+		for i, p := range norm {
+			patterns[i] = store.NewTagPattern(p)
 		}
 		newestFirst := in.Before != nil && in.After == nil
 		var rows []store.Message
