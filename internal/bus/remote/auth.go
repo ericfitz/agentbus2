@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"time"
 
@@ -55,7 +56,11 @@ func Register(ctx context.Context, c *gen.ClientWithResponses, identity string, 
 		return RegisterResult{}, unparsable(r.StatusCode())
 	}
 	g := r.JSON201
-	return RegisterResult{Identity: g.Identity, KID: g.Kid, Algorithm: keys.Algorithm(g.Algorithm), Created: g.Created}, nil
+	alg := keys.Algorithm(g.Algorithm)
+	if alg != keys.EdDSA && alg != keys.ES256 {
+		return RegisterResult{}, &ab2bus.Error{Code: ab2bus.CodeInternal, Message: ab2bus.TruncateErrorMessage(fmt.Sprintf("HTTP %d: unrecognized algorithm %q", r.StatusCode(), g.Algorithm))}
+	}
+	return RegisterResult{Identity: g.Identity, KID: g.Kid, Algorithm: alg, Created: g.Created}, nil
 }
 
 // AccessToken is a minted bearer and its lifetime.

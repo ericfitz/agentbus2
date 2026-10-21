@@ -123,6 +123,11 @@ func TestRemoteRegisterErrors(t *testing.T) {
 	if _, err := Register(context.Background(), c, "pat", k.Public(), ""); ab2bus.CodeOf(err) != ab2bus.CodeInternal {
 		t.Fatalf("err = %v, want internal", err)
 	}
+	// A registration naming an algorithm outside Decision 55 is internal, not accepted.
+	c = newRecClient(t, &recorder{status: 201, ctype: "application/json", body: `{"identity":"pat","kid":"k1","algorithm":"HS256","created":true}`})
+	if _, err := Register(context.Background(), c, "pat", k.Public(), ""); ab2bus.CodeOf(err) != ab2bus.CodeInternal {
+		t.Fatalf("err = %v, want internal for an unrecognized algorithm", err)
+	}
 }
 
 func TestRemoteTokenSendsForm(t *testing.T) {
