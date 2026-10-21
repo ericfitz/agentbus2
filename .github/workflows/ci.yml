@@ -1,0 +1,65 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+env:
+  CGO_ENABLED: "0"
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: agentbus2
+          POSTGRES_PASSWORD: agentbus2
+          POSTGRES_DB: agentbus2
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U agentbus2" --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      AGENTBUS2_TEST_POSTGRES_DSN: postgres://agentbus2:agentbus2@127.0.0.1:5432/agentbus2?sslmode=disable
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with: { version: v2.14.0, install-only: true }
+      - run: make tidy-check
+      - run: make verify
+  verify-testcontainers: # the local developer path: variable unset, testcontainers on the runner's Docker
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - run: make test-conformance
+  gate-negative: # negative half of the exit criterion: no service, unreachable DSN, verify must fail for that reason
+    runs-on: ubuntu-latest
+    env:
+      AGENTBUS2_TEST_POSTGRES_DSN: postgres://agentbus2:agentbus2@127.0.0.1:1/agentbus2?sslmode=disable&connect_timeout=2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with: { version: v2.14.0, install-only: true }
+      - run: bash scripts/ci-gate-negative.sh 'postgres from AGENTBUS2_TEST_POSTGRES_DSN is unreachable'
+  gate-negative-no-docker: # variable unset and no Docker at all; verify must fail with the unset-and-could-not-start text
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with: { version: v2.14.0, install-only: true }
+      - name: Stop Docker
+        run: |
+          sudo systemctl stop docker.socket docker.service || true
+          if docker info >/dev/null 2>&1; then echo "::error::docker still reachable after stop"; exit 1; fi
+      - name: make verify must fail for want of Postgres
+        run: bash scripts/ci-gate-negative.sh 'AGENTBUS2_TEST_POSTGRES_DSN is unset and testcontainers could not start postgres:17'
