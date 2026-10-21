@@ -52,7 +52,7 @@ check_unit_excludes() {
 	if AGENTBUS2_TEST_POSTGRES_DSN="$BAD_DSN" make test >"$log" 2>&1; then
 		pass "$name"
 	else
-		fail "$name" "make test failed with an unreachable Postgres (conformance leaked into the unit set?): $(tail -n 5 "$log" | tr '\n' ' ')"
+		fail "$name" "make test failed with an unreachable Postgres (conformance leaked into the unit set?): $({ grep -E '^\s*--- FAIL|^FAIL|^panic' "$log" || true; tail -n 5 "$log"; } | tr '\n' ' ')"
 	fi
 }
 
@@ -121,7 +121,7 @@ check_no_docker() {
 			fail "$name" "$pkg suite passed with no Docker and no AGENTBUS2_TEST_POSTGRES_DSN"
 			return
 		fi
-		has "$log" 'AGENTBUS2_TEST_POSTGRES_DSN is unset and testcontainers could not start postgres:17' || { fail "$name" "$pkg log lacks the unset-and-could-not-start text; tail: $(tail -n 5 "$log" | tr '\n' ' ')"; return; }
+		has "$log" 'AGENTBUS2_TEST_POSTGRES_DSN is unset and testcontainers could not start postgres:17' || { fail "$name" "$pkg log lacks the unset-and-could-not-start text; tail: $({ grep -E '^\s*--- FAIL|^FAIL|^panic' "$log" || true; tail -n 5 "$log"; } | tr '\n' ' ')"; return; }
 		has "$log" '--- FAIL: TestScaffold/postgres' || { fail "$name" "$pkg log lacks '--- FAIL: TestScaffold/postgres'"; return; }
 		has "$log" '--- PASS: TestScaffold/sqlite' || { fail "$name" "$pkg log lacks '--- PASS: TestScaffold/sqlite'"; return; }
 		if has "$log" '--- SKIP'; then
