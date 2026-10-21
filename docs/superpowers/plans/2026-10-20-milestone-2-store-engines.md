@@ -6,29 +6,34 @@
 
 **Architecture:** `internal/store` is the contract: interfaces grouped by aggregate, domain types, typed errors and the input rules the Store enforces (`NameRule`, kinds, permissions). `internal/store/sqlstore` implements it once with `sqlx` and `?` placeholders rebound per engine, behind a small `Dialect` interface that holds the only engine-specific code: placeholders, the retryable-error test, the migration lock, the empty-database test, the text-search condition and the Milestone 7 append notification hook. `internal/store/sqlite` and `internal/store/postgres` each provide `Open`, the dialect and one embedded migration set numbered from version 1. The Store conformance suite in `internal/conformance/store` opens both engines through their own `Open` (never through `dbtest.Engine.Open`, which sets no pragmas) and isolates each Postgres test in its own schema through the `search_path` runtime parameter.
 
+**Revision 2 (2026-10-21):** resolves the plan review: Postgres text search re-shaped so which messages match agrees with FTS5 (per-column tsvectors over alphanumeric tokens, `phraseto_tsquery`, last-token prefix; probed), `remove_diacritics 0` on FTS5, shared conformance fixtures with aggregate-prefixed test names, a commit-time serialization-failure test with two barriers, BeginTx and LockAppend errors classified by the retry loop, the five open design points batched as Gate 0 for Eric, the `SearchText` query shape fixed in Task 6, Task 10 split so the parser and translations run in Wave 4, the per-engine mutation proofs committed as self-test blocks, `creator` and `resume_token_hash` column shapes, the failed-step-1 leftovers case and stale test-schema sweeping.
+
 **Tech Stack:** Go 1.27, `CGO_ENABLED=0`, `database/sql`, `modernc.org/sqlite` v1.60.1 (FTS5 built in), `github.com/jackc/pgx/v5` v5.11.0 through `stdlib`, `github.com/jmoiron/sqlx` v1.4.0 (struct scanning and `Rebind`), `internal/dbtest` and testcontainers from Milestone 1, `postgres:17`.
 
 **Spec:** `docs/superpowers/specs/2026-10-19-agentbus2-design.md` sections 4.4 to 4.7 (what the rows must hold), 5 (the Store), 8 (the suites), 9 (the porting map), 10 (Milestone 2); ADR 0004 (Decisions 2, 5, 6, 25, 26, 27, 30, 34, 49, 50, 51, 52, 53, 54, 68, 69), ADR 0008 (Decisions 80, 88, 90, 92, 93, 94, 95, 96), ADR 0003 (Decisions 16, 37, 40, 75, 79), ADR 0002 (Decisions 55, 57, 73), ADR 0005 (Decisions 29, 31, 32). v1 at `/Users/efitz/Projects/agentbus` (`v1.14.3-4-g8bb09e2`, `internal/bus/`).
 
 ## Task dependencies and parallelism
 
-Tasks with no dependency between them run in parallel in separate worktrees and are cherry-picked onto `main`. Every task's `Files:` list is disjoint from every task it can run beside: the engine DDL lives in Tasks 2 and 3 only, each aggregate task deletes its own stub file and adds its own repository and conformance files, and `go.mod` is touched by Task 1 alone.
+Tasks with no dependency between them run in parallel in separate worktrees and are cherry-picked onto `main`. Every task's `Files:` list is disjoint from every task it can run beside: the engine DDL lives in Tasks 2 and 3 only, each aggregate task deletes its own stub file and adds its own repository and conformance files, `go.mod` is touched by Task 1 alone, and Task 10 edits `internal/store/sqlite/sqlite.go` and `internal/store/postgres/postgres.go`, which no task of Waves 4 to 7 touches. Disjoint file lists do not prevent two parallel tasks from defining one unexported Go identifier twice in the shared conformance package, so the "Conformance package" constraint below fixes the shared helpers in one serial task and prefixes every other name.
+
+**Gate 0** (before Wave 1): the batched questions of the section "Gate 0: decisions batched for Eric" are sent to Eric in one message. Wave 1 to 3 may start while the answers are pending (no test there depends on them); Task 4 is the first task that encodes an answer, and it starts only after the answers arrive or, if Eric is unavailable, with the fallback stated in that section.
 
 | Task | Depends on | Wave |
 | --- | --- | --- |
 | 1 Store contract and types | none | 1 |
 | 2 `sqlstore` framework and SQLite engine | 1 | 2 |
-| 3 Postgres engine and the engine conformance tests | 2 | 3 |
-| 4 Identities, public keys, receipts | 3 | 4 |
+| 3 Postgres engine, engine conformance tests, shared fixtures | 2 | 3 |
+| 4 Identities, public keys, receipts | 3 (and Gate 0 answers) | 4 |
+| 10 Search: query parser and both text-search translations | 3 | 4 |
 | 5 Channels and ACL rows | 4 | 5 |
-| 6 Messages, tags, history, retention queries, embeddings | 5 | 6 |
+| 6 Messages, tags, history, retention queries, embeddings, `SearchText` | 5, 10 | 6 |
 | 7 Sessions, cursors, pending batch, watch registration | 5 | 6 |
 | 8 Subscriptions, tag subscriptions, acked marks, tag matches | 6 | 7 |
 | 9 Memories, access, revisions, task-list queries | 6 | 7 |
-| 10 Search: query parser and both text-search translations | 6 | 7 |
-| 11 Integration, milestone exit, docs | 4, 5, 6, 7, 8, 9, 10 | 8 |
+| 11 Search corpus conformance on both engines | 6 | 7 |
+| 12 Integration, milestone exit, docs | 7, 8, 9, 11 | 8 |
 
-Waves: 1; 2; 3; 4; 5; then 6 and 7 in parallel; then 8, 9 and 10 in parallel; then 11. The chain 1 to 5 is forced by the foreign keys (every aggregate references identities and channels) and by the engines; from Task 6 on, the aggregates fan out.
+Waves: 1; 2; 3; then 4 and 10 in parallel; 5; then 6 and 7 in parallel; then 8, 9 and 11 in parallel; then 12. The chain 1 to 5 is forced by the foreign keys (every aggregate references identities and channels) and by the engines; from Task 6 on, the aggregates fan out. Task 10 depends only on the dialects (Task 3) and runs beside Task 4; Task 6 depends on it so that `SearchText` is wired to a finished translation and its smoke test asserts real hits, and so that the cherry-pick order onto `main` is never ambiguous.
 
 ## Global Constraints
 
@@ -41,12 +46,14 @@ Waves: 1; 2; 3; 4; 5; then 6 and 7 in parallel; then 8, 9 and 10 in parallel; th
 - Decision 31: every porting commit names its v1 source file. Decision 32: nothing here reads or writes a v1 path. Work lands on `main`; nothing is pushed to origin in this milestone. Commit messages are Conventional Commits with the attribution trailer from the session's instructions.
 - Shell beyond a one-liner is a script run with `bash` under `set -euo pipefail`; `sed -i` is never used (BSD/GNU difference).
 - Definition of Done D applies to the migration runner and to the conformance helpers: each task's steps say what a second run, an overlapping run and a failed run's leftovers do.
+- Conformance package: every file under `internal/conformance/store` is `package store`, as `main_test.go` and `store_test.go` are on `main` (a directory holding only `_test.go` files compiles under that name, and `make verify` already proves it); the contract package is imported as `ab2store "github.com/ericfitz/agentbus2/internal/store"` everywhere (the alias is fixed once in `fixtures_test.go`'s doc comment and copied). The shared fixture helpers live in `fixtures_test.go` and the engine helpers in `helpers_test.go`, both written by Task 3 and never edited by a parallel task; a gap in them is reported to the integrator, who adds it in a serial commit. Every other unexported helper and every test function in the package is prefixed with its aggregate (`TestIdentity...`, `TestReceipt...`, `TestChannel...`, `TestACL...`, `TestMessage...`, `TestEmbedding...`, `TestSession...`, `TestSubscription...`, `TestTagSub...`, `TestMemory...`, `TestTask...`, `TestSearch...`; helpers `identityX`, `tagsubX`), and each task's `-run` pattern is anchored on that prefix (`'^Test(Identity|Receipt)'`), so two parallel tasks can neither collide on a name nor run each other's tests by accident.
+- Pending decisions are visible in the code: a test that encodes a Gate 0 item not yet answered by Eric carries the comment `// pending Eric: Gate 0 item N` on its first line, so a reversal is a one-line change found with `rg -n 'pending Eric' internal/`.
 
 ## Choices this milestone makes (delegated by the spec, recorded with rationale)
 
-The spec delegates two storage choices to Milestone 2; the rest below are plan-level choices about shape that re-decide nothing. Task 11 records choices 1 and 2 in an addendum to ADR 0004 and replaces the spec's "chosen in Milestone 2" placeholders.
+The spec delegates two storage choices to Milestone 2; the rest below are plan-level choices about shape that re-decide nothing. Task 12 records choices 1 and 2 in an addendum to ADR 0004 and replaces the spec's "chosen in Milestone 2" placeholders.
 
-1. **Postgres full-text equivalent of FTS5 (spec section 5.4, Decision 51).** A stored generated column `fts tsvector GENERATED ALWAYS AS (to_tsvector('simple', subject || ' ' || content)) STORED` with a GIN index, queried with `fts @@ (...)`. The `simple` configuration lowercases and does not stem, the closest match to FTS5's `unicode61` tokenizer (no stemming, no stop words), so "which messages match" agrees across engines for words, prefixes and phrases. Each query term is bound as its own parameter: a word through `plainto_tsquery('simple', ?)`, a prefix through `to_tsquery('simple', ?)` with the argument `'<text>':*` (the lexeme single-quoted, inner quotes doubled), a phrase through `phraseto_tsquery('simple', ?)`; terms are joined with the tsquery `&&` operator. Probed on `postgres:17.11` on 2026-10-20: `to_tsquery('simple', 'Commit')` is `'commit'`; `quote_literal('e159') || ':*'` is `'e159':*` and matches `abc e159e8c def`; `phraseto_tsquery('simple', 'rate limit')` is `'rate' <-> 'limit'`, matches `the rate limit hit` and not `the limit rate hit`; `plainto_tsquery('simple', 'commit:e159e8c')` is `'commit' & 'e159e8c'`; `to_tsvector('simple', 'foo-bar')` is `'bar':3 'foo':2 'foo-bar':1` (whole and parts, where FTS5 yields only the parts); `to_tsvector('simple', 'café Résumé')` keeps the accents (`unicode61` folds them); `plainto_tsquery('simple', '!!!')` is the empty query, which matches nothing. Rejected: `pg_trgm` / `ILIKE` (no phrase or token semantics, so matching would diverge from FTS5 on every word boundary) and a stemming configuration such as `english` (FTS5 does not stem, so `running` would match `run` on one engine only). Pgvector stays an optional capability for a later milestone; embeddings are `BYTEA` scored in Go (Decision 51).
+1. **Postgres full-text equivalent of FTS5 (spec section 5.4, Decision 51).** Two stored generated columns, one per FTS5 column, over text normalized to alphanumeric tokens: `fts_subject tsvector GENERATED ALWAYS AS (to_tsvector('simple', regexp_replace(subject, '[^[:alnum:]]+', ' ', 'g'))) STORED` and the same for `content`, each with a GIN index. The `simple` configuration lowercases and does not stem; the `regexp_replace` turns every run of non-alphanumeric characters into one space before Postgres' parser sees the text, so the parser can no longer keep `owner/repo`, `foo-bar`, an email or a URL as one whole token the way it does on raw text (probed: `to_tsvector('simple', 'foo-bar')` is `'bar':3 'foo':2 'foo-bar':1` raw and `'bar':2 'foo':1` normalized), which is what FTS5's `unicode61` tokenizer does on both the stored text and the query. Every query term is bound as its own parameter and normalized by the same expression; a word term and a phrase term translate identically (FTS5 quotes both, so a word that the tokenizer splits, `commit:e159e8c`, is an adjacent phrase on both engines): `W(?) = phraseto_tsquery('simple', regexp_replace(?, '[^[:alnum:]]+', ' ', 'g'))`; a prefix term applies the star to the last token only, as FTS5 does with `"commit:e159"*`: `P(?) = to_tsquery('simple', regexp_replace(phraseto_tsquery('simple', regexp_replace(?, '[^[:alnum:]]+', ' ', 'g'))::text, '''$', ''':*'))` (the `::text` form of a tsquery is accepted back by `to_tsquery`; probed: `'commit' <-> 'e159':*`). A term must match within one column, as an FTS5 phrase must, so the condition for a query is the AND over its terms of `(m.fts_subject @@ T_i OR m.fts_content @@ T_i)`, each term's text bound twice; a single concatenated column would let `"rate limit"` match subject `rate` plus content `limit hit` on Postgres only (probed: `{1,2,3}` concatenated against `{2,3}` per column and `[2 3]` on FTS5). Probed on `postgres:17.11` and modernc.org/sqlite v1.60.1 on 2026-10-21 with the Task 11 corpus: every query's set is identical on both engines, including `commit:e159e8c` (adjacent only: `commit abc e159e8c` and `e159e8c commit` do not match), `commit:e159*` (`committed:e159e8c` does not match), `owner/repo@e159*`, `foo-bar` (matches `foo bar` and `foo_bar`), `"rate limit"` against `the limit rate hit`, `rate of the limit` and the subject/content boundary row, and `cafe` against `café`. Rejected: `plainto_tsquery` for word terms (AND-anywhere: `commit:e159e8c` would match `commit abc e159e8c` on Postgres only), `to_tsquery('simple', quote_literal(text) || ':*')` for prefixes (prefix on every token: `committed:e159e8c` would match `commit:e159*` on Postgres only), one concatenated column (the boundary case above), `pg_trgm` / `ILIKE` (no phrase or token semantics), and a stemming configuration such as `english` (FTS5 does not stem). The `[[:alnum:]]` class is evaluated under the database's ctype: the database must be created with a UTF-8 locale (the `postgres` image default, probed `en_US.utf8`) for non-ASCII letters to count as token characters; under `LC_CTYPE=C` they would split (Gate 0 item 6 decides whether `Open` checks this). Residual, accepted and recorded in the ADR addendum: `unicode61` treats Unicode categories L*, N* and Co as token characters while `[[:alnum:]]` follows the C library's `iswalnum`, so private-use and some symbol-class code points may tokenize differently; no corpus row exercises them. Pgvector stays an optional capability for a later milestone; embeddings are `BYTEA` scored in Go (Decision 51).
 2. **ACL permission storage (spec section 5.8, Decision 80).** Three boolean columns per stored entry: `channel_acl(id, channel_id, identity, can_read, can_write, can_admin)` with `CHECK (can_read OR can_write OR can_admin)`. One row is one stored entry, exactly as Decisions 80 and 88 speak of entries: the default ACL is three rows, "removing the stored entries for `admins`" is a `DELETE` by identity, `ACL(ctx, channel)` returns what `SetACL` stored in the order it was given, and the `CHECK` enforces the non-empty rule in the database as well as in Go. Several rows may name one identity; `EffectivePermissions` takes the union. The alternative, one row per `(channel, identity, permission)` with `CHECK (permission IN ('read', 'write', 'admin'))`, cannot represent "an entry" (two entries for one identity collapse into one set), so a stored ACL could not round-trip as given. Unknown permission values are rejected in Go before the row is built (the column names are the constraint); the conformance case for an unknown value therefore calls `SetACL` with `Permission("owner")`.
 3. **Package layout.** `internal/store` (contract), `internal/store/sqlstore` (the one implementation), `internal/store/sqlite` and `internal/store/postgres` (engines: `Open`, dialect, embedded migrations). The dialect interface is unexported-by-convention (`sqlstore.Dialect`, exported so the engine packages implement it) and holds exactly: `Name`, `BindType` (for `sqlx.Rebind`), `IsRetryable(err)`, `IsEmpty(ctx, db)`, `Stamp(ctx, db)` and `CheckStamp(ctx, db)` (SQLite `application_id`; no-ops on Postgres), `LockMigrations(ctx, tx)`, `LockAppend(ctx, tx)`, `TextSearch(q)`, `NotifyAppend(ctx, tx, channel, seq)`.
 4. **Three transaction kinds.** `Store.Tx` (serializable, retried), `Store.Append` (as `Tx`, and the only kind in which `NextSeq` and `AppendMessage` are allowed: on Postgres its first statement is `LOCK TABLE seq_counter IN EXCLUSIVE MODE`, so concurrent appends queue behind the lock instead of aborting with 40001 on the counter row; on SQLite the immediate transaction already queues them), `Store.Read` (a read-only snapshot, no retry). Probed on 2026-10-20 with 8 goroutines appending 50 messages each under `SERIALIZABLE`: without the lock 1,843 serialization failures and 49 appends that exhausted 20 attempts; with the lock as the first statement 0 failures and 400 of 400 appends. Decision 27 already accepts that the counter serializes every append; the lock only moves the serialization from "abort and retry" to "wait". `NextSeq` outside `Append` returns `ErrNotAppend`.
@@ -54,27 +61,35 @@ The spec delegates two storage choices to Milestone 2; the rest below are plan-l
 6. **Surrogate channel ids.** `channels.id` is the key every other table references, `channels.name` is `UNIQUE`; a rename (Decision 89) is one row update instead of v1's three (`channels.go:376`). Identities are keyed by name (the authentication subject).
 7. **Delivery rows (Decisions 16, 37, 40, 75).** `subscriptions(identity, channel_id, acked_seq)` is identity-level and carries the acked mark; `session_cursors(session_id, channel_id, cursor_seq, pending_end_seq)` is the per-session delivery state; `sessions.pending_token` is the one pending batch per session (v1 keeps the token per subscription row, `schema.go` `subscriptions.pending_token`); tag-match delivery has one cursor per session (`sessions.tags_cursor_seq`, `tags_pending_end_seq`) and one acked mark per identity (`identities.tags_acked_seq`), v1's `tags/` pseudo-channel row (`tags.go:216`) re-keyed.
 8. **Tasks are memory rows**, as in v1 (`tasks.go:168` `loadTasks` reads `messages WHERE memory_id IS NOT NULL` on the task channel; leases live in the task JSON, `Task.LeasedUntil`). No `tasks` table; the Store adds the stored kind `tasks` (Decision 90), `LiveMemories(channel)` and `ChannelLastActivity(channel)` (v1 `taskLastActivitySQL`).
-9. **The default ACL is substituted by the core**, not the Store (`Milestone 3`): the Store stores exactly the entries it is given; `store.DefaultACL(creator)` returns the Decision 88 literal with the creator substituted (and without the creator entry when `creator == ""`, Decision 92), so the section 5.8 "default rows exist after a create without an ACL" case passes `store.DefaultACL(creator)` and the "absent after a create with one" case passes its own list.
-10. **Per-test Postgres isolation** is a schema per test (`t_<16 hex>`), created on `dbtest.Engine.Open(t)`'s connection and selected through `&search_path=<schema>` on the DSN (pgx treats unknown DSN keys as runtime parameters; probed: `current_schema()` returns the schema). The migration lock is `pg_advisory_xact_lock(hashtext(current_schema()))`, so parallel schemas on one server never share a lock key.
+9. **`ChannelCreate.ACL == nil` means "without an ACL" and the Store substitutes `store.DefaultACL(Creator)`**; `[]ACLEntry{}` means "with an empty ACL" and stores no rows (the implicit entries still apply). `store.DefaultACL(creator)` returns the Decision 88 literal with the creator substituted (and without the creator entry when `creator == ""`, Decision 92). This satisfies the section 5.8 conformance cases as worded ("default rows exist after a create without an ACL", "absent after a create with one") without reinterpreting them; the nil-versus-empty distinction is documented on the field and tested both ways in Task 5. The core (Milestone 3) may still pass an explicit list.
+10. **Per-test Postgres isolation** is a schema per test, named `t_<unix seconds>_<8 hex>`, created on `dbtest.Engine.Open(t)`'s connection and selected through `&search_path=<schema>` on the DSN (pgx treats unknown DSN keys as runtime parameters; probed: `current_schema()` returns the schema). The migration lock is `pg_advisory_xact_lock(hashtext(current_schema()))`, so parallel schemas on one server never share a lock key. The timestamp in the name lets a later run sweep leftovers: when the Postgres comes from `AGENTBUS2_TEST_POSTGRES_DSN` (a developer's own server; a testcontainer is thrown away), the first `openStore` of a process drops every `t_%` schema whose timestamp is older than one hour, so a killed run's schemas disappear on the next run and overlapping runs (younger than an hour) never drop each other's.
 11. **What is not here.** Rate-limit buckets stay in memory in the core (v1 `ratelimit.go`); enrollment tokens and external-issuer mappings are Milestone 5 rows (a version 2 migration); `pg_notify` and `pg_try_advisory_lock` are Milestone 7, which fills the `NotifyAppend` hook and may replace `TryLease` on Postgres; the admin `Reset` (v1 `meta.reset_generation`) is Milestone 3 or 5 and `meta` is not ported.
+12. **The resume token is stored hashed.** `sessions.resume_token_hash` holds the hash the core computes over the token of Decisions 40 and 79 (Milestone 6 fixes the token format and the hash; SHA-256 hex is the expectation), never the token; `SessionByResumeTokenHash(ctx, hash)` looks it up. The Store stores and compares the hash it is given and computes nothing, so a database read never yields a usable token and Milestone 6 needs no migration for the column shape.
 
-## Claude proposal, pending Eric
+## Gate 0: decisions batched for Eric
 
-- `everyone` and `admins` are reserved: `CreateIdentity` refuses them, because an ACL entry naming either must mean the special identity (Decision 80) and `NameRule` would otherwise allow a registered identity of that name. Elaboration Decision 80 forces; not in the spec text.
-- `40P01` (deadlock detected) is treated as retryable alongside `40001`; Decision 69 names only 40001.
-- The retry constants of choice 5 (five attempts, 10 ms doubling with jitter, 200 ms cap).
-- v1 `meta` (`reset_generation`, v1 ADR 0022) is not ported; v2's admin reset will be designed with the admin section (Milestone 5). v1 `notices` is ported as is (capacity and embedding notices surface through `receive` in v1; where v2 surfaces them is Milestone 3's).
-- Rate-limit buckets stay in memory per server process (choice 11). Two Milestone 7 replicas would therefore each grant the full per-identity rate; a shared bucket row would need a store write on every send.
+Six design points this plan would otherwise decide on its own. They go to Eric in one message before Wave 1 (the global rule: resolve consequential unknowns before execution; surface gaps as explicit design changes). Each item names the options, the plan's recommendation, and what encodes it. Task 12 records the answers in the ADR 0004/0008 addendum as `Decision (Eric, <date>)`; until they arrive, the tests that encode them carry `// pending Eric: Gate 0 item N` and the plan's recommendation is implemented so a reversal is a one-line change.
+
+1. **Reserved identity names.** An ACL entry naming `everyone` or `admins` must mean the special identity (Decision 80), but `NameRule` would admit a registered identity of either name. A) `CreateIdentity` refuses both names with `ErrInvalid` (recommended; changes the registration contract of Milestone 5 by two names). B) Allow them and have the ACL evaluation treat a stored entry for `everyone` as the special identity regardless (a registered `everyone` could then never be granted anything by name). Encoded in Task 1's `Identities` doc and Task 4's `TestIdentityRejects`.
+2. **`40P01` as retryable.** Decision 69 names SQLSTATE `40001`. A) Also retry `40P01` (deadlock detected), the other serialization-class abort Postgres raises under `SERIALIZABLE` with `LOCK TABLE` in the append transaction (recommended; extends Decision 69 by one code). B) `40001` only; a deadlock surfaces as a plain error. Encoded in Task 3's `IsRetryable` and `TestIsRetryable`.
+3. **Retry constants.** Decision 69 says "a small fixed count with jittered backoff". A) `TxAttempts = 5`, backoff before attempt n a uniform random duration in `[0, 10ms * 2^(n-1))` capped at 200 ms (recommended). B) Other values Eric names. Encoded in Task 3's `postgres.TxAttempts` and `TestTxGivesUpAfterAttempts`.
+4. **v1 `meta` and `notices`.** A) Do not port `meta` (`reset_generation`, v1 ADR 0022); design v2's admin reset with the admin section in Milestone 5; port `notices` as is (capacity and embedding notices; where v2 surfaces them is Milestone 3's) (recommended). B) Port `meta` now as a `schema_meta`-style row. Encoded in the version 1 DDL (Tasks 2, 3).
+5. **Rate-limit buckets.** A) In memory per server process, as v1 `ratelimit.go` (recommended; two Milestone 7 replicas would each grant the full per-identity rate). B) A shared bucket row, which costs a store write on every send. Encoded by the absence of a table (Tasks 2, 3); reversible in a version 2 migration.
+6. **Postgres database ctype.** The text-search normalization relies on `[[:alnum:]]` covering non-ASCII letters, which holds for a UTF-8 ctype (the `postgres` image default) and not for `C`. A) Document the requirement in the ADR addendum and the Milestone 5 deployment notes; `Open` does not check it (recommended; adding a check would extend the Decision 34 open rules). B) `Open` reads `pg_database.datctype` and refuses a non-UTF-8 database with `ErrSchemaInvalid`. Encoded in Task 12's docs (A) or Task 3's `Open` (B).
+
+If Eric is unavailable when Task 4 would start, every item proceeds on its recommendation (A) with the `pending Eric` comments in place, and Task 12's report lists the items still open.
 
 ## Review Focus
 
 1. A query term with no letter or digit (`!!!`, `*`, `"  "`): `search.Parse` drops it (v1 drops star-only words, `search.go:63`); a query that is empty after parsing is rejected by `SearchText` with `ErrInvalid`, never sent to the engine, where FTS5 would raise a syntax error and Postgres would match nothing with a NOTICE. (Tests in Task 10.)
-2. A message whose `content` is a diacritic word (`café`) searched as `cafe`: FTS5 `unicode61` folds, Postgres `simple` does not. The corpus test searches `café` and expects a match on both; the plan promises no diacritic folding. (Task 10 documents it in the test.)
+2. A message whose `content` is a diacritic word (`café`) searched as `cafe`: FTS5 `unicode61` folds diacritics by default and Postgres `simple` does not, which Decision 51's rule forbids. The SQLite table is created with `tokenize='unicode61 remove_diacritics 0'` (probed on modernc.org/sqlite v1.60.1: `"cafe"` returns 0 rows and `"café"` 1 against a `café` row), so neither engine folds; the corpus asserts that `cafe` matches only a literal `cafe` row and `café` only the `café` row, on both engines. (Task 11.)
 3. `AppendMessage` or `NextSeq` called inside `Store.Tx` rather than `Store.Append`: the Postgres path would then take the counter row under `SERIALIZABLE` without the table lock and fail with 40001 under contention; `ErrNotAppend` is returned instead, on both engines. (Test in Task 2, both engines in Task 3.)
 4. A second process opening an empty database at the same moment: both must succeed and the migration must run once (bootstrap `CREATE TABLE IF NOT EXISTS schema_meta` under the lock, `INSERT ... ON CONFLICT DO NOTHING`). (Test in Task 3.)
-5. A serialization failure surfacing from `Commit`, not from `fn`: the retry loop classifies the commit error too, or a conflict detected at commit would be returned unwrapped and the client would not know to retry. (Test in Task 3, injected and real.)
+5. A serialization failure surfacing from `Commit`, not from `fn`: the retry loop classifies the commit error too, or a conflict detected at commit would be returned unwrapped and the client would not know to retry. The real test holds both transactions at a second barrier after both writes and before either commit, so the failure can only come from `COMMIT`, and records that every write statement in `fn` returned nil. (Test in Task 3, injected and real.)
 6. `SetACL` with an entry naming a `/`-containing or unregistered identity, or an entry with `Permissions: nil`: rejected before any row is written, and the previous ACL is intact (the replace runs after validation, in the same transaction). (Tests in Task 5.)
 7. `DeleteChannel` while sessions hold cursors and messages hold tags and embeddings: every dependent row goes with the channel (cascades) and `ReadableChannels` no longer lists it. (Test in Task 5 for ACL rows, Tasks 6 and 7 for messages and cursors.)
+8. A phrase that spans the subject/content boundary (subject `rate`, content `limit hit`, query `"rate limit"`): FTS5 phrases match within one column, so one Postgres column over `subject || ' ' || content` would match on Postgres only; the per-column tsvectors and the `(subject OR content)` condition per term keep the engines in step. (Corpus row in Task 11; probed.)
+9. `SQLITE_BUSY` surfacing from `BeginTx` (`begin immediate`, modernc `tx.go:19-30`), not from `fn` or `Commit`, and `40P01` from `LockAppend` before `fn` runs: the retry loop classifies every stage's error, or the busy timeout would surface unwrapped. (Tests in Task 2 and Task 3.)
 
 ---
 
@@ -87,17 +102,17 @@ Disposition of the v1 tables (`schema.go`, 13 tables plus `messages_fts`):
 | v1 table | v2 | Why |
 | --- | --- | --- |
 | `channels` | ported: `id` surrogate, `creator`, kind `tasks`; `created_seq`, `evicted_before_seq`, `created_at` kept | Decisions 80, 90; choice 6 |
-| `sessions` | re-keyed: `id`, `identity`, `display_name`, `hint`, `resume_secret`, lease, `closed_at`, pending token, tag cursor, `watch_id`; `harness*` columns dropped | Decisions 14, 15, 39, 40, 41, 68, 78 (harness-derived identity not ported) |
+| `sessions` | re-keyed: `id`, `identity`, `display_name`, `hint`, `resume_token_hash` (choice 12), lease, `closed_at`, pending token, tag cursor, `watch_id`; `harness*` columns dropped | Decisions 14, 15, 39, 40, 41, 68, 78 (harness-derived identity not ported) |
 | `subscriptions` | identity-level with `acked_seq`; cursors move to `session_cursors` | Decisions 16, 37, 75 |
 | `messages` | ported: `channel_id`, `session_id` replaces `context`, `tombstone` boolean | Decision 25; choice 6 |
-| `messages_fts` | SQLite: ported with its two triggers; Postgres: `messages.fts` generated column | Decision 51; choice 1 |
+| `messages_fts` | SQLite: ported with its two triggers and `remove_diacritics 0`; Postgres: `messages.fts_subject` and `messages.fts_content` generated columns | Decision 51; choice 1 |
 | `embeddings`, `embed_failures` | ported | Decision 51; v1 ADR 0018 |
 | `message_tags` | ported | v1 ADR 0009 |
 | `tag_subscriptions`, `tag_subscription_tags` | ported, keyed by identity | Decisions 37, 38 |
 | `receipts` | ported, keyed by identity | Decision 67 |
 | `leases` | ported, with the `maintenance` row | Decisions 49, 68 |
-| `meta` | not ported | pending Eric (above) |
-| `notices` | ported | pending Eric (above) |
+| `meta` | not ported | Gate 0 item 4 |
+| `notices` | ported | Gate 0 item 4 |
 | `memory_access` | ported | v1 ADR 0013 |
 | new | `schema_meta`, `seq_counter`, `identities`, `identity_keys`, `channel_acl`, `session_cursors` | Decisions 27, 34, 57, 73, 80, 16 |
 
@@ -127,7 +142,7 @@ CREATE TABLE channels (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   name TEXT NOT NULL UNIQUE,
   kind TEXT NOT NULL CHECK (kind IN ('ordinary', 'memory', 'tasks')),
-  creator TEXT NULL,
+  creator TEXT NOT NULL DEFAULT '',
   created_seq INTEGER NOT NULL,
   evicted_before_seq INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
@@ -169,7 +184,7 @@ CREATE TABLE sessions (
   identity TEXT NOT NULL REFERENCES identities(name) ON DELETE CASCADE,
   display_name TEXT NOT NULL,
   hint TEXT NOT NULL DEFAULT '',
-  resume_secret TEXT NOT NULL UNIQUE,
+  resume_token_hash TEXT NOT NULL UNIQUE,
   opened_at INTEGER NOT NULL,
   lease_expires_at INTEGER NOT NULL,
   closed_at INTEGER NOT NULL DEFAULT 0,
@@ -207,7 +222,7 @@ CREATE INDEX messages_channel_seq ON messages(channel_id, seq);
 CREATE INDEX messages_memory ON messages(memory_id, tombstone);
 CREATE INDEX messages_tombstone_at ON messages(tombstone_at);
 CREATE INDEX messages_created_at ON messages(created_at);
-CREATE VIRTUAL TABLE messages_fts USING fts5(subject, content, content='messages', content_rowid='seq');
+CREATE VIRTUAL TABLE messages_fts USING fts5(subject, content, content='messages', content_rowid='seq', tokenize='unicode61 remove_diacritics 0');
 CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
   INSERT INTO messages_fts(rowid, subject, content) VALUES (new.seq, new.subject, new.content);
 END;
@@ -248,7 +263,7 @@ CREATE INDEX receipts_expires ON receipts(expires_at);
 
 ### Postgres (`internal/store/postgres/schema/0001_initial.sql`)
 
-The same tables with these substitutions and nothing else: `INTEGER` columns become `BIGINT` except `schema_meta.id`, `seq_counter.id`; `INTEGER PRIMARY KEY AUTOINCREMENT` becomes `BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`; the `INTEGER ... CHECK (x IN (0, 1))` booleans (`is_admin`, `can_read`, `can_write`, `can_admin`, `tombstone`) become `BOOLEAN NOT NULL` (with their `DEFAULT FALSE` where SQLite has `DEFAULT 0`) and the ACL check becomes `CHECK (can_read OR can_write OR can_admin)`; `BLOB` becomes `BYTEA`; `messages` gains `fts tsvector GENERATED ALWAYS AS (to_tsvector('simple', subject || ' ' || content)) STORED` and `CREATE INDEX messages_fts ON messages USING GIN (fts)` in place of the virtual table and its triggers; `TEXT NULL` and `INTEGER NULL` keep their meaning. `messages.seq BIGINT PRIMARY KEY` (no identity: the value comes from `seq_counter`).
+The same tables with these substitutions and nothing else: `INTEGER` columns become `BIGINT` except `schema_meta.id`, `seq_counter.id`; `INTEGER PRIMARY KEY AUTOINCREMENT` becomes `BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY`; the `INTEGER ... CHECK (x IN (0, 1))` booleans (`is_admin`, `can_read`, `can_write`, `can_admin`, `tombstone`) become `BOOLEAN NOT NULL` (with their `DEFAULT FALSE` where SQLite has `DEFAULT 0`) and the ACL check becomes `CHECK (can_read OR can_write OR can_admin)`; `BLOB` becomes `BYTEA`; `messages` gains `fts_subject tsvector GENERATED ALWAYS AS (to_tsvector('simple', regexp_replace(subject, '[^[:alnum:]]+', ' ', 'g'))) STORED` and `fts_content tsvector GENERATED ALWAYS AS (to_tsvector('simple', regexp_replace(content, '[^[:alnum:]]+', ' ', 'g'))) STORED` with `CREATE INDEX messages_fts_subject ON messages USING GIN (fts_subject)` and `CREATE INDEX messages_fts_content ON messages USING GIN (fts_content)` in place of the virtual table and its triggers (choice 1; the DDL was probed on `postgres:17.11`); `TEXT NULL` and `INTEGER NULL` keep their meaning; `creator TEXT NOT NULL DEFAULT ''` stays as written (Decision 92 compares `creator == ''`, so the column is never NULL on either engine). `messages.seq BIGINT PRIMARY KEY` (no identity: the value comes from `seq_counter`).
 
 ---
 ### Task 1: Store contract, domain types, errors, input rules
@@ -310,7 +325,7 @@ type Notice struct { Kind, Message string; SetAt int64 }
 // identities.go
 type Identity struct { Name string; Admin bool; TagsAckedSeq int64; CreatedAt int64 }
 type PublicKey struct { Identity, KID, Algorithm string; Key []byte; CreatedAt int64 } // Algorithm: "EdDSA" | "ES256" (Decision 55); Key: PKIX DER
-const (Everyone = "everyone"; Admins = "admins")                                      // special identities (Decision 80); reserved as names (pending Eric)
+const (Everyone = "everyone"; Admins = "admins")                                      // special identities (Decision 80); reserved as names (Gate 0 item 1)
 type Identities interface {
 	CreateIdentity(ctx, name string, now int64) error        // ErrInvalid (NameRule, reserved), ErrConflict
 	Identity(ctx, name string) (Identity, error)             // ErrNotFound
@@ -333,8 +348,8 @@ type Receipts interface {
 // channels.go
 type Kind string
 const (KindOrdinary Kind = "ordinary"; KindMemory Kind = "memory"; KindTasks Kind = "tasks")
-type Channel struct { ID int64; Name string; Kind Kind; Creator string; CreatedSeq, EvictedBeforeSeq, CreatedAt int64 } // Creator "" = none (Decision 92)
-type ChannelCreate struct { Name string; Kind Kind; Creator string; ACL []ACLEntry; CreatedSeq, CreatedAt int64 }          // ACL stored as given (choice 9)
+type Channel struct { ID int64; Name string; Kind Kind; Creator string; CreatedSeq, EvictedBeforeSeq, CreatedAt int64 } // Creator "" = none (Decision 92); stored as '' never NULL
+type ChannelCreate struct { Name string; Kind Kind; Creator string; ACL []ACLEntry; CreatedSeq, CreatedAt int64 }          // ACL nil: the Store stores DefaultACL(Creator); non-nil (even empty): stored as given (choice 9)
 type Channels interface {
 	CreateChannel(ctx, c ChannelCreate) (Channel, error)          // ErrInvalid (name, kind, ACL), ErrConflict (name)
 	Channel(ctx, id int64) (Channel, error); ChannelByName(ctx, name string) (Channel, error)
@@ -344,8 +359,8 @@ type Channels interface {
 	SetEvictedBefore(ctx, id int64, seq int64) error              // max(current, seq)
 	ACL(ctx, id int64) ([]ACLEntry, error)                        // stored entries, insertion order
 	SetACL(ctx, id int64, entries []ACLEntry) error               // validate all, then replace all, one transaction
-	EffectivePermissions(ctx, id int64, identity string) (Permissions, error) // union of stored rows for identity, everyone, admins (when identity is admin) plus the implicit entries
-	ReadableChannels(ctx, identity string) ([]int64, error)       // ids where EffectivePermissions.Read, ascending
+	EffectivePermissions(ctx, id int64, identity string) (Permissions, error) // union of stored rows for identity, everyone, admins (when identity is admin) plus the implicit entries; an unregistered identity is not admin and gets the everyone rows only (no error); ErrNotFound only for an unknown channel
+	ReadableChannels(ctx, identity string) ([]int64, error)       // ids where EffectivePermissions.Read, ascending; unregistered identity: the everyone-readable ids (no error)
 }
 
 // acl.go
@@ -382,11 +397,11 @@ type Subscriptions interface {
 }
 
 // sessions.go
-type Session struct { ID, Identity, DisplayName, Hint, ResumeSecret string; OpenedAt, LeaseExpiresAt, ClosedAt int64; PendingToken string; TagsCursorSeq, TagsPendingEndSeq int64; WatchID string }
+type Session struct { ID, Identity, DisplayName, Hint, ResumeTokenHash string; OpenedAt, LeaseExpiresAt, ClosedAt int64; PendingToken string; TagsCursorSeq, TagsPendingEndSeq int64; WatchID string } // ResumeTokenHash: the core's hash of the resume token, never the token (choice 12)
 type Cursor struct { SessionID string; ChannelID, CursorSeq, PendingEndSeq int64 }
 type Sessions interface {
-	OpenSession(ctx, s Session) error                                   // ErrConflict on id or resume secret; ErrNotFound on identity
-	Session(ctx, id string) (Session, error); SessionByResumeSecret(ctx, secret string) (Session, error)
+	OpenSession(ctx, s Session) error                                   // ErrConflict on id or resume token hash; ErrNotFound on identity; ErrInvalid on an empty ResumeTokenHash
+	Session(ctx, id string) (Session, error); SessionByResumeTokenHash(ctx, hash string) (Session, error)
 	ListSessions(ctx, identity string) ([]Session, error)              // "" = every identity; by opened_at, id
 	RenewLease(ctx, id string, until int64) error
 	CloseSession(ctx, id string, at int64) error
@@ -410,7 +425,7 @@ type Messages interface {
 	Message(ctx, seq int64) (Message, error)                                           // tombstoned rows too; ErrNotFound
 	MessagesAfter(ctx, channelID, afterSeq int64, limit int) ([]Message, error)       // live, ascending
 	MessagesInRange(ctx, channelID, fromSeq, toSeq int64, patterns []TagPattern, limit int) ([]Message, error) // live, fromSeq <= seq <= toSeq, every pattern matched by some tag (v1 tagsFilter)
-	SearchText(ctx, q search.Query, channelIDs []int64, limit int) ([]Message, error) // live, on channelIDs only; ErrInvalid on an empty query
+	SearchText(ctx, q search.Query, channelIDs []int64, limit int) ([]Message, error) // live, on channelIDs only; ErrInvalid on an empty query (checked before the dialect is asked); empty channelIDs: empty result, no query
 	TombstoneMessage(ctx, seq, at int64) (bool, error)                                // false when already tombstoned or missing
 	DeleteMessages(ctx, seqs []int64) error
 	ExpiredTombstones(ctx, before int64, limit int) ([]int64, error)                   // tombstone and tombstone_at < before
@@ -500,7 +515,7 @@ type Dialect interface {
 	CheckStamp(ctx context.Context, db *sqlx.DB) error        // SQLite: ErrNotAgentbus2 unless application_id == ApplicationID; Postgres: no-op
 	LockMigrations(ctx context.Context, tx *sqlx.Tx) error    // SQLite: no-op (immediate tx); Postgres: pg_advisory_xact_lock(hashtext(current_schema()))
 	LockAppend(ctx context.Context, tx *sqlx.Tx) error        // SQLite: no-op; Postgres: LOCK TABLE seq_counter IN EXCLUSIVE MODE (choice 4)
-	TextSearch(q search.Query) (cond string, args []any, err error) // Task 10; until then returns ErrNotImplemented
+	TextSearch(q search.Query) (cond string, args []any, err error) // Task 10; until then returns ErrNotImplemented. cond references columns of the alias m only and uses ? placeholders (rebound by the caller); it is pasted into the one SearchText query shape fixed in Task 6
 	NotifyAppend(ctx context.Context, tx *sqlx.Tx, channel string, seq int64) error // Milestone 7; no-op now
 }
 
@@ -515,7 +530,8 @@ type Options struct {
 func Open(ctx context.Context, db *sqlx.DB, d Dialect, opts Options) (*Store, error) // applies the Decision 34 rules then migrates; closes db on error
 func (s *Store) Engine() store.Engine; Tx; Append; Read; Close
 func (s *Store) SchemaVersion(ctx context.Context) (int, error)
-var ErrNotImplemented = errors.New("sqlstore: not implemented in this milestone") // deleted by Task 11
+func (s *Store) Attempts() int // the effective TxAttempts (tests)
+var ErrNotImplemented = errors.New("sqlstore: not implemented in this milestone") // deleted by Task 12
 ```
 
 ```go
@@ -528,9 +544,9 @@ func Open(ctx context.Context, path string, opts Options) (store.Store, error)
 func Migrations() []sqlstore.Migration                  // [{1, run schema/0001_initial.sql}]
 ```
 
-Open rules, implemented in `sqlstore.Open` in this order (Decision 34): `d.IsEmpty` → if empty: `d.Stamp`, then the bootstrap transaction (`d.LockMigrations`, `CREATE TABLE IF NOT EXISTS schema_meta`, insert version 0 with `ON CONFLICT (id) DO NOTHING`); if not empty: `d.CheckStamp`, then read `schema_meta`: table missing → `ErrNotAgentbus2`; `app != "agentbus2"` → `ErrNotAgentbus2`; `engine != d.Name()` → `ErrSchemaInvalid` (`"engine %q, want %q"`); `schema_version < 0` → `ErrSchemaInvalid`; `schema_version > latest` → `ErrUpgradeNeeded`. Then migrate from the current version: for each step `v → v+1`, one transaction: `d.LockMigrations`, re-read `schema_version`; if it is not `v`, skip the step (another process got there first); run `Up`; `UPDATE schema_meta SET schema_version = v+1`; commit. A missing step (`Migrations` has no entry for `v+1`) is `ErrSchemaInvalid`. State (Definition of Done D): a second open does nothing; an overlapping open waits on the lock and then sees the new version; a failed step rolls back (DDL is transactional on both engines), leaves the previous version and the error, and the next open retries it.
+Open rules, implemented in `sqlstore.Open` in this order (Decision 34): `d.IsEmpty` → if empty: `d.Stamp`, then the bootstrap transaction (`d.LockMigrations`, `CREATE TABLE IF NOT EXISTS schema_meta`, insert version 0 with `ON CONFLICT (id) DO NOTHING`); if not empty: `d.CheckStamp`, then read `schema_meta`: table missing → `ErrNotAgentbus2`; `app != "agentbus2"` → `ErrNotAgentbus2`; `engine != d.Name()` → `ErrSchemaInvalid` (`"engine %q, want %q"`); `schema_version < 0` → `ErrSchemaInvalid`; `schema_version > latest` → `ErrUpgradeNeeded`. Then migrate from the current version: for each step `v → v+1`, one transaction: `d.LockMigrations`, re-read `schema_version`; if it is not `v`, skip the step (another process got there first); run `Up`; `UPDATE schema_meta SET schema_version = v+1`; commit. A missing step (`Migrations` has no entry for `v+1`) is `ErrSchemaInvalid`. State (Definition of Done D): a second open does nothing; an overlapping open waits on the lock and then sees the new version; a failed step rolls back (DDL is transactional on both engines), leaves the previous version and the error, and the next open retries it. The likeliest leftover is a fresh database whose bootstrap committed (stamp set, `schema_meta` at 0) and whose step 1 then failed: the next `Open` takes the non-empty path (`CheckStamp` passes because the stamp was set before the bootstrap, `schema_meta` reads as version 0) and migrates from 0; both leftover shapes are tested.
 
-Transactions: `Tx` and `Append` begin with `sql.TxOptions{Isolation: sql.LevelSerializable}` (modernc.org/sqlite ignores the isolation level and uses `_txlock=immediate`, `tx.go:23` of v1.60.1; pgx issues `BEGIN ISOLATION LEVEL SERIALIZABLE`); `Append` runs `d.LockAppend` first and marks the `tx` as append-capable; `Read` begins with `sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}` (pgx issues `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY`, one snapshot for the whole `fn`, which is what the seq tests of Tasks 3 and 11 rely on when they read `MaxSeq` and then the rows; under the default `READ COMMITTED` each statement would take its own snapshot; modernc.org/sqlite ignores the level and issues a plain deferred `begin`, `tx.go:23`, which in WAL mode is one snapshot from the first read), and the `tx` rejects `exec` calls with `ErrReadOnly` before the engine sees them. The retry loop classifies the error from `fn` and from `Commit` alike with `d.IsRetryable`; after `TxAttempts` failures (or on the first for SQLite) it returns `fmt.Errorf("%w: %v", store.ErrRetryable, err)`; a `fn` error that is not retryable is returned as is after rollback; a context error is returned as is.
+Transactions: `Tx` and `Append` begin with `sql.TxOptions{Isolation: sql.LevelSerializable}` (modernc.org/sqlite ignores the isolation level and uses `_txlock=immediate`, `tx.go:23` of v1.60.1; pgx issues `BEGIN ISOLATION LEVEL SERIALIZABLE`); `Append` runs `d.LockAppend` first and marks the `tx` as append-capable; `Read` begins with `sql.TxOptions{Isolation: sql.LevelRepeatableRead, ReadOnly: true}` (pgx issues `BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY`, one snapshot for the whole `fn`, which is what the seq tests of Tasks 3 and 11 rely on when they read `MaxSeq` and then the rows; under the default `READ COMMITTED` each statement would take its own snapshot; modernc.org/sqlite ignores the level and issues a plain deferred `begin`, `tx.go:23`, which in WAL mode is one snapshot from the first read), and the `tx` rejects `exec` calls with `ErrReadOnly` before the engine sees them. The retry loop classifies the error of every stage with `d.IsRetryable`: `BeginTx` (on SQLite `SQLITE_BUSY` surfaces here, from `begin immediate` in modernc `newTx`, `tx.go:19-30` of v1.60.1, never from `fn`), `d.LockAppend` (on Postgres `LOCK TABLE` can fail with `40P01` before `fn` runs), `fn` and `Commit` alike; every retryable failure counts against `TxAttempts`, so a retryable `BeginTx` error on SQLite becomes `ErrRetryable` after the one attempt. After `TxAttempts` failures it returns `fmt.Errorf("%w: %v", store.ErrRetryable, err)`; a `fn` error that is not retryable is returned as is after rollback; a context error is returned as is.
 
 `Meta` methods in `meta.go`: `NextSeq` (`UPDATE seq_counter SET v = v + 1 WHERE id = 1 RETURNING v`; `ErrNotAppend` unless the tx is an append tx), `MaxSeq`, `TryLease` (v1 `takeLease` SQL, `RowsAffected() == 1`), `SetNotice` (`ON CONFLICT (kind) DO UPDATE`), `ClearNotice`, `Notice`.
 
@@ -546,15 +562,15 @@ Stubs: each `*_stub.go` implements its aggregate's methods on `*tx` with `return
 - `TestOpenRefusesWrongApp`: open once, then `UPDATE schema_meta SET app = 'other'`; reopen → `ErrNotAgentbus2`. Also: correct `schema_meta` but `PRAGMA application_id = 0` → `ErrNotAgentbus2`.
 - `TestOpenRefusesNewerVersion`: `UPDATE schema_meta SET schema_version = 2` (with the production set); reopen → `ErrUpgradeNeeded` and `err.Error()` contains `upgrade agentbus2`.
 - `TestOpenMigratesOlderVersion`: open with `Migrations: append(sqlite.Migrations(), Migration{2, CREATE TABLE probe (x INTEGER)})` on a database first opened at version 1 → `SchemaVersion == 2`, `probe` exists; a third open with the same set changes nothing (second-run proof).
-- `TestOpenFailedStepLeavesPreviousVersion`: step 2 creates `probe` then returns an error → `Open` fails, `schema_version` stays 1, `probe` does not exist; reopening with a working step 2 succeeds (leftovers proof).
+- `TestOpenFailedStepLeavesPreviousVersion`: step 2 creates `probe` then returns an error → `Open` fails, `schema_version` stays 1, `probe` does not exist; reopening with a working step 2 succeeds (leftovers proof). Second case, on a fresh path: `Migrations: [{1, creates probe then fails}]` → `Open` fails, `schema_meta` exists at version 0, `PRAGMA application_id == ApplicationID`, `probe` does not exist; reopening with `sqlite.Migrations()` reaches version 1 with the real tables (the non-empty, version-0 path of the open rules).
 - `TestOpenRejectsInvalidMeta`: `engine = 'postgres'` → `ErrSchemaInvalid`; `schema_version = -1` → `ErrSchemaInvalid`; a set missing version 2 while the file is at 1 and the set's latest is 3 → `ErrSchemaInvalid`.
 - `TestOpenConcurrentEmpty`: two goroutines `Open` the same fresh path at once; both succeed; `schema_version == 1`; exactly one `schema_meta` row (overlap proof; the immediate transaction serializes the bootstrap).
 
 `tx_test.go`:
 - `TestNextSeqNeedsAppend`: inside `Tx`, `NextSeq` → `ErrNotAppend`; inside `Append`, 1 then 2; `MaxSeq` inside a later `Read` is 2.
 - `TestReadRejectsWrites`: `SetNotice` inside `Read` → `ErrReadOnly`; no row written.
-- `TestBusyIsRetryable`: `BusyTimeout: 100 * time.Millisecond`; one store holds an `Append` open on a channel (block `fn` on a channel until released); a second `Open` of the same file runs `Tx` that writes → returns within a second with `errors.Is(err, store.ErrRetryable)`; release; the second store's `Tx` then succeeds (Decision 69, SQLite half).
-- `TestTxRetriesNothingOnSQLite`: a counting `fn` that returns a wrapped `*sqlite.Error` with code 5 fabricated via a real lock conflict is covered above; here assert `TxAttempts` defaults to 1 for the SQLite dialect (`store.(*sqlstore.Store)` exposes `Attempts()` for tests).
+- `TestBusyIsRetryable`: `BusyTimeout: 100 * time.Millisecond`; one store holds an `Append` open on a channel (block `fn` on a channel until released); a second `Open` of the same file runs `Tx` whose `fn` counts its calls and writes → returns within a second with `errors.Is(err, store.ErrRetryable)` and the count is 0 (the busy error came from `BeginTx`, before `fn` ran: Review Focus 9); release; the second store's `Tx` then succeeds with count 1 (Decision 69, SQLite half).
+- `TestTxRetriesNothingOnSQLite`: assert `store.(*sqlstore.Store).Attempts() == 1` for the SQLite dialect, and that `fn` returning a fabricated `&sqlite.Error{}` is not what the loop inspects: the real-conflict case above is the proof.
 - `TestLeaseAndNotices`: `TryLease("maintenance", "a", 100, 200)` true; `("maintenance", "b", 150, 300)` false; `("maintenance", "a", 150, 300)` true (owner renews); `("maintenance", "b", 250, 400)` true (expired); notices set, read, replaced, cleared.
 
 - [ ] **Step 2: Run them to verify they fail**
@@ -564,7 +580,7 @@ Expected: build failure (`undefined: Open`).
 
 - [ ] **Step 3: Implement**
 
-As in Interfaces. Notes the signatures do not determine: `sqlite.Open` builds the DSN with `DSN(path, busy)`, `sqlx.Open("sqlite", dsn)`, `db.SetMaxOpenConns(1)` is **not** set (readers in WAL mode run on other connections; the immediate lock serializes writers), then `sqlstore.Open`. `IsEmpty` on SQLite: `SELECT count(*) FROM sqlite_master WHERE type = 'table'` is 0. `IsRetryable` on SQLite: `errors.As(err, &e)` with `e *sqlite.Error` (`modernc.org/sqlite`) and `e.Code()` in `{5, 6}`. The migration runner executes the embedded file as one `ExecContext` (modernc.org/sqlite runs multi-statement strings; the file must not contain `BEGIN`/`COMMIT`). `tx.exec`/`get`/`sel` rebind with `sqlx.Rebind(d.BindType(), q)`.
+As in Interfaces. Notes the signatures do not determine: `sqlite.Open` builds the DSN with `DSN(path, busy)`, `sqlx.Open("sqlite", dsn)`, `db.SetMaxOpenConns(1)` is **not** set (readers in WAL mode run on other connections; the immediate lock serializes writers), then `sqlstore.Open`. `IsEmpty` on SQLite: `SELECT count(*) FROM sqlite_master WHERE type = 'table'` is 0. `IsRetryable` on SQLite: `errors.As(err, &e)` with `e *sqlite.Error` (`modernc.org/sqlite`) and the primary code `e.Code() & 0xff` in `{5, 6}`: modernc stores whatever result code the failing call returned (`conn.go` `errstrForDB`), which may be the extended `SQLITE_BUSY_SNAPSHOT` (517) or `SQLITE_LOCKED_SHAREDCACHE` (262), so the mask is what makes those retryable. The migration runner executes the embedded file as one `ExecContext` (modernc.org/sqlite runs multi-statement strings; the file must not contain `BEGIN`/`COMMIT`). `tx.exec`/`get`/`sel` rebind with `sqlx.Rebind(d.BindType(), q)`.
 
 - [ ] **Step 4: Run the tests, vet, lint, format**
 
@@ -588,14 +604,14 @@ version 1 DDL (no migration from v1, Decision 29)."
 ```
 
 ---
-### Task 3: Postgres engine and the engine conformance tests on both engines
+### Task 3: Postgres engine, the engine conformance tests on both engines, shared fixtures
 
 **Depends on:** 2.
 
 **Files:**
 - Create: `internal/store/postgres/postgres.go` (`Open`, `Options`, the dialect), `internal/store/postgres/migrations.go`, `internal/store/postgres/schema/0001_initial.sql` (the Postgres DDL above, verbatim)
-- Create: `internal/conformance/store/helpers_test.go` (`openStore`, `reopen`, `pgSchema`), `internal/conformance/store/open_test.go`, `internal/conformance/store/tx_test.go`, `internal/conformance/store/seq_test.go`
-- Test (pure, beside the code): `internal/store/postgres/dialect_test.go` (`IsRetryable` on fabricated `*pgconn.PgError` codes; `withSearchPath` DSN rewriting)
+- Create: `internal/conformance/store/helpers_test.go` (`openStore`, `reopen`, `pgSchema`, `sweepStaleSchemas`), `internal/conformance/store/fixtures_test.go` (the shared aggregate fixtures below), `internal/conformance/store/open_test.go`, `internal/conformance/store/tx_test.go`, `internal/conformance/store/seq_test.go`
+- Test (pure, beside the code): `internal/store/postgres/dialect_test.go` (`IsRetryable` on fabricated `*pgconn.PgError` codes; `withSearchPath` DSN rewriting), `internal/store/postgres/migrations_test.go` (`TestMigrationSetsAlign`: `len(postgres.Migrations()) == len(sqlite.Migrations())` and the version lists are equal, Decisions 34 and 53 "numbered in step"; the test lives here because `sqlstore` cannot import the engines that import it)
 
 **Interfaces:**
 - Consumes: `sqlstore.Open`, `Dialect`, `Migration`, `Options` (Task 2); `dbtest.Engine.DSN`, `dbtest.Engine.Open`, `dbtest.ForEachEngine` (Milestone 1).
@@ -611,31 +627,45 @@ func WithSearchPath(dsn, schema string) (string, error) // appends search_path=<
 ```
 
 ```go
-package store_test // internal/conformance/store
+package store // internal/conformance/store: the package name on main; every file imports the contract as
+import ab2store "github.com/ericfitz/agentbus2/internal/store" // (helpers_test.go and fixtures_test.go fix this alias; every task copies it)
 
+// helpers_test.go
 // openStore opens a fresh, isolated store on e through the engine's own Open and registers cleanup.
-// sqlite: filepath.Join(t.TempDir(), "agentbus2.db"); postgres: a schema t_<16 hex> created on e.Open(t), DSN via WithSearchPath.
-func openStore(t *testing.T, e dbtest.Engine, opts sqlstore.Options) (s store.Store, reopen func(opts sqlstore.Options) (store.Store, error), rawDSN func() string)
+// sqlite: filepath.Join(t.TempDir(), "agentbus2.db"); postgres: a schema t_<unix seconds>_<8 hex> created on e.Open(t), DSN via WithSearchPath.
+func openStore(t *testing.T, e dbtest.Engine, opts sqlstore.Options) (s ab2store.Store, reopen func(opts sqlstore.Options) (ab2store.Store, error), rawDSN func() string)
+
+// fixtures_test.go: the fixtures every aggregate task uses, compiled against Task 1's interfaces (the stubs of Task 2
+// make them compile now; they succeed once the aggregate lands). No parallel task edits this file.
+const fixedNow int64 = 1_700_000_000_000                                          // every fixture's timestamp
+func mustTx(t *testing.T, s ab2store.Store, fn func(ctx context.Context, tx ab2store.Tx) error)   // Tx; t.Fatal on error
+func mustAppendTx(t *testing.T, s ab2store.Store, fn func(ctx context.Context, tx ab2store.Tx) error) // Append; t.Fatal on error
+func mustRead(t *testing.T, s ab2store.Store, fn func(ctx context.Context, tx ab2store.Tx) error) // Read; t.Fatal on error
+func mustIdentity(t *testing.T, s ab2store.Store, name string)                     // CreateIdentity(name, fixedNow)
+func mustAdmin(t *testing.T, s ab2store.Store, name string)                        // mustIdentity then SetAdmin(name, true)
+func mustChannel(t *testing.T, s ab2store.Store, name string, kind ab2store.Kind, creator string, acl []ab2store.ACLEntry) ab2store.Channel // CreateChannel with CreatedSeq = MaxSeq(), CreatedAt = fixedNow
+func mustAppend(t *testing.T, s ab2store.Store, m ab2store.NewMessage) int64        // AppendMessage inside Append; CreatedAt defaults to fixedNow when 0
+func mustTombstone(t *testing.T, s ab2store.Store, seq int64)                     // TombstoneMessage(seq, fixedNow) must return true
 ```
 
-`rawDSN` returns the path (sqlite) or the schema-scoped DSN (postgres) so a test can open a plain `*sql.DB` on the same database to make fixtures (a stray table, an edited `schema_meta` row); it is never printed. Cleanup order: the `DROP SCHEMA ... CASCADE` cleanup is registered before any store is opened, so `t.Cleanup`'s LIFO order closes stores first. State: a test killed mid-way leaves a `t_<hex>` schema on the server, dropped by hand with `DROP SCHEMA t_<hex> CASCADE`; two overlapping test runs use different random schemas; the SQLite temp dir is `t.TempDir()`'s.
+`rawDSN` returns the path (sqlite) or the schema-scoped DSN (postgres) so a test can open a plain `*sql.DB` on the same database to make fixtures (a stray table, an edited `schema_meta` row); it is never printed. Cleanup order: the `DROP SCHEMA ... CASCADE` cleanup is registered before any store is opened, so `t.Cleanup`'s LIFO order closes stores first. State: a test killed mid-way leaves a `t_<seconds>_<hex>` schema on the server; `sweepStaleSchemas` (run once per process from the first `openStore` on postgres, only when `AGENTBUS2_TEST_POSTGRES_DSN` is set, since a testcontainer is discarded) drops every schema matching `^t_[0-9]+_[0-9a-f]{8}$` whose seconds are older than one hour, so the next run removes the leftovers; two overlapping runs use different random schemas younger than an hour and never drop each other's; a schema can still be dropped by hand with `DROP SCHEMA t_<seconds>_<hex> CASCADE`; the SQLite temp dir is `t.TempDir()`'s. `sweepStaleSchemas(ctx, db, now) (dropped int, err error)` is tested in `helpers_test.go` by `TestHelpersSweepStaleSchemas` under `ForEachEngine` (no `Skip`, per the gate): on postgres the test creates one schema named two hours in the past and one named now through `e.Open(t)`, runs the sweep, and asserts the stale one is gone, the fresh one is present and `dropped == 1`; on sqlite the sweep is defined as a no-op returning 0 and the test asserts exactly that.
 
 Dialect on Postgres: `BindType` `sqlx.DOLLAR`; `IsRetryable`: `*pgconn.PgError` with `Code` `40001` or `40P01`; `IsEmpty`: `SELECT count(*) FROM information_schema.tables WHERE table_schema = current_schema()` is 0; `Stamp`/`CheckStamp` no-ops; `LockMigrations`: `SELECT pg_advisory_xact_lock(hashtext(current_schema()))`; `LockAppend`: `LOCK TABLE seq_counter IN EXCLUSIVE MODE`; `TextSearch`: `ErrNotImplemented` until Task 10; `NotifyAppend`: no-op (Milestone 7). `Open`: `pgx.ParseConfig(dsn)` (error text never includes the DSN), `sqlx.Open("pgx", dsn)`, `PingContext`, `sqlstore.Open`.
 
 - [ ] **Step 1: Write the failing conformance tests (both engines, `dbtest.ForEachEngine`)**
 
-`open_test.go`, the Decision 34 rule set once more, now on both engines through `openStore`/`reopen`/`rawDSN` (the SQLite-only tests of Task 2 stay as the fast path): `TestOpenEmptyCreatesSchema` (plus: `schema_meta.engine` equals `e.Name`), `TestOpenRefusesNonEmptyWithoutSchemaMeta` (sqlite: the v1-shaped file; postgres: `CREATE TABLE stray (x INTEGER)` in the test schema before the first `Open`), `TestOpenRefusesWrongApp`, `TestOpenRefusesNewerVersion` (`upgrade agentbus2` in the text), `TestOpenMigratesOlderVersion` (extra step 2 from the engine's `Migrations()` plus a `probe` table; third open is a no-op), `TestOpenFailedStepLeavesPreviousVersion` (postgres proves DDL rollback too: `probe` must not exist), `TestOpenRejectsInvalidMeta` (engine mismatch: sqlite row says `postgres` and vice versa; negative version; missing step), `TestOpenConcurrentEmpty` (two `reopen` calls on a fresh database from two goroutines; one `schema_meta` row; version 1).
+`open_test.go`, the Decision 34 rule set once more, now on both engines through `openStore`/`reopen`/`rawDSN` (the SQLite-only tests of Task 2 stay as the fast path): `TestOpenEmptyCreatesSchema` (plus: `schema_meta.engine` equals `e.Name`), `TestOpenRefusesNonEmptyWithoutSchemaMeta` (sqlite: the v1-shaped file; postgres: `CREATE TABLE stray (x INTEGER)` in the test schema before the first `Open`), `TestOpenRefusesWrongApp`, `TestOpenRefusesNewerVersion` (`upgrade agentbus2` in the text), `TestOpenMigratesOlderVersion` (extra step 2 from the engine's `Migrations()` plus a `probe` table; third open is a no-op), `TestOpenFailedStepLeavesPreviousVersion` (both cases of Task 2: a failed step 2 on a version-1 database, and a failed step 1 on a fresh database leaving `schema_meta` at 0 with the next `Open` on the real set reaching 1; postgres proves DDL rollback too: `probe` must not exist in either case), `TestOpenRejectsInvalidMeta` (engine mismatch: sqlite row says `postgres` and vice versa; negative version; missing step), `TestOpenConcurrentEmpty` (two `reopen` calls on a fresh database from two goroutines; one `schema_meta` row; version 1).
 
 `tx_test.go`:
 - `TestNextSeqNeedsAppend`, `TestReadRejectsWrites`, `TestLeaseAndNotices` as in Task 2, on both engines.
 - `TestTxRetriesInjectedSerializationFailure`: `fn` returns a `*pgconn.PgError{Code: "40001"}` on its first call and nil after; on postgres `Tx` returns nil and `fn` ran twice; on sqlite the same `fn` makes `Tx` return `ErrRetryable` after one call (the SQLite dialect does not recognize pgx errors and attempts is 1; the assertion is "ran once, error is not retryable-wrapped": `errors.Is(err, store.ErrRetryable)` is false and the raw error comes back). State both expectations in one table-driven test keyed by `e.Name`.
-- `TestTxSerializationFailureAtCommitIsRetried`: two stores on the same database; tx A reads notice `x` and writes notice `y`, tx B reads `y` and writes `x`, started concurrently. On postgres a barrier after the reads (released only on each `fn`'s first run) makes both snapshots predate both writes, so one commit fails with 40001; the retry runs that `fn` again, both `Tx` calls return nil, the counters show at least one re-run, and the final notices are consistent with a serial order. On sqlite there is no barrier (B blocks at `BEGIN IMMEDIATE` until A commits, so a barrier inside `fn` would deadlock): both return nil with exactly one run each and the same serial-order assertion.
-- `TestTxGivesUpAfterAttempts`: `TxAttempts: 2`, `fn` always returns 40001 → postgres: `ErrRetryable` after exactly 2 runs; sqlite: as above, 1 run.
+- `TestTxSerializationFailureAtCommitIsRetried`: two stores on the same database; tx A reads notice `x` and writes notice `y`, tx B reads `y` and writes `x`, started concurrently. On postgres two barriers, each released only on each `fn`'s first run (later runs pass straight through): the first after both reads, so both snapshots predate both writes; the second after both writes and before either `fn` returns, so neither transaction has committed when the other's write runs and SSI defers the dangerous-structure check to `COMMIT` (with only the first barrier, A could commit before B's write and B's write statement itself would fail inside `fn`, which the injected test already covers). Each `fn` records per run the error of its write statement; assert that on both first runs the write returned nil, that exactly one `Tx` re-ran its `fn` (the loser's second run), that both `Tx` calls return nil, and that the final notices are consistent with a serial order. The failure therefore provably came from `Commit`. On sqlite there is no barrier (B blocks at `BEGIN IMMEDIATE` until A commits, so a barrier inside `fn` would deadlock): both return nil with exactly one run each and the same serial-order assertion.
+- `TestTxGivesUpAfterAttempts`: `TxAttempts: 2`, `fn` always returns 40001 → postgres: `ErrRetryable` after exactly 2 runs; sqlite: as above, 1 run. `// pending Eric: Gate 0 item 3` on the default-attempts assertion (`Attempts() == 5` on postgres).
 - `TestTxNonRetryableErrorPassesThrough`: `fn` returns `errors.New("boom")` → the same error, one run, nothing committed.
 
-`seq_test.go`, the Decision 54 concurrent-writer test: 8 writer goroutines, each over its own store opened by `reopen` (separate connections), each appending 50 rows through `Append` with `NextSeq` into a scratch table created by the test? No: the suite must not add tables. Use `NextSeq` plus `SetNotice(kind = "seq-<v>")` inside the same `Append` as the commit marker (the messages aggregate lands in Task 6; Task 11 switches this test to `AppendMessage`, see its Step 2). A reader goroutine polls inside one `Read` per poll: `m := MaxSeq()`, then `Notice("seq-<k>")` must exist for every `k` in `1..m` (the contiguous-prefix property: a snapshot that shows counter value `m` shows every lower seq's row, because each lower value's transaction held the counter row earlier and therefore committed earlier; a Postgres sequence would not give this, Decision 27), and `m` never decreases between polls. Assert 400 appends, `MaxSeq == 400`, no error escaped (`ErrRetryable` included), and the reader saw contiguous prefixes on every poll. On postgres also assert the run stays under 30 s (the probe took well under that with the table lock; without `LockAppend` the retries would exhaust the budget and the no-error assertion fails, which is the test's teeth).
+`seq_test.go`, the Decision 54 concurrent-writer test: 8 writer goroutines, each over its own store opened by `reopen` (separate connections), each appending 50 rows through `Append` with `NextSeq` into a scratch table created by the test? No: the suite must not add tables. Use `NextSeq` plus `SetNotice(kind = "seq-<v>")` inside the same `Append` as the commit marker (the messages aggregate lands in Task 6; Task 12 switches this test to `AppendMessage`, see its Step 2). A reader goroutine polls inside one `Read` per poll: `m := MaxSeq()`, then `Notice("seq-<k>")` must exist for every `k` in `1..m` (the contiguous-prefix property: a snapshot that shows counter value `m` shows every lower seq's row, because each lower value's transaction held the counter row earlier and therefore committed earlier; a Postgres sequence would not give this, Decision 27), and `m` never decreases between polls. Assert 400 appends, `MaxSeq == 400`, no error escaped (`ErrRetryable` included), and the reader saw contiguous prefixes on every poll. On postgres also assert the run stays under 30 s (the probe took well under that with the table lock; without `LockAppend` the retries would exhaust the budget and the no-error assertion fails, which is the test's teeth).
 
-`dialect_test.go` (pure): `TestIsRetryable` (`40001`, `40P01` true; `23505`, `errors.New` false), `TestWithSearchPath` (appends `search_path=t_ab` to a DSN with and without an existing query; rejects `T_ab`, `a-b`, `""`).
+`dialect_test.go` (pure): `TestIsRetryable` (`40001`, `40P01` true with `// pending Eric: Gate 0 item 2` on the `40P01` row; `23505`, `errors.New` false), `TestWithSearchPath` (appends `search_path=t_ab` to a DSN with and without an existing query; rejects `T_ab`, `a-b`, `""`). `migrations_test.go` (pure): `TestMigrationSetsAlign` as in Files.
 
 - [ ] **Step 2: Run them to verify they fail**
 
@@ -644,7 +674,7 @@ Expected: build failure (`undefined: postgres.Open`).
 
 - [ ] **Step 3: Implement `internal/store/postgres` and the helpers**
 
-As in Interfaces. The embedded `0001_initial.sql` runs as one `ExecContext` (pgx stdlib sends a multi-statement simple-protocol query when there are no arguments; verified by the migration test itself). `openStore` generates the schema name with `crypto/rand` (8 bytes, hex), runs `CREATE SCHEMA t_<hex>` on `e.Open(t)`, registers `DROP SCHEMA t_<hex> CASCADE` in `t.Cleanup`, then returns `reopen` closures that call `postgres.Open` with the `WithSearchPath` DSN.
+As in Interfaces. The embedded `0001_initial.sql` runs as one `ExecContext` (pgx stdlib sends a multi-statement simple-protocol query when there are no arguments; verified by the migration test itself). `openStore` generates the schema name as `t_<time.Now().Unix()>_<4 random bytes, hex>`, runs `sweepStaleSchemas` once per process (a `sync.Once`; `SELECT nspname FROM pg_namespace WHERE nspname ~ '^t_[0-9]+_[0-9a-f]{8}$'`, parse the seconds, `DROP SCHEMA ... CASCADE` for each older than an hour; the schema name is validated by the same regexp before it is interpolated), runs `CREATE SCHEMA t_...` on `e.Open(t)`, registers `DROP SCHEMA t_... CASCADE` in `t.Cleanup`, then returns `reopen` closures that call `postgres.Open` with the `WithSearchPath` DSN. `fixtures_test.go` is written here with the signatures above; its bodies call the Task 1 methods and `t.Fatalf` on any error.
 
 - [ ] **Step 4: Run the suite on both engines, then the gate**
 
@@ -655,7 +685,7 @@ Expected: every test has `--- PASS` for both `/sqlite` and `/postgres`; no `SKIP
 
 ```bash
 git add internal/store/postgres internal/conformance/store
-git commit -m "feat(store): Postgres engine; Decision 34, Tx retry and concurrent-writer conformance on both engines
+git commit -m "feat(store): Postgres engine; Decision 34, Tx retry and concurrent-writer conformance on both engines; shared fixtures
 
 SERIALIZABLE with 40001/40P01 retried up to five attempts with jittered
 backoff (Decision 69), the append transaction locking seq_counter so
@@ -683,16 +713,16 @@ for Postgres (no migration from v1, Decision 29)."
 
 - [ ] **Step 1: Write the failing conformance tests**
 
-`identities_test.go`: `TestIdentityCreateGetList` (create `pat`, `kim`; `Identity("pat")` has `Admin false`, `CreatedAt` as given; list is `[kim, pat]`; unknown → `ErrNotFound`), `TestIdentityRejects` (`a/b` → `ErrInvalid`; `""`; 129 bytes; `everyone` and `admins` → `ErrInvalid` naming them reserved; duplicate → `ErrConflict`), `TestSetAdmin` (true then false; unknown → `ErrNotFound`), `TestAdvanceTagAckedMark` (10 then 5 leaves 10, 12 raises), `TestPublicKeys` (put two kids, list by kid, replace one (`Key` changes), unknown algorithm `RS256` → `ErrInvalid`, unknown identity → `ErrNotFound`, delete returns 2 then list empty), `TestDeleteIdentityCascade` is not here (identities are not deleted in 2.0.0; no method).
+`identities_test.go` (fixtures from `fixtures_test.go`; names prefixed `TestIdentity`): `TestIdentityCreateGetList` (create `pat`, `kim`; `Identity("pat")` has `Admin false`, `CreatedAt` as given; list is `[kim, pat]`; unknown → `ErrNotFound`), `TestIdentityRejects` (`a/b` → `ErrInvalid`; `""`; 129 bytes; duplicate → `ErrConflict`), `TestIdentityRejectsReservedNames` (`// pending Eric: Gate 0 item 1`; `everyone` and `admins` → `ErrInvalid` naming them reserved), `TestIdentitySetAdmin` (true then false; unknown → `ErrNotFound`), `TestIdentityAdvanceTagAckedMark` (10 then 5 leaves 10, 12 raises), `TestIdentityPublicKeys` (put two kids, list by kid, replace one (`Key` changes), unknown algorithm `RS256` → `ErrInvalid`, unknown identity → `ErrNotFound`, delete returns 2 then list empty). No cascade test: identities are not deleted in 2.0.0 (no method).
 
-`receipts_test.go`: `TestReceiptRoundTrip` (put, get with `now < ExpiresAt` found with equal fields, `now >= ExpiresAt` not found; other identity same key not found, Decision 67 scope), `TestReceiptReplace` (second put with a new fingerprint wins), `TestDeleteExpiredReceipts` (3 rows, 2 expired at `now`, limit 1 → deletes 1, then 1, then 0).
+`receipts_test.go`: `TestReceiptRoundTrip` (put, get with `now < ExpiresAt` found with equal fields, `now >= ExpiresAt` not found; other identity same key not found, Decision 67 scope), `TestReceiptReplace` (second put with a new fingerprint wins), `TestReceiptDeleteExpired` (3 rows, 2 expired at `now`, limit 1 → deletes 1, then 1, then 0).
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `go test -count=1 -p 1 -run 'TestIdentity|TestSetAdmin|TestAdvanceTag|TestPublicKeys|TestReceipt|TestDeleteExpired' ./internal/conformance/store/`
+Run: `go test -count=1 -p 1 -run '^Test(Identity|Receipt)' ./internal/conformance/store/`
 Expected: `--- FAIL` with `ErrNotImplemented` on both engines.
 
-- [ ] **Step 3: Implement** the two files; delete the two stubs. `CreateIdentity` runs `store.NameRule`, the reserved-name check, then `INSERT`, mapping the unique violation to `ErrConflict` (detect with the `isConflict` helper in `tx.go`: SQLite `*sqlite.Error` code 1555/2067 (`SQLITE_CONSTRAINT_PRIMARYKEY`/`UNIQUE`), Postgres `23505`). Add `isForeignKey` beside it (SQLite code 787, `SQLITE_CONSTRAINT_FOREIGNKEY`; Postgres `23503`), which `PutPublicKey` uses to map an unknown identity to `ErrNotFound` and which Tasks 6 (`AppendMessage` on an unknown channel), 7 (`OpenSession` on an unknown identity) and 8 (`Subscribe`) reuse. `PutPublicKey` validates `Algorithm` against the two values before the `INSERT ... ON CONFLICT (identity, kid) DO UPDATE`. `DeleteExpiredReceipts` selects up to `limit` keys then deletes them (portability rule).
+- [ ] **Step 3: Implement** the two files; delete the two stubs. `CreateIdentity` runs `store.NameRule`, the reserved-name check (Gate 0 item 1), then `INSERT`, mapping the unique violation to `ErrConflict` (detect with the `isConflict` helper in `tx.go`: SQLite `*sqlite.Error` with extended code 1555/2067 (`SQLITE_CONSTRAINT_PRIMARYKEY`/`UNIQUE`; probed on v1.60.1: `Exec` returns the extended code), falling back on primary code 19 (`e.Code() & 0xff`) with `UNIQUE constraint failed` in the message; Postgres `23505`). Add `isForeignKey` beside it (SQLite extended code 787, `SQLITE_CONSTRAINT_FOREIGNKEY`, same fallback with `FOREIGN KEY constraint failed`; Postgres `23503`), which `PutPublicKey` uses to map an unknown identity to `ErrNotFound` and which Tasks 6 (`AppendMessage` on an unknown channel), 7 (`OpenSession` on an unknown identity) and 8 (`Subscribe`) reuse. `PutPublicKey` validates `Algorithm` against the two values before the `INSERT ... ON CONFLICT (identity, kid) DO UPDATE`. `DeleteExpiredReceipts` selects up to `limit` keys then deletes them (portability rule).
 
 - [ ] **Step 4: Run the suite and the gate**
 
@@ -708,7 +738,7 @@ git commit -m "feat(store): identities with admin flag and public keys; receipts
 Receipts port v1 internal/bus/receipts.go (checkReceipt, storeReceipt)
 re-keyed to the identity (Decision 67). Identities, the admin flag and
 PKIX public keys are new rows for Decisions 14, 55, 57, 73; everyone and
-admins are reserved names (pending Eric)."
+admins are reserved names (Gate 0 item 1)."
 ```
 
 ---
@@ -728,30 +758,31 @@ admins are reserved names (pending Eric)."
 
 - [ ] **Step 1: Write the failing conformance tests**
 
-`channels_test.go`: `TestCreateChannel` (fields round-trip; `ID > 0`; `ChannelByName`; `ListChannels` by name; `ListChannelsByKind(tasks)`), `TestCreateChannelRejects` (`a/b`, `""`, 129 bytes → `ErrInvalid` (Decision 93); `Kind("dm")`, `Kind("")` → `ErrInvalid` (Decision 90); duplicate name → `ErrConflict`; `Creator` not registered → `ErrInvalid`), `TestRenameChannel` (messages and cursors are Tasks 6 and 7; here: name changes, old name `ErrNotFound`, taken name `ErrConflict`, invalid name `ErrInvalid`, id unchanged), `TestDeleteChannelRemovesACL` (ACL rows gone, `ReadableChannels` no longer lists it, `Channel(id)` `ErrNotFound`), `TestSetEvictedBefore` (max semantics).
+`channels_test.go` (names prefixed `TestChannel`): `TestChannelCreate` (fields round-trip; `ID > 0`; `ChannelByName`; `ListChannels` by name; `ListChannelsByKind(tasks)`; `Creator` round-trips as `""` when created with `""`), `TestChannelCreateRejects` (`a/b`, `""`, 129 bytes → `ErrInvalid` (Decision 93); `Kind("dm")`, `Kind("")` → `ErrInvalid` (Decision 90); duplicate name → `ErrConflict`; `Creator` not registered → `ErrInvalid`), `TestChannelRename` (messages and cursors are Tasks 6 and 7; here: name changes, old name `ErrNotFound`, taken name `ErrConflict`, invalid name `ErrInvalid`, id unchanged), `TestChannelDeleteRemovesACL` (ACL rows gone, `ReadableChannels` no longer lists it, `Channel(id)` `ErrNotFound`), `TestChannelSetEvictedBefore` (max semantics).
 
 `acl_test.go`, the section 5.8 Store cases, one test each, named after the case:
 - `TestACLCreatorRecorded`: `Channel.Creator == "pat"`.
-- `TestACLDefaultRowsStoredWhenCreatedWithDefault`: create with `ACL: store.DefaultACL("pat")`: `ACL(id)` equals exactly `[{everyone,[read,write]},{pat,[read,write,admin]},{admins,[admin]}]` in that order.
+- `TestACLDefaultRowsStoredWhenCreatedWithoutACL`: create with `ACL: nil` and creator `pat`: `ACL(id)` equals exactly `[{everyone,[read,write]},{pat,[read,write,admin]},{admins,[admin]}]` in that order (the Store substituted `DefaultACL("pat")`, choice 9); the same create with `ACL: store.DefaultACL("pat")` passed explicitly stores the same rows.
+- `TestACLEmptyListStoresNoRows`: create with `ACL: []ab2store.ACLEntry{}`: `ACL(id)` is empty; `EffectivePermissions(id, "kim")` is all false and `(id, "pat")` (the creator) is `{false,false,true}` (choice 9: empty is not nil).
 - `TestACLDefaultRowsAbsentWhenCreatedWithOwn`: create with `ACL: [{kim,[read]}]`: `ACL(id)` is exactly that; `EffectivePermissions(id, "everyone")` is all false.
-- `TestACLImplicitEntriesGrantAdmin`: stored ACL `[{kim,[read]}]`, creator `pat`, identity `root` with `SetAdmin(true)`: `EffectivePermissions(id, "pat") == {false,false,true}`, `(id, "root") == {false,false,true}`, `(id, "kim") == {true,false,false}`, `(id, "lee") == {false,false,false}`.
+- `TestACLImplicitEntriesGrantAdmin`: stored ACL `[{kim,[read]}]`, creator `pat`, identity `root` with `SetAdmin(true)`, identity `lee` registered without rows, and `ghost` never registered: `EffectivePermissions(id, "pat") == {false,false,true}`, `(id, "root") == {false,false,true}`, `(id, "kim") == {true,false,false}`, `(id, "lee") == {false,false,false}`, `(id, "ghost") == {false,false,false}` with no error (an unregistered identity is simply not admin); `EffectivePermissions(unknownChannelID, "pat")` → `ErrNotFound`.
 - `TestACLDuplicateEntriesAreAdditive`: `[{kim,[read]},{kim,[write]}]` → `{true,true,false}`; `ACL(id)` still returns both rows.
 - `TestACLRejectsUnknownPermissionAndEmptyList`: `SetACL` with `Permission("owner")` → `ErrInvalid`; with `[]Permission{}` → `ErrInvalid`; with `nil` → `ErrInvalid`; after each, `ACL(id)` is unchanged (Review Focus 6).
 - `TestACLRejectsUnregisteredIdentity`: `SetACL` with `{ghost,[read]}` → `ErrInvalid` (Decision 96); `everyone` and `admins` pass; `CreateChannel` with such an ACL fails and creates no channel.
-- `TestACLRejectsNameWithSlash` and `TestACLRejectsUnknownKind`: covered by `TestCreateChannelRejects`; keep them as explicit one-assertion tests so the section 5.8 list maps one to one.
+- `TestACLRejectsNameWithSlash` and `TestACLRejectsUnknownKind`: covered by `TestChannelCreateRejects`; keep them as explicit one-assertion tests so the section 5.8 list maps one to one.
 - `TestACLGeneralHasDefaultAndNoCreator`: create `general` with `Creator: ""` and `ACL: store.DefaultACL("")` → rows `[{everyone,[read,write]},{admins,[admin]}]`, `Creator == ""`, `EffectivePermissions(id, "pat")` for a non-admin is `{true,true,false}` (Decision 92).
 - `TestACLRemovingAdminsAndCreatorRowsKeepsImplicitAdmin`: start from the default for `pat`; `SetACL(id, [{everyone,[read,write]}])`; `pat` and the admin `root` have `{true,true,true}` (everyone's read and write plus implicit admin); then `SetACL(id, [])`: both have `{false,false,true}` ("unable to read until they grant it"); `SetACL(id, [{pat,[read]}])` → `pat` is `{true,false,true}`.
-- `TestACLDeleteChannelRemovesEntries`: as `TestDeleteChannelRemovesACL`, listed here for the section 5.8 map.
-- `TestReadableChannels`: three channels, `kim` readable on two through different entries (`kim` direct, `everyone`), the admin `root` readable only where a read row exists (implicit entries grant admin, not read), ascending ids.
+- `TestACLDeleteChannelRemovesEntries`: as `TestChannelDeleteRemovesACL`, listed here for the section 5.8 map.
+- `TestACLReadableChannels`: three channels, `kim` readable on two through different entries (`kim` direct, `everyone`), the admin `root` readable only where a read row exists (implicit entries grant admin, not read), the unregistered `ghost` readable only where `everyone` has read (no error), ascending ids.
 
 The last section 5.8 case ("the check the core makes for each row of the section 4.6 table") is Milestone 3's core suite.
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `go test -count=1 -p 1 -run 'TestCreateChannel|TestRenameChannel|TestDeleteChannel|TestSetEvicted|TestACL|TestReadable' ./internal/conformance/store/`
+Run: `go test -count=1 -p 1 -run '^Test(Channel|ACL)' ./internal/conformance/store/`
 Expected: `--- FAIL` with `ErrNotImplemented` on both engines.
 
-- [ ] **Step 3: Implement** `channels.go` and `acl.go`; delete the stub. `CreateChannel` order: `NameRule`, `ValidKind`, creator registered (when non-empty), every entry through `ValidateEntry` then the Decision 96 registry check (`everyone`/`admins` exempt), then `INSERT ... RETURNING id`, then the ACL rows in order. `SetACL`: validate all (zero entries is valid and clears the stored ACL; the implicit entries still apply), `DELETE FROM channel_acl WHERE channel_id = ?`, insert in order. `EffectivePermissions`: `SELECT can_read, can_write, can_admin FROM channel_acl WHERE channel_id = ? AND identity IN (?, ?, ?)` with the identity, `everyone`, and `admins` only when `identities.is_admin` for the identity (one prior query), union in Go; add `Admin = true` when the identity is the creator or an admin. `ReadableChannels`: the same rule in one query (`EXISTS` over `channel_acl` with `can_read = TRUE` for the identity, `everyone`, or `admins` when admin), ordered by id.
+- [ ] **Step 3: Implement** `channels.go` and `acl.go`; delete the stub. `CreateChannel` order: `NameRule`, `ValidKind`, creator registered (when non-empty), `ACL == nil` → `DefaultACL(Creator)` (choice 9), every entry through `ValidateEntry` then the Decision 96 registry check (`everyone`/`admins` exempt), then `INSERT ... RETURNING id` (`creator` bound as the string, `''` for none, never NULL), then the ACL rows in order. `SetACL`: validate all (zero entries is valid and clears the stored ACL; the implicit entries still apply), `DELETE FROM channel_acl WHERE channel_id = ?`, insert in order. `EffectivePermissions`: `ErrNotFound` unless the channel row exists; `SELECT is_admin FROM identities WHERE name = ?` with no row read as `false` (an unregistered identity is not admin and is not an error); `SELECT can_read, can_write, can_admin FROM channel_acl WHERE channel_id = ? AND identity IN (?, ?, ?)` with the identity, `everyone`, and `admins` only when admin, union in Go; add `Admin = true` when the identity equals `channels.creator` (and `creator <> ''`) or is admin. `ReadableChannels`: the same rule in one query (`EXISTS` over `channel_acl` with `can_read = TRUE` for the identity, `everyone`, or `admins` when admin), ordered by id.
 
 - [ ] **Step 4: Run the suite and the gate**
 
@@ -772,31 +803,52 @@ channels.creator (Decisions 73, 96)."
 ```
 
 ---
-### Task 6: Messages, tags, history, retention queries, embeddings
+### Task 6: Messages, tags, history, retention queries, embeddings, `SearchText`
 
-**Depends on:** 5.
+**Depends on:** 5, 10.
 
 **Files:**
 - Delete: `internal/store/sqlstore/messages_stub.go`
 - Create: `internal/store/sqlstore/messages.go` (append, get, after, range, tombstone, delete, retention queries, `messageCols`/scan, tags), `internal/store/sqlstore/embeddings.go`
 - Test: `internal/conformance/store/messages_test.go`, `internal/conformance/store/embeddings_test.go`
 
-**Port from v1:** `internal/bus/messages.go:27-59` (`Message`, `messageCols`; the `group_concat` tag subquery becomes a second query `SELECT seq, tag FROM message_tags WHERE seq IN (...) ORDER BY seq, tag`), `internal/bus/tags.go:117-160` (`insertTags`, `tagsOf`, `tagsFilter`: `EXISTS (SELECT 1 FROM message_tags t WHERE t.seq = m.seq AND t.tag BETWEEN ? AND ?)` per pattern, ANDed), `internal/bus/maintenance.go:78` (expired tombstones), `maintenance.go:151-190` (`deleteOrdinaryChunk`: select then delete, `evicted_before_seq` is the caller's through `SetEvictedBefore`), `internal/bus/embed.go:167-183` (`encodeVec`/`decodeVec` stay in the core; the Store stores bytes), `embed.go:194-199` (`unembeddedFrom`, with `m.channel <> 'tasks' AND ... NOT LIKE 'tasks/%'` replaced by `channels.kind <> 'tasks'`, Decision 90), `embed.go:277-290` (`DeleteStaleModel`), `embed.go:362-367` (conditional put), `internal/bus/memories.go:266` (`DeleteEmbedding`). `SearchText` is Task 10 (returns the dialect's `ErrNotImplemented` until then).
+**Port from v1:** `internal/bus/messages.go:27-59` (`Message`, `messageCols`; the `group_concat` tag subquery becomes a second query `SELECT seq, tag FROM message_tags WHERE seq IN (...) ORDER BY seq, tag`), `internal/bus/tags.go:117-160` (`insertTags`, `tagsOf`, `tagsFilter`: `EXISTS (SELECT 1 FROM message_tags t WHERE t.seq = m.seq AND t.tag BETWEEN ? AND ?)` per pattern, ANDed), `internal/bus/maintenance.go:78` (expired tombstones), `maintenance.go:151-190` (`deleteOrdinaryChunk`: select then delete, `evicted_before_seq` is the caller's through `SetEvictedBefore`), `internal/bus/embed.go:167-183` (`encodeVec`/`decodeVec` stay in the core; the Store stores bytes), `embed.go:194-199` (`unembeddedFrom`, with `m.channel <> 'tasks' AND ... NOT LIKE 'tasks/%'` replaced by `channels.kind <> 'tasks'`, Decision 90), `embed.go:277-290` (`DeleteStaleModel`), `embed.go:362-367` (conditional put), `internal/bus/memories.go:266` (`DeleteEmbedding`), `internal/bus/search.go:145-182` (`textSearch`: the query shape around the dialect condition; the translations themselves are Task 10).
 
-**Interfaces:** consumes Task 1's `Messages`, `NewMessage`, `Message`, `TagPattern`; Task 2's `NextSeq`, `Dialect.NotifyAppend`; produces the `*tx` implementations and the unexported `scanMessages(ctx, tx, query, args) ([]store.Message, error)` helper (query selects the fixed column list in `messageCols`) that Tasks 8 and 9 reuse.
+**Interfaces:** consumes Task 1's `Messages`, `NewMessage`, `Message`, `TagPattern`; Task 2's `NextSeq`, `Dialect.NotifyAppend`; Task 10's `Dialect.TextSearch` (both engines are implemented by then). Produces the `*tx` implementations and these cross-task shapes:
+
+```go
+package sqlstore
+
+// messageCols is the fixed, alias-qualified column list; every query that selects messages
+// names the table "messages m" and selects exactly messageCols (Tasks 8 and 9 reuse both).
+const messageCols = "m.seq, m.channel_id, m.sender, m.session_id, m.created_at, m.type, m.subject, m.content, m.reply_to, m.metadata, m.memory_id, m.revision, m.tombstone, m.tombstone_at"
+
+// scanMessages runs query (which selects messageCols from "messages m"), loads Tags with the
+// second query over message_tags, and returns the rows in the query's order.
+func scanMessages(ctx context.Context, tx *tx, query string, args ...any) ([]store.Message, error)
+
+// SearchText's one query shape, engine-independent; cond and condArgs come from d.TextSearch(q)
+// and reference columns of alias m only (SQLite: m.seq IN (SELECT rowid FROM messages_fts WHERE
+// messages_fts MATCH ?); Postgres: (m.fts_subject @@ ... OR m.fts_content @@ ...) AND ...).
+//   SELECT <messageCols> FROM messages m
+//   WHERE (<cond>) AND m.tombstone = FALSE AND m.channel_id IN (?)   -- sqlx.In, then Rebind
+//   ORDER BY m.seq LIMIT ?
+// Order of checks: q.Empty() → ErrInvalid (before the dialect is asked); len(channelIDs) == 0 →
+// empty slice, no query; then d.TextSearch, then the query.
+```
 
 - [ ] **Step 1: Write the failing conformance tests**
 
-`messages_test.go`: `TestAppendMessageAssignsSeqAndStoresTags` (three appends on two channels: seq 1, 2, 3; `Message(2)` round-trips every field including `Metadata`, `ReplyTo`, sorted `Tags`; `MaxSeq == 3`), `TestAppendNeedsAppendTx` (`AppendMessage` inside `Tx` → `ErrNotAppend`, nothing stored; Review Focus 3), `TestAppendRejectsUnknownChannel` (FK → `ErrNotFound`), `TestMessagesAfter` (channel scoping, `afterSeq`, limit, tombstoned excluded, ascending), `TestMessagesInRangeWithTagFilter` (`[from, to]` inclusive; patterns `env*` and `team:a` both required; no patterns returns all live rows in range), `TestTombstoneMessage` (true once, false the second time, false for unknown; `Message(seq).Tombstone` and `TombstoneAt`), `TestDeleteMessagesCascades` (tags, embeddings, failures rows gone), `TestExpiredTombstones` and `TestOrdinaryMessagesBefore` (memories excluded, ascending, limit), `TestRenameChannelKeepsMessages` (messages found by the channel id after `RenameChannel`), `TestDeleteChannelDeletesMessages` (Review Focus 7).
+`messages_test.go` (names prefixed `TestMessage`): `TestMessageAppendAssignsSeqAndStoresTags` (three appends on two channels: seq 1, 2, 3; `Message(2)` round-trips every field including `Metadata`, `ReplyTo`, sorted `Tags`; `MaxSeq == 3`), `TestMessageAppendNeedsAppendTx` (`AppendMessage` inside `Tx` → `ErrNotAppend`, nothing stored; Review Focus 3), `TestMessageAppendRejectsUnknownChannel` (FK → `ErrNotFound`), `TestMessagesAfter` (channel scoping, `afterSeq`, limit, tombstoned excluded, ascending), `TestMessagesInRangeWithTagFilter` (`[from, to]` inclusive; patterns `env*` and `team:a` both required; no patterns returns all live rows in range), `TestMessageTombstone` (true once, false the second time, false for unknown; `Message(seq).Tombstone` and `TombstoneAt`), `TestMessageDeleteCascades` (tags, embeddings, failures rows gone), `TestMessageExpiredTombstones` and `TestMessageOrdinaryBefore` (memories excluded, ascending, limit), `TestMessageSurvivesChannelRename` (messages found by the channel id after `RenameChannel`), `TestMessageDeletedWithChannel` (Review Focus 7), `TestMessageSearchTextWiring` (the wiring only; the cross-engine corpus is Task 11: `search.Query{}` → `ErrInvalid` on both engines; two live messages `hello world` and `goodbye` on channel A: `SearchText(search.Parse("hello"), [A], 10)` returns exactly the first on both engines, `SearchText(search.Parse("hello"), nil, 10)` returns an empty slice, and `search.Parse("missing")` returns an empty slice).
 
-`embeddings_test.go`: `TestPutEmbeddingOnlyForLiveMemory` (ordinary message: no row; live memory via `SetMemory`: row; tombstoned memory: no row), `TestUnembeddedMemories` (memory on an ordinary channel listed; on a `tasks` channel not; with an embedding for the model not; with a failure for the model not; for another model yes), `TestDeleteStaleModel`, `TestEmbeddingsByChannels` (scoped, live only), `TestDeleteEmbedding`.
+`embeddings_test.go` (names prefixed `TestEmbedding`): `TestEmbeddingPutOnlyForLiveMemory` (ordinary message: no row; live memory via `SetMemory`: row; tombstoned memory: no row), `TestEmbeddingUnembeddedMemories` (memory on an ordinary channel listed; on a `tasks` channel not; with an embedding for the model not; with a failure for the model not; for another model yes), `TestEmbeddingDeleteStaleModel`, `TestEmbeddingByChannels` (scoped, live only), `TestEmbeddingDelete`.
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `go test -count=1 -p 1 -run 'TestAppend|TestMessages|TestTombstone|TestDeleteMessages|TestExpiredTomb|TestOrdinary|TestRenameChannelKeeps|TestDeleteChannelDeletes|TestPutEmbedding|TestUnembedded|TestDeleteStale|TestEmbeddings|TestDeleteEmbedding' ./internal/conformance/store/`
+Run: `go test -count=1 -p 1 -run '^Test(Message|Embedding)' ./internal/conformance/store/`
 Expected: `--- FAIL` with `ErrNotImplemented`.
 
-- [ ] **Step 3: Implement**; delete the stub. `AppendMessage`: `ErrNotAppend` unless append tx; `NextSeq`; `INSERT INTO messages (seq, channel_id, ...)` with `metadata` as JSON text or NULL; tags in sorted order (the core normalizes; the Store sorts for determinism); `d.NotifyAppend(ctx, tx, channelName, seq)` (one lookup of the name by id, the hook that Milestone 7 fills). `Message.Tags` is loaded by `scanMessages` with the second query. `tombstone` is bound as a Go `bool`.
+- [ ] **Step 3: Implement**; delete the stub. `AppendMessage`: `ErrNotAppend` unless append tx; `NextSeq`; `INSERT INTO messages (seq, channel_id, ...)` with `metadata` as JSON text or NULL; tags in sorted order (the core normalizes; the Store sorts for determinism); `d.NotifyAppend(ctx, tx, channelName, seq)` (one lookup of the name by id, the hook that Milestone 7 fills). `Message.Tags` is loaded by `scanMessages` with the second query. `tombstone` is bound as a Go `bool`. `SearchText` is the query shape in Interfaces, with `sqlx.In` for the channel list and the dialect's `cond` pasted in parentheses.
 
 - [ ] **Step 4: Run the suite and the gate**
 
@@ -833,11 +885,11 @@ Milestone 7 (Decision 52)."
 
 - [ ] **Step 1: Write the failing conformance tests**
 
-`sessions_test.go`: `TestOpenSessionRoundTrip` (all fields; `SessionByResumeSecret`; `ListSessions("pat")` and `ListSessions("")` order), `TestOpenSessionRejects` (duplicate id and duplicate resume secret → `ErrConflict`; unknown identity → `ErrNotFound`), `TestRenewLeaseAndClose` (`LeaseExpiresAt`, `ClosedAt`; unknown id → `ErrNotFound`), `TestRegisterWatchReplaces` (`WatchID` becomes the newer value and the lease is renewed; a reader of the older watch id sees it is no longer current: the Decision 68 replaced rule), `TestPendingTokenAndTagsCursor`, `TestCursorsUpsertAndDelete` (put, list by channel id, upsert changes `CursorSeq` and `PendingEndSeq`, delete), `TestDeleteSessionsLapsedBefore` (two lapsed, one live, limit 1 → 1 then 1 then 0; cursors of deleted sessions gone; the live one keeps its cursors: Decision 79), `TestDeleteChannelDeletesCursors` (Review Focus 7).
+`sessions_test.go` (names prefixed `TestSession`): `TestSessionOpenRoundTrip` (all fields; `SessionByResumeTokenHash` with the stored hash; `ListSessions("pat")` and `ListSessions("")` order), `TestSessionOpenRejects` (duplicate id and duplicate resume token hash → `ErrConflict`; unknown identity → `ErrNotFound`; empty `ResumeTokenHash` → `ErrInvalid`), `TestSessionRenewLeaseAndClose` (`LeaseExpiresAt`, `ClosedAt`; unknown id → `ErrNotFound`), `TestSessionRegisterWatchReplaces` (`WatchID` becomes the newer value and the lease is renewed; a reader of the older watch id sees it is no longer current: the Decision 68 replaced rule), `TestSessionPendingTokenAndTagsCursor`, `TestSessionCursorsUpsertAndDelete` (put, list by channel id, upsert changes `CursorSeq` and `PendingEndSeq`, delete), `TestSessionDeleteLapsedBefore` (two lapsed, one live, limit 1 → 1 then 1 then 0; cursors of deleted sessions gone; the live one keeps its cursors: Decision 79), `TestSessionCursorsDeletedWithChannel` (Review Focus 7).
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `go test -count=1 -p 1 -run 'TestOpenSession|TestRenewLease|TestRegisterWatch|TestPendingToken|TestCursors|TestDeleteSessions|TestDeleteChannelDeletesCursors' ./internal/conformance/store/`
+Run: `go test -count=1 -p 1 -run '^TestSession' ./internal/conformance/store/`
 Expected: `--- FAIL` with `ErrNotImplemented`.
 
 - [ ] **Step 3: Implement**; delete the stub. `DeleteSessions`: select up to `limit` ids with `lease_expires_at < ?` ordered by `lease_expires_at, id`, then delete by id (cascade removes cursors). `RegisterWatch`: `UPDATE sessions SET watch_id = ?, lease_expires_at = ? WHERE id = ?` (`ErrNotFound` when no row).
@@ -855,7 +907,8 @@ git commit -m "feat(store): sessions with leases, watch registration, per-sessio
 Ports the heartbeat, sweep and unregister writes of v1
 internal/bus/sessions.go and the cursor and pending-batch columns of v1
 internal/bus/receive.go, re-keyed to a session row with a lease
-(Decisions 16, 40, 42, 68, 79). Harness pid and start are not ported
+(Decisions 16, 40, 42, 68, 79) whose resume token is stored hashed
+(Milestone 2 choice 12). Harness pid and start are not ported
 (Decision 78)."
 ```
 
@@ -876,13 +929,13 @@ internal/bus/receive.go, re-keyed to a session row with a lease
 
 - [ ] **Step 1: Write the failing conformance tests**
 
-`subscriptions_test.go`: `TestSubscribeIdempotent` (second call keeps the first `AckedSeq` and `CreatedAt`), `TestSubscribeRejectsUnknown` (identity or channel → `ErrNotFound`), `TestUnsubscribeAndList`, `TestAdvanceAckedMarkIsMax`, `TestDeleteChannelDeletesSubscriptions`.
+`subscriptions_test.go` (names prefixed `TestSubscription`): `TestSubscriptionIdempotent` (second call keeps the first `AckedSeq` and `CreatedAt`), `TestSubscriptionRejectsUnknown` (identity or channel → `ErrNotFound`), `TestSubscriptionUnsubscribeAndList`, `TestSubscriptionAdvanceAckedMarkIsMax`, `TestSubscriptionDeletedWithChannel`.
 
-`tagsubs_test.go`: `TestSubscribeTagsStoresPatternsWithRanges` (`TagSubscriptions` returns `Patterns` with `Lo`/`Hi` from `store.NewTagPattern`, by `TagsKey`), `TestUnsubscribeTagsCascades` (pattern rows gone; proven with a second set still present), `TestTagMatchesAfter`: messages on channels A, B, C with tags; identity `kim` has sets `{env*}` (created at seq 0) and `{team:a, prio:high}` (created after seq 3); `TagMatchesAfter("kim", 0, [A, B], 100)` returns, ascending, exactly the live messages on A or B that (match `env*` with seq > 0) or (carry a tag in `[team:a, team:a]` and one in `[prio:high, prio:high]` with seq > 3); a message on C is never returned (Decision 95 scoping); `afterSeq` and `limit` honored; a tombstoned match excluded; an identity with no sets gets an empty slice.
+`tagsubs_test.go` (names prefixed `TestTagSub`): `TestTagSubStoresPatternsWithRanges` (`TagSubscriptions` returns `Patterns` with `Lo`/`Hi` from `ab2store.NewTagPattern`, by `TagsKey`), `TestTagSubUnsubscribeCascades` (pattern rows gone; proven with a second set still present), `TestTagSubMatchesAfter`: messages on channels A, B, C with tags; identity `kim` has sets `{env*}` (created at seq 0) and `{team:a, prio:high}` (created after seq 3); `TagMatchesAfter("kim", 0, [A, B], 100)` returns, ascending, exactly the live messages on A or B that (match `env*` with seq > 0) or (carry a tag in `[team:a, team:a]` and one in `[prio:high, prio:high]` with seq > 3); a message on C is never returned (Decision 95 scoping); `afterSeq` and `limit` honored; a tombstoned match excluded; an identity with no sets gets an empty slice.
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `go test -count=1 -p 1 -run 'TestSubscribe|TestUnsubscribe|TestAdvanceAcked|TestDeleteChannelDeletesSubscriptions|TestTagMatches' ./internal/conformance/store/`
+Run: `go test -count=1 -p 1 -run '^Test(Subscription|TagSub)' ./internal/conformance/store/`
 Expected: `--- FAIL` with `ErrNotImplemented`.
 
 - [ ] **Step 3: Implement**; delete the stub. `TagMatchesAfter` with an empty `channelIDs` returns an empty slice without querying. The `IN (?)` lists expand with `sqlx.In` before `Rebind`.
@@ -921,13 +974,13 @@ Decision 95."
 
 - [ ] **Step 1: Write the failing conformance tests**
 
-`memories_test.go`: `TestMemoryRevisionsAndLive` (append seq 5, `SetMemory(5, 5, 1)`; append seq 6, `SetMemory(6, 5, 2)`, `TombstoneMessage(5)`: `LiveMemory(5).Seq == 6`, `MemoryRevisions(5)` is `[5, 6]` by revision; tombstone 6 → `LiveMemory` `ErrNotFound`), `TestMemoryAccess` (touch two ids, touch one again with a later time, `ExpiredMemories(before, limit)` lists live memories whose access is older, ascending; `DeleteMemoryAccess`), `TestExpiredMemoriesIgnoresTombstoned`.
+`memories_test.go` (names prefixed `TestMemory`): `TestMemoryRevisionsAndLive` (append seq 5, `SetMemory(5, 5, 1)`; append seq 6, `SetMemory(6, 5, 2)`, `TombstoneMessage(5)`: `LiveMemory(5).Seq == 6`, `MemoryRevisions(5)` is `[5, 6]` by revision; tombstone 6 → `LiveMemory` `ErrNotFound`), `TestMemoryAccess` (touch two ids, touch one again with a later time, `ExpiredMemories(before, limit)` lists live memories whose access is older, ascending; `DeleteMemoryAccess`), `TestMemoryExpiredIgnoresTombstoned`.
 
-`tasks_test.go`: `TestLiveMemoriesOnChannel` (live memory rows on the channel only, ordinary rows and tombstoned rows excluded, ascending seq), `TestChannelLastActivity` (empty channel → `created_at`; after a message → its `created_at`; after a tombstone with a later `tombstone_at` → that), `TestTasksKindIsStored` (a channel of kind `tasks` is listed by `ListChannelsByKind(store.KindTasks)` and `UnembeddedMemories` skips its memories: the Decision 90 replacement of `IsTaskChannel`).
+`tasks_test.go` (names prefixed `TestTask`): `TestTaskLiveMemoriesOnChannel` (live memory rows on the channel only, ordinary rows and tombstoned rows excluded, ascending seq), `TestTaskChannelLastActivity` (empty channel → `created_at`; after a message → its `created_at`; after a tombstone with a later `tombstone_at` → that), `TestTaskKindIsStored` (a channel of kind `tasks` is listed by `ListChannelsByKind(store.KindTasks)` and `UnembeddedMemories` skips its memories: the Decision 90 replacement of `IsTaskChannel`).
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `go test -count=1 -p 1 -run 'TestMemory|TestExpiredMemories|TestLiveMemories|TestChannelLastActivity|TestTasksKind' ./internal/conformance/store/`
+Run: `go test -count=1 -p 1 -run '^Test(Memory|Task)' ./internal/conformance/store/`
 Expected: `--- FAIL` with `ErrNotImplemented`.
 
 - [ ] **Step 3: Implement**; delete the two stubs.
@@ -953,67 +1006,162 @@ channels of the stored kind tasks (Decision 90; v1 ADR 0013)."
 
 ### Task 10: Search: query parser and both text-search translations
 
-**Depends on:** 6.
+**Depends on:** 3. Runs in Wave 4 beside Task 4; it edits only the two dialect files and `internal/search`, which no task of Waves 4 to 7 touches.
 
 **Files:**
 - Create: `internal/search/parse.go`, `internal/search/parse_test.go`
-- Modify: `internal/store/sqlite/sqlite.go` (the dialect's `TextSearch`), `internal/store/postgres/postgres.go` (the dialect's `TextSearch`)
-- Create: `internal/store/sqlite/search_test.go`, `internal/store/postgres/search_test.go` (pure: the translation strings and args)
-- Test: `internal/conformance/store/search_test.go`
+- Modify: `internal/store/sqlite/sqlite.go` (the dialect's `TextSearch` and the `ftsPrefix` constant), `internal/store/postgres/postgres.go` (the dialect's `TextSearch` and the `tsWord`, `tsPrefix`, `tsNormalize` constants)
+- Create: `internal/store/sqlite/search_test.go`, `internal/store/postgres/search_test.go` (pure: the translation strings and args; Docker-free, they run in `make test`)
 
-**Port from v1:** `internal/bus/search.go:50-91` (`searchTerms`: fields, trailing stars mark a prefix, star-only words dropped; `ftsQuery`: every term quoted with `"` doubled, `*` after a prefix term, terms joined by spaces for implicit AND), `search.go:145-182` (`textSearch`: `FROM messages_fts JOIN messages m ON m.seq = messages_fts.rowid WHERE messages_fts MATCH ? AND m.tombstone = 0`; `bm25` ranking is not part of the contract, Decision 51). Phrases are new (Decision 51).
+**Port from v1:** `internal/bus/search.go:50-91` (`searchTerms`: fields, trailing stars mark a prefix, star-only words dropped; `ftsQuery`: every term quoted with `"` doubled, `*` after a prefix term, terms joined by spaces for implicit AND; its comment documents that FTS5 applies the star to the phrase's last token, so `commit:e159e8c*` and `owner/repo@e159*` work). Phrases are new (Decision 51).
 
-**Interfaces:** consumes Task 1's `search.Query`/`Term`, Task 2's `Dialect.TextSearch`, Task 6's `SearchText` (which already calls the dialect and returns its error). Produces `search.Parse(q string) Query`: whitespace-separated words; a word ending in one or more `*` is a prefix of the word without them; a `"`-delimited run is one phrase term (its inner words kept in order; a star after the closing quote is dropped; an unterminated quote runs to the end); a term left with no letter or digit (`!!!`, `*`, `""`) is dropped (Review Focus 1).
+**Interfaces:** consumes Task 1's `search.Query`/`Term`, Task 2's `Dialect.TextSearch` contract (`cond` references alias `m` only, `?` placeholders). Produces `search.Parse(q string) Query`: whitespace-separated words; a word ending in one or more `*` is a prefix of the word without them; a `"`-delimited run is one phrase term (its inner words kept in order; a star after the closing quote is dropped; an unterminated quote runs to the end); a term left with no letter or digit (`!!!`, `*`, `""`) is dropped (Review Focus 1). And the two translations, with the SQL fragments as named constants so the pure tests build their expectations from the constants and the Task 12 self-test mutations have fixed anchors:
+
+```go
+package sqlite
+const ftsPrefix = "*" // appended to a quoted prefix term; FTS5 applies it to the last token
+// TextSearch: cond = `m.seq IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)`, args = [one string:
+// every term as "<text with " doubled>", a prefix term followed by ftsPrefix, joined by single spaces]; word and
+// phrase terms translate identically (both quoted). Empty query → store.ErrInvalid.
+
+package postgres
+const tsNormalize = `regexp_replace(?, '[^[:alnum:]]+', ' ', 'g')`                              // raw string literal
+const tsWord = `phraseto_tsquery('simple', ` + tsNormalize + `)`                                 // word and phrase terms
+const tsPrefix = `to_tsquery('simple', regexp_replace(phraseto_tsquery('simple', ` + tsNormalize + `)::text, '''$', ''':*'))` // last token only
+// TextSearch: cond = the terms' conditions joined by " AND ", each `(m.fts_subject @@ T OR m.fts_content @@ T)` with
+// T = tsWord or tsPrefix; args = each term's text twice, in term order (once per column). Empty query → store.ErrInvalid.
+```
 
 - [ ] **Step 1: Write the failing tests**
 
-`parse_test.go`: `TestParse` table: `rate limit` → two words; `e159*` → prefix `e159`; `commit:e159e8c` → one word; `"rate limit" hit` → phrase `rate limit` + word `hit`; `"rate limit"*` → phrase only; `** !!! a` → word `a`; `""` and `"  "` → empty; `"unterminated phrase` → phrase `unterminated phrase`; `Hello` keeps case (the engines lowercase).
+`parse_test.go`: `TestParse` table: `rate limit` → two words; `e159*` → prefix `e159`; `commit:e159e8c` → one word; `"rate limit" hit` → phrase `rate limit` + word `hit`; `"rate limit"*` → phrase only; `** !!! a` → word `a`; `""` and `"  "` → empty; `"unterminated phrase` → phrase `unterminated phrase`; `Hello` keeps case (the engines lowercase); `it's` → one word (the apostrophe is the engines' business).
 
-`sqlite/search_test.go`: `TestTextSearchSQLite`: for `Parse("rate limit e159* \"commit hash\"")` the condition is `m.seq IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)` with the single arg `"rate" "limit" "e159"* "commit hash"`; a term containing `"` is doubled; an empty query → `ErrInvalid`.
+`sqlite/search_test.go`: `TestTextSearchSQLite`: for `Parse("rate limit e159* \"commit hash\"")` the condition is `m.seq IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)` with the single arg `"rate" "limit" "e159"* "commit hash"`; a term containing `"` is doubled (`"say ""hi"""`); `ftsPrefix` is what follows the prefix term (the test builds the expectation with the constant); an empty query → `ErrInvalid`.
 
-`postgres/search_test.go`: `TestTextSearchPostgres`: the same query gives `m.fts @@ (plainto_tsquery('simple', ?) && plainto_tsquery('simple', ?) && to_tsquery('simple', ?) && phraseto_tsquery('simple', ?))` with args `rate`, `limit`, `'e159':*`, `commit hash`; a prefix containing `'` is doubled inside the quotes (`'it''s':*`); an empty query → `ErrInvalid`.
-
-`conformance/store/search_test.go`: `TestSearchTextMatchesAgreeAcrossEngines`: one corpus (fixed slice of `{channel, subject, content}`) appended on channels A and B; a table of queries with the expected set of content ids, asserted identically on both engines (Decision 51 "which messages match, not ranking"): `rate` (word in subject or content, case-insensitive: `Rate` matches); `e159*` (prefix matches `e159e8c`, not `d159`); `"rate limit"` (adjacent in order only); `rate limit` (both words anywhere); `commit:e159e8c` (matches the message containing it); `café` (matches the `café` message on both; the test's comment records that `cafe` would match only on SQLite, Review Focus 2); `missing` (empty). Also: `channelIDs = [A]` excludes B's hits (Decision 95 scoping); a tombstoned match is excluded; `limit` honored; `search.Query{}` → `ErrInvalid` on both.
+`postgres/search_test.go`: `TestTextSearchPostgres`: the same query gives cond `(m.fts_subject @@ W OR m.fts_content @@ W) AND (m.fts_subject @@ W OR m.fts_content @@ W) AND (m.fts_subject @@ P OR m.fts_content @@ P) AND (m.fts_subject @@ W OR m.fts_content @@ W)` with `W = tsWord` and `P = tsPrefix` (built from the constants) and args `rate, rate, limit, limit, e159, e159, commit hash, commit hash`; the args are the raw term texts (no quoting: normalization and quoting happen in SQL); the number of `?` in cond equals `len(args)`; an empty query → `ErrInvalid`. `TestTextSearchPostgresConstants`: `tsPrefix` contains `'''$'` and `''':*'` literally (the escaping an implementer most easily gets wrong in a Go string).
 
 - [ ] **Step 2: Run to verify they fail**
 
-Run: `go test ./internal/search/ ./internal/store/sqlite/ ./internal/store/postgres/ && go test -count=1 -p 1 -run TestSearchText ./internal/conformance/store/`
-Expected: the first fails to build (`undefined: Parse`); the conformance test fails with `ErrNotImplemented`.
+Run: `go test ./internal/search/ ./internal/store/sqlite/ ./internal/store/postgres/`
+Expected: build failure (`undefined: Parse`, `undefined: ftsPrefix`).
 
-- [ ] **Step 3: Implement** `Parse` and both `TextSearch` methods. SQLite's condition uses the `IN (SELECT rowid ...)` subquery so `SearchText`'s one query shape (`SELECT <messageCols> FROM messages m WHERE <cond> AND m.tombstone = FALSE AND m.channel_id IN (...) ORDER BY m.seq LIMIT ?`) is engine-independent.
+- [ ] **Step 3: Implement** `Parse` and both `TextSearch` methods as in Interfaces, replacing the `ErrNotImplemented` placeholders of Tasks 2 and 3. The SQLite condition uses the `IN (SELECT rowid ...)` subquery and the Postgres one the two `fts_*` columns so that both plug into the one `SearchText` shape of Task 6 unchanged.
 
-- [ ] **Step 4: Run the tests, the suite and the gate**
+- [ ] **Step 4: Run the tests and the gate**
 
-Run: `make test` then `env -u AGENTBUS2_TEST_POSTGRES_DSN go test -count=1 -p 1 -v -run TestSearchText ./internal/conformance/store/ 2>&1 | grep -E '^(--- |ok|FAIL)'`, then `make verify` (600000 ms).
+Run: `make build-all vet fmt-check lint test`, then `make verify` (600000 ms; the conformance suites still pass because nothing calls `TextSearch` before Task 6).
+Expected: pass; `verify: OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/search internal/store/sqlite internal/store/postgres
+git commit -m "feat(search): core query language with FTS5 and Postgres tsquery translations
+
+Ports searchTerms and ftsQuery from v1 internal/bus/search.go (v1 ADR
+0019) into internal/search and the SQLite dialect, adds phrases, and
+translates the same query to phraseto_tsquery over per-column
+simple-configuration tsvectors on alphanumeric tokens with a last-token
+prefix rewrite on Postgres (Decision 51; Milestone 2 choice 1), so which
+messages match agrees across engines."
+```
+
+---
+
+### Task 11: Search corpus conformance on both engines
+
+**Depends on:** 6 (which depends on 10).
+
+**Files:**
+- Test: `internal/conformance/store/search_test.go`
+
+**Interfaces:** consumes Task 6's `SearchText`, Task 10's `search.Parse`, the fixtures of Task 3.
+
+- [ ] **Step 1: Write the failing test**
+
+`search_test.go`: `TestSearchTextMatchesAgreeAcrossEngines`. The corpus is this fixed slice, appended in order on channel `A` unless marked, so row `r<n>` has `seq == n`; `r18` is tombstoned after the appends:
+
+| Row | Channel | Subject | Content | Exercises |
+| --- | --- | --- | --- | --- |
+| r1 | A | | `the rate limit hit` | phrase, words |
+| r2 | A | | `the limit rate hit` | reversed tokens (phrase must not match) |
+| r3 | A | | `rate of the limit` | non-adjacent tokens |
+| r4 | A | `rate` | `limit hit` | subject/content boundary (Review Focus 8) |
+| r5 | A | | `Rate hit` | case folding |
+| r6 | A | | `commit:e159e8c landed` | punctuated word term |
+| r7 | A | | `commit abc e159e8c` | non-adjacent tokens of a punctuated term |
+| r8 | A | | `e159e8c commit` | reversed tokens of a punctuated term |
+| r9 | A | | `committed:e159e8c` | head token that is a prefix of another word |
+| r10 | A | | `see owner/repo@e159e8c now` | path-like compound |
+| r11 | A | | `owner repo@e159e8c` | the same tokens without the slash |
+| r12 | A | | `commit:d159` | prefix must not match a different tail |
+| r13 | A | | `foo-bar` | hyphenated compound |
+| r14 | A | | `foo bar` | the same tokens spaced |
+| r15 | A | | `café` | diacritic kept (Review Focus 2) |
+| r16 | A | | `cafe` | plain form |
+| r17 | B | | `rate limit on B` | channel scoping |
+| r18 | A | | `tombstoned rate limit` | tombstoned, excluded |
+
+Queries, each run as `SearchText(search.Parse(q), [A, B], 100)` unless noted, with the expected set asserted identically on both engines (Decision 51 "which messages match, not ranking"; the result is compared as an ascending seq list):
+
+| Query | Expected | Why |
+| --- | --- | --- |
+| `rate` | r1 r2 r3 r4 r5 r17 | word in subject or content, case-insensitive; r18 excluded |
+| `rate limit` | r1 r2 r3 r4 r17 | both words anywhere, any column each |
+| `"rate limit"` | r1 r17 | adjacent, in order, within one column: not r2, r3, r4 |
+| `e159*` | r6 r7 r8 r9 r10 r11 | prefix; not r12 |
+| `commit:e159e8c` | r6 | adjacent phrase of the split tokens: not r7, r8, r9 |
+| `commit:e159*` | r6 | star on the last token only: not r9 (`committed`), not r7 |
+| `owner/repo@e159*` | r10 r11 | compound split on both engines |
+| `foo-bar` | r13 r14 | compound split on both engines |
+| `"foo bar"` | r13 r14 | same tokens |
+| `cafe` | r16 | no diacritic folding on either engine |
+| `café` | r15 | exact |
+| `missing` | none | |
+| `rate` on `[A]` | r1 r2 r3 r4 r5 | Decision 95 scoping excludes r17 |
+| `rate` with limit 2 | r1 r2 | ascending seq, limit honored |
+| `search.Query{}` | `ErrInvalid` | on both engines |
+
+The expected sets were probed on `postgres:17.11` and modernc.org/sqlite v1.60.1 with the Task 10 translations on 2026-10-21 (choice 1); the test must not loosen any row to make an engine pass: a divergence is a translation bug.
+
+- [ ] **Step 2: Run to verify it fails**
+
+Run: `go test -count=1 -p 1 -run '^TestSearch' ./internal/conformance/store/`
+Expected: Tasks 6 and 10 are already on the tree, so the test compiles and either passes outright or fails on an assertion (a translation or query-shape bug). If it passes outright, deliberately break one expectation (add r2 to the `"rate limit"` set), confirm both engines report `--- FAIL`, and restore it: a test that cannot fail proves nothing.
+
+- [ ] **Step 3: Make it pass**
+
+Any failure is fixed in Task 10's translations or Task 6's query shape, in this task, with the pure tests updated to match; the corpus expectations stay.
+
+- [ ] **Step 4: Run the suite and the gate**
+
+Run: `env -u AGENTBUS2_TEST_POSTGRES_DSN go test -count=1 -p 1 -v -run '^TestSearch' ./internal/conformance/store/ 2>&1 | grep -E '^(--- |ok|FAIL)'`, then `make verify` (600000 ms).
 Expected: `--- PASS` for `/sqlite` and `/postgres`; `verify: OK`.
 
 - [ ] **Step 5: Commit**
 
 ```bash
-git add internal/search internal/store/sqlite internal/store/postgres internal/conformance/store
-git commit -m "feat(search): core query language with FTS5 and Postgres tsquery translations
+git add internal/conformance/store/search_test.go
+git commit -m "test(store): search corpus proving which messages match agrees on SQLite and Postgres
 
-Ports searchTerms and ftsQuery from v1 internal/bus/search.go (v1 ADR
-0019) into internal/search and the SQLite dialect, adds phrases, and
-translates the same query to to_tsquery/plainto_tsquery/phraseto_tsquery
-over a simple-configuration tsvector on Postgres (Decision 51; Milestone
-2 choice 1). The conformance corpus checks which messages match on both
-engines, not ranking."
+Fixed corpus and expected sets for words, phrases, prefixes, punctuated
+and hyphenated terms, the subject/content boundary, diacritics, channel
+scoping, tombstones and limits (Decision 51; Milestone 2 choice 1)."
 ```
 
 ---
 
-### Task 11: Integration, milestone exit and docs
+### Task 12: Integration, milestone exit and docs
 
-**Depends on:** 4, 5, 6, 7, 8, 9, 10.
+**Depends on:** 7, 8, 9, 11 (and through them 4, 5, 6, 10).
 
 **Files:**
 - Delete: `internal/store/sqlstore/errors.go` (`ErrNotImplemented`; no stub may survive the build)
-- Modify: `internal/conformance/store/seq_test.go` (switch the concurrent-writer test to `AppendMessage`), `internal/conformance/store/store_test.go` (keep `TestScaffold`; add `TestStoreImplementsEveryAggregate`), `CLAUDE.md`, `README.md`, `docs/adr/0004-store-contract-and-storage.md` (addendum), `docs/superpowers/specs/2026-10-19-agentbus2-design.md` (sections 5.4 and 5.8 placeholders), `HANDOFF.md` (untracked)
+- Modify: `internal/conformance/store/seq_test.go` (switch the concurrent-writer test to `AppendMessage`), `internal/conformance/store/store_test.go` (keep `TestScaffold`; add `TestStoreImplementsEveryAggregate`), `scripts/check-gates-selftest.sh` (blocks 7 and 8: the per-engine search mutations), `CLAUDE.md`, `README.md`, `docs/adr/0004-store-contract-and-storage.md` (addendum), `docs/superpowers/specs/2026-10-19-agentbus2-design.md` (sections 5.4 and 5.8 placeholders), `HANDOFF.md` (untracked)
 
 - [ ] **Step 1: Remove the stub sentinel and prove no stub survived**
 
-Delete `errors.go`; `go build ./...` must pass with no reference to `ErrNotImplemented` left (`rg -n ErrNotImplemented internal/` prints nothing; the dialects' `TextSearch` placeholders were replaced in Task 10). Add `TestStoreImplementsEveryAggregate` in `store_test.go`: for each engine, open a store and, inside one `Append`, call one cheap method of every aggregate interface (`MaxSeq`, `ListIdentities`, `Receipt`, `ListChannels`, `Subscriptions`, `ListSessions`, `MessagesAfter`, `MemoryRevisions`, `LiveMemories`) and require no error: a regression that re-introduces a stub fails here on both engines.
+Delete `errors.go`; `go build ./...` must pass with no reference to `ErrNotImplemented` left (`rg -n ErrNotImplemented internal/` prints nothing; the dialects' `TextSearch` placeholders were replaced in Task 10). `rg -n 'pending Eric' internal/` lists exactly the Gate 0 items still unanswered (none when Eric answered before Task 4). Add `TestStoreImplementsEveryAggregate` in `store_test.go`: for each engine, open a store and, inside one `Append`, call one cheap method of every aggregate interface (`MaxSeq`, `ListIdentities`, `Receipt`, `ListChannels`, `Subscriptions`, `ListSessions`, `MessagesAfter`, `MemoryRevisions`, `LiveMemories`) and require no error: a regression that re-introduces a stub fails here on both engines.
 
 - [ ] **Step 2: Concurrent writers through `AppendMessage`**
 
@@ -1027,38 +1175,39 @@ Expected: `verify: OK`; the log holds `ok  	github.com/ericfitz/agentbus2/intern
 - [ ] **Step 4: The milestone exit, negative halves**
 
 1. Unreachable Postgres fails the Store suite, not skips: `AGENTBUS2_TEST_POSTGRES_DSN='postgres://agentbus2:agentbus2@127.0.0.1:1/agentbus2?sslmode=disable&connect_timeout=2' make verify 2>&1 | grep -E 'unreachable|conformance/store|verify: OK|^make'; echo "exit=${PIPESTATUS[0]}"`. Expected: `FAIL	github.com/ericfitz/agentbus2/internal/conformance/store`, the `is unreachable` text, no `verify: OK`, non-zero exit.
-2. The suite is load-bearing per engine: a scratch script (not committed; `bash`, `set -euo pipefail`) copies `internal/store/postgres/postgres.go` through `sed 's/phraseto_tsquery/plainto_tsquery/'` to a temp file and `cp`s it back, runs `env -u AGENTBUS2_TEST_POSTGRES_DSN go test -count=1 -p 1 -v -run TestSearchText ./internal/conformance/store/ 2>&1 | grep -E '^\s+--- (PASS|FAIL): TestSearchText'`, then `git checkout -- internal/store/postgres/postgres.go`. Expected: `--- FAIL: TestSearchTextMatchesAgreeAcrossEngines/postgres` (the phrase case) and `--- PASS: .../sqlite`.
-3. The same for SQLite: `sed 's/"\*/"/'` on the prefix marker in `internal/store/sqlite/sqlite.go`'s `TextSearch` (adapt the pattern to the implementation) → `/sqlite` fails on the prefix case, `/postgres` passes; revert.
+2. The suite is load-bearing per engine, as two committed blocks of `scripts/check-gates-selftest.sh` (the harness that already mutates a throwaway worktree of `HEAD` and proves each gate fires; Definition of Done C), so the proof is repeatable and runs in the self-test CI job. Block 7 `search-postgres-phrase`: in the worktree, `sed 's/phraseto_tsquery/plainto_tsquery/g' internal/store/postgres/postgres.go` through a temp file and `cp` back (`problem` if `grep -c plainto_tsquery` is 0: the mutation changed nothing), then `go test -count=1 -p 1 -v -run '^TestSearchTextMatchesAgreeAcrossEngines$' ./internal/conformance/store/` in the worktree, expecting the log to contain `--- FAIL: TestSearchTextMatchesAgreeAcrossEngines/postgres` (word terms become AND-anywhere, so `"rate limit"` matches r2, r3 and r4 and `commit:e159e8c` matches r7 and r8) and `--- PASS: TestSearchTextMatchesAgreeAcrossEngines/sqlite`; `revert`. Block 8 `search-sqlite-prefix`: `sed 's/ftsPrefix = "\*"/ftsPrefix = ""/' internal/store/sqlite/sqlite.go` likewise (`problem` if `ftsPrefix = ""` is absent after the edit), the same test run, expecting `--- FAIL: .../sqlite` (`e159*` and `commit:e159*` return nothing) and `--- PASS: .../postgres`; `revert`. Both blocks run the corpus test with the ambient `AGENTBUS2_TEST_POSTGRES_DSN` (testcontainers when unset), the same Postgres source as `make test-conformance`; the self-test header already requires Docker and says so. The `expect_checks` helper is not used by these blocks (they assert on the `go test -v` log, not on `check-gates` output), so the `CHECKS` array is unchanged. Run after Step 6's commit (the self-test tests `HEAD`): `make check-gates-selftest 2>&1 | tail -12`. Expected: `selftest: ok search-postgres-phrase`, `selftest: ok search-sqlite-prefix` and every earlier block `ok`. A failure here is fixed and committed as a second commit in this task.
 
 - [ ] **Step 5: Docs**
 
-- `CLAUDE.md`: under Design, add one line: the Store contract is `internal/store`; the engines are `internal/store/sqlite` and `internal/store/postgres` over `internal/store/sqlstore`; the Store suite is `internal/conformance/store` and isolates Postgres tests in a schema per test. Under Commands: `make test` covers the SQLite-only engine tests; the suites need Docker or the variable, as before. Facts only, checked against the tree (Definition of Done E).
-- `README.md`: the status line becomes `Milestone 2 (Store and engines) done; nothing usable yet`.
-- `docs/adr/0004-store-contract-and-storage.md`: append a section `## Milestone 2 choices (Claude, 2026-10-21; delegated by Decisions 51 and 80)` with choices 1 and 2 from this plan's "Choices" section, each with its rationale and the probe results, clearly labeled as Claude's choices under the spec's delegation, not Eric's decisions.
-- Spec: in section 5.4 replace `the Postgres equivalent, chosen in Milestone 2` with `the Postgres equivalent, chosen in Milestone 2: a simple-configuration tsvector queried with to_tsquery, plainto_tsquery and phraseto_tsquery (ADR 0004, Milestone 2 choices)`; in section 5.8 replace `the list is stored as three boolean columns or a constrained set, chosen in Milestone 2` with `the list is stored as three boolean columns per entry with CHECK (can_read OR can_write OR can_admin), chosen in Milestone 2 (ADR 0004, Milestone 2 choices)`. Nothing else in the spec changes.
-- `HANDOFF.md` via `/session:handoff`: Milestone 2 done at the Step 6 commit, unpushed; the Step 3 and 4 outputs; the pending-Eric list from this plan; Milestone 3 next.
+- `CLAUDE.md` (checked against `main` at `03c4a96`: the Commands section already describes the Makefile targets and the stale "Makefile does not exist yet" sentence is gone; nothing there is edited): under Design, add one line: the Store contract is `internal/store`; the engines are `internal/store/sqlite` and `internal/store/postgres` over `internal/store/sqlstore`; the Store suite is `internal/conformance/store` and isolates Postgres tests in a schema per test. Facts only, checked against the tree (Definition of Done E).
+- `README.md`: the existing `Status:` line (added at `03c4a96`) becomes `Status: Milestone 2 (Store and engines) done; nothing usable yet.`; under Development add one line that the Postgres database must use a UTF-8 ctype (choice 1; Gate 0 item 6).
+- `docs/adr/0004-store-contract-and-storage.md`: append a section `## Milestone 2 addendum (2026-10-21)` with: (a) choices 1 and 2 from this plan's "Choices" section, each with its rationale and the probe results, clearly labeled as Claude's choices under the spec's delegation (Decisions 51 and 80), not Eric's decisions; (b) the Gate 0 answers, each as `Decision (Eric, <date>)` with the option chosen, or, if still unanswered, as `Claude proposal, pending Eric` with the recommendation and the `pending Eric` test markers that encode it; (c) the shapes this plan chose that a later milestone leans on: the resume token stored hashed (choice 12; Milestone 6 fixes the token and hash), `ChannelCreate.ACL` nil-versus-empty (choice 9; satisfies the section 5.8 wording directly), `creator` stored as `''` never NULL, the UTF-8 ctype requirement, and the residual `unicode61`-versus-`[[:alnum:]]` tokenizer difference on exotic Unicode categories.
+- Spec: in section 5.4 replace `the Postgres equivalent, chosen in Milestone 2` with `the Postgres equivalent, chosen in Milestone 2: one simple-configuration tsvector per column over alphanumeric tokens, queried with phraseto_tsquery and a last-token prefix rewrite (ADR 0004, Milestone 2 addendum)`; in section 5.8 replace `the list is stored as three boolean columns or a constrained set, chosen in Milestone 2` with `the list is stored as three boolean columns per entry with CHECK (can_read OR can_write OR can_admin), chosen in Milestone 2 (ADR 0004, Milestone 2 addendum)`. Nothing else in the spec changes.
+- `HANDOFF.md` via `/session:handoff`: Milestone 2 done at the Step 6 commit, unpushed; the Step 3 and 4 outputs; the Gate 0 items still open; Milestone 3 next.
 
 - [ ] **Step 6: Commit**
 
 ```bash
-git add internal/store/sqlstore internal/conformance/store CLAUDE.md README.md docs/adr/0004-store-contract-and-storage.md docs/superpowers/specs/2026-10-19-agentbus2-design.md
-git commit -m "feat(store): Milestone 2 exit: full Store suite on both engines, concurrent writers, docs
+git add internal/store/sqlstore internal/conformance/store scripts/check-gates-selftest.sh CLAUDE.md README.md docs/adr/0004-store-contract-and-storage.md docs/superpowers/specs/2026-10-19-agentbus2-design.md
+git commit -m "feat(store): Milestone 2 exit: full Store suite on both engines, concurrent writers, search mutation proofs, docs
 
 Removes the stub sentinel, switches the Decision 54 concurrent-writer
-test to AppendMessage, records the two delegated choices (Postgres
-full text, ACL storage) in ADR 0004 and the spec."
+test to AppendMessage, adds the per-engine search mutations to the gate
+self-test, records the two delegated choices (Postgres full text, ACL
+storage) and the Gate 0 answers in ADR 0004 and the spec."
 ```
 
 - [ ] **Step 7: Report**
 
-End the report with the Step 3 outputs (positive, race, Decision 34 rule count), the Step 4 outputs (unreachable, both per-engine mutations), and the pending-Eric list. No push: the next push is Eric's (`Approve: push main to origin (git push origin main)`).
+End the report with the Step 3 outputs (positive, race, Decision 34 rule count), the Step 4 outputs (unreachable; the self-test tail with both search blocks), and the Gate 0 items still open. No push: the next push is Eric's (`Approve: push main to origin (git push origin main)`).
 
 ---
 
 ## Self-review notes
 
-- Spec coverage, section 10 Milestone 2: `Store` interface (Task 1), `Tx` with the Decision 69 bounds (Tasks 2, 3), `seq_counter` (Task 2, exercised in Tasks 3, 6, 11), `schema_meta` and the Decision 34 rules each covered by a test (Tasks 2, 3, counted in Task 11 Step 3), migrations under the Decision 68 lock (Tasks 2, 3), both stores (Tasks 2, 3), channel ACL rows and the identity admin flag (Tasks 4, 5), the Store conformance suite with the concurrent-writer test (Tasks 3, 11) and the ACL cases (Task 5, one test per section 5.8 case). Section 5.5's `NotifyAppend` hook and section 5.7's lease row are shaped for Milestone 7 (Tasks 2, 6). Milestone 3's needs: delivery rows (Task 7), receipts (Task 4), tags and tag subscriptions (Tasks 6, 8), leases (Task 2), memories and tasks (Task 9), ACL queries (Task 5), search (Task 10).
+- Spec coverage, section 10 Milestone 2: `Store` interface (Task 1), `Tx` with the Decision 69 bounds (Tasks 2, 3), `seq_counter` (Task 2, exercised in Tasks 3, 6, 12), `schema_meta` and the Decision 34 rules each covered by a test (Tasks 2, 3, counted in Task 12 Step 3), migrations under the Decision 68 lock (Tasks 2, 3), both stores (Tasks 2, 3), channel ACL rows and the identity admin flag (Tasks 4, 5), the Store conformance suite with the concurrent-writer test (Tasks 3, 12) and the ACL cases (Task 5, one test per section 5.8 case, with the "without an ACL" case taken literally through choice 9). Section 5.5's `NotifyAppend` hook and section 5.7's lease row are shaped for Milestone 7 (Tasks 2, 6). Milestone 3's needs: delivery rows (Task 7), receipts (Task 4), tags and tag subscriptions (Tasks 6, 8), leases (Task 2), memories and tasks (Task 9), ACL queries (Task 5), search (Tasks 10, 11).
 - Decisions traced: 2, 5, 6, 25, 26, 27, 29, 30, 31, 34, 49, 50, 51, 52, 53, 54, 68, 69 (ADR 0004); 80, 88, 90, 92, 93, 94 (names and kinds visible: `ListChannels` needs no ACL), 95, 96 (ADR 0008); 16, 37, 40, 42, 75, 79 (ADR 0003); 55, 57, 73 (ADR 0002); 67 (ADR 0001); 32 (no v1 path); 14, 15, 39, 41, 78 (what is deliberately not stored on the session).
-- Names used across tasks (checked against `main` at `ac1ea8d` on 2026-10-21: `dbtest.Engine.DSN`, `Engine.Open`, `ForEachEngine`, `Run`, `internal/conformance/store/{main_test.go,store_test.go}` with `TestScaffold`, `make test-conformance`, `PKGS_UNIT`): `store.Store`, `store.Tx`, the nine aggregate interfaces, `ErrNotFound`/`ErrConflict`/`ErrInvalid`/`ErrRetryable`/`ErrNotAppend`/`ErrReadOnly`/`ErrNotAgentbus2`/`ErrUpgradeNeeded`/`ErrSchemaInvalid`, `sqlstore.Dialect`/`Migration`/`Options`/`Open`/`ErrNotImplemented`, `sqlite.Open`/`DSN`/`ApplicationID`/`Migrations`, `postgres.Open`/`WithSearchPath`/`Migrations`/`TxAttempts`, the conformance helpers `openStore`/`reopen`/`rawDSN`, `scanMessages`, `IsConflict`; the test names listed per task. `ctx context.Context` is implied on every method.
-- Proportion: the plan fixes the DDL (exact copy the implementers cannot invent independently), the interface signatures and the test names and assertions; bodies are left to the implementers except the Decision 34 order, the retry loop's classification rule and the two search translations.
+- Names used across tasks (checked against `main` at `ac1ea8d` on 2026-10-21: `dbtest.Engine.DSN`, `Engine.Open`, `ForEachEngine`, `Run`, `internal/conformance/store/{main_test.go,store_test.go}` with `TestScaffold`, `make test-conformance`, `PKGS_UNIT`): `store.Store`, `store.Tx`, the nine aggregate interfaces, `ErrNotFound`/`ErrConflict`/`ErrInvalid`/`ErrRetryable`/`ErrNotAppend`/`ErrReadOnly`/`ErrNotAgentbus2`/`ErrUpgradeNeeded`/`ErrSchemaInvalid`, `sqlstore.Dialect`/`Migration`/`Options`/`Open`/`Attempts`/`ErrNotImplemented`, `sqlite.Open`/`DSN`/`ApplicationID`/`Migrations`/`ftsPrefix`, `postgres.Open`/`WithSearchPath`/`Migrations`/`TxAttempts`/`tsWord`/`tsPrefix`/`tsNormalize`, the conformance helpers `openStore`/`reopen`/`rawDSN`/`sweepStaleSchemas` and the fixtures `fixedNow`/`mustTx`/`mustAppendTx`/`mustRead`/`mustIdentity`/`mustAdmin`/`mustChannel`/`mustAppend`/`mustTombstone` (import alias `ab2store`), `messageCols`, `scanMessages`, `isConflict`, `isForeignKey`; the aggregate-prefixed test names listed per task. `ctx context.Context` is implied on every method.
+- Proportion: the plan fixes the DDL (exact copy the implementers cannot invent independently), the interface signatures, the shared fixtures, the `SearchText` query shape, the search corpus and the test names and assertions; bodies are left to the implementers except the Decision 34 order, the retry loop's classification rule and the two search translations.
 - Verified against sources on 2026-10-20: modernc.org/sqlite v1.60.1 `tx.go:23` (ReadOnly uses a plain `begin`; `_txlock` sets `beginMode`), `error.go:21` (`Code()`), `lib/sqlite.go:3108,3938` (BUSY 5, LOCKED 6); pgx v5.11.0 `pgconn/config.go:498-536` (unknown DSN keys become runtime params); `postgres:17.11` probes for the tsquery shapes, `hashtext(current_schema())` as an advisory key, `search_path` through pgx, and the `LOCK TABLE` effect on 40001 (0 of 400 with the lock, 1,843 retries and 49 give-ups without).
+- Verified on 2026-10-21 (revision 2): modernc.org/sqlite v1.60.1 `tx.go:19-30` (`newTx` runs `begin immediate`, so `SQLITE_BUSY` surfaces from `BeginTx`), `conn.go:958-983` (`errstrForDB` stores the result code it was handed; `Exec` on a constraint violation yields the extended codes 1555, 2067 and 787, probed), `lib/sqlite.go:3112,3940` (`SQLITE_BUSY_SNAPSHOT` 517, `SQLITE_LOCKED_SHAREDCACHE` 262); FTS5 `tokenize='unicode61 remove_diacritics 0'` accepted by modernc with `"cafe"` matching 0 rows against `café`; the full Task 11 corpus against FTS5 and against `postgres:17.11` (`en_US.utf8`) with the Task 10 translations, every set identical; the two-column generated DDL accepted; `TestMigrationSetsAlign` placed in `internal/store/postgres` because `sqlstore` importing an engine would be an import cycle.
