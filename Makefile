@@ -1,0 +1,20 @@
+.PHONY: build build-all vet fmt-check lint test test-race tidy-check
+export CGO_ENABLED=0
+PKGS_UNIT = $$(go list ./... | grep -v '/internal/conformance')
+
+build:       ## Build the agentbus2 binary (no cgo), as the release build will
+	go build -trimpath -o agentbus2 .
+build-all:   ## Compile every package
+	go build ./...
+vet:
+	go vet ./...
+fmt-check:   ## gofmt over this module's Go files (files, never directories: gofmt recurses into a directory argument)
+	@out=$$(gofmt -l $$(go list -f '{{range .GoFiles}}{{$$.Dir}}/{{.}} {{end}}{{range .TestGoFiles}}{{$$.Dir}}/{{.}} {{end}}{{range .XTestGoFiles}}{{$$.Dir}}/{{.}} {{end}}' ./...)); if [ -n "$$out" ]; then echo "gofmt needed:"; echo "$$out"; exit 1; fi
+lint:        ## golangci-lint v2 default linters (no .golangci.yml)
+	golangci-lint run ./...
+test:        ## Unit tests: every package except internal/conformance (no Docker needed)
+	go test $(PKGS_UNIT)
+test-race:   ## Every package under the race detector, suites included (needs Postgres like verify)
+	go test -race -count=1 ./...
+tidy-check:  ## go.mod and go.sum are tidy (CI step; not in verify, pending Eric)
+	go mod tidy -diff
