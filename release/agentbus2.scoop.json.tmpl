@@ -1,0 +1,20 @@
+{
+    "version": "__VERSION__",
+    "description": "Message bus, shared memory and shared task queue for coding agents",
+    "homepage": "https://github.com/ericfitz/agentbus2",
+    "license": "Apache-2.0",
+    "architecture": {
+        "64bit": { "url": "__AMD64_URL__", "hash": "__AMD64_SHA256__" },
+        "arm64": { "url": "__ARM64_URL__", "hash": "__ARM64_SHA256__" }
+    },
+    "bin": "agentbus2.exe",
+    "checkver": { "github": "https://github.com/ericfitz/agentbus2" },
+    "autoupdate": {
+        "architecture": {
+            "64bit": { "url": "https://github.com/ericfitz/agentbus2/releases/download/v$version/agentbus2-v$version-windows-amd64.zip" },
+            "arm64": { "url": "https://github.com/ericfitz/agentbus2/releases/download/v$version/agentbus2-v$version-windows-arm64.zip" }
+        },
+        "hash": { "url": "https://github.com/ericfitz/agentbus2/releases/download/v$version/SHA256SUMS" }
+    },
+    "notes": "Stop agentbus2 sessions (MCP servers, waits, the TUI) before `scoop update agentbus2`: Scoop cannot replace the files of a running program."
+}

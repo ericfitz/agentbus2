@@ -1,0 +1,19 @@
+# Rendered from release/agentbus2.winget.installer.yaml.tmpl by release/release.sh.
+# yaml-language-server: $schema=https://aka.ms/winget-manifest.installer.1.12.0.schema.json
+
+PackageIdentifier: ericfitz.agentbus2
+PackageVersion: __VERSION__
+InstallerType: zip
+NestedInstallerType: portable
+NestedInstallerFiles:
+- RelativeFilePath: agentbus2.exe
+  PortableCommandAlias: agentbus2
+Installers:
+- Architecture: x64
+  InstallerUrl: __AMD64_URL__
+  InstallerSha256: __AMD64_SHA256__
+- Architecture: arm64
+  InstallerUrl: __ARM64_URL__
+  InstallerSha256: __ARM64_SHA256__
+ManifestType: installer
+ManifestVersion: 1.12.0

@@ -1,0 +1,604 @@
+#!/usr/bin/env bash
+# Build, sign and publish a release of agentbus2, then update Homebrew, Scoop
+# and winget. macOS is built, codesigned and notarized here; the Linux and
+# Windows archives are built, run and attested by .github/workflows/
+# release-build.yml on native runners, dispatched on the tag. Every archive
+# is listed in SHA256SUMS, signed with the Ed25519 release key.
+#   ./release/release.sh v2.0.0 --windows-signing=on                # full release
+#   ./release/release.sh v2.0.0 --windows-signing=off --no-publish  # stop with a draft release and the rendered
+#                                                                   # formula, Scoop and winget files (dry run)
+# Builds the macOS binary from the tag, so HEAD may be anywhere. Reruns for the
+# same tag reuse the draft release and replace every asset.
+# --no-publish never undrafts the release and never touches the Homebrew tap,
+# the Scoop bucket or winget; the rendered files stay under dist/.
+# One-time setup: a notarytool keychain profile named $NOTARY_PROFILE
+# (`xcrun notarytool store-credentials`), and the release key pair
+# (docs/release-signing.md).
+# Ported from v1 release/release.sh (agentbus), portable to Linux: every tool
+# only the release manager has (gh, codesign, xcrun, lipo, ditto, komac, git
+# push) is called by name, so a test can shadow it with a shell function.
+set -euo pipefail
+
+BIN_NAME="agentbus2"
+GH_REPO="ericfitz/agentbus2"
+TAP_DIR="${TAP_DIR:-$HOME/Projects/homebrew-tap}" # SSH clone of ericfitz/homebrew-tap
+SCOOP_DIR="${SCOOP_DIR:-$HOME/Projects/scoop-bucket}" # SSH clone of ericfitz/scoop-bucket
+KOMAC_KEY_FILE="$HOME/.keys/KOMAC_GITHUB_KEY"           # `export KOMAC_GITHUB_KEY='<PAT with public_repo>'`
+WINGET_ID="ericfitz.agentbus2"
+SIGN_IDENTITY="Developer ID Application: Robert Fitzgerald (796T45968D)"
+NOTARY_PROFILE="sqdist-notary" # team-level credential, shared across projects
+SIGNING_KEY="${AGENTBUS2_SIGNING_KEY:-$HOME/.keys/agentbus2-release-ed25519.pem}"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+PUBKEY="${REPO_ROOT}/release/agentbus2-release-ed25519.pub"
+DIST="${REPO_ROOT}/dist"
+OPENSSL=""  # an OpenSSL 3 binary, set by require_tools
+TAG="" VERSION="" SRC=""
+ARCHIVES=() # archive file names under $DIST, in SHA256SUMS order
+MACOS_ARCHIVE=""   # file name of the macOS tarball under $DIST
+NO_PUBLISH=0       # --no-publish: stop after signing, leave the draft
+PUBLISHED=0        # set when the release for $TAG is already public (rerun)
+RUN_ID=""          # the release-build.yml run this release used
+WORKFLOW="release-build.yml"
+BUILD_SCRIPT="release/build-archive.sh"
+WINDOWS_SIGNING="" # on|off, required (--windows-signing=on|off)
+UNSIGNED_NOTE="The Windows binaries in this release are not Authenticode-signed; they are covered by the signed SHA256SUMS and by build attestations."
+SIGNING_VARS=(AZURE_CLIENT_ID AZURE_TENANT_ID AZURE_SUBSCRIPTION_ID ARTIFACT_SIGNING_ENDPOINT ARTIFACT_SIGNING_ACCOUNT ARTIFACT_SIGNING_PROFILE AUTHENTICODE_SIGNER)
+FIND_RUN_TRIES="${FIND_RUN_TRIES:-30}"
+FIND_RUN_SLEEP="${FIND_RUN_SLEEP:-2}"
+
+# BEGIN shared release helpers
+# release_openssl prints the path of an OpenSSL 3 binary: $AGENTBUS2_RELEASE_OPENSSL,
+# else Homebrew openssl@3, else the first of openssl, openssl3 on PATH whose
+# "version" major is 3 or more. It dies naming the places it looked.
+release_openssl() {
+    local cand major
+    local tried=()
+    if [[ -n "${AGENTBUS2_RELEASE_OPENSSL:-}" ]]; then
+        cand="$AGENTBUS2_RELEASE_OPENSSL"
+        major="$("$cand" version 2>/dev/null | sed -n 's/^OpenSSL \([0-9][0-9]*\)\..*/\1/p')"
+        if [[ -n "$major" && "$major" -ge 3 ]]; then printf '%s\n' "$cand"; return 0; fi
+        echo "error: AGENTBUS2_RELEASE_OPENSSL=$cand is not OpenSSL 3 or newer ($("$cand" version 2>&1 | head -n1))" >&2
+        return 1
+    fi
+    if command -v brew >/dev/null 2>&1; then
+        cand="$(brew --prefix openssl@3 2>/dev/null)/bin/openssl"
+        if [[ -x "$cand" ]]; then printf '%s\n' "$cand"; return 0; fi
+        tried+=("$cand")
+    fi
+    for cand in openssl openssl3; do
+        if ! command -v "$cand" >/dev/null 2>&1; then tried+=("$cand (not on PATH)"); continue; fi
+        major="$("$cand" version 2>/dev/null | sed -n 's/^OpenSSL \([0-9][0-9]*\)\..*/\1/p')"
+        if [[ -n "$major" && "$major" -ge 3 ]]; then command -v "$cand"; return 0; fi
+        tried+=("$cand ($("$cand" version 2>&1 | head -n1))")
+    done
+    echo "error: no OpenSSL 3 found; set AGENTBUS2_RELEASE_OPENSSL; tried: ${tried[*]}" >&2
+    return 1
+}
+# utc_minus_60s prints the UTC time one minute ago as YYYY-MM-DDTHH:MM:SSZ (BSD date, then GNU date).
+utc_minus_60s() {
+    date -u -v-60S +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '-60 seconds' +%Y-%m-%dT%H:%M:%SZ
+}
+# END shared release helpers
+
+usage() { echo "usage: release.sh <tag> --windows-signing=on|off [--no-publish]" >&2; exit 2; }
+fail() { echo "error: $*" >&2; exit 1; }
+
+parse_args() {
+    local a
+    for a in "$@"; do
+        case "$a" in
+            --no-publish) [[ "$NO_PUBLISH" == 0 ]] || usage; NO_PUBLISH=1 ;;
+            --windows-signing=*)
+                [[ -z "$WINDOWS_SIGNING" ]] || usage
+                case "${a#*=}" in
+                    on | off) WINDOWS_SIGNING="${a#*=}" ;;
+                    *) echo "error: --windows-signing must be on or off, got '${a#*=}'" >&2; usage ;;
+                esac ;;
+            --*) echo "error: unknown option $a" >&2; usage ;;
+            *) [[ -z "$TAG" ]] || usage; TAG="$a" ;;
+        esac
+    done
+    [[ -n "$TAG" ]] || usage
+    [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] \
+        || { echo "error: tag must look like vX.Y.Z, got '$TAG'" >&2; exit 2; }
+    [[ -n "$WINDOWS_SIGNING" ]] || { echo "error: --windows-signing=on|off is required (billing for Artifact Signing is monthly; choose per release)" >&2; usage; }
+    VERSION="${TAG#v}"
+}
+
+# require_tools fails once, naming everything that is missing. Under
+# --no-publish komac and its token file are not needed (winget is not touched).
+require_tools() {
+    local missing=() t tools=(gh git go lipo codesign xcrun shasum)
+    [[ "$NO_PUBLISH" == 1 ]] || tools+=(komac)
+    for t in "${tools[@]}"; do
+        command -v "$t" >/dev/null 2>&1 || missing+=("$t")
+    done
+    if ! command -v ditto >/dev/null 2>&1 && ! command -v zip >/dev/null 2>&1; then missing+=("ditto or zip"); fi
+    OPENSSL="$(release_openssl)" || { OPENSSL=""; missing+=("OpenSSL 3 (see the error above)"); }
+    [[ -r "$SIGNING_KEY" ]] || missing+=("signing key $SIGNING_KEY (docs/release-signing.md)")
+    if [[ "$NO_PUBLISH" == 0 ]]; then
+        [[ -r "$KOMAC_KEY_FILE" ]] || missing+=("komac token $KOMAC_KEY_FILE")
+    fi
+    [[ -r "$PUBKEY" ]] || missing+=("public key $PUBKEY (docs/release-signing.md)")
+    (( ${#missing[@]} == 0 )) || fail "missing: $(printf '%s; ' "${missing[@]}")"
+}
+
+# check_signing_key signs a fixed string and verifies it with the committed
+# public key, so a wrong or regenerated private key is caught before building.
+check_signing_key() {
+    local d; d="$(mktemp -d)"
+    printf 'agentbus2 release key check\n' > "$d/msg"
+    "$OPENSSL" pkeyutl -sign -rawin -inkey "$SIGNING_KEY" -in "$d/msg" -out "$d/sig"
+    if ! "$OPENSSL" pkeyutl -verify -rawin -pubin -inkey "$PUBKEY" -in "$d/msg" -sigfile "$d/sig" >/dev/null 2>&1; then
+        rm -rf "$d"; fail "signing key $SIGNING_KEY does not match $PUBKEY"
+    fi
+    rm -rf "$d"
+}
+
+check_tag_exists() {
+    git -C "$REPO_ROOT" rev-parse -q --verify "refs/tags/$TAG" >/dev/null || fail "tag $TAG not found in $REPO_ROOT"
+}
+
+check_tag_pushed() {
+    git -C "$REPO_ROOT" ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1 \
+        || fail "tag $TAG is not on origin; push it first (git push origin $TAG)"
+}
+
+check_gh() {
+    gh auth status >/dev/null 2>&1 || fail "gh is not authenticated (gh auth login)"
+    gh attestation verify --help >/dev/null 2>&1 || fail "this gh cannot verify attestations; upgrade gh (brew upgrade gh)"
+    gh workflow view "$WORKFLOW" --repo "$GH_REPO" >/dev/null 2>&1 \
+        || fail "$WORKFLOW is not on the default branch of $GH_REPO; merge it to main first"
+}
+
+# A tag cut before the workflow or the build script landed cannot use this
+# flow: the run uses the workflow file as of the tag, and the macOS build and
+# the workflow both run the tag's copy of the build script.
+check_workflow_at_tag() {
+    local p
+    for p in ".github/workflows/$WORKFLOW" "$BUILD_SCRIPT"; do
+        git -C "$REPO_ROOT" cat-file -e "$TAG:$p" 2>/dev/null \
+            || fail "$p is not in tag $TAG; tag a commit that has it"
+    done
+}
+
+# check_signing_vars: with --windows-signing=on every Artifact Signing
+# variable must exist as a repository variable (gh variable list), else the
+# workflow would fail after the macOS build and the dispatch.
+check_signing_vars() {
+    [[ "$WINDOWS_SIGNING" == on ]] || return 0
+    local have missing=() v
+    have="$(gh variable list --repo "$GH_REPO" --json name --jq '.[].name')" \
+        || fail "could not list the repository variables of $GH_REPO"
+    for v in "${SIGNING_VARS[@]}"; do
+        grep -qx "$v" <<<"$have" || missing+=("$v")
+    done
+    (( ${#missing[@]} == 0 )) && return 0
+    local joined; joined="$(printf '%s, ' "${missing[@]}")"; joined="${joined%, }"
+    fail "missing repository variables for Authenticode signing: $joined (docs/release-signing.md, step 4; or release with --windows-signing=off)"
+}
+
+# checkout_tag builds from the tagged source in a throwaway worktree, whatever
+# HEAD is. It prunes stale worktree registrations first (a killed run's
+# leftovers) and replaces $DIST, so a killed run's partial dist/ is discarded.
+checkout_tag() {
+    [[ -n "$DIST" && "$DIST" != / ]] || fail "refusing to replace DIST='$DIST'"
+    git -C "$REPO_ROOT" worktree prune
+    SRC="$(mktemp -d)/src"
+    git -C "$REPO_ROOT" worktree add -q "$SRC" "$TAG"
+    # shellcheck disable=SC2064 # expand SRC now: the trap must remove this worktree
+    trap "git -C '$REPO_ROOT' worktree remove -f '$SRC'; rm -rf \"\$(dirname '$SRC')\"" EXIT
+    rm -rf "$DIST" && mkdir -p "$DIST"
+}
+
+# build_macos builds both architectures with the tag's own build script,
+# joins them with lipo, codesigns and notarizes the universal binary.
+build_macos() {
+    local bin="$DIST/macos/$BIN_NAME" arch
+    mkdir -p "$DIST/macos"
+    echo "==> Building universal binary $VERSION from $TAG"
+    for arch in arm64 amd64; do
+        (cd "$SRC" && bash "$BUILD_SCRIPT" "$TAG" darwin "$arch" "$DIST/macos-$arch")
+    done
+    lipo -create -output "$bin" "$DIST/macos-arm64/$BIN_NAME" "$DIST/macos-amd64/$BIN_NAME"
+    lipo -info "$bin"
+    # The universal binary runs only on a Mac; elsewhere the dry run checks the
+    # Linux archive instead (build-archive.sh already ran each native build).
+    if [[ "$(uname -s)" == Darwin ]]; then
+        [[ "$("$bin" version)" == "$VERSION" ]] || fail "version mismatch: $("$bin" version) != $VERSION"
+    fi
+
+    echo "==> Codesigning with hardened runtime"
+    codesign --force --timestamp --options runtime --sign "$SIGN_IDENTITY" "$bin"
+    codesign --verify --strict --verbose=2 "$bin"
+
+    echo "==> Notarizing (bare CLI binaries cannot be stapled; Gatekeeper checks online)"
+    local zip="$DIST/notarize.zip"
+    if command -v ditto >/dev/null 2>&1; then
+        ditto -c -k --keepParent "$bin" "$zip"
+    else
+        (cd "$DIST/macos" && zip -q -j "$zip" "$BIN_NAME")
+    fi
+    xcrun notarytool submit "$zip" --keychain-profile "$NOTARY_PROFILE" --wait | tee "$DIST/notary.log"
+    grep -q 'status: Accepted' "$DIST/notary.log" || fail "notarization not accepted"
+    rm -f "$zip"
+
+    local archive="${BIN_NAME}-${TAG}-macos-universal.tar.gz"
+    tar -C "$DIST/macos" -czf "$DIST/$archive" "$BIN_NAME"
+    ARCHIVES+=("$archive")
+    MACOS_ARCHIVE="$archive"
+}
+
+# copy_scripts puts the installer(s) from the tag's worktree into $DIST so
+# they are listed in SHA256SUMS and published with the archives.
+copy_scripts() {
+    check_script_embedded "$SRC/install.sh" install.sh
+    check_script_embedded "$SRC/install.ps1" install.ps1
+    cp "$SRC/install.sh" "$DIST/install.sh"
+    cp "$SRC/install.ps1" "$DIST/install.ps1"
+}
+
+# check_script_embedded <path> <name> fails when the installer still holds the
+# placeholder key block that embed-key.sh replaces.
+check_script_embedded() {
+    if grep -qxF 'REPLACED-BY-release/embed-key.sh' "$1"; then
+        fail "$2 has no embedded release key (placeholder still present); run release/embed-key.sh release/agentbus2-release-ed25519.pub $2 and commit before tagging"
+    fi
+}
+
+# check_installers_embedded is the cheap preflight form: it reads install.sh
+# and install.ps1 from the tag, before anything is built.
+check_installers_embedded() {
+    local tmp; tmp="$(mktemp)"
+    git -C "$REPO_ROOT" show "$TAG:install.sh" > "$tmp" 2>/dev/null || { rm -f "$tmp"; fail "$TAG has no install.sh; the installer ships with every release, so tag a commit that includes it"; }
+    local rc=0
+    (check_script_embedded "$tmp" install.sh) || rc=$?
+    if [[ "$rc" -eq 0 ]]; then
+        git -C "$REPO_ROOT" show "$TAG:install.ps1" > "$tmp" 2>/dev/null || { rm -f "$tmp"; fail "$TAG has no install.ps1; the Windows installer ships with every release, so tag a commit that includes it"; }
+        (check_script_embedded "$tmp" install.ps1) || rc=$?
+    fi
+    rm -f "$tmp"
+    return "$rc"
+}
+
+write_sums() {
+    echo "==> Writing SHA256SUMS"
+    (cd "$DIST" && shasum -a 256 "${ARCHIVES[@]}" install.sh install.ps1 > SHA256SUMS)
+    cat "$DIST/SHA256SUMS"
+}
+
+sign_sums() {
+    echo "==> Signing SHA256SUMS"
+    "$OPENSSL" pkeyutl -sign -rawin -inkey "$SIGNING_KEY" -in "$DIST/SHA256SUMS" -out "$DIST/SHA256SUMS.sig"
+    verify_sums
+}
+
+verify_sums() {
+    "$OPENSSL" pkeyutl -verify -rawin -pubin -inkey "$PUBKEY" -in "$DIST/SHA256SUMS" -sigfile "$DIST/SHA256SUMS.sig" >/dev/null \
+        || fail "SHA256SUMS.sig does not verify with $PUBKEY"
+}
+
+# render_notes_text <notes> <on|off> prints the notes with the unsigned-
+# Windows line present exactly once (off) or absent (on), so a rerun can
+# flip the choice. The line is always the last paragraph.
+render_notes_text() {
+    local text="$1" mode="$2"
+    [[ "$mode" == on || "$mode" == off ]] || fail "render_notes_text: mode must be on or off, got '$mode'"
+    # Command substitution strips every trailing newline, so a previous
+    # run's blank line before the note disappears with the note itself.
+    text="$(grep -vF "$UNSIGNED_NOTE" <<<"$text" || true)"
+    if [[ "$mode" == off ]]; then
+        printf '%s\n\n%s\n' "$text" "$UNSIGNED_NOTE"
+    else
+        printf '%s\n' "$text"
+    fi
+}
+
+# render_notes writes $DIST/notes.md: release/notes-<tag>.md when present,
+# else GitHub's generated notes for the tag, then render_notes_text.
+render_notes() {
+    local base
+    if [[ -f "$REPO_ROOT/release/notes-${TAG}.md" ]]; then
+        base="$(cat "$REPO_ROOT/release/notes-${TAG}.md")"
+    else
+        base="$(gh api "repos/${GH_REPO}/releases/generate-notes" -f "tag_name=$TAG" --jq .body)" \
+            || fail "could not generate the notes of $TAG"
+    fi
+    render_notes_text "$base" "$WINDOWS_SIGNING" > "$DIST/notes.md"
+}
+
+# ensure_draft creates the draft release for $TAG, reuses an existing draft
+# (rerun after a failure), or, after a warning, reuses a published release
+# (rerun that replaces public assets). releases/latest never resolves to a
+# draft, so the install scripts cannot see a partial release.
+ensure_draft() {
+    # stdout (the isDraft value) and stderr are kept apart: stderr noise on a
+    # successful call (GH_DEBUG, a gh warning) must not read as "published".
+    local draft errfile err rc=0
+    errfile="$(mktemp)"
+    draft="$(gh release view "$TAG" --repo "$GH_REPO" --json isDraft --jq .isDraft 2>"$errfile")" || rc=$?
+    err="$(cat "$errfile")"; rm -f "$errfile"
+    if [[ "$rc" == 0 ]]; then
+        case "$draft" in
+            true) echo "==> Reusing draft release $TAG" ;;
+            false)
+                echo "warning: release $TAG is already published; continuing replaces its public assets" >&2
+                PUBLISHED=1 ;;
+            *) fail "could not query release $TAG: unexpected output from gh: $draft" ;;
+        esac
+        # a rerun may have changed --windows-signing: the notes line follows it
+        gh release edit "$TAG" --repo "$GH_REPO" --notes-file "$DIST/notes.md" \
+            || fail "could not update the notes of release $TAG"
+        return
+    fi
+    # Only "not found" means there is no release; any other error (network,
+    # rate limit, token) must not create a second draft for the same tag.
+    [[ "$err" == *"release not found"* ]] || fail "could not query release $TAG: ${err:-$draft}"
+    echo "==> Creating draft release $TAG"
+    gh release create "$TAG" --repo "$GH_REPO" --verify-tag --title "$TAG" --draft --notes-file "$DIST/notes.md"
+}
+
+# list_run_ids prints the ids of the existing $WORKFLOW runs titled for $TAG.
+list_run_ids() {
+    gh run list --repo "$GH_REPO" --workflow "$WORKFLOW" --event workflow_dispatch --limit 50 \
+        --json databaseId,displayTitle \
+        --jq ".[] | select(.displayTitle == \"release-build $TAG\") | .databaseId"
+}
+
+# dispatch_build runs the workflow on the tag itself (its github.ref is the
+# tag, and the workflow file used is the tag's) and records the run id. The
+# ids of the tag's earlier runs are recorded first and excluded, so a stale
+# run (a rerun within the clock slack) is never mistaken for this dispatch.
+dispatch_build() {
+    local existing since
+    existing="$(list_run_ids)" || fail "could not list the existing $WORKFLOW runs"
+    echo "==> Dispatching $WORKFLOW on $TAG"
+    since="$(utc_minus_60s)" # one minute of clock slack
+    gh workflow run "$WORKFLOW" --repo "$GH_REPO" --ref "$TAG" -f "tag=$TAG" -f "windows_signing=$WINDOWS_SIGNING" \
+        || fail "could not dispatch $WORKFLOW on $TAG"
+    local ids=() id
+    while IFS= read -r id; do
+        if [[ -n "$id" ]]; then ids+=("$id"); fi
+    done <<< "$existing"
+    RUN_ID="$(find_run "$since" ${ids[@]+"${ids[@]}"})"
+    echo "run: https://github.com/$GH_REPO/actions/runs/$RUN_ID"
+}
+
+# find_run <since> [excluded-run-id...]: the newest workflow_dispatch run of
+# $WORKFLOW created at or after <since> (RFC 3339 UTC) whose display title is
+# "release-build <tag>" and whose id is not excluded. Polls because the run
+# appears a moment after the dispatch.
+find_run() {
+    local since="$1" id i ex="" x; shift
+    for x in "$@"; do
+        [[ "$x" =~ ^[0-9]+$ ]] || fail "find_run: bad run id '$x'"
+        ex+="${ex:+,}$x"
+    done
+    for ((i = 0; i < FIND_RUN_TRIES; i++)); do
+        id="$(gh run list --repo "$GH_REPO" --workflow "$WORKFLOW" --event workflow_dispatch --limit 50 \
+            --json databaseId,displayTitle,createdAt \
+            --jq "[.[] | select(.createdAt >= \"$since\" and .displayTitle == \"release-build $TAG\" and (.databaseId as \$i | [$ex] | index(\$i) | not))] | sort_by(.createdAt) | last | .databaseId // empty")"
+        if [[ -n "$id" ]]; then printf '%s\n' "$id"; return 0; fi
+        sleep "$FIND_RUN_SLEEP"
+    done
+    fail "could not find the dispatched run of $WORKFLOW for $TAG"
+}
+
+watch_run() {
+    echo "==> Waiting for run $RUN_ID"
+    gh run watch "$RUN_ID" --repo "$GH_REPO" --exit-status \
+        || fail "$WORKFLOW failed; the draft stays for a rerun: https://github.com/$GH_REPO/actions/runs/$RUN_ID"
+}
+
+# download_archives fetches the four attested archives the workflow uploaded
+# to the draft and requires every one of them.
+download_archives() {
+    echo "==> Downloading the Linux and Windows archives"
+    gh release download "$TAG" --repo "$GH_REPO" --dir "$DIST" --clobber \
+        --pattern "${BIN_NAME}-${TAG}-linux-*.tar.gz" --pattern "${BIN_NAME}-${TAG}-windows-*.zip" \
+        || fail "could not download the archives of $TAG; rerun the workflow"
+    local a
+    for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do
+        [[ -f "$DIST/${BIN_NAME}-${TAG}-$a" ]] || fail "release $TAG lacks ${BIN_NAME}-${TAG}-$a; rerun the workflow"
+        ARCHIVES+=("${BIN_NAME}-${TAG}-$a")
+    done
+}
+
+# verify_attestations checks the Sigstore build provenance of every
+# downloaded archive against this repository before anything is signed.
+verify_attestations() {
+    echo "==> Verifying build attestations"
+    local a
+    for a in "${ARCHIVES[@]}"; do
+        [[ "$a" == "$MACOS_ARCHIVE" ]] && continue
+        gh attestation verify "$DIST/$a" --repo "$GH_REPO" \
+            --signer-workflow "$GH_REPO/.github/workflows/$WORKFLOW" --source-ref "refs/tags/$TAG" >/dev/null \
+            || fail "attestation of $a does not verify against $GH_REPO"
+    done
+}
+
+# upload_assets adds what only this machine has to the draft; the four
+# archives are already there, uploaded by the workflow.
+upload_assets() {
+    echo "==> Uploading the macOS tarball, the install scripts and SHA256SUMS"
+    (cd "$DIST" && gh release upload "$TAG" --repo "$GH_REPO" --clobber "$MACOS_ARCHIVE" install.sh install.ps1 SHA256SUMS SHA256SUMS.sig)
+}
+
+# render_template <tmpl> <out> KEY=VALUE... replaces every __KEY__ and fails
+# if any __PLACEHOLDER__ is left.
+render_template() {
+    local tmpl="$1" out="$2"; shift 2
+    local args=() kv left
+    for kv in "$@"; do
+        [[ "$kv" == *=* ]] || fail "render_template: expected KEY=VALUE, got '$kv'"
+        args+=(-e "s|__${kv%%=*}__|${kv#*=}|g")
+    done
+    sed "${args[@]}" "$tmpl" > "$out"
+    left="$(grep -Eo '__[A-Z0-9_]+__' "$out" | sort -u | tr '\n' ' ' || true)"
+    [[ -z "$left" ]] || fail "unfilled placeholders in $out: $left"
+}
+
+# sum_of <file> prints the hash SHA256SUMS records for <file>.
+sum_of() {
+    local h; h="$(awk -v f="$1" '$2 == f { print $1 }' "$DIST/SHA256SUMS")"
+    [[ -n "$h" ]] || fail "no SHA256SUMS entry for $1"
+    printf '%s\n' "$h"
+}
+
+# render_formula renders the Homebrew formula to $DIST/agentbus2.rb from the
+# macOS and Linux archives listed in SHA256SUMS. It touches nothing else.
+render_formula() {
+    local base="https://github.com/${GH_REPO}/releases/download/${TAG}"
+    local m="${BIN_NAME}-${TAG}-macos-universal.tar.gz" la="${BIN_NAME}-${TAG}-linux-amd64.tar.gz" lr="${BIN_NAME}-${TAG}-linux-arm64.tar.gz"
+    # Each hash is its own assignment: a failed $( ) inside an argument list
+    # would not stop the script and would render an empty sha256.
+    local hm hla hlr
+    hm="$(sum_of "$m")" || exit 1; hla="$(sum_of "$la")" || exit 1; hlr="$(sum_of "$lr")" || exit 1
+    render_template "$REPO_ROOT/release/${BIN_NAME}.rb.tmpl" "$DIST/${BIN_NAME}.rb" \
+        "MACOS_URL=$base/$m" "MACOS_SHA256=$hm" \
+        "LINUX_AMD64_URL=$base/$la" "LINUX_AMD64_SHA256=$hla" \
+        "LINUX_ARM64_URL=$base/$lr" "LINUX_ARM64_SHA256=$hlr"
+}
+
+# render_scoop renders the Scoop manifest to $DIST/agentbus2.scoop.json.
+render_scoop() {
+    local base="https://github.com/${GH_REPO}/releases/download/${TAG}"
+    local wa="${BIN_NAME}-${TAG}-windows-amd64.zip" wr="${BIN_NAME}-${TAG}-windows-arm64.zip"
+    local ha hr
+    ha="$(sum_of "$wa")" || exit 1; hr="$(sum_of "$wr")" || exit 1
+    render_template "$REPO_ROOT/release/${BIN_NAME}.scoop.json.tmpl" "$DIST/${BIN_NAME}.scoop.json" \
+        "VERSION=$VERSION" "AMD64_URL=$base/$wa" "AMD64_SHA256=$ha" \
+        "ARM64_URL=$base/$wr" "ARM64_SHA256=$hr"
+}
+
+# render_winget renders komac's three-file layout under $DIST/winget/, so
+# `komac submit "$DIST/winget"` takes the directory as is. winget writes its
+# hashes in upper case.
+render_winget() {
+    local base="https://github.com/${GH_REPO}/releases/download/${TAG}"
+    local wa="${BIN_NAME}-${TAG}-windows-amd64.zip" wr="${BIN_NAME}-${TAG}-windows-arm64.zip"
+    local out="$DIST/winget" ha hr
+    ha="$(sum_of "$wa" | tr 'a-f' 'A-F')" || exit 1
+    hr="$(sum_of "$wr" | tr 'a-f' 'A-F')" || exit 1
+    mkdir -p "$out"
+    render_template "$REPO_ROOT/release/${BIN_NAME}.winget.version.yaml.tmpl" "$out/${WINGET_ID}.yaml" "VERSION=$VERSION"
+    render_template "$REPO_ROOT/release/${BIN_NAME}.winget.installer.yaml.tmpl" "$out/${WINGET_ID}.installer.yaml" \
+        "VERSION=$VERSION" "AMD64_URL=$base/$wa" "AMD64_SHA256=$ha" "ARM64_URL=$base/$wr" "ARM64_SHA256=$hr"
+    render_template "$REPO_ROOT/release/${BIN_NAME}.winget.locale.en-US.yaml.tmpl" "$out/${WINGET_ID}.locale.en-US.yaml" "VERSION=$VERSION"
+}
+
+# publish_release renders the formula, the Scoop manifest and the winget
+# manifests, then either stops with the draft in place (--no-publish) or makes
+# the draft public and updates the package managers.
+publish_release() {
+    render_formula
+    render_scoop
+    render_winget
+    local f
+    for f in "$DIST/${BIN_NAME}.rb" "$DIST/${BIN_NAME}.scoop.json" "$DIST/winget/${WINGET_ID}.yaml" \
+        "$DIST/winget/${WINGET_ID}.installer.yaml" "$DIST/winget/${WINGET_ID}.locale.en-US.yaml"; do
+        echo "rendered: $f"
+    done
+    if [[ "$NO_PUBLISH" == 1 ]]; then
+        local what=draft
+        [[ "$PUBLISHED" == 1 ]] && what=release
+        echo "==> --no-publish: stopping before publish; $what: https://github.com/$GH_REPO/releases/tag/$TAG"
+        return 0
+    fi
+    if [[ "$PUBLISHED" == 0 ]]; then
+        echo "==> Publishing release $TAG"
+        gh release edit "$TAG" --repo "$GH_REPO" --draft=false \
+            || fail "could not publish $TAG; the draft stays"
+    fi
+    update_tap
+    update_scoop
+    submit_winget
+    echo "==> Released ${TAG}: brew install ericfitz/tap/${BIN_NAME}; curl -fsSL https://github.com/${GH_REPO}/releases/latest/download/install.sh | sh; irm https://github.com/${GH_REPO}/releases/latest/download/install.ps1 | iex"
+}
+
+# update_tap copies the rendered formula into the tap clone, commits when it
+# changed and always pushes (a rerun after "commit ok, push failed" publishes
+# the stranded commit; the push is a no-op when up to date).
+update_tap() {
+    echo "==> Updating Homebrew tap"
+    [[ -f "$DIST/${BIN_NAME}.rb" ]] || fail "$DIST/${BIN_NAME}.rb is not rendered; run render_formula first"
+    [[ -d "$TAP_DIR" ]] || git clone git@github.com:ericfitz/homebrew-tap.git "$TAP_DIR"
+    git -C "$TAP_DIR" pull -q --ff-only
+    mkdir -p "$TAP_DIR/Formula"
+    if cmp -s "$DIST/${BIN_NAME}.rb" "$TAP_DIR/Formula/${BIN_NAME}.rb"; then
+        echo "formula unchanged"
+    else
+        cp "$DIST/${BIN_NAME}.rb" "$TAP_DIR/Formula/${BIN_NAME}.rb"
+        git -C "$TAP_DIR" add "Formula/${BIN_NAME}.rb"
+        git -C "$TAP_DIR" commit -m "${BIN_NAME} ${VERSION}"
+    fi
+    git -C "$TAP_DIR" push
+}
+
+# update_scoop is update_tap's twin for the Scoop bucket.
+update_scoop() {
+    echo "==> Updating Scoop bucket"
+    [[ -f "$DIST/${BIN_NAME}.scoop.json" ]] || fail "$DIST/${BIN_NAME}.scoop.json is not rendered; run render_scoop first"
+    [[ -d "$SCOOP_DIR" ]] || git clone git@github.com:ericfitz/scoop-bucket.git "$SCOOP_DIR"
+    git -C "$SCOOP_DIR" pull -q --ff-only
+    mkdir -p "$SCOOP_DIR/bucket"
+    if cmp -s "$DIST/${BIN_NAME}.scoop.json" "$SCOOP_DIR/bucket/${BIN_NAME}.json"; then
+        echo "scoop manifest unchanged"
+    else
+        cp "$DIST/${BIN_NAME}.scoop.json" "$SCOOP_DIR/bucket/${BIN_NAME}.json"
+        git -C "$SCOOP_DIR" add "bucket/${BIN_NAME}.json"
+        git -C "$SCOOP_DIR" commit -m "${BIN_NAME} ${VERSION}"
+    fi
+    git -C "$SCOOP_DIR" push
+}
+
+# submit_winget opens the winget-pkgs pull request for this version with
+# komac. An open pull request for the version counts as done (rerun). A
+# komac failure does not fail the release: the exact rerun command is
+# printed. The token is scoped to the one command, because exporting
+# GITHUB_TOKEN would override gh's own auth for the rest of the run.
+submit_winget() {
+    echo "==> Submitting ${WINGET_ID} ${VERSION} to winget"
+    local open
+    open="$(gh pr list --repo microsoft/winget-pkgs --state open --search "\"${WINGET_ID} version ${VERSION}\" in:title" --json number --jq '.[].number')" \
+        || fail "could not list open pull requests in microsoft/winget-pkgs; rerun once gh works (an open pull request for ${VERSION} would make komac open a duplicate)"
+    if [[ -n "$open" ]]; then
+        echo "winget: an open pull request for ${VERSION} exists; nothing to do"; return
+    fi
+    local base="https://github.com/${GH_REPO}/releases/download/${TAG}"
+    local cmd=(komac update "$WINGET_ID" --version "$VERSION" --urls "$base/${BIN_NAME}-${TAG}-windows-amd64.zip" "$base/${BIN_NAME}-${TAG}-windows-arm64.zip" --submit)
+    if ! (
+        # shellcheck disable=SC1090
+        source "$KOMAC_KEY_FILE"
+        GITHUB_TOKEN="$KOMAC_GITHUB_KEY" "${cmd[@]}"
+    ); then
+        echo "warning: komac failed; the release stands. Rerun: (source $KOMAC_KEY_FILE && GITHUB_TOKEN=\"\$KOMAC_GITHUB_KEY\" ${cmd[*]})" >&2
+    fi
+}
+
+main() {
+    parse_args "$@"
+    require_tools
+    check_signing_key
+    check_tag_exists
+    check_tag_pushed
+    check_gh
+    check_workflow_at_tag
+    check_signing_vars
+    check_installers_embedded
+    checkout_tag
+    render_notes
+    build_macos
+    ensure_draft
+    dispatch_build
+    watch_run
+    download_archives
+    verify_attestations
+    copy_scripts
+    write_sums
+    sign_sums
+    upload_assets
+    publish_release
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
