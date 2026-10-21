@@ -499,6 +499,7 @@ m6_log() {
 	for n in "${M6_SEQUENCE_STEPS[@]}"; do printf '    --- PASS: TestSection24Sequence/%s (0.00s)\n' "$n" >>"$f"; done
 	printf -- '--- PASS: TestExitCodeTable (20.00s)\n' >>"$f"
 	for n in "${M6_CELLS[@]}"; do printf '    --- PASS: TestExitCodeTable/%s (0.00s)\n' "$n" >>"$f"; done
+	printf 'PASS\nok  \tgithub.com/ericfitz/agentbus2/internal/e2e\t25.000s\n' >>"$f"
 }
 
 # m6_expect LABEL WHAT WANT_RC PRESENT [ABSENT]: runs the log form of the script
@@ -539,6 +540,15 @@ block_m6_exit_script_fires() {
 	m6_log "$tmp/m6.log"
 	sed 's/--- PASS: TestExitCodeTable\/wait-3-signal/--- FAIL: TestExitCodeTable\/wait-3-signal/' "$tmp/m6.log" >"$tmp/m6x.log" && cp "$tmp/m6x.log" "$tmp/m6.log"
 	m6_expect "$label" "failed cell line" 1 'fail=1'
+	m6_log "$tmp/m6.log"
+	sed 's/TestSection24Sequence\/7-receive /TestSection24Sequence\/6-wake /' "$tmp/m6.log" >"$tmp/m6x.log" && cp "$tmp/m6x.log" "$tmp/m6.log"
+	m6_expect "$label" "a repeated step line in place of a missing one" 1 'sequence=12'
+	m6_log "$tmp/m6.log"
+	sed 's/^ok  .*internal\/e2e.*$/FAIL\tgithub.com\/ericfitz\/agentbus2\/internal\/e2e\t25.000s/' "$tmp/m6.log" >"$tmp/m6x.log" && cp "$tmp/m6x.log" "$tmp/m6.log"
+	m6_expect "$label" "a package FAIL with every leaf passing (TestMain teardown)" 1 'pkg_ok=0'
+	m6_log "$tmp/m6.log"
+	grep -vE '^(PASS|ok )' "$tmp/m6.log" >"$tmp/m6x.log" && cp "$tmp/m6x.log" "$tmp/m6.log"
+	m6_expect "$label" "no package ok line" 1 'pkg_ok=0'
 	m6_log "$tmp/m6.log"
 	printf '\ndm/ is gone in v2\n' >>"$wt/internal/cli/skills/using-agentbus2/SKILL.md"
 	m6_expect "$label" "word check" 1 'words_hit' 'words_ok'
