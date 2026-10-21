@@ -19,6 +19,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/auth/token"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentbus2/internal/core/maintenance"
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -580,7 +581,18 @@ func TestTokenReplayInsideLeeway(t *testing.T) {
 		t.Fatalf("first use of b: %d %s", resp.StatusCode, readBody(t, resp))
 	}
 	e.clock.Advance(p.Expiry.Add(token.Leeway).Sub(e.clock.Now()))
+	// The expiry job running at that instant (on any replica) must keep b's
+	// row: it removes a's only.
+	if n, err := maintenance.New(e.core).RunJob(context.Background(), "assertion replay expiry"); err != nil || n != 1 {
+		t.Fatalf("expiry job at exp+Leeway: %d, %v; want 1 (a's row only)", n, err)
+	}
 	wantAuthProblem(t, e.exchange(b, ""), 401, "unauthenticated", "assertion replayed")
+	// Past the retention the row goes, and Verify refuses b as expired.
+	e.clock.Advance(time.Second + time.Millisecond)
+	if n, err := maintenance.New(e.core).RunJob(context.Background(), "assertion replay expiry"); err != nil || n != 1 {
+		t.Fatalf("expiry job past retention: %d, %v; want 1", n, err)
+	}
+	wantAuthProblem(t, e.exchange(b, ""), 401, "unauthenticated", "expired")
 }
 
 // TestTokenReplayIsShared: two server instances (replicas) over one database

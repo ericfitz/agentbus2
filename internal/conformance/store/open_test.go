@@ -317,8 +317,8 @@ func TestOpenConcurrentEmpty(t *testing.T) {
 }
 
 // TestOpenMigratesVersion1Database opens a database at version 1 (the set cut
-// to its first step), which has neither auth table, then reopens with the full
-// set.
+// to its first step), which has neither auth table nor assertion_jti, then
+// reopens with the full set.
 func TestOpenMigratesVersion1Database(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		full := migrationsFor(e)
@@ -327,7 +327,7 @@ func TestOpenMigratesVersion1Database(t *testing.T) {
 		if got := schemaVersion(t, s); got != 1 {
 			t.Fatalf("SchemaVersion = %d, want 1", got)
 		}
-		for _, tbl := range []string{"enrollment_tokens", "signing_keys"} {
+		for _, tbl := range []string{"enrollment_tokens", "signing_keys", "assertion_jti"} {
 			if got := tableCount(t, e, db, tbl); got != 0 {
 				t.Fatalf("%s tables at version 1 = %d, want 0", tbl, got)
 			}
@@ -341,7 +341,7 @@ func TestOpenMigratesVersion1Database(t *testing.T) {
 			if got := schemaVersion(t, s2); got != len(full) {
 				t.Fatalf("SchemaVersion = %d, want %d", got, len(full))
 			}
-			for _, tbl := range []string{"enrollment_tokens", "signing_keys"} {
+			for _, tbl := range []string{"enrollment_tokens", "signing_keys", "assertion_jti"} {
 				if got := tableCount(t, e, db, tbl); got != 1 {
 					t.Fatalf("%s tables = %d, want 1", tbl, got)
 				}

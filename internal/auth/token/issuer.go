@@ -1,8 +1,9 @@
 // Package token is the server side of authentication: the issuer that mints and
-// verifies the server's own bearer JWTs (Decisions 57, 70, 84), the jti replay
-// set for client assertions, external issuers with JWKS, and the verifier that
-// routes a bearer by its issuer. It imports only the standard library, go-jose
-// and internal/auth/keys, and is never imported by client code.
+// verifies the server's own bearer JWTs (Decisions 57, 70, 84), external
+// issuers with JWKS, and the verifier that routes a bearer by its issuer. The
+// client assertion jti record is the Store's assertion_jti table. It imports
+// only the standard library, go-jose and internal/auth/keys, and is never
+// imported by client code.
 package token
 
 import (
