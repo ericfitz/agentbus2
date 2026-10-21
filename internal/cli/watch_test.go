@@ -525,3 +525,59 @@ func TestResumeOncePerLapse(t *testing.T) {
 		}
 	}
 }
+
+// TestWatchStartedInGapReplacesOlder is the review's gap inversion: a newer
+// watch started while the older one is in its post-wake gap replaces the
+// older (spec 3.5, Decision 68), not the other way round. The older stays
+// armed through its gap, so its next arm cannot replace the newer one.
+func TestWatchStartedInGapReplacesOlder(t *testing.T) {
+	prev := watchMinGap
+	watchMinGap = 1500 * time.Millisecond
+	t.Cleanup(func() { watchMinGap = prev })
+	e := newTestEnv(t)
+	ctx := context.Background()
+	pat, sam := e.conn(t, "pat"), e.conn(t, "sam")
+	sess, err := pat.Bus.Open(ctx, bus.OpenSessionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.writeState(t, sessionstate.File{Session: sess.ID, Identity: "pat", Profile: "default", DisplayName: sess.DisplayName, ResumeToken: sess.ResumeToken,
+		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
+	var so1, se1, so2, se2 syncBuf
+	older, newer := make(chan int, 1), make(chan int, 1)
+	ctx2, cancel2 := context.WithCancel(ctx)
+	defer cancel2()
+	go func() { older <- RunWatch(ctx, nil, e.Environ, strings.NewReader(""), &so1, &se1) }()
+	time.Sleep(400 * time.Millisecond)
+	if _, err := sam.Bus.Send(ctx, bus.SendInput{Channel: "general", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for so1.String() == "" {
+		if time.Now().After(deadline) {
+			t.Fatalf("no wake line (stderr %q)", se1.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	// The agent receives (its batch is pending, so nothing wakes), then starts
+	// a newer watch inside the older one's gap.
+	if _, err := pat.Bus.Receive(ctx, bus.ReceiveInput{Session: sess.ID}); err != nil {
+		t.Fatal(err)
+	}
+	go func() { newer <- RunWatch(ctx2, nil, e.Environ, strings.NewReader(""), &so2, &se2) }()
+	select {
+	case code := <-older:
+		if code != 3 {
+			t.Fatalf("older exited %d, want 3 (stderr %q)", code, se1.String())
+		}
+	case code := <-newer:
+		t.Fatalf("the newer watch exited %d and the older kept running (stderr %q)", code, se2.String())
+	case <-time.After(4 * time.Second):
+		t.Fatal("the older watch was never replaced")
+	}
+	select {
+	case code := <-newer:
+		t.Fatalf("the newer watch exited %d after replacing the older (stderr %q)", code, se2.String())
+	case <-time.After(2 * watchMinGap):
+	}
+}

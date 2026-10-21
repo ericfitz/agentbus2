@@ -31,17 +31,37 @@ func watchLine(display string, r bus.WatchResult) string {
 	return fmt.Sprintf("agentbus2: %d new message(s) for %s on %s; call receive", r.Count, display, strings.Join(chans, ", "))
 }
 
-// watchLoop arms Watch{After: floor, Timeout: 0} in a loop. A wake prints one
-// line, raises the floor to its Seq and sleeps watchMinGap (or until ctx is
-// done); a timeout re-arms silently. It returns only with a non-nil error (the
-// Watch's, a failed write, or ctx's), together with the floor reached, so a
-// resumed re-arm continues from it.
+// watchLoop arms Watch{After: floor} in a loop and stays armed: a wake raises
+// the floor to its Seq and prints one line, unless the last line is less than
+// watchMinGap old; then the wake is held, merged with any further wakes, and
+// printed once the gap has passed (the re-armed Watch carries the rest of the
+// gap as its timeout). Re-arming at once, rather than sleeping out the gap,
+// matters: Watch registration replaces the session's current watcher, so a
+// watcher that slept and then re-armed would replace a newer watch, wait or
+// wait_seconds receive started meanwhile (spec 3.5, Decision 68: the newer
+// one wins). A timeout with nothing held re-arms silently. It returns only
+// with a non-nil error (the Watch's, a failed write, or ctx's), together with
+// the floor reached, so a resumed re-arm continues from it.
 func watchLoop(ctx context.Context, s bus.Sessions, session, display string, floor int64, includeOwn bool, stdout io.Writer) (int64, error) {
+	var held bus.WatchResult
+	var last time.Time
 	for {
 		if err := ctx.Err(); err != nil {
 			return floor, err
 		}
-		r, err := s.Watch(ctx, bus.WatchInput{Session: session, After: floor, IncludeOwn: includeOwn})
+		in := bus.WatchInput{Session: session, After: floor, IncludeOwn: includeOwn}
+		if held.Woke {
+			rest := watchMinGap - time.Since(last)
+			if rest <= 0 {
+				if _, err := fmt.Fprintln(stdout, watchLine(display, held)); err != nil {
+					return floor, err
+				}
+				last, held = time.Now(), bus.WatchResult{}
+				continue
+			}
+			in.Timeout = rest
+		}
+		r, err := s.Watch(ctx, in)
 		if err != nil {
 			return floor, err
 		}
@@ -49,16 +69,7 @@ func watchLoop(ctx context.Context, s bus.Sessions, session, display string, flo
 			continue
 		}
 		floor = r.Seq
-		if _, err := fmt.Fprintln(stdout, watchLine(display, r)); err != nil {
-			return floor, err
-		}
-		gap := time.NewTimer(watchMinGap)
-		select {
-		case <-ctx.Done():
-			gap.Stop()
-			return floor, ctx.Err()
-		case <-gap.C:
-		}
+		held = bus.WatchResult{Woke: true, Seq: r.Seq, Count: held.Count + r.Count, Channels: append(held.Channels, r.Channels...)}
 	}
 }
 
