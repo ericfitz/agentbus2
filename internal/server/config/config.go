@@ -54,6 +54,8 @@ type Config struct {
 	ReceiveDefaultCount        int `json:"receive_default_count"`
 	ReceiveMaxCount            int `json:"receive_max_count"`
 	ResultDefaultKiB           int `json:"result_default_kib"`
+	SQLiteBudgetMiB            int `json:"sqlite_budget_mib"`
+	CleanupFreePercent         int `json:"cleanup_free_percent"`
 
 	EmbeddingEndpoint            string  `json:"embedding_endpoint"`
 	EmbeddingModel               string  `json:"embedding_model"`
@@ -92,6 +94,8 @@ func Default() Config {
 		ReceiveDefaultCount:          d.ReceiveDefaultCount,
 		ReceiveMaxCount:              d.ReceiveMaxCount,
 		ResultDefaultKiB:             d.ResultDefaultKiB,
+		SQLiteBudgetMiB:              d.SQLiteBudgetMiB,
+		CleanupFreePercent:           d.CleanupFreePercent,
 		EmbeddingQueryTimeoutSeconds: d.EmbeddingQueryTimeoutSeconds,
 	}
 }
@@ -140,6 +144,8 @@ func (c Config) Core() (core.Config, error) {
 		ReceiveDefaultCount:          c.ReceiveDefaultCount,
 		ReceiveMaxCount:              c.ReceiveMaxCount,
 		ResultDefaultKiB:             c.ResultDefaultKiB,
+		SQLiteBudgetMiB:              c.SQLiteBudgetMiB,
+		CleanupFreePercent:           c.CleanupFreePercent,
 		EmbeddingModel:               c.EmbeddingModel,
 		EmbeddingQueryTimeoutSeconds: c.EmbeddingQueryTimeoutSeconds,
 	}

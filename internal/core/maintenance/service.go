@@ -1,5 +1,5 @@
-// Package maintenance runs the periodic cleanup jobs under a lease row in the
-// Store (Decisions 49, 68, 79). Ported from v1 internal/bus/maintenance.go.
+// Package maintenance runs the periodic cleanup jobs under the Store's
+// cross-process lock (Decisions 49, 68, 79). Ported from v1 internal/bus/maintenance.go.
 package maintenance
 
 import (
@@ -10,7 +10,6 @@ import (
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/tasks"
-	"github.com/ericfitz/agentbus2/internal/store"
 )
 
 const (
@@ -20,13 +19,16 @@ const (
 	// embedBatchesPT is the embedding batches one tick runs (v1 embedBatchesPT).
 	embedBatchesPT = 4
 
-	leaseName = "maintenance"
+	lockName = "maintenance"
 )
 
 // Service is the maintenance aggregate over a Core.
 type Service struct {
 	*core.Core
 	Tasks tasks.Service
+	// BudgetOverride is the SQLite budget in bytes; tests only. 0 means
+	// Cfg.SQLiteBudgetMiB << 20.
+	BudgetOverride int64
 
 	// jobs replaces Jobs() when non-nil (tests drive Tick with fakes).
 	jobs []Job
@@ -64,8 +66,7 @@ func (s Service) pastDeadline(ctx context.Context) bool {
 	return ok && s.NowMs() >= d
 }
 
-// Jobs lists the jobs in tick order. Budget eviction and capacity notices are
-// not among them (Decision (Eric, 2026-10-21): Milestone 3 item 3, Milestone 7).
+// Jobs lists the jobs in tick order.
 func (s Service) Jobs() []Job {
 	if s.jobs != nil {
 		return s.jobs
@@ -81,32 +82,33 @@ func (s Service) Jobs() []Job {
 		{"task expiry", s.taskExpiry},
 		{"memory expiry", s.memoryExpiry},
 		{"empty channels", s.emptyChannels},
+		{"budget eviction", s.evictToBudget},
+		{"capacity notices", s.capacityNotice},
 		{"embeddings", s.embeddings},
 	}
 }
 
-// Tick runs one maintenance pass if this core holds the lease (v1 Tick,
-// takeLease). Another owner holding it is not an error: ran is false and
-// nothing else happens (Decision 68). Each job runs in transactions of its
-// own, chunked; an error is logged and recorded in its JobResult and never
-// aborts the tick. Once the deadline (half the interval) has passed, the
-// remaining jobs are Skipped.
+// Tick runs one maintenance pass if this core holds the maintenance lock
+// (Store.TryLock; v1 Tick, takeLease). It calls TryLock on every tick, before
+// any job, which renews the hold and detects a lock lost with a Postgres
+// session. Another owner holding it is not an error: ran is false and nothing
+// else happens (Decision 68). The lock is held across ticks and released by
+// Release at shutdown. Each job runs in transactions of its own, chunked; an
+// error is logged and recorded in its JobResult and never aborts the tick.
+// Once the deadline (half the interval) has passed, the remaining jobs are
+// Skipped.
 //
 // State: every job is idempotent, so a second tick finds nothing; two
-// overlapping ticks are serialized by the lease row; a tick killed mid-job
-// leaves committed chunks and a lease that expires after twice the interval,
-// after which the next tick continues from wherever the queries find work.
+// overlapping ticks are serialized by the lock; a tick killed mid-job leaves
+// committed chunks and a lock that lapses at twice the interval (SQLite) or
+// when the session ends (Postgres), after which the next tick continues from
+// wherever the queries find work.
 func (s Service) Tick(ctx context.Context) (ran bool, report []JobResult) {
 	now := s.NowMs()
 	interval := int64(s.Cfg.MaintenanceIntervalSeconds) * 1000
-	var held bool
-	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-		var err error
-		held, err = tx.TryLease(ctx, leaseName, s.Owner, now, now+2*interval)
-		return err
-	})
+	held, err := s.Store.TryLock(ctx, lockName, s.Owner, now, now+2*interval)
 	if err != nil {
-		s.Log.Warn("maintenance lease", "err", err)
+		s.Log.Warn("maintenance lock", "err", err)
 		return false, nil
 	}
 	if !held {
@@ -128,7 +130,13 @@ func (s Service) Tick(ctx context.Context) (ran bool, report []JobResult) {
 	return true, report
 }
 
-// RunJob runs one job by name, without the lease and without a deadline (tests
+// Release gives up the maintenance lock; Serve calls it once at shutdown. A
+// lock this core does not hold is left alone and the error is nil.
+func (s Service) Release(ctx context.Context) error {
+	return s.Store.Unlock(ctx, lockName, s.Owner)
+}
+
+// RunJob runs one job by name, without the lock and without a deadline (tests
 // and the operator command of Milestone 7). An unknown name is a validation
 // error naming the known jobs.
 func (s Service) RunJob(ctx context.Context, name string) (int, error) {

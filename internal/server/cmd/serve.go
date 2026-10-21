@@ -41,11 +41,17 @@ type Config struct {
 	Issuer       *token.Issuer     // nil: local mode, the token endpoint answers 503
 	External     []*token.External // configured external issuers (Decision 57)
 	Embedder     core.Embedder     // nil: text search only; embed.Install when set
+
+	// OnTick, when non-nil, is called after every maintenance Tick from the
+	// maintenance goroutine.
+	OnTick func(ran bool, report []maintenance.JobResult)
 }
 
 const (
 	defaultReadTimeout = 30 * time.Second
 	shutdownTimeout    = 60 * time.Second
+	// releaseTimeout bounds the maintenance lock release at shutdown.
+	releaseTimeout = 5 * time.Second
 )
 
 // httpServer builds the http.Server with choice 15's values. WriteTimeout is
@@ -77,7 +83,7 @@ func httpServer(c Config, h http.Handler) *http.Server {
 //
 // State (Definition of Done D): a second start over the same store finds the
 // migrations at their version and general present, so it writes nothing; two
-// servers over one Postgres serialize maintenance on the lease row; two over
+// servers over one Postgres serialize maintenance on the Store lock; two over
 // one SQLite file are unsupported (their notifiers cannot see each other); a
 // start after a crash finds the lease expired after twice the interval.
 func Serve(ctx context.Context, c Config) error {
@@ -108,10 +114,20 @@ func Serve(ctx context.Context, c Config) error {
 	mctx, stopMaint := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stopMaint(); wg.Wait() }()
+	m := maintenance.New(cr)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		m := maintenance.New(cr)
+		// After the loop has returned no Tick can renew the lock, so the
+		// release cannot race one. The deadline is bounded because the
+		// caller closes the Store next.
+		defer func() {
+			rctx, rcancel := context.WithTimeout(context.Background(), releaseTimeout)
+			defer rcancel()
+			if err := m.Release(rctx); err != nil {
+				cr.Log.Error("maintenance lock release", "err", err)
+			}
+		}()
 		t := time.NewTicker(time.Duration(cfg.MaintenanceIntervalSeconds) * time.Second)
 		defer t.Stop()
 		for {
@@ -119,7 +135,11 @@ func Serve(ctx context.Context, c Config) error {
 			case <-mctx.Done():
 				return
 			case <-t.C:
-				m.Tick(mctx)
+				ran, report := m.Tick(mctx)
+				logTick(cr.Log, ran, report)
+				if c.OnTick != nil {
+					c.OnTick(ran, report)
+				}
 			}
 		}
 	}()
@@ -153,4 +173,13 @@ func Serve(ctx context.Context, c Config) error {
 		return err
 	}
 	return nil
+}
+
+// logTick writes the Debug line of one maintenance tick.
+func logTick(log *slog.Logger, ran bool, report []maintenance.JobResult) {
+	counts := make(map[string]int, len(report))
+	for _, r := range report {
+		counts[r.Name] = r.N
+	}
+	log.Debug("maintenance tick", "ran", ran, "jobs", len(report), "counts", counts)
 }

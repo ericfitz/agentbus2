@@ -50,7 +50,7 @@ func twoCores(t *testing.T) (a, b Service, clk *testClock) {
 	return mk(), mk(), clk
 }
 
-func TestTickTakesAndRenewsLease(t *testing.T) {
+func TestTickLockHeldAcrossTicks(t *testing.T) {
 	a, b, clk := twoCores(t)
 	ctx := context.Background()
 	interval := time.Duration(a.Cfg.MaintenanceIntervalSeconds) * time.Second
@@ -58,23 +58,66 @@ func TestTickTakesAndRenewsLease(t *testing.T) {
 		t.Fatal("first Tick did not run")
 	}
 	if ran, rep := b.Tick(ctx); ran || rep != nil {
-		t.Fatalf("second core ran while the first holds the lease: %v %v", ran, rep)
+		t.Fatalf("second core ran while the first holds the lock: %v %v", ran, rep)
 	}
-	// The holder renews.
+	// The holder renews; the lock is not released between ticks.
 	clk.advance(interval)
 	if ran, _ := a.Tick(ctx); !ran {
 		t.Fatal("holder could not renew")
 	}
+	if ran, _ := b.Tick(ctx); ran {
+		t.Fatal("second core ran after the holder's renewal")
+	}
 	clk.advance(2*interval - time.Second)
 	if ran, _ := b.Tick(ctx); ran {
-		t.Fatal("second core ran before the renewed lease expired")
+		t.Fatal("second core ran before the renewed lock expired")
 	}
 	clk.advance(2 * time.Second)
 	if ran, _ := b.Tick(ctx); !ran {
-		t.Fatal("second core did not take the expired lease")
+		t.Fatal("second core did not take the expired lock")
 	}
 	if ran, _ := a.Tick(ctx); ran {
-		t.Fatal("first core ran while the second holds the lease")
+		t.Fatal("first core ran while the second holds the lock")
+	}
+
+	// A fresh pair: after Release the other core takes it at once.
+	a, b, _ = twoCores(t)
+	if ran, _ := a.Tick(ctx); !ran {
+		t.Fatal("fresh pair: first Tick did not run")
+	}
+	if err := a.Release(ctx); err != nil {
+		t.Fatalf("Release: %v", err)
+	}
+	if err := a.Release(ctx); err != nil {
+		t.Fatalf("second Release: %v", err)
+	}
+	if ran, _ := b.Tick(ctx); !ran {
+		t.Fatal("second core did not take the released lock")
+	}
+}
+
+func TestTickRunsBudgetJobsInOrder(t *testing.T) {
+	a, _, _ := twoCores(t)
+	ran, rep := a.Tick(context.Background())
+	if !ran {
+		t.Fatal("Tick did not run")
+	}
+	idx := map[string]int{}
+	for i, r := range rep {
+		idx[r.Name] = i
+	}
+	for _, n := range []string{"memory expiry", "budget eviction", "capacity notices", "embeddings"} {
+		if _, ok := idx[n]; !ok {
+			t.Fatalf("report lacks %q: %+v", n, rep)
+		}
+	}
+	if idx["budget eviction"] <= idx["memory expiry"] || idx["capacity notices"] != idx["budget eviction"]+1 || idx["embeddings"] <= idx["capacity notices"] {
+		t.Fatalf("job order wrong: %+v", idx)
+	}
+	for _, r := range rep {
+		if r.Err != nil {
+			t.Fatalf("job %s failed: %v", r.Name, r.Err)
+		}
 	}
 }
 

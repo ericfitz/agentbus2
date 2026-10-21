@@ -55,6 +55,12 @@ type Config struct {
 	ReceiveDefaultCount     int
 	ReceiveMaxCount         int
 	ResultDefaultKiB        int
+	// SQLiteBudgetMiB bounds the SQLite file; eviction and the capacity notice
+	// act only where Store.Usage reports Evictable (Milestone 7 Gate 0 item 2,
+	// Decision (Eric, 2026-10-21)). CleanupFreePercent is how far below the
+	// budget eviction sweeps.
+	SQLiteBudgetMiB    int
+	CleanupFreePercent int
 
 	// EmbeddingModel names the model of the Embedder; it must equal
 	// Embedder.Model() when one is given (checked in New).
@@ -84,6 +90,8 @@ func Defaults() Config {
 		ReceiveDefaultCount:          100,
 		ReceiveMaxCount:              1000,
 		ResultDefaultKiB:             64,
+		SQLiteBudgetMiB:              2048,
+		CleanupFreePercent:           25,
 		EmbeddingQueryTimeoutSeconds: 10,
 	}
 }
@@ -111,6 +119,8 @@ func (c Config) Validate() error {
 		{"receive_default_count", c.ReceiveDefaultCount, 1, 1000},
 		{"receive_max_count", c.ReceiveMaxCount, 1, 10000},
 		{"result_default_kib", c.ResultDefaultKiB, 1, 4096},
+		{"sqlite_budget_mib", c.SQLiteBudgetMiB, 64, 1048576},
+		{"cleanup_free_percent", c.CleanupFreePercent, 5, 90},
 		{"empty_channel_reap_hours", c.EmptyChannelReapHours, 1, 8760},
 		{"task_expiry_hours", c.TaskExpiryHours, 0, 87600},
 		{"memory_expiry_hours", c.MemoryExpiryHours, 0, 87600},

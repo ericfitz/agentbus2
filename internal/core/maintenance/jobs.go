@@ -71,35 +71,41 @@ func (s Service) receipts(ctx context.Context, now int64) (int, error) {
 // highest deleted seq plus one (v1 deleteOrdinaryChunk).
 func (s Service) messageRetention(ctx context.Context, now int64) (int, error) {
 	cutoff := now - int64(s.Cfg.MessageRetentionHours)*hourMs
-	return s.loopChunks(ctx, func() (n int, err error) {
-		err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-			n = 0
-			rows, err := tx.OrdinaryMessagesBefore(ctx, cutoff, cleanupChunk)
-			if err != nil {
-				return err
-			}
-			if len(rows) == 0 {
-				return nil
-			}
-			seqs := make([]int64, len(rows))
-			maxByChannel := map[int64]int64{}
-			for i, r := range rows {
-				seqs[i] = r.Seq
-				maxByChannel[r.ChannelID] = max(maxByChannel[r.ChannelID], r.Seq)
-			}
-			if err := tx.DeleteMessages(ctx, seqs); err != nil {
-				return err
-			}
-			for id, m := range maxByChannel {
-				if err := tx.SetEvictedBefore(ctx, id, m+1); err != nil {
-					return err
-				}
-			}
-			n = len(rows)
+	return s.loopChunks(ctx, func() (int, error) { return s.deleteOrdinaryChunk(ctx, cutoff) })
+}
+
+// deleteOrdinaryChunk deletes one chunk of ordinary messages created before
+// createdBefore, oldest first, in one transaction, and raises each affected
+// channel's evicted-before mark to the highest deleted seq plus one (v1
+// deleteOrdinaryChunk).
+func (s Service) deleteOrdinaryChunk(ctx context.Context, createdBefore int64) (n int, err error) {
+	err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		n = 0
+		rows, err := tx.OrdinaryMessagesBefore(ctx, createdBefore, cleanupChunk)
+		if err != nil {
+			return err
+		}
+		if len(rows) == 0 {
 			return nil
-		})
-		return n, err
+		}
+		seqs := make([]int64, len(rows))
+		maxByChannel := map[int64]int64{}
+		for i, r := range rows {
+			seqs[i] = r.Seq
+			maxByChannel[r.ChannelID] = max(maxByChannel[r.ChannelID], r.Seq)
+		}
+		if err := tx.DeleteMessages(ctx, seqs); err != nil {
+			return err
+		}
+		for id, m := range maxByChannel {
+			if err := tx.SetEvictedBefore(ctx, id, m+1); err != nil {
+				return err
+			}
+		}
+		n = len(rows)
+		return nil
 	})
+	return n, err
 }
 
 // tombstonePurge deletes tombstones older than TombstoneMinHours.

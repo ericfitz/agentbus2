@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -404,15 +405,246 @@ func TestMaintenanceEmptyChannels(t *testing.T) {
 }
 
 func TestMaintenanceRunJobRejectsUnknown(t *testing.T) {
-	// Decision (Eric, 2026-10-21): Milestone 3 item 3: budget eviction and capacity notices wait for Milestone 7.
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
-		for _, name := range []string{"vacuum", "budget eviction", "capacity notices", ""} {
+		for _, name := range []string{"vacuum", ""} {
 			_, err := maint(h).RunJob(context.Background(), name)
 			codeOf(t, err, ab2bus.CodeValidation)
 			if !strings.Contains(err.Error(), "lapsed sessions") {
 				t.Fatalf("error %q does not name the known jobs", err)
 			}
+		}
+		for _, name := range []string{"budget eviction", "capacity notices"} {
+			if _, err := maint(h).RunJob(context.Background(), name); err != nil {
+				t.Fatalf("RunJob(%q): %v", name, err)
+			}
+		}
+	})
+}
+
+// ordinaryRows returns the count and the first and last seq of the ordinary
+// messages of ch.
+func ordinaryRows(h *harness, ch ab2store.Channel) (n int, first, last int64) {
+	h.t.Helper()
+	h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+		rows, err := tx.OrdinaryMessagesBefore(ctx, 1<<62, 1<<30)
+		if err != nil {
+			return err
+		}
+		n, first, last = 0, 0, 0
+		for _, r := range rows {
+			if r.ChannelID != ch.ID {
+				continue
+			}
+			if n == 0 || r.Seq < first {
+				first = r.Seq
+			}
+			n++
+			last = max(last, r.Seq)
+		}
+		return nil
+	})
+	return n, first, last
+}
+
+func usageBytes(h *harness) int64 {
+	h.t.Helper()
+	u, err := h.raw.Usage(context.Background())
+	if err != nil {
+		h.t.Fatalf("Usage: %v", err)
+	}
+	return u.Bytes
+}
+
+func capacityNotice(h *harness) (ab2store.Notice, bool) {
+	h.t.Helper()
+	var n ab2store.Notice
+	var ok bool
+	h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+		var err error
+		n, ok, err = tx.Notice(ctx, "capacity")
+		return err
+	})
+	return n, ok
+}
+
+func (h *harness) channelRow(ch ab2store.Channel) ab2store.Channel {
+	h.t.Helper()
+	var got ab2store.Channel
+	h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+		var err error
+		got, err = tx.Channel(ctx, ch.ID)
+		return err
+	})
+	return got
+}
+
+func runJobOn(h *harness, m maintenance.Service, name string) int {
+	h.t.Helper()
+	n, err := m.RunJob(context.Background(), name)
+	if err != nil {
+		h.t.Fatalf("RunJob(%q): %v", name, err)
+	}
+	return n
+}
+
+// Gate 0 item 2, Decision (Eric, 2026-10-21): eviction acts only where usage
+// is evictable (SQLite).
+func TestMaintenanceBudgetEviction(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		dev := h.channel("dev", ab2store.KindOrdinary, "pat", nil)
+		mem := h.channel("mem", ab2store.KindMemory, "pat", nil)
+		body := strings.Repeat("x", 1024)
+		var lastSeq int64
+		for range 2500 {
+			lastSeq = h.append(dev, "pat", "", body)
+		}
+		var memSeqs []int64
+		for i := range 5 {
+			memSeqs = append(memSeqs, h.append(mem, "pat", "", "memory "+strconv.Itoa(i)))
+		}
+		peak := usageBytes(h)
+		m := maint(h)
+
+		if e.Name == "postgres" {
+			m.BudgetOverride = peak / 2
+			if n := runJobOn(h, m, "budget eviction"); n != 0 {
+				t.Fatalf("postgres: evicted %d, want 0", n)
+			}
+			if n, _, _ := ordinaryRows(h, dev); n != 2500 {
+				t.Fatalf("postgres: %d rows remain, want 2500", n)
+			}
+			if _, ok := capacityNotice(h); ok {
+				t.Fatal("postgres: a capacity notice was set")
+			}
+			return
+		}
+
+		// Hysteresis: at or below the budget but above the target, nothing goes.
+		m.BudgetOverride = peak + peak/8
+		before := h.channelRow(dev).EvictedBeforeSeq
+		if n := runJobOn(h, m, "budget eviction"); n != 0 {
+			t.Fatalf("between target and budget: evicted %d, want 0", n)
+		}
+		if n, _, _ := ordinaryRows(h, dev); n != 2500 {
+			t.Fatalf("between target and budget: %d rows remain, want 2500", n)
+		}
+		if got := h.channelRow(dev).EvictedBeforeSeq; got != before {
+			t.Fatalf("EvictedBeforeSeq moved %d -> %d", before, got)
+		}
+
+		// Sweep.
+		m.BudgetOverride = peak / 2
+		target := m.BudgetOverride - m.BudgetOverride*int64(h.cfg.CleanupFreePercent)/100
+		deleted := runJobOn(h, m, "budget eviction")
+		if deleted <= 1000 || deleted >= 2500 {
+			t.Fatalf("evicted %d, want more than one chunk and not all", deleted)
+		}
+		if u := usageBytes(h); u > target {
+			t.Fatalf("usage %d above target %d", u, target)
+		}
+		n, first, last := ordinaryRows(h, dev)
+		if n != 2500-deleted || n == 0 || last != lastSeq || last-first+1 != int64(n) {
+			t.Fatalf("survivors n=%d first=%d last=%d lastSeq=%d deleted=%d: want the newest contiguous range", n, first, last, lastSeq, deleted)
+		}
+		if got := h.channelRow(dev).EvictedBeforeSeq; got != first {
+			t.Fatalf("EvictedBeforeSeq = %d, want %d (highest deleted + 1)", got, first)
+		}
+		if live := h.liveSeqs(memSeqs...); !sameSeqs(live, memSeqs...) {
+			t.Fatalf("live memories = %v, want %v", live, memSeqs)
+		}
+		if n := runJobOn(h, m, "budget eviction"); n != 0 {
+			t.Fatalf("second run evicted %d", n)
+		}
+	})
+}
+
+// Gate 0 item 3, Decision (Eric, 2026-10-21): the notice is set where usage is
+// evictable and never blocks a Send.
+func TestMaintenanceCapacityNotice(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		mem := h.channel("mem", ab2store.KindMemory, "pat", nil)
+		dev := h.channel("dev", ab2store.KindOrdinary, "pat", nil)
+		for i := range 5 {
+			h.append(mem, "pat", "", "memory "+strconv.Itoa(i))
+		}
+		m := maint(h)
+		m.BudgetOverride = 4 << 10
+		if n := runJobOn(h, m, "budget eviction"); n != 0 {
+			t.Fatalf("evicted %d with nothing evictable", n)
+		}
+		if n := runJobOn(h, m, "capacity notices"); (n == 1) != (e.Name == "sqlite") {
+			t.Fatalf("capacity notices returned %d on %s", n, e.Name)
+		}
+		n, ok := capacityNotice(h)
+		if e.Name == "postgres" {
+			if ok {
+				t.Fatal("postgres: a capacity notice was set")
+			}
+		} else if !ok || !strings.Contains(n.Message, "sqlite_budget_mib=0 ") || n.SetAt != h.core.NowMs() {
+			t.Fatalf("notice = %+v, %v", n, ok)
+		}
+		if _, err := newBus(h, "pat").Send(context.Background(), ab2bus.SendInput{Channel: dev.Name, Content: "still works"}); err != nil {
+			t.Fatalf("Send under a capacity notice: %v", err)
+		}
+		m.BudgetOverride = 1 << 30
+		runJobOn(h, m, "capacity notices")
+		if _, ok := capacityNotice(h); ok {
+			t.Fatal("notice not cleared under a large budget")
+		}
+	})
+}
+
+func TestMaintenanceLockExclusiveAcrossCores(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx := context.Background()
+		h := newHarness(t, e, harnessOptions{})
+		sib := h.sibling(harnessOptions{})
+		if ran, _ := maint(h).Tick(ctx); !ran {
+			t.Fatal("first core did not run")
+		}
+		if ran, _ := maint(sib).Tick(ctx); ran {
+			t.Fatal("sibling ran while the first holds the lock")
+		}
+		if err := maint(h).Release(ctx); err != nil {
+			t.Fatalf("Release: %v", err)
+		}
+		if ran, _ := maint(sib).Tick(ctx); !ran {
+			t.Fatal("sibling did not take the released lock")
+		}
+		// The SQLite row has no session to terminate; the rest is Postgres only.
+		if e.Name != "postgres" {
+			return
+		}
+		rdb := e.Open(t)
+		rows, err := rdb.QueryContext(ctx, `SELECT l.pid FROM pg_locks l JOIN pg_namespace n ON l.classid = hashtext(n.nspname)::oid
+			WHERE l.locktype = 'advisory' AND l.granted AND l.objid = hashtext('maintenance')::oid
+			AND n.nspname LIKE 'b\_%' AND l.pid <> pg_backend_pid()`)
+		if err != nil {
+			t.Fatalf("lock lookup: %v", err)
+		}
+		var pids []int64
+		for rows.Next() {
+			var pid int64
+			if err := rows.Scan(&pid); err != nil {
+				t.Fatal(err)
+			}
+			pids = append(pids, pid)
+		}
+		_ = rows.Close()
+		if len(pids) != 1 {
+			t.Fatalf("maintenance advisory locks in b_ schemas = %d, want 1", len(pids))
+		}
+		if _, err := rdb.ExecContext(ctx, "SELECT pg_terminate_backend($1)", pids[0]); err != nil {
+			t.Fatalf("terminate: %v", err)
+		}
+		if ran, _ := maint(h).Tick(ctx); !ran {
+			t.Fatal("first core did not take the lock after the holder's session died")
+		}
+		if ran, _ := maint(sib).Tick(ctx); ran {
+			t.Fatal("sibling kept running after its session died")
 		}
 	})
 }

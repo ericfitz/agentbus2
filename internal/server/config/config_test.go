@@ -97,6 +97,8 @@ func TestValidateRejects(t *testing.T) {
 		{"both keys", func(c *Config) { c.EmbeddingAPIKeyFile = "f"; c.EmbeddingAPIKeyEnv = "E" }, "embedding_api_key"},
 		{"receive counts", func(c *Config) { c.ReceiveDefaultCount = 20; c.ReceiveMaxCount = 10 }, "receive_default_count"},
 		{"core bound", func(c *Config) { c.MaxMessageKiB = 0 }, "max_message_kib"},
+		{"budget bound", func(c *Config) { c.SQLiteBudgetMiB = 1 }, "sqlite_budget_mib"},
+		{"cleanup bound", func(c *Config) { c.CleanupFreePercent = 95 }, "cleanup_free_percent"},
 		{"reap bound", func(c *Config) { c.EmptyChannelReapHours = 0 }, "empty_channel_reap_hours"},
 		{"default acl", func(c *Config) { c.DefaultACL = []ACLEntry{{"ghost", []string{"read"}}} }, "default_acl"},
 	}
