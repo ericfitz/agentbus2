@@ -676,8 +676,9 @@ block_tui_hint_mutation() {
 	begin
 	# (1) the receive path
 	f="$wt/internal/tui/run.go"
-	sed '/go c\.receiveLoop(p\.Send)/d' "$f" >"$tmp/x" && cp "$tmp/x" "$f"
-	if [ "$(grep -c 'receiveLoop(p.Send)' "$f" || true)" -ne 0 ]; then
+	before="$(grep -c 'go c\.receiveLoop(' "$f" || true)"
+	sed '/go c\.receiveLoop(/d' "$f" >"$tmp/x" && cp "$tmp/x" "$f"
+	if [ "$before" -ne 1 ] || [ "$(grep -c 'receiveLoop(' "$f" || true)" -ne 0 ]; then
 		problem "$label" "mutation 1 changed nothing"
 	else
 		(cd "$wt" && perl -e 'alarm 300; exec @ARGV' go test -count=1 -v -run '^TestBothModes$' ./internal/tui/ >"$log" 2>&1) && rc=0 || rc=$?
