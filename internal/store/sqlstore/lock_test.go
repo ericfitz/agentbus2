@@ -30,7 +30,7 @@ func TestCloseReleasesLocksWithinADeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Store{db: db, d: hangingLocker{}, held: map[string]string{}, conns: map[string]*sql.Conn{}}
-	if held, err := s.TryLock(context.Background(), "maintenance", "a", 0, 0); err != nil || !held {
+	if held, err := s.TryLock(context.Background(), "maintenance", "a", 1, 2); err != nil || !held {
 		t.Fatalf("TryLock = %v, %v; want true", held, err)
 	}
 	done := make(chan error, 1)

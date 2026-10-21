@@ -14,13 +14,14 @@ import (
 // SQL, so a second owner on this handle never touches the row or the pinned
 // connection beneath the first.
 func (s *Store) TryLock(ctx context.Context, name, owner string, now, until int64) (bool, error) {
-	if err := checkText("lock", "name", name, "owner", owner); err != nil {
+	if err := checkLock(name, owner); err != nil {
 		return false, err
 	}
-	// An empty name has no row to name; an empty owner would equal the
-	// unheld marker of a seeded leases row.
-	if name == "" || owner == "" {
-		return false, fmt.Errorf("%w: lock name and owner must not be empty", store.ErrInvalid)
+	// Checked on both engines although Postgres ignores the times: until <=
+	// now would grant a SQLite lease already expired, and a second handle
+	// would take it at once.
+	if now <= 0 || until <= now {
+		return false, fmt.Errorf("%w: lock times must satisfy 0 < now < until, got now %d, until %d", store.ErrInvalid, now, until)
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -86,10 +87,23 @@ func (s *Store) tryLockSession(ctx context.Context, l Locker, name, owner string
 	return true, nil
 }
 
+// checkLock refuses (ErrInvalid) a name or owner failing TextRule or empty:
+// an empty name has no row to name; an empty owner would equal the unheld
+// marker of a seeded leases row.
+func checkLock(name, owner string) error {
+	if err := checkText("lock", "name", name, "owner", owner); err != nil {
+		return err
+	}
+	if name == "" || owner == "" {
+		return fmt.Errorf("%w: lock name and owner must not be empty", store.ErrInvalid)
+	}
+	return nil
+}
+
 // Unlock: see store.Locks.
 func (s *Store) Unlock(ctx context.Context, name, owner string) error {
-	if badText(name, owner) {
-		return nil
+	if err := checkLock(name, owner); err != nil {
+		return err
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()

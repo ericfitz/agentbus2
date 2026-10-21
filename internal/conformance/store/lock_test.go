@@ -74,6 +74,17 @@ func TestLockOtherNames(t *testing.T) {
 			if !errors.Is(err, ab2store.ErrInvalid) || held {
 				t.Errorf("TryLock(%q, %q) = %v, %v; want ErrInvalid", c.name, c.owner, held, err)
 			}
+			if err := s.Unlock(context.Background(), c.name, c.owner); !errors.Is(err, ab2store.ErrInvalid) {
+				t.Errorf("Unlock(%q, %q) = %v; want ErrInvalid", c.name, c.owner, err)
+			}
+		}
+		// A lease must start at a real time and end after it: until <= now
+		// would grant one already expired, which a second handle then takes.
+		for _, c := range []struct{ now, until int64 }{{5, 5}, {5, 4}, {0, 10}, {-1, 10}} {
+			held, err := s.TryLock(context.Background(), "x", "a", c.now, c.until)
+			if !errors.Is(err, ab2store.ErrInvalid) || held {
+				t.Errorf("TryLock(now %d, until %d) = %v, %v; want ErrInvalid", c.now, c.until, held, err)
+			}
 		}
 	})
 }
