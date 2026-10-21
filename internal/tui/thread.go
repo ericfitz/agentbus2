@@ -1,28 +1,15 @@
-// Stub created by Milestone 8 Task 3 from the call sites in v1 906dec8 model.go, view.go and compose.go; Task 4 replaces this file.
-//
-// Signatures and the v1 call site each came from:
-//
-//	paneMsgs(ch string) []bus.Message         view.go:749 renderStream
-//	type row struct{ msg, depth, hidden, open, latest, newest, root }  view.go:769 renderStream
-//	rows(ch string) []row                     model.go:237 updateNormal, view.go:769 renderStream
-//	cursorRow() (row, bool)                   model.go:476 updateNormal
-//	rowAvail(depth int) int                   view.go:787 renderStream
-//	openCursor()                              model.go:519 updateNormal
-//	closeCursor()                             model.go:528 updateNormal
-//	peekReply(ch string, x bus.Message)       model.go:1197 onBatch
-//	rootSeq, nextParent, collapseCursor, setExpanded: called only inside v1 thread.go
-//
-// The stub draws the loaded messages flat: one row per message, depth 0, no
-// replies shown or hidden.
+// Ported from v1 906dec8 internal/tui/thread.go (paneMsgs without the inbox merge, ADR 0006).
 
 package tui
 
 import (
+	"sort"
+
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
 
 // paneMsgs returns the messages a pane shows: a tag pane's matches, else the
-// channel's own.
+// channel's own. There is no inbox merge: the stream is the channel (ADR 0006).
 func (m *Model) paneMsgs(ch string) []bus.Message {
 	if isTagPane(ch) {
 		return m.tagPaneMsgs(ch)
@@ -41,21 +28,116 @@ type row struct {
 	root   int64 // seq of the thread root
 }
 
-// rows returns ch's loaded messages as flat rows, oldest first.
+// rows returns ch's loaded messages in display order: threads (a root and
+// every reply into it) sorted by their newest message ascending (by seq,
+// which is monotonic with time on one bus and never ties), each in tree
+// order. A reply whose parent is not loaded is a root. Replies are
+// shown only under a parent the user expanded, or along the path to the
+// thread's peeked reply (the newest one received while collapsed).
 func (m *Model) rows(ch string) []row {
 	ms := m.paneMsgs(ch)
-	out := make([]row, 0, len(ms))
+	if len(ms) == 0 {
+		return nil
+	}
+	bySeq := make(map[int64]bus.Message, len(ms))
 	for _, x := range ms {
-		out = append(out, row{msg: x, latest: x.CreatedAt, newest: x.Seq, root: x.Seq})
+		bySeq[x.Seq] = x
+	}
+	parent := func(x bus.Message) (bus.Message, bool) {
+		if x.ReplyTo == nil {
+			return bus.Message{}, false
+		}
+		p, ok := bySeq[*x.ReplyTo]
+		return p, ok
+	}
+	children := map[int64][]bus.Message{}
+	rootOf := map[int64]int64{}
+	latest := map[int64]int64{} // root seq -> newest created_at in the thread
+	newest := map[int64]int64{} // root seq -> newest seq in the thread
+	var roots []bus.Message
+	for _, x := range ms { // seq order, so a parent is processed before its replies
+		if p, ok := parent(x); ok {
+			children[p.Seq] = append(children[p.Seq], x)
+			rootOf[x.Seq] = rootOf[p.Seq]
+		} else {
+			rootOf[x.Seq] = x.Seq
+			roots = append(roots, x)
+		}
+		r := rootOf[x.Seq]
+		latest[r] = max(latest[r], x.CreatedAt)
+		newest[r] = x.Seq
+	}
+	sort.Slice(roots, func(i, j int) bool { return newest[roots[i].Seq] < newest[roots[j].Seq] })
+	var size func(seq int64) int
+	size = func(seq int64) int {
+		n := 1
+		for _, c := range children[seq] {
+			n += size(c.Seq)
+		}
+		return n
+	}
+	var out []row
+	var walk func(x bus.Message, depth int, onPath map[int64]bool)
+	walk = func(x bus.Message, depth int, onPath map[int64]bool) {
+		r := row{msg: x, depth: depth, root: rootOf[x.Seq]}
+		if depth == 0 {
+			r.latest, r.newest = latest[x.Seq], newest[x.Seq]
+		}
+		at := len(out)
+		out = append(out, r)
+		for _, c := range children[x.Seq] {
+			if m.expanded[x.Seq] || onPath[c.Seq] {
+				out[at].open = true
+				walk(c, depth+1, onPath)
+			} else {
+				out[at].hidden += size(c.Seq)
+			}
+		}
+	}
+	for _, r := range roots {
+		onPath := map[int64]bool{}
+		for seq, ok := m.peek[r.Seq], true; ok; seq, ok = nextParent(bySeq, seq) {
+			onPath[seq] = true
+		}
+		walk(r, 0, onPath)
 	}
 	return out
 }
 
-func nextParent(map[int64]bus.Message, int64) (int64, bool) { return 0, false } //nolint:unused // stub; Task 4 uses it
+func nextParent(bySeq map[int64]bus.Message, seq int64) (int64, bool) {
+	x, ok := bySeq[seq]
+	if !ok || x.ReplyTo == nil {
+		return 0, false
+	}
+	_, ok = bySeq[*x.ReplyTo]
+	return *x.ReplyTo, ok
+}
 
-func (m *Model) rootSeq(_ string, seq int64) int64 { return seq } //nolint:unused // stub; Task 4 uses it
+// rootSeq returns the thread root of seq among ch's loaded messages.
+func (m *Model) rootSeq(ch string, seq int64) int64 {
+	bySeq := map[int64]bus.Message{}
+	for _, x := range m.paneMsgs(ch) {
+		bySeq[x.Seq] = x
+	}
+	for {
+		p, ok := nextParent(bySeq, seq)
+		if !ok {
+			return seq
+		}
+		seq = p
+	}
+}
 
-func (m *Model) peekReply(string, bus.Message) {}
+// peekReply marks x, a reply just received on ch, as the one reply its
+// thread shows while collapsed, replacing any earlier peek.
+func (m *Model) peekReply(ch string, x bus.Message) {
+	if x.ReplyTo == nil {
+		return
+	}
+	if root := m.rootSeq(ch, x.Seq); root != x.Seq {
+		m.peek[root] = x.Seq
+	}
+}
 
 // cursorRow returns the stream row under the normal-mode cursor.
 func (m *Model) cursorRow() (row, bool) {
@@ -72,10 +154,71 @@ func (m *Model) rowAvail(depth int) int {
 	return max(m.stream.Width, 20) - 2*depth - 2
 }
 
-func (m *Model) openCursor() {}
+// openCursor (→) opens the cursor row's body when it's closed and the row
+// has one; otherwise it shows the row's direct replies.
+func (m *Model) openCursor() {
+	r, ok := m.cursorRow()
+	if !ok {
+		return
+	}
+	// hasBody is judged on the live message: → is not a version key, so
+	// updateNormal (model.go) already reset m.mem before openCursor runs,
+	// and the row on screen is the live version.
+	if _, hasBody := rowLine(r.msg, m.rowAvail(r.depth)); hasBody && !m.bodyOpen[r.msg.Seq] {
+		m.bodyOpen[r.msg.Seq] = true
+		m.refreshStream()
+		m.scrollOpenedIntoView()
+		return
+	}
+	m.setExpanded(r, true)
+}
 
-func (m *Model) closeCursor() {}
+// closeCursor (←) hides the replies under the cursor row (the whole
+// subtree) when any are shown; otherwise it closes the row's body.
+func (m *Model) closeCursor() {
+	r, ok := m.cursorRow()
+	if !ok {
+		return
+	}
+	if r.open {
+		m.collapseCursor()
+		return
+	}
+	delete(m.bodyOpen, r.msg.Seq)
+	m.refreshStream()
+	m.scrollCursorIntoView()
+}
 
-func (m *Model) collapseCursor() {} //nolint:unused // stub; Task 4 uses it
+// collapseCursor hides everything under the cursor message, so a later
+// expand shows direct replies only.
+func (m *Model) collapseCursor() {
+	r, ok := m.cursorRow()
+	if !ok {
+		return
+	}
+	under := map[int64]bool{r.msg.Seq: true}
+	for _, x := range m.paneMsgs(m.selName()) { // seq order: a parent precedes its replies
+		if x.ReplyTo != nil && under[*x.ReplyTo] {
+			under[x.Seq] = true
+			delete(m.expanded, x.Seq)
+		}
+	}
+	m.setExpanded(r, false)
+}
 
-func (m *Model) setExpanded(row, bool) {} //nolint:unused // stub; Task 4 uses it
+// setExpanded shows or hides r's direct replies. A change drops the
+// thread's peek so the user's choice is what shows.
+func (m *Model) setExpanded(r row, v bool) {
+	if v {
+		m.expanded[r.msg.Seq] = true
+	} else {
+		delete(m.expanded, r.msg.Seq)
+	}
+	delete(m.peek, r.root)
+	m.refreshStream()
+	if v {
+		m.scrollOpenedIntoView()
+	} else {
+		m.scrollCursorIntoView()
+	}
+}
