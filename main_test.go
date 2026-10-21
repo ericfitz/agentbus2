@@ -49,3 +49,23 @@ func TestRunRejectsUnknownAndEmpty(t *testing.T) {
 		t.Fatalf("stderr %q lacks the unknown-command line", errb.String())
 	}
 }
+
+func TestUsageListsServer(t *testing.T) {
+	var out bytes.Buffer
+	if code := run([]string{"help"}, &out, io.Discard); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if !strings.Contains(out.String(), "  server ") {
+		t.Fatalf("usage %q lacks the server command", out.String())
+	}
+}
+
+func TestRunServerRejectsMissingFlags(t *testing.T) {
+	var errb bytes.Buffer
+	if code := run([]string{"server"}, io.Discard, &errb); code != 2 {
+		t.Fatalf("exit %d, want 2", code)
+	}
+	if !strings.Contains(errb.String(), "-listen is required") {
+		t.Fatalf("stderr %q", errb.String())
+	}
+}
