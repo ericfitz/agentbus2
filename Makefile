@@ -1,6 +1,6 @@
 .PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates check-gates-selftest verify
 export CGO_ENABLED=0
-PKGS_UNIT = $$(go list ./... | grep -v '/internal/conformance')
+PKGS_UNIT = $$(go list ./... | grep -v '^github.com/ericfitz/agentbus2/internal/conformance')
 
 build:       ## Build the agentbus2 binary (no cgo), as the release build will
 	go build -trimpath -o agentbus2 .

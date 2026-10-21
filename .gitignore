@@ -7,7 +7,10 @@ HANDOFF.md
 # Code-generator spike: generated output (Eric, 2026-10-20)
 /docs/superpowers/specs/2026-10-19-codegen-spike/*/gen/
 /docs/superpowers/specs/2026-10-19-codegen-spike/*/probes/
-/docs/superpowers/specs/2026-10-19-codegen-spike/logs/
+# logs/go.mod is a tracked sentinel: it makes logs/ its own module so copied generated
+# code under it never joins the root module (go list ./..., go mod tidy).
+/docs/superpowers/specs/2026-10-19-codegen-spike/logs/*
+!/docs/superpowers/specs/2026-10-19-codegen-spike/logs/go.mod
 /docs/superpowers/specs/2026-10-19-codegen-spike/last-run-summary.log
 
 # Agent worktrees created by Claude Code workflows

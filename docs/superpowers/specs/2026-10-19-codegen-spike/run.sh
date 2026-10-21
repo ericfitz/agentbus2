@@ -14,6 +14,9 @@ export CGO_ENABLED=0
 
 rm -rf "$LOGS"
 mkdir -p "$LOGS"
+# Sentinel module (tracked in git): keeps the generated code copied into logs/ below
+# out of the root agentbus2 module, so its go.mod stays tidy after a spike run.
+printf '%s\n' '// Sentinel: keeps spike output in logs/ out of the root agentbus2 module (written by run.sh).' 'module spike-logs' >"$LOGS/go.mod"
 RESULTS=()
 FAIL=0
 
