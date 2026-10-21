@@ -107,7 +107,7 @@ CREATE INDEX messages_fts_subject ON messages USING GIN (fts_subject);
 CREATE INDEX messages_fts_content ON messages USING GIN (fts_content);
 CREATE TABLE message_tags (
   seq BIGINT NOT NULL REFERENCES messages(seq) ON DELETE CASCADE,
-  tag TEXT NOT NULL,
+  tag TEXT COLLATE "C" NOT NULL,
   PRIMARY KEY (seq, tag)
 );
 CREATE INDEX message_tags_tag_seq ON message_tags(tag, seq);
