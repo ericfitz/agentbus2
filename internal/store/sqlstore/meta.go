@@ -4,9 +4,48 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/ericfitz/agentbus2/internal/store"
 )
+
+// resetDataTables is the ResetData order: messages first (explicitly, so the
+// SQLite messages_ad trigger fires and keeps messages_fts in step), then the
+// parents whose cascades remove the rest. Foreign keys are on for both
+// engines (sqlite.DSN sets foreign_keys(1)). Port of the table wipe in v1
+// internal/bus/admin.go Reset, re-scoped to data (Milestone 5 item 1).
+var resetDataTables = []string{
+	"notices", "messages", "channels", "subscriptions", "tag_subscriptions",
+	"sessions", "memory_access", "receipts",
+}
+
+// ResetData: see store.Meta.
+func (t *tx) ResetData(ctx context.Context) error {
+	if err := t.writable(); err != nil {
+		return err
+	}
+	for _, table := range resetDataTables {
+		if _, err := t.execW(ctx, "DELETE FROM "+table); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ResetRegistry: see store.Meta.
+func (t *tx) ResetRegistry(ctx context.Context, keep string) error {
+	if err := t.writable(); err != nil {
+		return err
+	}
+	if err := store.TextRule(keep); err != nil {
+		return fmt.Errorf("%w: keep identity %q %s", store.ErrInvalid, keep, err)
+	}
+	if _, err := t.execW(ctx, "DELETE FROM identities WHERE name <> ?", keep); err != nil {
+		return err
+	}
+	_, err := t.execW(ctx, "DELETE FROM enrollment_tokens")
+	return err
+}
 
 // NextSeq allocates the next message sequence number (Decision 27). The
 // read-only guard precedes the append check.

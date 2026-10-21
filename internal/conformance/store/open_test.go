@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -38,9 +39,10 @@ func otherEngine(e dbtest.Engine) string {
 
 func TestOpenEmptyCreatesSchema(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		latest := len(migrationsFor(e))
 		s, reopen, rawDSN := openStore(t, e, sqlstore.Options{})
-		if got := schemaVersion(t, s); got != 1 {
-			t.Fatalf("SchemaVersion = %d, want 1", got)
+		if got := schemaVersion(t, s); got != latest {
+			t.Fatalf("SchemaVersion = %d, want %d", got, latest)
 		}
 		if string(s.Engine()) != e.Name {
 			t.Fatalf("Engine = %q, want %q", s.Engine(), e.Name)
@@ -78,8 +80,8 @@ func TestOpenEmptyCreatesSchema(t *testing.T) {
 		if err != nil {
 			t.Fatalf("second Open: %v", err)
 		}
-		if got := schemaVersion(t, s2); got != 1 {
-			t.Fatalf("second SchemaVersion = %d", got)
+		if got := schemaVersion(t, s2); got != latest {
+			t.Fatalf("second SchemaVersion = %d, want %d", got, latest)
 		}
 		if got := scalar[int64](t, db, "SELECT created_at FROM schema_meta"); got != fixedNow {
 			t.Fatalf("created_at after reopen = %d, want %d", got, fixedNow)
@@ -147,7 +149,8 @@ func TestOpenRefusesNewerVersion(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		s, reopen, rawDSN := openStore(t, e, sqlstore.Options{})
 		_ = s.Close()
-		execAll(t, rawDB(t, e, rawDSN), "UPDATE schema_meta SET schema_version = 2")
+		latest := len(migrationsFor(e))
+		execAll(t, rawDB(t, e, rawDSN), fmt.Sprintf("UPDATE schema_meta SET schema_version = %d", latest+1))
 		_, err := reopen(sqlstore.Options{})
 		if !errors.Is(err, ab2store.ErrUpgradeNeeded) {
 			t.Fatalf("err = %v, want ErrUpgradeNeeded", err)
@@ -164,55 +167,57 @@ func TestOpenMigratesOlderVersion(t *testing.T) {
 		_ = s.Close()
 		db := rawDB(t, e, rawDSN)
 
-		opts := sqlstore.Options{Migrations: append(migrationsFor(e), openStep(2, probeDDL, false))}
+		latest := len(migrationsFor(e))
+		opts := sqlstore.Options{Migrations: append(migrationsFor(e), openStep(latest+1, probeDDL, false))}
 		s2, err := reopen(opts)
 		if err != nil {
-			t.Fatalf("Open with step 2: %v", err)
+			t.Fatalf("Open with step %d: %v", latest+1, err)
 		}
-		if got := schemaVersion(t, s2); got != 2 {
-			t.Fatalf("SchemaVersion = %d, want 2", got)
+		if got := schemaVersion(t, s2); got != latest+1 {
+			t.Fatalf("SchemaVersion = %d, want %d", got, latest+1)
 		}
 		if got := tableCount(t, e, db, "probe"); got != 1 {
 			t.Fatalf("probe tables = %d", got)
 		}
 		_ = s2.Close()
 
-		// Second run with the same set changes nothing (a re-run of step 2 would fail: probe exists).
-		opts.Migrations = append(migrationsFor(e), openStep(2, probeDDL, false))
+		// Second run with the same set changes nothing (a re-run of the probe step would fail: probe exists).
+		opts.Migrations = append(migrationsFor(e), openStep(latest+1, probeDDL, false))
 		s3, err := reopen(opts)
 		if err != nil {
 			t.Fatalf("third Open: %v", err)
 		}
-		if got := schemaVersion(t, s3); got != 2 {
-			t.Fatalf("third open SchemaVersion = %d, want 2", got)
+		if got := schemaVersion(t, s3); got != latest+1 {
+			t.Fatalf("third open SchemaVersion = %d, want %d", got, latest+1)
 		}
 	})
 }
 
 func TestOpenFailedStepLeavesPreviousVersion(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		t.Run("step2", func(t *testing.T) {
+		t.Run("step_past_latest", func(t *testing.T) {
+			latest := len(migrationsFor(e))
 			s, reopen, rawDSN := openStore(t, e, sqlstore.Options{})
 			_ = s.Close()
 			db := rawDB(t, e, rawDSN)
 
-			failing := sqlstore.Options{Migrations: append(migrationsFor(e), openStep(2, probeDDL, true))}
+			failing := sqlstore.Options{Migrations: append(migrationsFor(e), openStep(latest+1, probeDDL, true))}
 			if _, err := reopen(failing); err == nil {
 				t.Fatal("Open with a failing step succeeded")
 			}
-			if got := scalar[int](t, db, "SELECT schema_version FROM schema_meta"); got != 1 {
-				t.Fatalf("schema_version = %d, want 1", got)
+			if got := scalar[int](t, db, "SELECT schema_version FROM schema_meta"); got != latest {
+				t.Fatalf("schema_version = %d, want %d", got, latest)
 			}
 			if got := tableCount(t, e, db, "probe"); got != 0 {
 				t.Fatal("probe survived a rolled back step")
 			}
-			working := sqlstore.Options{Migrations: append(migrationsFor(e), openStep(2, probeDDL, false))}
+			working := sqlstore.Options{Migrations: append(migrationsFor(e), openStep(latest+1, probeDDL, false))}
 			s2, err := reopen(working)
 			if err != nil {
 				t.Fatalf("retry Open: %v", err)
 			}
-			if got := schemaVersion(t, s2); got != 2 {
-				t.Fatalf("after retry SchemaVersion = %d, want 2", got)
+			if got := schemaVersion(t, s2); got != latest+1 {
+				t.Fatalf("after retry SchemaVersion = %d, want %d", got, latest+1)
 			}
 		})
 		t.Run("step1_on_fresh_database", func(t *testing.T) {
@@ -238,8 +243,8 @@ func TestOpenFailedStepLeavesPreviousVersion(t *testing.T) {
 			if err != nil {
 				t.Fatalf("recovery Open: %v", err)
 			}
-			if got := schemaVersion(t, s); got != 1 {
-				t.Fatalf("SchemaVersion = %d, want 1", got)
+			if got := schemaVersion(t, s); got != len(migrationsFor(e)) {
+				t.Fatalf("SchemaVersion = %d, want %d", got, len(migrationsFor(e)))
 			}
 			if got := tableCount(t, e, db, "seq_counter"); got != 1 {
 				t.Fatal("version 1 tables missing after recovery")
@@ -260,12 +265,13 @@ func TestOpenRejectsInvalidMeta(t *testing.T) {
 				t.Fatalf("engine %q: err = %v, want ErrSchemaInvalid", bad, err)
 			}
 		}
+		latest := len(migrationsFor(e))
 		execAll(t, db, "UPDATE schema_meta SET engine = '"+e.Name+"', schema_version = -1")
 		if _, err := reopen(sqlstore.Options{}); !errors.Is(err, ab2store.ErrSchemaInvalid) {
 			t.Fatalf("version -1: err = %v, want ErrSchemaInvalid", err)
 		}
-		execAll(t, db, "UPDATE schema_meta SET schema_version = 1")
-		gap := sqlstore.Options{Migrations: append(migrationsFor(e), openStep(3, "SELECT 1", false))}
+		execAll(t, db, fmt.Sprintf("UPDATE schema_meta SET schema_version = %d", latest))
+		gap := sqlstore.Options{Migrations: append(migrationsFor(e), openStep(latest+2, "SELECT 1", false))}
 		if _, err := reopen(gap); !errors.Is(err, ab2store.ErrSchemaInvalid) {
 			t.Fatalf("gap in set: err = %v, want ErrSchemaInvalid", err)
 		}
@@ -304,8 +310,43 @@ func TestOpenConcurrentEmpty(t *testing.T) {
 		if got := scalar[int](t, db, "SELECT count(*) FROM schema_meta"); got != 1 {
 			t.Fatalf("schema_meta rows = %d, want 1", got)
 		}
-		if got := scalar[int](t, db, "SELECT schema_version FROM schema_meta"); got != 1 {
-			t.Fatalf("schema_version = %d, want 1", got)
+		if got := scalar[int](t, db, "SELECT schema_version FROM schema_meta"); got != len(migrationsFor(e)) {
+			t.Fatalf("schema_version = %d, want %d", got, len(migrationsFor(e)))
+		}
+	})
+}
+
+// TestOpenMigratesVersion1Database opens a database at version 1 (the set cut
+// to its first step), which has neither auth table, then reopens with the full
+// set.
+func TestOpenMigratesVersion1Database(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		full := migrationsFor(e)
+		s, reopen, rawDSN := openStore(t, e, sqlstore.Options{Migrations: full[:1]})
+		db := rawDB(t, e, rawDSN)
+		if got := schemaVersion(t, s); got != 1 {
+			t.Fatalf("SchemaVersion = %d, want 1", got)
+		}
+		for _, tbl := range []string{"enrollment_tokens", "signing_keys"} {
+			if got := tableCount(t, e, db, tbl); got != 0 {
+				t.Fatalf("%s tables at version 1 = %d, want 0", tbl, got)
+			}
+		}
+		_ = s.Close()
+		for i := range 2 { // the second reopen changes nothing
+			s2, err := reopen(sqlstore.Options{})
+			if err != nil {
+				t.Fatalf("reopen %d: %v", i, err)
+			}
+			if got := schemaVersion(t, s2); got != len(full) {
+				t.Fatalf("SchemaVersion = %d, want %d", got, len(full))
+			}
+			for _, tbl := range []string{"enrollment_tokens", "signing_keys"} {
+				if got := tableCount(t, e, db, tbl); got != 1 {
+					t.Fatalf("%s tables = %d, want 1", tbl, got)
+				}
+			}
+			_ = s2.Close()
 		}
 	})
 }

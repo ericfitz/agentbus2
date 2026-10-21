@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/dbtest"
@@ -32,6 +33,13 @@ func TestStoreImplementsEveryAggregate(t *testing.T) {
 				call func() error
 			}{
 				{"MaxSeq", func() error { _, err := tx.MaxSeq(ctx); return err }},
+				{"ListEnrollmentTokens", func() error { _, err := tx.ListEnrollmentTokens(ctx); return err }},
+				{"SigningKey", func() error {
+					if _, err := tx.SigningKey(ctx); !errors.Is(err, ab2store.ErrNotFound) {
+						return err // an empty store answers ErrNotFound; nil would be a stub
+					}
+					return nil
+				}},
 				{"ListIdentities", func() error { _, err := tx.ListIdentities(ctx); return err }},
 				{"Receipt", func() error { _, _, err := tx.Receipt(ctx, "nobody", "k", fixedNow); return err }},
 				{"ListChannels", func() error { _, err := tx.ListChannels(ctx); return err }},

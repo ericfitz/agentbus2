@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -101,8 +102,8 @@ func schemaVersion(t *testing.T, s *sqlstore.Store) int {
 func TestOpenEmptyCreatesSchema(t *testing.T) {
 	path := newPath(t)
 	s := mustOpen(t, path, Options{})
-	if got := schemaVersion(t, s); got != 1 {
-		t.Fatalf("SchemaVersion = %d, want 1", got)
+	if got := schemaVersion(t, s); got != len(Migrations()) {
+		t.Fatalf("SchemaVersion = %d, want %d", got, len(Migrations()))
 	}
 	if s.Engine() != store.EngineSQLite {
 		t.Fatalf("Engine = %q", s.Engine())
@@ -181,7 +182,8 @@ func TestOpenRefusesWrongApp(t *testing.T) {
 func TestOpenRefusesNewerVersion(t *testing.T) {
 	path := newPath(t)
 	_ = mustOpen(t, path, Options{}).Close()
-	execAll(t, rawDB(t, path), "UPDATE schema_meta SET schema_version = 2")
+	latest := len(Migrations())
+	execAll(t, rawDB(t, path), fmt.Sprintf("UPDATE schema_meta SET schema_version = %d", latest+1))
 	_, err := openAt(t, path, Options{})
 	if !errors.Is(err, store.ErrUpgradeNeeded) {
 		t.Fatalf("err = %v, want ErrUpgradeNeeded", err)
@@ -195,10 +197,11 @@ func TestOpenMigratesOlderVersion(t *testing.T) {
 	path := newPath(t)
 	_ = mustOpen(t, path, Options{}).Close()
 
-	opts := withSteps(step(2, "CREATE TABLE probe (x INTEGER)", false))
+	latest := len(Migrations())
+	opts := withSteps(step(latest+1, "CREATE TABLE probe (x INTEGER)", false))
 	s := mustOpen(t, path, opts)
-	if got := schemaVersion(t, s); got != 2 {
-		t.Fatalf("SchemaVersion = %d, want 2", got)
+	if got := schemaVersion(t, s); got != latest+1 {
+		t.Fatalf("SchemaVersion = %d, want %d", got, latest+1)
 	}
 	db := rawDB(t, path)
 	if got := scalar[int](t, db, "SELECT count(*) FROM sqlite_master WHERE name = 'probe'"); got != 1 {
@@ -208,8 +211,8 @@ func TestOpenMigratesOlderVersion(t *testing.T) {
 
 	// Second run with the same set changes nothing (a re-run of step 2 would fail: probe exists).
 	s3 := mustOpen(t, path, opts)
-	if got := schemaVersion(t, s3); got != 2 {
-		t.Fatalf("third open SchemaVersion = %d, want 2", got)
+	if got := schemaVersion(t, s3); got != latest+1 {
+		t.Fatalf("third open SchemaVersion = %d, want %d", got, latest+1)
 	}
 }
 
@@ -217,19 +220,20 @@ func TestOpenFailedStepLeavesPreviousVersion(t *testing.T) {
 	path := newPath(t)
 	_ = mustOpen(t, path, Options{}).Close()
 	db := rawDB(t, path)
+	latest := len(Migrations())
 
-	if _, err := openAt(t, path, withSteps(step(2, "CREATE TABLE probe (x INTEGER)", true))); err == nil {
+	if _, err := openAt(t, path, withSteps(step(latest+1, "CREATE TABLE probe (x INTEGER)", true))); err == nil {
 		t.Fatal("Open with a failing step succeeded")
 	}
-	if got := scalar[int](t, db, "SELECT schema_version FROM schema_meta"); got != 1 {
-		t.Fatalf("schema_version = %d, want 1", got)
+	if got := scalar[int](t, db, "SELECT schema_version FROM schema_meta"); got != latest {
+		t.Fatalf("schema_version = %d, want %d", got, latest)
 	}
 	if got := scalar[int](t, db, "SELECT count(*) FROM sqlite_master WHERE name = 'probe'"); got != 0 {
 		t.Fatal("probe survived a rolled back step")
 	}
-	s := mustOpen(t, path, withSteps(step(2, "CREATE TABLE probe (x INTEGER)", false)))
-	if got := schemaVersion(t, s); got != 2 {
-		t.Fatalf("after retry SchemaVersion = %d, want 2", got)
+	s := mustOpen(t, path, withSteps(step(latest+1, "CREATE TABLE probe (x INTEGER)", false)))
+	if got := schemaVersion(t, s); got != latest+1 {
+		t.Fatalf("after retry SchemaVersion = %d, want %d", got, latest+1)
 	}
 }
 
@@ -252,8 +256,8 @@ func TestOpenFailedFirstStepLeavesBootstrap(t *testing.T) {
 	}
 
 	s := mustOpen(t, path, Options{})
-	if got := schemaVersion(t, s); got != 1 {
-		t.Fatalf("SchemaVersion = %d, want 1", got)
+	if got := schemaVersion(t, s); got != len(Migrations()) {
+		t.Fatalf("SchemaVersion = %d, want %d", got, len(Migrations()))
 	}
 	if got := scalar[int](t, db, "SELECT count(*) FROM sqlite_master WHERE name = 'seq_counter'"); got != 1 {
 		t.Fatal("version 1 tables missing after recovery")
@@ -277,8 +281,8 @@ func TestOpenRejectsInvalidMeta(t *testing.T) {
 	if _, err := openAt(t, path, Options{}); !errors.Is(err, store.ErrSchemaInvalid) {
 		t.Fatalf("version -1: err = %v, want ErrSchemaInvalid", err)
 	}
-	execAll(t, db, "UPDATE schema_meta SET schema_version = 1")
-	gap := Options{Store: sqlstore.Options{Migrations: append(Migrations(), step(3, "SELECT 1", false))}}
+	execAll(t, db, fmt.Sprintf("UPDATE schema_meta SET schema_version = %d", len(Migrations())))
+	gap := Options{Store: sqlstore.Options{Migrations: append(Migrations(), step(len(Migrations())+2, "SELECT 1", false))}}
 	if _, err := openAt(t, path, gap); !errors.Is(err, store.ErrSchemaInvalid) {
 		t.Fatalf("gap in set: err = %v, want ErrSchemaInvalid", err)
 	}
@@ -310,7 +314,7 @@ func TestOpenConcurrentEmpty(t *testing.T) {
 	if got := scalar[int](t, db, "SELECT count(*) FROM schema_meta"); got != 1 {
 		t.Fatalf("schema_meta rows = %d, want 1", got)
 	}
-	if got := scalar[int](t, db, "SELECT schema_version FROM schema_meta"); got != 1 {
-		t.Fatalf("schema_version = %d, want 1", got)
+	if got := scalar[int](t, db, "SELECT schema_version FROM schema_meta"); got != len(Migrations()) {
+		t.Fatalf("schema_version = %d, want %d", got, len(Migrations()))
 	}
 }

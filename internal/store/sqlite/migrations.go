@@ -17,7 +17,10 @@ var schemaFS embed.FS
 // (Decision 53). Each step executes its embedded file as one statement list;
 // the files must not contain BEGIN or COMMIT.
 func Migrations() []sqlstore.Migration {
-	return []sqlstore.Migration{{Version: 1, Up: runFile("schema/0001_initial.sql")}}
+	return []sqlstore.Migration{
+		{Version: 1, Up: runFile("schema/0001_initial.sql")},
+		{Version: 2, Up: runFile("schema/0002_auth.sql")},
+	}
 }
 
 func runFile(name string) func(context.Context, *sqlx.Tx) error {

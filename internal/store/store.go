@@ -50,4 +50,6 @@ type Tx interface {
 	Messages
 	Memories
 	Tasks
+	EnrollmentTokens
+	SigningKeys
 }
