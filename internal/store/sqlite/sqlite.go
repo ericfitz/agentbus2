@@ -186,9 +186,28 @@ func (dialect) LockMigrations(context.Context, *sqlx.Tx) error { return nil }
 // LockAppend is a no-op: the immediate transaction already queues appends.
 func (dialect) LockAppend(context.Context, *sqlx.Tx) error { return nil }
 
-// TextSearch arrives in Task 10.
-func (dialect) TextSearch(search.Query) (string, []any, error) {
-	return "", nil, sqlstore.ErrNotImplemented
+// ftsPrefix is appended to a quoted prefix term; FTS5 applies it to the
+// phrase's last token.
+const ftsPrefix = "*"
+
+// TextSearch translates the query to one FTS5 MATCH string: every term quoted
+// with `"` doubled, a prefix term followed by ftsPrefix, joined by spaces
+// (implicit AND). Ported from v1 internal/bus/search.go ftsQuery. Word and
+// phrase terms translate identically.
+func (dialect) TextSearch(q search.Query) (string, []any, error) {
+	if q.Empty() {
+		return "", nil, fmt.Errorf("%w: search query has no searchable terms", store.ErrInvalid)
+	}
+	parts := make([]string, 0, len(q.Terms))
+	for _, t := range q.Terms {
+		s := `"` + strings.ReplaceAll(t.Text, `"`, `""`) + `"`
+		if t.Prefix {
+			s += ftsPrefix
+		}
+		parts = append(parts, s)
+	}
+	return `m.seq IN (SELECT rowid FROM messages_fts WHERE messages_fts MATCH ?)`,
+		[]any{strings.Join(parts, " ")}, nil
 }
 
 // NotifyAppend is the Milestone 7 hook; SQLite has no notification.

@@ -180,9 +180,36 @@ func (dialect) LockAppend(ctx context.Context, tx *sqlx.Tx) error {
 	return err
 }
 
-// TextSearch arrives in Task 10.
-func (dialect) TextSearch(search.Query) (string, []any, error) {
-	return "", nil, sqlstore.ErrNotImplemented
+// SQL fragments of the text-search translation (Decision 51). tsNormalize
+// turns every run of non-alphanumeric characters into one space so the
+// tokens match FTS5's unicode61 tokens; it relies on [[:alnum:]] covering
+// non-ASCII letters, which holds for a UTF-8 database ctype (pending Eric:
+// Gate 0 item 6, documented in Task 12).
+const (
+	tsNormalize = `regexp_replace(?, '[^[:alnum:]]+', ' ', 'g')`
+	tsWord      = `phraseto_tsquery('simple', ` + tsNormalize + `)`
+	// tsPrefix puts the :* prefix marker on the last token only.
+	tsPrefix = `to_tsquery('simple', regexp_replace(phraseto_tsquery('simple', ` + tsNormalize + `)::text, '''$', ''':*'))`
+)
+
+// TextSearch translates the query to an AND of per-term conditions over the
+// per-column tsvectors, so a phrase never spans the subject/content boundary
+// (as in FTS5). Each term's text is bound twice, once per column.
+func (dialect) TextSearch(q search.Query) (string, []any, error) {
+	if q.Empty() {
+		return "", nil, fmt.Errorf("%w: search query has no searchable terms", store.ErrInvalid)
+	}
+	conds := make([]string, 0, len(q.Terms))
+	args := make([]any, 0, 2*len(q.Terms))
+	for _, t := range q.Terms {
+		ts := tsWord
+		if t.Prefix {
+			ts = tsPrefix
+		}
+		conds = append(conds, "(m.fts_subject @@ "+ts+" OR m.fts_content @@ "+ts+")")
+		args = append(args, t.Text, t.Text)
+	}
+	return strings.Join(conds, " AND "), args, nil
 }
 
 // NotifyAppend is the Milestone 7 hook.
