@@ -20,7 +20,7 @@ type api struct {
 	opts    Options
 	version string
 
-	channels  channels.Service  //nolint:unused // Task 6
+	channels  channels.Service
 	sessions  sessions.Service  //nolint:unused // Task 5
 	delivery  delivery.Service  //nolint:unused // Task 5
 	messaging messaging.Service //nolint:unused // Task 7

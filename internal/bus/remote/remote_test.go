@@ -229,7 +229,7 @@ func TestRemoteStubsNameTheirMethod(t *testing.T) {
 		"Subscribe":        func(b *Bus) error { return b.Subscribe(ctx, ab2bus.SubscribeInput{}) },
 		"Unsubscribe":      func(b *Bus) error { return b.Unsubscribe(ctx, ab2bus.UnsubscribeInput{}) },
 		"SubscribeTags":    func(b *Bus) error { return b.SubscribeTags(ctx, ab2bus.TagSubscribeInput{}) },
-		"UnsubscribeTags":  func(b *Bus) error { return b.UnsubscribeTags(ctx, ab2bus.TagSubscribeInput{}) },
+		"UnsubscribeTags":  func(b *Bus) error { return b.UnsubscribeTags(ctx, ab2bus.TagSubscribeInput{Patterns: []string{"a"}}) },
 		"TagSubscriptions": func(b *Bus) error { _, err := b.TagSubscriptions(ctx); return err },
 		"Status":           func(b *Bus) error { _, err := b.Status(ctx); return err },
 		"Send":             func(b *Bus) error { _, err := b.Send(ctx, ab2bus.SendInput{}); return err },
