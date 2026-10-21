@@ -14,18 +14,24 @@
 # unrelated to the release tooling). A tracked file deleted from disk is
 # skipped. It sources the fixture's release/release.sh, not $ROOT's.
 #
-# Nothing leaves the machine and no real secret is read:
+# Nothing leaves the machine and no real secret is read, for tools called by
+# name (release.sh calls every tool by name, see its header):
 #   - gh, codesign, xcrun, komac and git are shell-function stubs, and curl,
 #     wget, ssh, scp, sftp, nc, ncat, telnet, ftp, rsync, gh and komac are also
-#     guard scripts first on PATH, so a child process cannot reach them either;
-#     any call appends to $WORK/guard.log and exits 98, and a run whose
-#     guard.log exists FAILS. git refuses (exit 98) any ssh/http(s)/git URL or
-#     scp-style address; GIT_ALLOW_PROTOCOL=file and a failing GIT_SSH_COMMAND
-#     back that up, and the user's git config is ignored.
+#     guard scripts first on PATH, so a child process calling them by name is
+#     caught too; any call appends to $WORK/guard.log and exits 98, and a run
+#     whose guard.log exists FAILS. git refuses (exit 98) any ssh/http(s)/git
+#     URL or scp-style address; GIT_ALLOW_PROTOCOL=file and a failing
+#     GIT_SSH_COMMAND back that up (`command git` over https fails with
+#     "transport 'https' not allowed"), and the user's git config is ignored.
+#     A tool called by absolute path (/usr/bin/curl) is not caught: there is
+#     no network namespace here.
 #   - every path release.sh reads or writes (REPO_ROOT, PUBKEY, DIST,
 #     SIGNING_KEY, KOMAC_KEY_FILE, TAP_DIR, SCOOP_DIR) must live under $WORK,
 #     else assert_hermetic exits 97 before main runs; the signing key is a
-#     throwaway generated in $WORK and nothing under ~/.keys is touched.
+#     throwaway generated in $WORK and nothing under ~/.keys is touched. The
+#     check is made once, before main: it relies on release.sh assigning these
+#     paths only at source time.
 #   - the only network use is what `go build` already does (module and
 #     toolchain cache) and, on Darwin, the first build of the debian:12 image
 #     for the install check.
@@ -41,7 +47,8 @@
 #
 # Tools: git, go, python3, jq, shasum, OpenSSL 3, ruby, tar, zip where ditto
 # is absent, curl on Linux (the install check), docker on Darwin (the install
-# check runs in a container there), lipo when present.
+# check runs in a container there), lipo when present, pwsh when present (the
+# install.ps1 signature and hash check; without it that check is not run).
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -644,6 +651,41 @@ install_check() {
     stop_server_in "$WORK"
 }
 
+# install_ps1_check <dist>: when pwsh is on PATH, the shipped install.ps1 is
+# dot-sourced (its guard keeps Main from running) and its own Test-Signature
+# and Test-Hash run over a copy of the release files, so its embedded key and
+# its SHA256SUMS parser are proven to agree with sign_sums and write_sums; a
+# tampered SHA256SUMS must be refused. The install itself needs Windows
+# (registry, user PATH, running the .exe): windows.yml and Task 10 cover it.
+# Without pwsh it prints a note line and counts nothing.
+install_ps1_check() {
+    local dist="$1" d="$WORK/ps1check" out rc=0
+    if ! command -v pwsh >/dev/null 2>&1; then
+        echo "note: install-ps1-check not run (no pwsh on PATH)"
+        return
+    fi
+    rm -rf "$d"
+    mkdir -p "$d"
+    cp "$dist/SHA256SUMS" "$dist/SHA256SUMS.sig" "$dist/agentbus2-$TAG-windows-amd64.zip" "$dist/agentbus2-$TAG-windows-arm64.zip" "$d/"
+    # shellcheck disable=SC2016 # PowerShell variables, expanded by pwsh
+    out="$(cd "$d" && PS1_FILE="$dist/install.ps1" OSSL="$OSSL" D="$d" TAG="$TAG" PATH="$WORK/guardbin:$PATH" \
+        POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
+        pwsh -NoProfile -NonInteractive -Command '
+            $ErrorActionPreference = "Stop"
+            . $env:PS1_FILE
+            Test-Signature $env:OSSL $env:D "http://127.0.0.1:9"
+            foreach ($a in "amd64", "arm64") { Test-Hash $env:D "agentbus2-$($env:TAG)-windows-$a.zip" }
+            "ps1-verified"
+            Add-Content -LiteralPath (Join-Path $env:D "SHA256SUMS") -Value "0000000000000000000000000000000000000000000000000000000000000000  extra"
+            try { Test-Signature $env:OSSL $env:D "http://127.0.0.1:9"; "ps1-tamper-accepted" } catch { "ps1-tamper-refused: $_" }
+        ' 2>&1)" || rc=$?
+    if [[ "$rc" == 0 && "$out" == *ps1-verified*"ps1-tamper-refused: agentbus2 install: signature check of SHA256SUMS failed"* ]]; then
+        pass install-ps1-check
+    else
+        bad install-ps1-check "exit $rc: $out"
+    fi
+}
+
 host_archive() { # <dist>: the archive that runs on this host
     case "$(uname -s)" in
         Darwin) echo "$1/agentbus2-$TAG-macos-universal.tar.gz" ;;
@@ -755,6 +797,7 @@ run_a() {
     if [[ "$(tail -n1 "$dist/notes.md")" == "$UNSIGNED_NOTE" ]]; then pass A-notes; else bad A-notes "$(tail -n 3 "$dist/notes.md")"; fi
 
     install_check "$dist"
+    install_ps1_check "$dist"
 }
 
 run_b() {
