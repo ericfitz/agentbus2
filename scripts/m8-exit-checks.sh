@@ -2,18 +2,17 @@
 # Milestone 8 exit evidence.
 #   usage: m8-exit-checks.sh <tui.log>   counts, word check, then import rule
 #          m8-exit-checks.sh --deps-only import rule alone (Docker-free)
-# <tui.log> is a `go test -v -run '^(TestBothModes|TestNoInboxView)$'
-# ./internal/tui/` log. It must exist and be non-empty (exit 2 naming the
+# <tui.log> is a `go test -v -run '^(TestBothModes|TestNoInboxView|TestRunTUI.*)$'
+# ./internal/tui/ ./internal/cli/` log. It must exist and be non-empty (exit 2 naming the
 # path). The script prints modes=<n> (the TestBothModes local and server
 # subtests), noinbox=<n>, cli=<n> (TestRunTUILocalProfile and
 # TestRunTUIServerProfile) and fail=<n> (every --- FAIL line), and exits 1
-# unless fail=0, modes=2 and noinbox=1. cli is printed and not required until
-# Milestone 8 Task 10 adds the TestRunTUI* tests; Task 10 removes this sentence
-# and requires cli=2.
+# unless fail=0, modes=2, noinbox=1 and cli=2.
 #
 # The word check: no non-test Go file under internal/tui may use the words
-# of v1's direct-message and merged-view design (comments included). Test
-# files may spell them when they assert their absence. words_ok=1 when
+# of v1's direct-message and merged-view design (comments included), and
+# neither may internal/cli/tui.go. Test files may spell them when they assert
+# their absence. words_ok=1 when
 # nothing matches; otherwise the matches are printed and the exit is 1.
 #
 # The import rule (spec 2.3, tui --> busif): the direct imports of
@@ -73,11 +72,11 @@ echo "noinbox=$noinbox"
 echo "cli=$cli"
 echo "fail=$fail"
 rc=0
-if [ "$fail" -ne 0 ] || [ "$modes" -ne 2 ] || [ "$noinbox" -ne 1 ]; then
+if [ "$fail" -ne 0 ] || [ "$modes" -ne 2 ] || [ "$noinbox" -ne 1 ] || [ "$cli" -ne 2 ]; then
 	rc=1
 fi
 
-words="$(rg -n -e '\bdm/' -e 'DMPrefix' -e 'DMChannel' -e '(?i)inbox' -e 'IsTaskChannel' -e 'tui_name' --glob '*.go' --glob '!*_test.go' "$ROOT/internal/tui" || true)"
+words="$(rg -n -e '\bdm/' -e 'DMPrefix' -e 'DMChannel' -e '(?i)inbox' -e 'IsTaskChannel' -e 'tui_name' --glob '*.go' --glob '!*_test.go' "$ROOT/internal/tui" "$ROOT/internal/cli/tui.go" || true)"
 if [ -n "$words" ]; then
 	echo "$words"
 	rc=1

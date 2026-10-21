@@ -643,13 +643,17 @@ block_m8_exit_script_fires() {
 	# internal/filelock is named in no forbidden list anywhere: only an
 	# allowlist catches it.
 	m8_deps_probe "$label" internal/tui/probe_m8.go "$m/internal/filelock" "deps_violation=$m/internal/tui imports $m/internal/filelock"
+	# internal/client is the package cli/tui.go uses and tui itself must not.
+	m8_deps_probe "$label" internal/tui/probe_m8.go "$m/internal/client" "deps_violation=$m/internal/tui imports $m/internal/client"
 	: >"$tmp/empty.log"
 	m8_expect "$label" 2 "$tmp/missing.log"
 	m8_expect "$label" 2 "$tmp/empty.log"
 	bash "$wt/scripts/m8-exit-checks.sh" >"$log" 2>&1 || rc=$?
 	[ "$rc" -eq 2 ] || problem "$label" "no argument: exit $rc, expected 2"
-	(cd "$wt" && go test -count=1 -v -run '^(TestBothModes|TestNoInboxView)$' ./internal/tui/ >"$real" 2>&1) || true
-	m8_expect "$label" 0 "$real" modes=2 noinbox=1 fail=0 words_ok=1 deps_ok=1
+	(cd "$wt" && go test -count=1 -v -run '^(TestBothModes|TestNoInboxView|TestRunTUI.*)$' ./internal/tui/ ./internal/cli/ >"$real" 2>&1) || true
+	m8_expect "$label" 0 "$real" modes=2 noinbox=1 cli=2 fail=0 words_ok=1 deps_ok=1
+	sed '/TestRunTUIServerProfile/d' "$real" >"$tmp/b25-m8-cli.log"
+	m8_expect "$label" 1 "$tmp/b25-m8-cli.log" cli=1
 	sed '/TestBothModes\/server/d' "$real" >"$tmp/b25-m8-one.log"
 	m8_expect "$label" 1 "$tmp/b25-m8-one.log" modes=1
 	sed 's/^\(    --- \)PASS\(: TestBothModes\/local\)/\1FAIL\2/' "$real" >"$tmp/b25-m8-fail.log"

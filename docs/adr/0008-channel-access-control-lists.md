@@ -253,3 +253,13 @@ the markers are removed as the decisions land.
   not a pending item.
 - **`channel_creation`** is a setting; `TestRunChannelCreationSwitch` is its
   proof over the wire.
+
+## Milestone 8 addendum (2026-10-21)
+
+The TUI's rail sections are keyed on `Kind` (`bus.KindTasks`, `bus.KindMemory`,
+a followed tag set, else an ordinary channel); nothing in `internal/tui`
+inspects a channel name's prefix. The one synthetic prefix is the rail's own
+`tags:` entry, which never reaches the bus. v1's `shortName`, which stripped
+the `general/`, `memory/` and `tasks/` prefixes from a row, is not ported: rows
+show the full name. A channel whose ACL denies `read` is listed (Decision 94)
+and marked `(no access)`; the TUI does not subscribe to it or read its history.

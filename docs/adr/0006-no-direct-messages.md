@@ -133,3 +133,28 @@ Both resolved on 2026-10-20:
 A per-identity contact channel needs no naming convention: channel names
 have no reserved shapes (Decision 76, ADR 0008), so it is any channel the
 identity creates and whose ACL it controls.
+
+## Milestone 8 addendum (2026-10-21)
+
+`agentbus2 tui` shipped with no inbox view and no session selection: the rail
+has five sections (`channels`, `memories`, `tasks`, `tags`, `sessions`), and
+the `sessions` section is a display-only list, so nothing in the TUI selects a
+session or an identity. `TestNoInboxView` proves it behaviorally (every channel
+the TUI reads is one `ListChannels` listed) and `scripts/m8-exit-checks.sh`
+adds a word check over the production files. The milestone's choices 2 to 6
+(identity and session by Decision 71 with hint `tui`; the Decision 83 watch and
+receive loop; rail sources and sections; the channel create prompt with kinds;
+task editing) are recorded in
+`docs/superpowers/plans/2026-10-21-milestone-8-tui.md`.
+
+Three Claude proposals are pending Eric, each implemented the way the plan
+states and marked `pending Eric: Milestone 8 item N` in code:
+
+1. TUI settings live in a top-level `tui` object of `config.json`
+   (alternative: a separate `tui.json`).
+2. The TUI's identity is Decision 71 as is, with a stderr and health warning
+   when the identity has other live sessions (alternative: fall back to the OS
+   user name, as v1's `tui_name` did).
+3. No resume token is persisted across TUI restarts, so a crashed TUI's next
+   start is `<identity>/tui-2` until retention removes the lapsed row
+   (alternative: persist it, as the MCP server does).

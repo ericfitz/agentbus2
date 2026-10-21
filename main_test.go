@@ -167,13 +167,13 @@ func TestSecondSignalExits(t *testing.T) {
 	}
 }
 
-// The twenty commands: the nineteen cases of cli.Main plus server. Each is in
+// The twenty-one commands: the twenty cases of cli.Main plus server. Each is in
 // the usage line and none is answered as an unknown command.
 func TestUsageListsEveryCommand(t *testing.T) {
 	names := []string{"init", "register", "login", "mcp", "server", "watch", "wait", "stop-hook", "subagent-hook",
-		"session", "channels", "send", "receive", "history", "search", "memories", "tasks", "status", "version", "help"}
-	if len(names) != 20 {
-		t.Fatalf("%d names, want 20", len(names))
+		"session", "channels", "send", "receive", "history", "search", "memories", "tasks", "status", "tui", "version", "help"}
+	if len(names) != 21 {
+		t.Fatalf("%d names, want 21", len(names))
 	}
 	for _, n := range names {
 		if !strings.Contains(strings.TrimSuffix(strings.TrimPrefix(usage, "usage: agentbus2 <"), "> [flags]"), n) {

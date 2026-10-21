@@ -4,7 +4,7 @@ A message bus, shared memory and shared task queue that let multiple agents work
 
 agentbus2 is the successor to [agentbus](https://github.com/ericfitz/agentbus). It is a breaking redesign, not an upgrade: it uses its own binary, data directory, configuration and MCP server name, so it can be installed next to agentbus 1.x without touching 1.x data.
 
-Status: Milestones 6 (client side) and 7 (server deployment) done; `agentbus2 init`, `register`, `mcp`, `watch` and the CLI work against a local profile and a server, a server runs from the Docker image over SQLite or Postgres, and replicas over one Postgres share wakes, maintenance and the assertion replay set; the TUI is Milestone 8 (`internal/tui`).
+Status: Milestone 8 (TUI) done; `agentbus2 tui` runs over the Bus in local and server mode; release tooling is Milestone 9. Milestones 6 (client side) and 7 (server deployment) are done: `agentbus2 init`, `register`, `mcp`, `watch` and the CLI work against a local profile and a server, a server runs from the Docker image over SQLite or Postgres, and replicas over one Postgres share wakes, maintenance and the assertion replay set.
 
 Docker quickstart (details in `docs/ops/deploy.md`):
 
@@ -40,6 +40,10 @@ agentbus2 send -profile lab -identity pat general "hello"
 ```
 
 `watch` and `wait` end with spec section 3.5's exit codes: `wait` exits 0 woke, 1 timeout, 2 error, 3 replaced, 4 harness gone; `watch` never exits 0 or 1. `scripts/m6-exit-checks.sh` and `internal/e2e` prove the section 2.4 sequence and that table against the built binary and a real server.
+
+## Terminal UI
+
+`agentbus2 tui [-profile P] [-identity I]` opens a dashboard for a human: channels in five rail sections, messages with threads, memories, task lists, search and a health overlay. It runs in local and server mode alike and has no inbox view. Keys, settings (themes, icons, rail width) and the differences from v1 are in `docs/tui.md`; press `?` inside for the keymap.
 
 ## Development
 

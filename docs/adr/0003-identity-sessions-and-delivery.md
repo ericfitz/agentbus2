@@ -349,3 +349,16 @@ on 2026-10-21 (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`,
   with a hint (agent type plus a random suffix) only if its prompt asks it to
   use agentbus2, to pass its `session` on every call and never to arm
   `watch` or `wait`.
+
+## Milestone 8 addendum (2026-10-21)
+
+- **Server-assigned names in the TUI.** The TUI renders `Message.Display` (the
+  bare sender when empty) and its own `Session.DisplayName`, and never derives
+  a name itself.
+- **Session lifecycle.** It opens its session with the hint `tui` (so the human
+  is `<identity>/tui`), passes the session id on `Send`, `Receive`, `Watch` and
+  `Close` (the server sets `Display` only when a `Send` names a session),
+  closes on quit, and on `session_lapsed` resumes once with the resume token
+  before treating a second lapse as an error.
+- **Pending item 3** (a Claude proposal, pending Eric): the resume token is not
+  persisted across TUI restarts; see the Milestone 8 addendum of ADR 0006.
