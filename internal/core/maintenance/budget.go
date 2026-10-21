@@ -14,7 +14,7 @@ const capacityKind = "capacity"
 // budget is the SQLite budget in bytes: BudgetOverride (tests), else the
 // setting.
 func (s Service) budget() int64 {
-	if s.BudgetOverride != 0 {
+	if s.BudgetOverride > 0 {
 		return s.BudgetOverride
 	}
 	return int64(s.Cfg.SQLiteBudgetMiB) << 20
