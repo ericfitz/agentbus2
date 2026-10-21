@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"math"
 	"time"
 
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
@@ -84,7 +85,11 @@ func (a *api) Watch(ctx context.Context, req gen.WatchRequestObject) (gen.WatchR
 		IncludeOwn: unptr(req.Params.IncludeOwn),
 	}
 	if t := req.Params.Timeout; t != nil {
-		in.Timeout = time.Duration(float64(*t) * float64(time.Second))
+		d, err := watchTimeout(float64(*t))
+		if err != nil {
+			return nil, err
+		}
+		in.Timeout = d
 	}
 	r, err := a.delivery.Watch(ctx, IdentityFrom(ctx), in)
 	if err != nil {
@@ -114,6 +119,28 @@ func (a *api) ListIdentities(ctx context.Context, _ gen.ListIdentitiesRequestObj
 		out = append(out, g)
 	}
 	return out, nil
+}
+
+// watchTimeout converts the wire's fractional seconds to a Duration without
+// leaving the range a float to int64 conversion defines: that conversion is
+// implementation-defined out of range (arm64 saturates, amd64 gives
+// math.MinInt64), so the same request would be a clamp on one platform and a
+// "negative" validation on the other. NaN and the infinities are validation;
+// anything a Duration cannot hold saturates at its end, where the core clamps
+// the top to the configured cap (Decision 42) and rejects the bottom as
+// negative.
+func watchTimeout(seconds float64) (time.Duration, error) {
+	if math.IsNaN(seconds) || math.IsInf(seconds, 0) {
+		return 0, ab2bus.Errorf(ab2bus.CodeValidation, false, "timeout must be a finite number of seconds")
+	}
+	ns := seconds * float64(time.Second)
+	switch {
+	case ns >= float64(math.MaxInt64):
+		return time.Duration(math.MaxInt64), nil
+	case ns <= float64(math.MinInt64):
+		return time.Duration(math.MinInt64), nil
+	}
+	return time.Duration(ns), nil
 }
 
 // unptr is the pointed-to value, the zero value for nil.

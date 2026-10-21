@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"math"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -105,6 +106,78 @@ func TestWatchTimeoutWire(t *testing.T) {
 	p := readProblem(t, resp)
 	if resp.StatusCode != 400 || p.Code != "validation" {
 		t.Fatalf("timeout=abc: %d %v", resp.StatusCode, p)
+	}
+}
+
+// TestWatchTimeoutRangeWire: a timeout outside what a Duration can hold must
+// be answered the same on every platform. A float to int64 conversion out of
+// range is implementation-defined (arm64 saturates, amd64 gives MinInt64), so
+// NaN and the infinities are validation, anything above the cap is clamped to
+// it (Decision 42) and anything below zero is validation, whatever the CPU.
+// pending Eric: Milestone 4 item 4 (watch timeout as fractional seconds).
+func TestWatchTimeoutRangeWire(t *testing.T) {
+	s := newSessionEnv(t, func(c *core.Config) { c.WatchMaxSeconds = 1 })
+	id := s.session.Id
+	for _, tc := range []struct {
+		query  string
+		status int // 400 is problem+json validation, 204 waited the cap
+	}{
+		{"NaN", 400}, {"Inf", 400}, {"-Inf", 400}, {"infinity", 400},
+		{"-1e300", 400}, {"-1e19", 400},
+		{"1e10", 204}, {"1e19", 204}, {"1e300", 204}, {"9223372036.9", 204},
+	} {
+		start := time.Now()
+		resp := s.raw("pat", newReq(t, "GET", "/v1/sessions/"+id+"/watch?timeout="+tc.query, nil))
+		d := time.Since(start)
+		if resp.StatusCode != tc.status {
+			t.Errorf("timeout=%s: status %d, want %d", tc.query, resp.StatusCode, tc.status)
+			continue
+		}
+		if tc.status == 400 {
+			if p := readProblem(t, resp); p.Code != "validation" {
+				t.Errorf("timeout=%s: code %q, want validation", tc.query, p.Code)
+			}
+			continue
+		}
+		if d < time.Second || d > 1500*time.Millisecond {
+			t.Errorf("timeout=%s took %v, want the 1s cap", tc.query, d)
+		}
+	}
+}
+
+// TestWatchTimeoutConversion pins watchTimeout at the edges of the Duration
+// range, where the float to int64 conversion alone is platform-dependent.
+func TestWatchTimeoutConversion(t *testing.T) {
+	nan, inf := math.NaN(), math.Inf(1)
+	for _, tc := range []struct {
+		sec  float64
+		want time.Duration
+		bad  bool
+	}{
+		{sec: 0, want: 0},
+		{sec: 0.2, want: 200 * time.Millisecond},
+		{sec: 600, want: 600 * time.Second},
+		{sec: -1, want: -time.Second},
+		{sec: 9e9, want: 9_000_000_000 * time.Second},
+		{sec: 9223372036.9, want: math.MaxInt64},
+		{sec: 1e19, want: math.MaxInt64},
+		{sec: math.MaxFloat64, want: math.MaxInt64},
+		{sec: -9223372036.9, want: math.MinInt64},
+		{sec: -math.MaxFloat64, want: math.MinInt64},
+		{sec: nan, bad: true},
+		{sec: inf, bad: true},
+		{sec: -inf, bad: true},
+	} {
+		got, err := watchTimeout(tc.sec)
+		if tc.bad {
+			if ab2bus.CodeOf(err) != ab2bus.CodeValidation {
+				t.Errorf("watchTimeout(%v) = %v, %v; want validation", tc.sec, got, err)
+			}
+			continue
+		}
+		if err != nil || got != tc.want {
+			t.Errorf("watchTimeout(%v) = %v, %v; want %v", tc.sec, got, err, tc.want)
+		}
 	}
 }
 
