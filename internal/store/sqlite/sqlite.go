@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand/v2"
 	"net/url"
 	"path/filepath"
 	"strings"
@@ -79,6 +80,14 @@ func Open(ctx context.Context, path string, opts Options) (store.Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	busy := opts.BusyTimeout
+	if busy <= 0 {
+		busy = defaultBusy
+	}
+	if err := pingBusy(ctx, db, busy); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	so := opts.Store
 	if so.Migrations == nil {
 		so.Migrations = Migrations()
@@ -88,6 +97,27 @@ func Open(ctx context.Context, path string, opts Options) (store.Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// pingBusy opens the first connection, retrying SQLITE_BUSY for up to busy.
+// The connection's journal_mode(WAL) pragma runs while the connection is
+// being opened, and on a brand-new file two openers racing to switch the mode
+// get SQLITE_BUSY at once instead of waiting on the busy handler. Once the
+// file is in WAL mode the pragma is a no-op, so only this first connection
+// can race.
+func pingBusy(ctx context.Context, db *sqlx.DB, busy time.Duration) error {
+	deadline := time.Now().Add(busy)
+	for {
+		err := db.PingContext(ctx)
+		if err == nil || !(dialect{}).IsRetryable(err) || !time.Now().Before(deadline) {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(time.Duration(5+rand.IntN(15)) * time.Millisecond):
+		}
+	}
 }
 
 // dialect is the SQLite sqlstore.Dialect.

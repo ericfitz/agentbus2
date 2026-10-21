@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 
@@ -65,7 +66,13 @@ func (s *Store) run(ctx context.Context, k kind, fn func(context.Context, store.
 		if ctx.Err() != nil || !s.d.IsRetryable(err) {
 			return err
 		}
-		// Backoff between attempts is Postgres' (Decision 69, Task 3).
+		if attempt < attempts {
+			if b, ok := s.d.(Backoffer); ok {
+				if err := sleep(ctx, b.Backoff(attempt)); err != nil {
+					return err
+				}
+			}
+		}
 	}
 	return fmt.Errorf("%w: %v", store.ErrRetryable, err)
 }
@@ -95,4 +102,19 @@ func (s *Store) once(ctx context.Context, k kind, fn func(context.Context, store
 		return err
 	}
 	return sx.Commit()
+}
+
+// sleep waits d or until ctx is done, returning the context error.
+func sleep(ctx context.Context, d time.Duration) error {
+	if d <= 0 {
+		return ctx.Err()
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-t.C:
+		return nil
+	}
 }

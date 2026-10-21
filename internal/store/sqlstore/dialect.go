@@ -2,6 +2,7 @@ package sqlstore
 
 import (
 	"context"
+	"time"
 
 	"github.com/jmoiron/sqlx"
 
@@ -32,6 +33,13 @@ type Dialect interface {
 	TextSearch(q search.Query) (cond string, args []any, err error)
 	// NotifyAppend is the Milestone 7 hook; a no-op now.
 	NotifyAppend(ctx context.Context, tx *sqlx.Tx, channelID int64, seq int64) error
+}
+
+// Backoffer is an optional Dialect extension: the wait before retry
+// attempt+1 after attempt (counting from 1) failed with a retryable error
+// (Decision 69's jittered backoff; Postgres only).
+type Backoffer interface {
+	Backoff(attempt int) time.Duration
 }
 
 // Migration is one schema step; Version is the version reached by running Up.
