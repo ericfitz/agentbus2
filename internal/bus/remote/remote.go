@@ -12,10 +12,14 @@ import (
 )
 
 // Bus is the remote implementation of ab2bus.Bus over the generated client.
-// Names (channels, sessions) go to the generated client as given: there is
-// no client-side path-parameter rule (Decision 80), with the one exception of
-// UnsubscribeTags for an empty {patterns} segment (channels.go; pending Eric:
-// Milestone 4 item 5).
+// Names (channels, sessions, tag patterns) go to the generated client as
+// given: there is no client-side path-parameter rule (Decision 80), with three
+// exceptions, each for exactly the inputs that encode to an empty path
+// segment (the router's 404 not_found where the core answers validation):
+// Send with an empty channel (messages.go), Close with an empty session id
+// (sessions.go) and UnsubscribeTags with an empty pattern set (channels.go).
+// pending Eric: Milestone 4 item 6 (A: keep the three guards; B: the core
+// answers not_found for the empty name on these paths and the guards go).
 type Bus struct{ c *gen.ClientWithResponses }
 
 // New wraps a generated client.
@@ -67,6 +71,12 @@ func errorOf(ctx context.Context, status int, p *gen.Problem, body []byte, err e
 		excerpt = excerpt[:maxBodyExcerpt]
 	}
 	return &ab2bus.Error{Code: ab2bus.CodeInternal, Message: ab2bus.TruncateErrorMessage(fmt.Sprintf("HTTP %d: %s", status, excerpt)), Retryable: false}
+}
+
+// unparsable is a 2xx whose body did not parse as the documented shape:
+// internal and not retryable (the server did act, so a retry could repeat it).
+func unparsable(status int) error {
+	return &ab2bus.Error{Code: ab2bus.CodeInternal, Message: fmt.Sprintf("HTTP %d: response body is not the documented shape", status), Retryable: false}
 }
 
 // key maps an idempotency key to the optional header: "" omits it.

@@ -10,10 +10,6 @@ import (
 // Channel, ACL and subscription methods. Every channel name goes to the
 // generated client as given (choice 17); the generated client escapes it.
 
-func malformed(what string) error {
-	return &ab2bus.Error{Code: ab2bus.CodeInternal, Message: "malformed " + what + " response"}
-}
-
 func (b *Bus) ListChannels(ctx context.Context) ([]ab2bus.Channel, error) {
 	r, err := b.c.ListChannelsWithResponse(ctx)
 	if err != nil {
@@ -23,7 +19,7 @@ func (b *Bus) ListChannels(ctx context.Context) ([]ab2bus.Channel, error) {
 		return nil, err
 	}
 	if r.JSON200 == nil {
-		return nil, malformed("ListChannels")
+		return nil, unparsable(r.StatusCode())
 	}
 	out := make([]ab2bus.Channel, len(*r.JSON200))
 	for i, c := range *r.JSON200 {
@@ -53,7 +49,7 @@ func (b *Bus) CreateChannel(ctx context.Context, in ab2bus.CreateChannelInput) (
 		return ab2bus.ChannelInfo{}, err
 	}
 	if r.JSON201 == nil {
-		return ab2bus.ChannelInfo{}, malformed("CreateChannel")
+		return ab2bus.ChannelInfo{}, unparsable(r.StatusCode())
 	}
 	return fromGenChannelInfo(*r.JSON201), nil
 }
@@ -91,7 +87,7 @@ func (b *Bus) ACL(ctx context.Context, channel string) ([]ab2bus.ACLEntry, error
 		return nil, err
 	}
 	if r.JSON200 == nil {
-		return nil, malformed("ACL")
+		return nil, unparsable(r.StatusCode())
 	}
 	out := make([]ab2bus.ACLEntry, len(*r.JSON200))
 	for i, e := range *r.JSON200 {
@@ -143,17 +139,17 @@ func (b *Bus) SubscribeTags(ctx context.Context, in ab2bus.TagSubscribeInput) er
 }
 
 func (b *Bus) UnsubscribeTags(ctx context.Context, in ab2bus.TagSubscribeInput) error {
-	// pending Eric: Milestone 4 item 5 (reopened for {patterns}: the empty set
-	// is validation in the core, a router 404 on the wire). The set is one
-	// path segment, so no pattern and one empty pattern both encode to the
-	// empty segment, which no route matches. This is the narrowest guard that
-	// makes the transports agree (a departure from Decision 80, reported to
-	// the integrator): it fires for exactly those two inputs, sends nothing,
-	// and answers what the core answers; every other input goes to the wire
-	// as given (choice 17). Open, not guarded: a comma inside one pattern
-	// splits the segment into two patterns on the wire (the core rejects the
-	// pattern); only a client-side pattern rule or a different encoding could
-	// close it, so it is reported to the integrator instead.
+	// pending Eric: Milestone 4 item 6 (the empty set is validation in the
+	// core, a router 404 on the wire). The set is one path segment, so no
+	// pattern and one empty pattern both encode to the empty segment, which
+	// no route matches. This is the narrowest guard that makes the transports
+	// agree (a departure from Decision 80): it fires for exactly those two
+	// inputs, sends nothing, and answers what the core answers; every other
+	// input goes to the wire as given (choice 17). Not guarded, also item 6:
+	// a comma inside one pattern splits the segment into two patterns on the
+	// wire where the core rejects the pattern (TestUnsubscribeTagsCommaSplitsOnTheWire
+	// pins it); only a client-side pattern rule (Decision 80 forbids it) or a
+	// different wire encoding (option C) could close it.
 	if len(in.Patterns) == 0 || (len(in.Patterns) == 1 && in.Patterns[0] == "") {
 		return &ab2bus.Error{Code: ab2bus.CodeValidation, Message: "a tag subscription needs at least one pattern"}
 	}
@@ -173,7 +169,7 @@ func (b *Bus) TagSubscriptions(ctx context.Context) ([][]string, error) {
 		return nil, err
 	}
 	if r.JSON200 == nil {
-		return nil, malformed("TagSubscriptions")
+		return nil, unparsable(r.StatusCode())
 	}
 	return *r.JSON200, nil
 }

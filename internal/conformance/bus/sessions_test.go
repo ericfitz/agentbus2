@@ -537,6 +537,7 @@ func TestSessionIdentitiesListsLive(t *testing.T) {
 // and Watch look the session up and find none (not_found). On the wire the id
 // is an empty path segment, the router's 404, so the remote Bus judges Close
 // itself (as for Send's empty channel); the other two agree without a guard.
+// pending Eric: Milestone 4 item 6
 func TestEmptySessionIDAgreesAcrossTransports(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})

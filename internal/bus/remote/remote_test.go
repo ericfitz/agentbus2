@@ -207,12 +207,13 @@ func TestRemoteConvertRoundTrips(t *testing.T) {
 	}
 }
 
-// TestUnsubscribeTagsEmptyPathSegment pins the one client-side rule of the
-// remote Bus (pending Eric: Milestone 4 item 5, reopened for {patterns}): the
-// set travels as one path segment, and an empty segment is the router's 404
-// on the wire where the core answers validation. The guard fires for exactly
-// the inputs that would encode to an empty segment and sends no request; every
-// other input, bad or not, goes to the wire and is judged by the core.
+// TestUnsubscribeTagsEmptyPathSegment pins the UnsubscribeTags guard, one of
+// the three client-side guards of the remote Bus: the set travels as one path
+// segment, and an empty segment is the router's 404 on the wire where the
+// core answers validation. The guard fires for exactly the inputs that would
+// encode to an empty segment and sends no request; every other input, bad or
+// not, goes to the wire and is judged by the core.
+// pending Eric: Milestone 4 item 6
 func TestUnsubscribeTagsEmptyPathSegment(t *testing.T) {
 	ctx := context.Background()
 	for name, patterns := range map[string][]string{

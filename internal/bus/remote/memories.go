@@ -25,7 +25,7 @@ func mtCheck[R mtResponse](ctx context.Context, r R, err error, ok func(R) bool)
 		return e
 	}
 	if !ok(r) {
-		return &ab2bus.Error{Code: ab2bus.CodeInternal, Message: "unexpected success response", Retryable: false}
+		return unparsable(r.StatusCode())
 	}
 	return nil
 }

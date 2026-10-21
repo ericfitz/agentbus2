@@ -9,6 +9,9 @@ import (
 	"sync"
 	"testing"
 
+	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/bus/local"
+	"github.com/ericfitz/agentbus2/internal/bus/remote"
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -258,5 +261,46 @@ func TestTagSubscriptionsWire(t *testing.T) {
 	resp = e.raw("pat", jsonPost(t, "/v1/tag-subscriptions", `{"patterns":["Bad Tag!"]}`))
 	if p := readProblem(t, resp); resp.StatusCode != 400 || p.Code != gen.ProblemCode("validation") {
 		t.Fatalf("bad pattern: %d %+v", resp.StatusCode, p)
+	}
+}
+
+// TestUnsubscribeTagsCommaSplitsOnTheWire pins the one divergence of the
+// {patterns} path array that no guard closes (pending Eric: Milestone 4 item
+// 6, option C): a comma inside one pattern is the array separator of the
+// simple-style segment, so the remote Bus's ["a,b"] reaches the core as
+// ["a", "b"] and removes that set, where the local Bus hands the core the one
+// pattern "a,b" and gets validation (the tag rule refuses the comma).
+// pending Eric: Milestone 4 item 6
+func TestUnsubscribeTagsCommaSplitsOnTheWire(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	e.identity("pat", false)
+	ctx := context.Background()
+	in := ab2bus.TagSubscribeInput{Patterns: []string{"a,b"}}
+	sets := func(b ab2bus.Bus) [][]string {
+		t.Helper()
+		got, err := b.TagSubscriptions(ctx)
+		if err != nil {
+			t.Fatalf("TagSubscriptions: %v", err)
+		}
+		return got
+	}
+
+	lb := local.New(e.core, "pat")
+	if err := lb.SubscribeTags(ctx, ab2bus.TagSubscribeInput{Patterns: []string{"a", "b"}}); err != nil {
+		t.Fatalf("SubscribeTags: %v", err)
+	}
+	if err := lb.UnsubscribeTags(ctx, in); ab2bus.CodeOf(err) != ab2bus.CodeValidation {
+		t.Fatalf("local UnsubscribeTags %v = %v, want validation", in.Patterns, err)
+	}
+	if got, want := sets(lb), [][]string{{"a", "b"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("after local: %v, want %v", got, want)
+	}
+
+	rb := remote.New(e.client("pat"))
+	if err := rb.UnsubscribeTags(ctx, in); err != nil {
+		t.Fatalf("remote UnsubscribeTags %v = %v, want nil (split into [a b])", in.Patterns, err)
+	}
+	if got := sets(rb); len(got) != 0 {
+		t.Fatalf("after remote: %v, want the [a b] set removed", got)
 	}
 }

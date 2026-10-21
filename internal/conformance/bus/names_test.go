@@ -90,8 +90,10 @@ func TestChannelNameRoundTripsOnTheWire(t *testing.T) {
 				if err := pat.DeleteChannel(ctx, ab2bus.DeleteChannelInput{Name: name}); ab2bus.CodeOf(err) != ab2bus.CodeNotFound {
 					t.Errorf("DeleteChannel = %v, want not_found", err)
 				}
-				// Send names the channel in the body, not the path: an empty
-				// name is the core's required-field validation on both transports.
+				// Send names the channel in the path too, but an empty name is
+				// the core's required-field validation; on the wire the empty
+				// segment would be the router's 404, so the remote Bus answers
+				// validation itself (pending Eric: Milestone 4 item 6).
 				wantSend := ab2bus.CodeNotFound
 				if name == "" {
 					wantSend = ab2bus.CodeValidation

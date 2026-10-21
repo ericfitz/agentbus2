@@ -222,13 +222,30 @@ the source (`rg -n 'pending Eric: Milestone 4' internal/`).
 - **Former item 5 (withdrawn in the plan; client-side path-parameter rule).**
   The probe showed no client-side rule is needed for names containing `/`
   (Decision 80 stands for them): they travel as one escaped segment and the
-  core judges them. Three narrow client-side guards exist anyway, all
-  departures from Decision 80 reported by their tasks and marked in the
-  source: `Send` with an empty channel and `Close` with an empty session id
-  (the core answers `validation`, the wire's
-  empty segment answers 404) and `UnsubscribeTags` with an empty pattern set
-  (same cause); a comma inside one pattern still splits the `{patterns}`
-  segment into two patterns on the wire and is not guarded.
+  core judges them. The number 5 stays withdrawn.
+- **Pending item 6 (the empty-name guards; Claude proposal, pending Eric).**
+  The plan's empty-name contingency (Task dependencies) fired: for three
+  inputs the core answers `validation` while the wire's empty path segment is
+  the router's 404 `not_found`, so the remote `Bus` judges exactly those
+  inputs itself and sends nothing: `Send` with an empty channel
+  (`internal/bus/remote/messages.go`), `Close` with an empty session id
+  (`sessions.go`) and `UnsubscribeTags` with no pattern or one empty pattern
+  (`channels.go`). Each is a departure from Decision 80 limited to the input
+  that encodes to the empty segment. Tests:
+  `TestSendEmptyChannelIsValidationWithoutARequest`,
+  `TestUnsubscribeTagsEmptyPathSegment`, `TestSessionOddIdsOnRemote`,
+  `TestEmptySessionIDAgreesAcrossTransports`. A related divergence is not
+  guarded: a comma inside one `UnsubscribeTags` pattern is the separator of
+  the simple-style `{patterns}` array, so the remote `Bus`'s `["a,b"]`
+  reaches the core as `["a", "b"]` (and removes that set) where the local
+  `Bus` answers `validation` (test `TestUnsubscribeTagsCommaSplitsOnTheWire`).
+  Options: A (recommended, in effect): keep the three narrow guards and
+  accept the comma divergence until the wire changes; B: the core answers
+  `not_found` for the empty name on these three paths and the guards go;
+  C (in addition to A or B, for the comma): `unsubscribeTags` takes the
+  patterns in a body or query instead of the path segment (a change to
+  choice 1's operation table). Marker: `pending Eric: Milestone 4 item 6`
+  on each guard and each test.
 - **Choice 14 limitation.** `agentbus2 server` uses `notify.NewMemory()`
   (Decision 52); two server processes over one SQLite file are unsupported
   (each misses the other's hints; a watch still ends at its timeout). The

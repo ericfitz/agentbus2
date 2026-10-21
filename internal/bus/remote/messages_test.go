@@ -2,6 +2,7 @@ package remote
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -18,7 +19,7 @@ const notFoundProblem = `{"type":"about:blank","title":"Not Found","status":404,
 // core Send answers validation for Channel "", while the wire's empty path
 // segment is the router's 404 not_found, so the remote Bus answers validation
 // itself and sends nothing.
-// pending Eric: Milestone 4 item N (A: keep the guard; B: core answers
+// pending Eric: Milestone 4 item 6 (A: keep the guard; B: core answers
 // not_found for an empty channel and the guard goes).
 func TestSendEmptyChannelIsValidationWithoutARequest(t *testing.T) {
 	c := &canned{status: 404, ctype: "application/problem+json", body: notFoundProblem}
@@ -120,6 +121,58 @@ func TestTagsQueryEncoding(t *testing.T) {
 			}
 			if raw := q.last(t); !strings.Contains(raw, "tags=a,b%2A") {
 				t.Fatalf("query %q, want tags=a,b%%2A", raw)
+			}
+		})
+	}
+}
+
+// TestUnparsableSuccessIsInternal: a 2xx whose body is not the documented
+// shape is internal and not retryable in every aggregate (a spurious
+// retryable unavailable would make a caller resend a keyless Send).
+func TestUnparsableSuccessIsInternal(t *testing.T) {
+	ctx := context.Background()
+	for name, call := range map[string]func(*Bus) error{
+		"Send": func(b *Bus) error {
+			_, err := b.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "x"})
+			return err
+		},
+		"History": func(b *Bus) error {
+			_, err := b.History(ctx, ab2bus.HistoryInput{Channel: "dev"})
+			return err
+		},
+		"Search": func(b *Bus) error {
+			_, err := b.Search(ctx, ab2bus.SearchInput{Query: "x"})
+			return err
+		},
+		"Open": func(b *Bus) error {
+			_, err := b.Open(ctx, ab2bus.OpenSessionInput{})
+			return err
+		},
+		"ListChannels": func(b *Bus) error {
+			_, err := b.ListChannels(ctx)
+			return err
+		},
+		"GetMemory": func(b *Bus) error {
+			_, err := b.GetMemory(ctx, 1)
+			return err
+		},
+		"GetTask": func(b *Bus) error {
+			_, err := b.GetTask(ctx, 1)
+			return err
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			status := 200
+			if name == "Send" || name == "Open" {
+				status = 201
+			}
+			c := &canned{status: status, ctype: "text/plain", body: "not json"}
+			be := asBusError(t, call(newBus(t, c)))
+			if be.Code != ab2bus.CodeInternal || be.Retryable {
+				t.Fatalf("got %+v, want internal and not retryable", be)
+			}
+			if want := fmt.Sprintf("HTTP %d", status); !strings.Contains(be.Message, want) || !strings.Contains(be.Message, "documented shape") {
+				t.Fatalf("message %q does not name %s and the undocumented shape", be.Message, want)
 			}
 		})
 	}

@@ -20,7 +20,7 @@ func (b *Bus) Status(ctx context.Context) (ab2bus.Status, error) {
 		return ab2bus.Status{}, err
 	}
 	if r.JSON200 == nil {
-		return ab2bus.Status{}, malformed("Status")
+		return ab2bus.Status{}, unparsable(r.StatusCode())
 	}
 	g := *r.JSON200
 	st := ab2bus.Status{

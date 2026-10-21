@@ -2,7 +2,6 @@ package remote
 
 import (
 	"context"
-	"fmt"
 
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/gen"
@@ -10,7 +9,8 @@ import (
 
 // Sessions, receive, watch and identities. Session ids go to the generated
 // client as given (choice 17, Decision 80): the rules stay in the core, so an
-// empty or odd session id is judged by the server, never refused here.
+// odd session id is judged by the server, never refused here; the one
+// exception is Close's empty id (below).
 
 func (b *Bus) Open(ctx context.Context, in ab2bus.OpenSessionInput) (ab2bus.Session, error) {
 	body := gen.OpenSessionJSONRequestBody{Hint: strPtr(in.Hint), ResumeToken: strPtr(in.ResumeToken)}
@@ -29,7 +29,7 @@ func (b *Bus) Open(ctx context.Context, in ab2bus.OpenSessionInput) (ab2bus.Sess
 		return ab2bus.Session{}, err
 	}
 	if r.JSON201 == nil {
-		return ab2bus.Session{}, unparsableSuccess(r.StatusCode())
+		return ab2bus.Session{}, unparsable(r.StatusCode())
 	}
 	s := r.JSON201
 	out := ab2bus.Session{
@@ -49,6 +49,8 @@ func (b *Bus) Open(ctx context.Context, in ab2bus.OpenSessionInput) (ab2bus.Sess
 // it, while the wire's empty path segment is the router's 404 not_found, so the
 // request is not sent (the plan's empty-name contingency, a Decision 80
 // departure limited to the empty id; same as Send's empty channel).
+// pending Eric: Milestone 4 item 6 (A: keep the guard; B: core answers
+// not_found for an empty session id and the guard goes).
 func (b *Bus) Close(ctx context.Context, in ab2bus.CloseSessionInput) error {
 	if in.Session == "" {
 		return ab2bus.Errorf(ab2bus.CodeValidation, false, "session is required")
@@ -76,7 +78,7 @@ func (b *Bus) Receive(ctx context.Context, in ab2bus.ReceiveInput) (ab2bus.Recei
 		return ab2bus.ReceiveResult{}, err
 	}
 	if r.JSON200 == nil {
-		return ab2bus.ReceiveResult{}, unparsableSuccess(r.StatusCode())
+		return ab2bus.ReceiveResult{}, unparsable(r.StatusCode())
 	}
 	w := r.JSON200
 	out := ab2bus.ReceiveResult{
@@ -112,7 +114,7 @@ func (b *Bus) Watch(ctx context.Context, in ab2bus.WatchInput) (ab2bus.WatchResu
 		return ab2bus.WatchResult{}, err
 	}
 	if r.JSON200 == nil {
-		return ab2bus.WatchResult{}, unparsableSuccess(r.StatusCode())
+		return ab2bus.WatchResult{}, unparsable(r.StatusCode())
 	}
 	return ab2bus.WatchResult{Woke: true, Seq: r.JSON200.Seq, Count: r.JSON200.Count, Channels: r.JSON200.Channels}, nil
 }
@@ -126,7 +128,7 @@ func (b *Bus) Identities(ctx context.Context) ([]ab2bus.IdentityInfo, error) {
 		return nil, err
 	}
 	if r.JSON200 == nil {
-		return nil, unparsableSuccess(r.StatusCode())
+		return nil, unparsable(r.StatusCode())
 	}
 	out := make([]ab2bus.IdentityInfo, 0, len(*r.JSON200))
 	for _, i := range *r.JSON200 {
@@ -137,9 +139,4 @@ func (b *Bus) Identities(ctx context.Context) ([]ab2bus.IdentityInfo, error) {
 		out = append(out, info)
 	}
 	return out, nil
-}
-
-// unparsableSuccess is a 2xx whose body did not parse as the documented shape.
-func unparsableSuccess(status int) error {
-	return &ab2bus.Error{Code: ab2bus.CodeInternal, Message: fmt.Sprintf("HTTP %d: response body is not the documented shape", status)}
 }

@@ -454,6 +454,8 @@ func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 	return c.next.RoundTrip(r)
 }
 
+// TestSessionOddIdsOnRemote: odd session ids through the remote Bus.
+// pending Eric: Milestone 4 item 6 (Close's empty-id guard).
 func TestSessionOddIdsOnRemote(t *testing.T) {
 	s := newSessionEnv(t, nil)
 	ct := &countingTransport{next: InProcessTransport(s.handler(), "pat")}

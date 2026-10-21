@@ -13,7 +13,7 @@ import (
 // validation for it, while the wire's empty path segment is the router's 404
 // not_found, so the request is not sent (the plan's empty-name contingency, a
 // Decision 80 departure limited to the empty name).
-// pending Eric: Milestone 4 item N (A: keep the guard; B: core answers
+// pending Eric: Milestone 4 item 6 (A: keep the guard; B: core answers
 // not_found for an empty channel and the guard goes).
 func (b *Bus) Send(ctx context.Context, in ab2bus.SendInput) (ab2bus.SendResult, error) {
 	if in.Channel == "" {
@@ -35,7 +35,7 @@ func (b *Bus) Send(ctx context.Context, in ab2bus.SendInput) (ab2bus.SendResult,
 		return ab2bus.SendResult{}, e
 	}
 	if resp.JSON201 == nil {
-		return ab2bus.SendResult{}, errorOf(ctx, 500, nil, resp.Body, nil)
+		return ab2bus.SendResult{}, unparsable(resp.StatusCode())
 	}
 	return ab2bus.SendResult{Seq: resp.JSON201.Seq, MemoryID: resp.JSON201.MemoryId}, nil
 }
@@ -54,7 +54,7 @@ func (b *Bus) History(ctx context.Context, in ab2bus.HistoryInput) ([]ab2bus.Mes
 		return nil, e
 	}
 	if resp.JSON200 == nil {
-		return nil, errorOf(ctx, 500, nil, resp.Body, nil)
+		return nil, unparsable(resp.StatusCode())
 	}
 	out := make([]ab2bus.Message, len(*resp.JSON200))
 	for i, m := range *resp.JSON200 {
@@ -84,7 +84,7 @@ func (b *Bus) Search(ctx context.Context, in ab2bus.SearchInput) (ab2bus.SearchR
 		return ab2bus.SearchResult{}, e
 	}
 	if resp.JSON200 == nil {
-		return ab2bus.SearchResult{}, errorOf(ctx, 500, nil, resp.Body, nil)
+		return ab2bus.SearchResult{}, unparsable(resp.StatusCode())
 	}
 	out := ab2bus.SearchResult{
 		Next: deref(resp.JSON200.Next), SemanticUnavailable: deref(resp.JSON200.SemanticUnavailable),
