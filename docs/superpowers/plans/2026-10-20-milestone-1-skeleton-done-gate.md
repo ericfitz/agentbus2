@@ -10,6 +10,24 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-19-agentbus2-design.md` (section 10, Milestone 1; sections 5.3, 7 and 8 for the libraries, the generator and the done gate), ADR 0004 (Decisions 28, 50, 53, 54), ADR 0005 (Decisions 31, 32, 33), ADR 0007 (Decision 64, pinning and freshness), and the codegen spike `docs/superpowers/specs/2026-10-19-codegen-spike.md` (need 8, pinning and freshness; `oapi/cfg.yaml` for the generator configuration).
 
+## Task dependencies and parallelism
+
+Tasks with no dependency between them run in parallel in separate worktrees and are cherry-picked onto `main`.
+
+| Task | Depends on |
+| --- | --- |
+| 1 | none |
+| 2 | 1 |
+| 3 | 2 |
+| 4 | 1 |
+| 5 | 4 |
+| 6 | 3, 5 |
+| 7 | 6 |
+| 8 | 7 |
+| 9 | 8 |
+
+Waves: 1; then 2 and 4 in parallel (both touch `go.mod`/`go.sum`; the integrator merges both sets of requirements); then 3 and 5 in parallel (both add a `Makefile` target); then 6, 7, 8, 9 in order.
+
 ## Global Constraints
 
 - Module path `github.com/ericfitz/agentbus2`; `go 1.27`; every build and test runs with `CGO_ENABLED=0` (Decision 53; spec section 5.3).
