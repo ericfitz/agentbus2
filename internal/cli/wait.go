@@ -3,6 +3,7 @@ package cli
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -91,43 +92,44 @@ func RunWait(ctx context.Context, args []string, environ []string, stdin io.Read
 		return code
 	}
 	defer w.stop()
+	if err := waitResuming(w.ctx, w.conn.Bus, w.l, includeOwn, timeout, stdout); err != nil {
+		return exitFail(stderr, cancelCause(w.ctx, err))
+	}
+	return 0
+}
 
-	// The deadline runs across a resume: one timeout for the whole command.
+// waitResuming runs waitOnce under one deadline for the whole command (it runs
+// across a resume) and answers a session_lapsed error with one resume: once
+// per lapse, never twice in a row without a successful Watch in between.
+func waitResuming(ctx context.Context, s bus.Sessions, l located, includeOwn bool, timeout time.Duration, stdout io.Writer) error {
 	var deadline time.Time
 	if timeout > 0 {
 		deadline = time.Now().Add(timeout)
 	}
 	var ok atomic.Bool
-	s := probe{Sessions: w.conn.Bus, ok: &ok}
+	p := probe{Sessions: s, ok: &ok}
 	resumed := false
-	var err error
 	for {
 		remaining := time.Duration(0)
 		if !deadline.IsZero() {
 			if remaining = time.Until(deadline); remaining <= 0 {
-				err = errTimeout
-				break
+				return errTimeout
 			}
 		}
-		err = cancelCause(w.ctx, waitOnce(w.ctx, s, w.l.Session, includeOwn, remaining, stdout))
-		if err == nil || err == errTimeout {
-			break
+		err := cancelCause(ctx, waitOnce(ctx, p, l.Session, includeOwn, remaining, stdout))
+		if err == nil || errors.Is(err, errTimeout) {
+			return err
 		}
 		if ok.Swap(false) {
 			resumed = false
 		}
 		if resumed {
-			break
+			return err
 		}
-		again, rerr := resumeIfLapsed(w.ctx, w.conn.Bus, w.l, err)
+		again, rerr := resumeIfLapsed(ctx, s, l, err)
 		if !again {
-			err = rerr
-			break
+			return rerr
 		}
 		resumed = true
 	}
-	if err == nil {
-		return 0
-	}
-	return exitFail(stderr, cancelCause(w.ctx, err))
 }

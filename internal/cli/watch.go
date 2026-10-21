@@ -158,27 +158,32 @@ func RunWatch(ctx context.Context, args []string, environ []string, stdin io.Rea
 		return code
 	}
 	defer w.stop()
+	return exitFail(stderr, cancelCause(w.ctx, watchResuming(w.ctx, w.conn.Bus, w.l, w.display, includeOwn, stdout)))
+}
 
+// watchResuming runs watchLoop from floor 0 and answers a session_lapsed
+// error with one resume: once per lapse, never twice in a row without a
+// successful Watch in between. It returns watchLoop's final error, read
+// through cancelCause.
+func watchResuming(ctx context.Context, s bus.Sessions, l located, display string, includeOwn bool, stdout io.Writer) error {
 	var ok atomic.Bool
-	s := probe{Sessions: w.conn.Bus, ok: &ok}
+	p := probe{Sessions: s, ok: &ok}
 	var floor int64
 	resumed := false
-	var err error
 	for {
-		floor, err = watchLoop(w.ctx, s, w.l.Session, w.display, floor, includeOwn, stdout)
-		err = cancelCause(w.ctx, err)
+		var err error
+		floor, err = watchLoop(ctx, p, l.Session, display, floor, includeOwn, stdout)
+		err = cancelCause(ctx, err)
 		if ok.Swap(false) {
 			resumed = false
 		}
 		if resumed {
-			break
+			return err
 		}
-		again, rerr := resumeIfLapsed(w.ctx, w.conn.Bus, w.l, err)
+		again, rerr := resumeIfLapsed(ctx, s, l, err)
 		if !again {
-			err = rerr
-			break
+			return rerr
 		}
 		resumed = true
 	}
-	return exitFail(stderr, cancelCause(w.ctx, err))
 }

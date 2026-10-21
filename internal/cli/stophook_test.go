@@ -50,7 +50,10 @@ func TestStopHookBlocksWhenPending(t *testing.T) {
 		}
 		return code, out, se.String()
 	}
-	code, out, _ := run()
+	code, out, errOut := run()
+	if errOut != "" {
+		t.Fatalf("stderr %q: a hook never writes to stderr", errOut)
+	}
 	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "2 new message(s) for "+sess.DisplayName+" on general") ||
 		!strings.Contains(out["reason"], "`agentbus2 watch`") || strings.Contains(out["reason"], "-filter") {
 		t.Fatalf("claude-code: exit %d %v", code, out)
@@ -179,6 +182,9 @@ func TestStopHookCountsUnackedBatch(t *testing.T) {
 	hook := func() string {
 		var so, se syncBuf
 		RunStopHook(ctx, nil, e.Environ, strings.NewReader(`{}`), &so, &se)
+		if se.String() != "" {
+			t.Fatalf("stderr %q: a hook never writes to stderr", se.String())
+		}
 		return so.String()
 	}
 	send := func() {
@@ -228,6 +234,9 @@ func TestStopHookSilentCases(t *testing.T) {
 	run := func(stdin string) (int, string) {
 		var so, se syncBuf
 		code := RunStopHook(ctx, nil, e.Environ, strings.NewReader(stdin), &so, &se)
+		if se.String() != "" {
+			t.Fatalf("stdin %q: stderr %q: a hook never writes to stderr", stdin, se.String())
+		}
 		return code, so.String()
 	}
 
@@ -312,8 +321,8 @@ func TestStopHookFailsOpenWithinBudget(t *testing.T) {
 	var so, se syncBuf
 	start := time.Now()
 	code := RunStopHook(context.Background(), nil, e.Environ, strings.NewReader(`{}`), &so, &se)
-	if d := time.Since(start); code != 0 || so.String() != "" || d > hookBudget+300*time.Millisecond {
-		t.Fatalf("exit %d stdout %q after %v", code, so.String(), d)
+	if d := time.Since(start); code != 0 || so.String() != "" || se.String() != "" || d > hookBudget+300*time.Millisecond {
+		t.Fatalf("exit %d stdout %q stderr %q after %v", code, so.String(), se.String(), d)
 	}
 	select {
 	case <-entered:
@@ -322,6 +331,41 @@ func TestStopHookFailsOpenWithinBudget(t *testing.T) {
 	}
 	b, err := os.ReadFile(filepath.Join(e.DataDir, "logs", "hook.log"))
 	if err != nil || !strings.Contains(string(b), "budget") {
+		t.Fatalf("hook.log %q, %v", b, err)
+	}
+}
+
+// TestRunHookBudgetCutsWorkThatIgnoresContext: a step that never returns and
+// ignores its context (a stuck stdin read, a blocking syscall) still cannot
+// hold the hook past hookBudget; the hook prints nothing on stdout or stderr,
+// exits 0 and logs the budget stage.
+func TestRunHookBudgetCutsWorkThatIgnoresContext(t *testing.T) {
+	e := newTestEnv(t)
+	prev := hookBudget
+	hookBudget = 100 * time.Millisecond
+	t.Cleanup(func() { hookBudget = prev })
+	stuck := make(chan struct{})
+	t.Cleanup(func() { close(stuck) })
+	var so syncBuf
+	start := time.Now()
+	res := make(chan int, 1)
+	go func() {
+		res <- runHook(context.Background(), e.Environ, &so, func(context.Context) hookResult {
+			<-stuck
+			return hookResult{out: []byte("late\n")}
+		})
+	}()
+	var code int
+	select {
+	case code = <-res:
+	case <-time.After(hookBudget + time.Second):
+		t.Fatal("runHook waited on work that ignores its context, past hookBudget")
+	}
+	if d := time.Since(start); code != 0 || so.String() != "" || d > hookBudget+200*time.Millisecond {
+		t.Fatalf("exit %d stdout %q after %v", code, so.String(), d)
+	}
+	b, err := os.ReadFile(filepath.Join(e.DataDir, "logs", "hook.log"))
+	if err != nil || !strings.Contains(string(b), " budget: ") {
 		t.Fatalf("hook.log %q, %v", b, err)
 	}
 }

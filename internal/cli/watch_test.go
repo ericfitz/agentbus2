@@ -3,10 +3,12 @@ package cli
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -453,5 +455,73 @@ func TestExitCodeTable(t *testing.T) {
 	cancel2(nil)
 	if cancelCause(ctx2, boom) != errReplaced {
 		t.Error("nil cause not mapped to replaced")
+	}
+}
+
+// lapsingSessions answers every Watch with the scripted results in order (the
+// last one repeating) and counts the resumes; any other method panics.
+type lapsingSessions struct {
+	bus.Sessions
+	mu      sync.Mutex
+	script  []error // nil: a successful Woke-false Watch
+	watches int
+	opens   []string
+}
+
+func (s *lapsingSessions) Watch(ctx context.Context, in bus.WatchInput) (bus.WatchResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	i := min(s.watches, len(s.script)-1)
+	s.watches++
+	if s.watches > 1000 {
+		return bus.WatchResult{}, errors.New("runaway re-arm")
+	}
+	return bus.WatchResult{}, s.script[i]
+}
+
+func (s *lapsingSessions) Open(ctx context.Context, in bus.OpenSessionInput) (bus.Session, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.opens = append(s.opens, in.ResumeToken)
+	return bus.Session{}, nil
+}
+
+// TestResumeOncePerLapse: a session that answers session_lapsed again right
+// after a successful resume is resumed once, not in a loop, and the command
+// ends with session_lapsed (exit 2); a successful Watch between two lapses
+// allows the second resume.
+func TestResumeOncePerLapse(t *testing.T) {
+	lapsed := &bus.Error{Code: bus.CodeSessionLapsed}
+	l := located{Session: "s1", ResumeToken: "tok", FromFile: true}
+	runs := map[string]func(s bus.Sessions) error{
+		"watch": func(s bus.Sessions) error {
+			return watchResuming(context.Background(), s, l, "pat", false, io.Discard)
+		},
+		"wait": func(s bus.Sessions) error {
+			return waitResuming(context.Background(), s, l, false, 0, io.Discard)
+		},
+	}
+	for name, run := range runs {
+		s := &lapsingSessions{script: []error{lapsed}}
+		err := run(s)
+		if bus.CodeOf(err) != bus.CodeSessionLapsed || exitCode(err) != 2 || len(s.opens) != 1 || s.opens[0] != "tok" {
+			t.Errorf("%s, lapsed forever: err %v, %d opens, want one resume and session_lapsed", name, err, len(s.opens))
+		}
+		s = &lapsingSessions{script: []error{lapsed, nil, lapsed}}
+		err = run(s)
+		if bus.CodeOf(err) != bus.CodeSessionLapsed || len(s.opens) != 2 {
+			t.Errorf("%s, lapse, success, lapse: err %v, %d opens, want two resumes", name, err, len(s.opens))
+		}
+		// No resume token: no resume at all.
+		s = &lapsingSessions{script: []error{lapsed}}
+		var err2 error
+		if name == "watch" {
+			err2 = watchResuming(context.Background(), s, located{Session: "s1"}, "pat", false, io.Discard)
+		} else {
+			err2 = waitResuming(context.Background(), s, located{Session: "s1"}, false, 0, io.Discard)
+		}
+		if bus.CodeOf(err2) != bus.CodeSessionLapsed || len(s.opens) != 0 {
+			t.Errorf("%s, no token: err %v, %d opens", name, err2, len(s.opens))
+		}
 	}
 }
