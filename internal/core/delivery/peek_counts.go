@@ -27,7 +27,9 @@ func (s Service) Peek(ctx context.Context, identity string, in bus.PeekInput) (b
 		}
 		switch {
 		case sess.Identity != identity:
-			return core.E(bus.CodeForbidden, "session %q is not yours", in.Session)
+			// not_found, as sessions.Require answers Receive and Watch, so
+			// another identity's session is not revealed to exist.
+			return core.E(bus.CodeNotFound, "session %q does not exist", in.Session)
 		case sess.ClosedAt != 0:
 			return core.E(bus.CodeSessionClosed, "session %q is closed", in.Session)
 		case !s.IsLive(sess, s.NowMs()):

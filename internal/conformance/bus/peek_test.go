@@ -141,14 +141,23 @@ func TestPeekWritesNothing(t *testing.T) {
 
 		// A watch armed through a second Bus of pat is not replaced by Peek.
 		b2 := newBus(h, "pat")
-		wc := startWatch(ctx, b2, ab2bus.WatchInput{Session: s.ID, After: 100, Timeout: 3 * time.Second})
-		time.Sleep(100 * time.Millisecond)
+		wc := startWatch(ctx, b2, ab2bus.WatchInput{Session: s.ID, Timeout: 3 * time.Second})
+		deadline := time.Now().Add(2 * time.Second)
+		for sessionRow(h, s.ID).WatchID == "" {
+			if time.Now().After(deadline) {
+				t.Fatal("the watch was not armed")
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+		armed := sessionRow(h, s.ID).WatchID
 		peekOf(t, b, ab2bus.PeekInput{Session: s.ID})
-		sendOn(t, sam, "general", "")
-		sendOn(t, sam, "general", "") // seq above After
+		if got := sessionRow(h, s.ID).WatchID; got != armed {
+			t.Fatalf("Peek changed the watch id: %q -> %q", armed, got)
+		}
+		sendOn(t, sam, "general", "") // above the held batch: wakes the watch
 		o := awaitWatch(t, wc, 4*time.Second)
-		if o.err != nil && ab2bus.CodeOf(o.err) == ab2bus.CodeReplaced {
-			t.Fatalf("Peek replaced the watch: %v", o.err)
+		if o.err != nil || !o.res.Woke {
+			t.Fatalf("Watch after Peek = %+v, %v; want a wake", o.res, o.err)
 		}
 
 		// A lapsed session answers session_lapsed and stays lapsed.
@@ -174,7 +183,41 @@ func TestPeekWritesNothing(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		// Another identity's session is not_found, as Receive and Watch
+		// answer it, so Peek does not reveal that the session exists.
 		_, err = h.as("kim").Peek(ctx, ab2bus.PeekInput{Session: s4.ID})
-		codeOf(t, err, ab2bus.CodeForbidden)
+		codeOf(t, err, ab2bus.CodeNotFound)
+		_, err = h.as("kim").Receive(ctx, ab2bus.ReceiveInput{Session: s4.ID})
+		codeOf(t, err, ab2bus.CodeNotFound)
+	})
+}
+
+// TestPeekCountsTagMatches covers the tag source: a tagged message on a
+// readable channel the identity is not subscribed to is counted on its
+// channel, an untagged one is not, and a held batch is not counted.
+func TestPeekCountsTagMatches(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx := context.Background()
+		h := newHarness(t, e, watchOpts(nil))
+		h.channel("general", ab2store.KindOrdinary, "pat", nil)
+		h.channel("open", ab2store.KindOrdinary, "kim", nil)
+		b, s := recvOpen(h, "pat", "general")
+		if err := b.SubscribeTags(ctx, ab2bus.TagSubscribeInput{Patterns: []string{"urgent"}}); err != nil {
+			t.Fatal(err)
+		}
+		kim := h.as("kim")
+		for _, tags := range [][]string{nil, {"urgent"}, {"urgent"}} {
+			if _, err := kim.Send(ctx, ab2bus.SendInput{Channel: "open", Content: "x", Tags: tags}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		sendOn(t, kim, "general", "")
+		wantPeek(t, peekOf(t, b, ab2bus.PeekInput{Session: s.ID}), 3,
+			ab2bus.PeekChannel{Channel: "general", Count: 1}, ab2bus.PeekChannel{Channel: "open", Count: 2})
+		r := recv(t, b, ab2bus.ReceiveInput{Session: s.ID})
+		if len(r.Messages) != 3 {
+			t.Fatalf("receive = %d messages, want the 3 Peek counted", len(r.Messages))
+		}
+		wantPeek(t, peekOf(t, b, ab2bus.PeekInput{Session: s.ID}), 0)
 	})
 }

@@ -132,7 +132,7 @@ type Sessions interface {
 	Watch(ctx context.Context, in WatchInput) (WatchResult, error)
 	// Peek counts what a Watch with After 0 would wake on, per channel,
 	// writing nothing (no lease renewal). It answers session_lapsed,
-	// session_closed and not_found as Receive does, and forbidden for a
+	// session_closed and not_found as Receive does, not_found also for a
 	// session that is not the caller's.
 	Peek(ctx context.Context, in PeekInput) (PeekResult, error)
 	// Identities lists identities with a live session (v1 discover).
