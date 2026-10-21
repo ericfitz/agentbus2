@@ -9,15 +9,16 @@ import (
 	"github.com/ericfitz/agentbus2/internal/gen"
 )
 
-type stub struct{}
+// smokeStub implements WellKnown only; the nil embedded interface panics on any other call.
+type smokeStub struct{ gen.StrictServerInterface }
 
-func (stub) WellKnown(_ context.Context, _ gen.WellKnownRequestObject) (gen.WellKnownResponseObject, error) {
+func (smokeStub) WellKnown(_ context.Context, _ gen.WellKnownRequestObject) (gen.WellKnownResponseObject, error) {
 	return gen.WellKnown200JSONResponse{Discover: "/v1/discover"}, nil
 }
 
 func TestGeneratedServerAndClientRoundTrip(t *testing.T) {
 	mux := http.NewServeMux()
-	gen.HandlerFromMux(gen.NewStrictHandler(stub{}, nil), mux)
+	gen.HandlerFromMux(gen.NewStrictHandler(smokeStub{}, nil), mux)
 	srv := httptest.NewServer(mux)
 	defer srv.Close()
 	c, err := gen.NewClientWithResponses(srv.URL)

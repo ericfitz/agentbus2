@@ -36,12 +36,16 @@ const (
 	CodeUnavailable Code = "unavailable"
 	// CodeInternal: an unexpected failure; retryable, as in v1.
 	CodeInternal Code = "internal"
+	// CodeUnauthenticated: a failed security requirement at the HTTP layer
+	// (Milestone 4, spec section 3.3); the core never produces it.
+	CodeUnauthenticated Code = "unauthenticated"
 )
 
 var validCodes = map[Code]bool{
 	CodeValidation: true, CodeNotFound: true, CodeConflict: true, CodeForbidden: true,
 	CodeNotRegistered: true, CodeRateLimited: true, CodeReplaced: true,
 	CodeSessionLapsed: true, CodeSessionClosed: true, CodeUnavailable: true, CodeInternal: true,
+	CodeUnauthenticated: true,
 }
 
 // ValidCode reports whether c is one of the codes above.

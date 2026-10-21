@@ -3,12 +3,29 @@ info:
   title: agentbus2
   version: 2.0.0-dev
   description: >-
-    Milestone 1 stub so that make generate and the freshness check are real.
-    Milestone 4 writes the real document (spec section 7, Decision 65).
+    The agentbus2 HTTP API (spec section 3, Decision 65). Path parameters: a
+    client percent-encodes every path parameter exactly once (a space is %20,
+    a percent sign %25, a slash inside a name %2F, a question mark %3F, a
+    number sign %23); the server decodes each parameter exactly once, so a
+    channel name such as 100% or a%2Fb round-trips as the literal name and an
+    empty segment matches no route. Optional members are absent from the JSON,
+    never null. Every error is application/problem+json.
+security:
+  - bearerAuth: []
+  - oidc: []
+tags:
+  - name: discovery
+  - name: sessions
+  - name: channels
+  - name: messages
+  - name: memories
+  - name: tasks
+  - name: admin
 paths:
   /.well-known/agentbus2:
     get:
       operationId: wellKnown
+      tags: [discovery]
       security: []
       responses:
         "200":
@@ -17,11 +34,1349 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/WellKnown"
+        default:
+          $ref: "#/components/responses/Problem"
+  /.well-known/openid-configuration:
+    get:
+      operationId: openidConfiguration
+      tags: [discovery]
+      security: []
+      responses:
+        "200":
+          description: OpenID Connect discovery document (Decision 91).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OpenIDConfiguration"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/discover:
+    get:
+      operationId: discover
+      tags: [discovery]
+      security: []
+      responses:
+        "200":
+          description: Server versions, capabilities and auth methods.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Discovery"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/sessions:
+    post:
+      operationId: openSession
+      tags: [sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OpenSessionRequest"
+      responses:
+        "201":
+          description: Session opened or resumed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/sessions/{session}:
+    delete:
+      operationId: closeSession
+      tags: [sessions]
+      parameters:
+        - $ref: "#/components/parameters/SessionParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      responses:
+        "204":
+          description: Session closed.
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/sessions/{session}/receive:
+    post:
+      operationId: receive
+      tags: [sessions]
+      parameters:
+        - $ref: "#/components/parameters/SessionParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ReceiveRequest"
+      responses:
+        "200":
+          description: A batch of pending messages (possibly empty).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ReceiveResult"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/sessions/{session}/watch:
+    get:
+      operationId: watch
+      tags: [sessions]
+      parameters:
+        - $ref: "#/components/parameters/SessionParam"
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+            default: 0
+        - name: timeout
+          in: query
+          required: false
+          description: Seconds to wait; fractional allowed; 0 or absent means the server cap.
+          schema:
+            type: number
+            format: double
+        - name: include_own
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: Woke.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Wake"
+        "204":
+          description: Timed out, nothing new.
+        "409":
+          description: Replaced by a newer watch on the same session.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/identities:
+    get:
+      operationId: listIdentities
+      tags: [sessions]
+      responses:
+        "200":
+          description: Registered identities and their open sessions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Identity"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/channels:
+    get:
+      operationId: listChannels
+      tags: [channels]
+      responses:
+        "200":
+          description: Channels visible to the caller.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Channel"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: createChannel
+      tags: [channels]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateChannelRequest"
+      responses:
+        "201":
+          description: Channel created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ChannelInfo"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/channels/{channel}:
+    delete:
+      operationId: deleteChannel
+      tags: [channels, admin]
+      parameters:
+        - $ref: "#/components/parameters/ChannelParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      responses:
+        "204":
+          description: Channel deleted.
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: renameChannel
+      tags: [channels, admin]
+      parameters:
+        - $ref: "#/components/parameters/ChannelParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RenameChannelRequest"
+      responses:
+        "204":
+          description: Channel renamed.
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/channels/{channel}/acl:
+    get:
+      operationId: getACL
+      tags: [channels]
+      parameters:
+        - $ref: "#/components/parameters/ChannelParam"
+      responses:
+        "200":
+          description: The channel access control list.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ACLEntry"
+        default:
+          $ref: "#/components/responses/Problem"
+    put:
+      operationId: setACL
+      tags: [channels]
+      parameters:
+        - $ref: "#/components/parameters/ChannelParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: "#/components/schemas/ACLEntry"
+      responses:
+        "204":
+          description: ACL replaced.
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/channels/{channel}/subscription:
+    put:
+      operationId: subscribe
+      tags: [channels]
+      parameters:
+        - $ref: "#/components/parameters/ChannelParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SubscribeRequest"
+      responses:
+        "204":
+          description: Subscribed.
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: unsubscribe
+      tags: [channels]
+      parameters:
+        - $ref: "#/components/parameters/ChannelParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      responses:
+        "204":
+          description: Unsubscribed.
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/tag-subscriptions:
+    get:
+      operationId: listTagSubscriptions
+      tags: [channels]
+      responses:
+        "200":
+          description: The caller's tag subscriptions, each a set of patterns.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: array
+                  items:
+                    type: string
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: subscribeTags
+      tags: [channels]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TagPatterns"
+      responses:
+        "204":
+          description: Subscribed.
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/tag-subscriptions/{patterns}:
+    delete:
+      operationId: unsubscribeTags
+      tags: [channels]
+      parameters:
+        - name: patterns
+          in: path
+          required: true
+          style: simple
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      responses:
+        "204":
+          description: Unsubscribed.
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/channels/{channel}/messages:
+    post:
+      operationId: sendMessage
+      tags: [messages]
+      parameters:
+        - $ref: "#/components/parameters/ChannelParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SendRequest"
+      responses:
+        "201":
+          description: Message appended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SendResult"
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: history
+      tags: [messages]
+      parameters:
+        - $ref: "#/components/parameters/ChannelParam"
+        - name: before
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: after
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: count
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: tags
+          in: query
+          required: false
+          style: form
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+      responses:
+        "200":
+          description: Messages of the channel.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/search:
+    get:
+      operationId: search
+      tags: [messages]
+      parameters:
+        - name: q
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: mode
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [text, semantic, both]
+        - name: channel
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: sender
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: until
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: thread
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int64
+        - name: tags
+          in: query
+          required: false
+          style: form
+          explode: false
+          schema:
+            type: array
+            items:
+              type: string
+        - name: count
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: cursor
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Search hits.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SearchResult"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/memories/{id}:
+    get:
+      operationId: getMemory
+      tags: [memories]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: The current revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: deleteMemory
+      tags: [memories]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      responses:
+        "204":
+          description: Memory deleted.
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/memories/{id}/revisions:
+    get:
+      operationId: listMemoryRevisions
+      tags: [memories]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: Every revision, oldest first.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Message"
+        default:
+          $ref: "#/components/responses/Problem"
+    post:
+      operationId: editMemory
+      tags: [memories]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EditMemoryRequest"
+      responses:
+        "201":
+          description: New revision appended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EditResult"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/channels/{channel}/tasks:
+    post:
+      operationId: createTask
+      tags: [tasks]
+      parameters:
+        - $ref: "#/components/parameters/ChannelParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskCreateRequest"
+      responses:
+        "201":
+          description: Task created.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: listTasks
+      tags: [tasks]
+      parameters:
+        - $ref: "#/components/parameters/ChannelParam"
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: owner
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Task summaries in tree order.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TaskSummary"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/tasks/{id}:
+    get:
+      operationId: getTask
+      tags: [tasks]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+      responses:
+        "200":
+          description: The task.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Task"
+        default:
+          $ref: "#/components/responses/Problem"
+    patch:
+      operationId: updateTask
+      tags: [tasks]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TaskPatch"
+      responses:
+        "200":
+          description: The updated task.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskUpdateResult"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/tasks/{id}/claim:
+    post:
+      operationId: claimTask
+      tags: [tasks]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ClaimTaskRequest"
+      responses:
+        "200":
+          description: The claimed task.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskUpdateResult"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/tasks/{id}/release:
+    post:
+      operationId: releaseTask
+      tags: [tasks]
+      parameters:
+        - $ref: "#/components/parameters/IdParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      responses:
+        "200":
+          description: The released task.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TaskUpdateResult"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/status:
+    get:
+      operationId: adminStatus
+      tags: [admin]
+      responses:
+        "200":
+          description: Server status for administrators.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        default:
+          $ref: "#/components/responses/Problem"
 components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    oidc:
+      type: openIdConnect
+      openIdConnectUrl: /.well-known/openid-configuration
+  parameters:
+    SessionParam:
+      name: session
+      in: path
+      required: true
+      schema:
+        type: string
+    ChannelParam:
+      name: channel
+      in: path
+      required: true
+      schema:
+        type: string
+    IdParam:
+      name: id
+      in: path
+      required: true
+      schema:
+        type: integer
+        format: int64
+    IdempotencyKeyParam:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: Absent or empty means no receipt (Decision 66).
+      schema:
+        type: string
+  responses:
+    Problem:
+      description: RFC 9457 problem details.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
   schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code, retryable]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          description: agentbus2 extension member (RFC 9457 section 3.2).
+          enum:
+            - validation
+            - not_found
+            - conflict
+            - forbidden
+            - not_registered
+            - rate_limited
+            - replaced
+            - session_lapsed
+            - session_closed
+            - unavailable
+            - internal
+            - unauthenticated
+        retryable:
+          type: boolean
+          description: agentbus2 extension member (RFC 9457 section 3.2).
+    Wake:
+      type: object
+      required: [seq, count, channels]
+      properties:
+        seq:
+          type: integer
+          format: int64
+        count:
+          type: integer
+        channels:
+          type: array
+          items:
+            type: string
     WellKnown:
       type: object
       required: [discover]
       properties:
         discover:
           type: string
+    AuthMethod:
+      type: object
+      required: [name, type]
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        scheme:
+          type: string
+        bearer_format:
+          type: string
+        openid_configuration:
+          type: string
+    Discovery:
+      type: object
+      required: [api_versions, server_version, capabilities, auth_methods, issuers]
+      properties:
+        api_versions:
+          type: array
+          items:
+            type: string
+        server_version:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        auth_methods:
+          type: array
+          items:
+            $ref: "#/components/schemas/AuthMethod"
+        openid_configuration:
+          type: string
+        issuers:
+          type: array
+          items:
+            type: string
+    OpenIDConfiguration:
+      type: object
+      required:
+        - issuer
+        - token_endpoint
+        - jwks_uri
+        - token_endpoint_auth_methods_supported
+        - token_endpoint_auth_signing_alg_values_supported
+      properties:
+        issuer:
+          type: string
+        token_endpoint:
+          type: string
+        jwks_uri:
+          type: string
+        token_endpoint_auth_methods_supported:
+          type: array
+          items:
+            type: string
+        token_endpoint_auth_signing_alg_values_supported:
+          type: array
+          items:
+            type: string
+    OfferedCursor:
+      type: object
+      required: [channel, seq]
+      properties:
+        channel:
+          type: string
+        seq:
+          type: integer
+          format: int64
+    OpenSessionRequest:
+      type: object
+      properties:
+        hint:
+          type: string
+        resume_token:
+          type: string
+        cursors:
+          type: array
+          items:
+            $ref: "#/components/schemas/OfferedCursor"
+    RejectedCursor:
+      type: object
+      required: [channel, reason]
+      properties:
+        channel:
+          type: string
+        reason:
+          type: string
+          enum: [before_retention, ahead, unreadable, unsubscribed]
+    PendingChannel:
+      type: object
+      required: [channel, pending]
+      properties:
+        channel:
+          type: string
+        pending:
+          type: integer
+          format: int64
+    Session:
+      type: object
+      required: [id, identity, display_name, resume_token, resumed, rejected_cursors, pending]
+      properties:
+        id:
+          type: string
+        identity:
+          type: string
+        display_name:
+          type: string
+        resume_token:
+          type: string
+        resumed:
+          type: boolean
+        rejected_cursors:
+          type: array
+          items:
+            $ref: "#/components/schemas/RejectedCursor"
+        pending:
+          type: array
+          items:
+            $ref: "#/components/schemas/PendingChannel"
+    ReceiveRequest:
+      type: object
+      properties:
+        ack:
+          type: string
+        count:
+          type: integer
+        channels:
+          type: array
+          items:
+            type: string
+        include_own:
+          type: boolean
+    Gap:
+      type: object
+      required: [channel, from, to]
+      properties:
+        channel:
+          type: string
+        from:
+          type: integer
+          format: int64
+        to:
+          type: integer
+          format: int64
+    Message:
+      type: object
+      required: [seq, channel, sender, display, created_at, type, subject, content]
+      properties:
+        seq:
+          type: integer
+          format: int64
+        channel:
+          type: string
+        sender:
+          type: string
+        session:
+          type: string
+        display:
+          type: string
+        created_at:
+          type: integer
+          format: int64
+        type:
+          type: string
+        subject:
+          type: string
+        content:
+          type: string
+        reply_to:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        memory_id:
+          type: integer
+          format: int64
+        revision:
+          type: integer
+          format: int64
+        tags:
+          type: array
+          items:
+            type: string
+        matched_tags:
+          type: array
+          items:
+            type: string
+    ReceiveResult:
+      type: object
+      required: [messages, batch, redelivered, ack_ignored, gaps]
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: "#/components/schemas/Message"
+        batch:
+          type: string
+        redelivered:
+          type: boolean
+        ack_ignored:
+          type: boolean
+        gaps:
+          type: array
+          items:
+            $ref: "#/components/schemas/Gap"
+        notice:
+          type: string
+        instruction:
+          type: string
+    SessionInfo:
+      type: object
+      required: [id, identity, display_name, opened_at]
+      properties:
+        id:
+          type: string
+        identity:
+          type: string
+        display_name:
+          type: string
+        opened_at:
+          type: integer
+          format: int64
+    Identity:
+      type: object
+      required: [name, admin, sessions]
+      properties:
+        name:
+          type: string
+        admin:
+          type: boolean
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionInfo"
+    Channel:
+      type: object
+      required: [name, kind]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [ordinary, memory, tasks]
+    ChannelInfo:
+      type: object
+      required: [name, kind, creator, created_at]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [ordinary, memory, tasks]
+        creator:
+          type: string
+        created_at:
+          type: integer
+          format: int64
+    ACLEntry:
+      type: object
+      required: [identity, permissions]
+      properties:
+        identity:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+            enum: [read, write, admin]
+    CreateChannelRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        kind:
+          type: string
+          enum: [ordinary, memory, tasks]
+        acl:
+          type: array
+          items:
+            $ref: "#/components/schemas/ACLEntry"
+    RenameChannelRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+    SubscribeRequest:
+      type: object
+      properties:
+        from:
+          type: string
+          enum: [now, oldest]
+    TagPatterns:
+      type: object
+      required: [patterns]
+      properties:
+        patterns:
+          type: array
+          items:
+            type: string
+    SendRequest:
+      type: object
+      required: [content]
+      properties:
+        subject:
+          type: string
+        content:
+          type: string
+        type:
+          type: string
+        reply_to:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+        session:
+          type: string
+    SendResult:
+      type: object
+      required: [seq]
+      properties:
+        seq:
+          type: integer
+          format: int64
+        memory_id:
+          type: integer
+          format: int64
+    SearchHit:
+      type: object
+      required: [message, score]
+      properties:
+        message:
+          $ref: "#/components/schemas/Message"
+        score:
+          type: number
+          format: double
+    SearchResult:
+      type: object
+      required: [hits]
+      properties:
+        hits:
+          type: array
+          items:
+            $ref: "#/components/schemas/SearchHit"
+        next:
+          type: string
+        semantic_unavailable:
+          type: boolean
+    EditMemoryRequest:
+      type: object
+      required: [content]
+      properties:
+        subject:
+          type: string
+        content:
+          type: string
+        type:
+          type: string
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        tags:
+          type: array
+          items:
+            type: string
+    EditResult:
+      type: object
+      required: [seq, memory_id, revision, replaced]
+      properties:
+        seq:
+          type: integer
+          format: int64
+        memory_id:
+          type: integer
+          format: int64
+        revision:
+          type: integer
+          format: int64
+        replaced:
+          type: integer
+          format: int64
+    Task:
+      type: object
+      required: [id, channel, revision, subject, status, rank, blocked, updated_at, updated_by]
+      properties:
+        id:
+          type: integer
+          format: int64
+        channel:
+          type: string
+        revision:
+          type: integer
+          format: int64
+        subject:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        owner:
+          type: string
+        parent:
+          type: integer
+          format: int64
+        rank:
+          type: string
+        blocked_by:
+          type: array
+          items:
+            type: integer
+            format: int64
+        leased_until:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        blocked:
+          type: boolean
+        open_blockers:
+          type: array
+          items:
+            type: integer
+            format: int64
+        updated_at:
+          type: integer
+          format: int64
+        updated_by:
+          type: string
+    TaskSummary:
+      type: object
+      required: [id, subject, status, depth]
+      properties:
+        id:
+          type: integer
+          format: int64
+        subject:
+          type: string
+        status:
+          type: string
+        owner:
+          type: string
+        parent:
+          type: integer
+          format: int64
+        depth:
+          type: integer
+        open_blockers:
+          type: array
+          items:
+            type: integer
+            format: int64
+        leased_until:
+          type: integer
+          format: int64
+        has_details:
+          type: boolean
+    TaskCreateRequest:
+      type: object
+      required: [subject]
+      properties:
+        subject:
+          type: string
+        description:
+          type: string
+        parent:
+          type: integer
+          format: int64
+        before:
+          type: integer
+          format: int64
+        after:
+          type: integer
+          format: int64
+        blocked_by:
+          type: array
+          items:
+            type: integer
+            format: int64
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+    TaskPatch:
+      type: object
+      properties:
+        status:
+          type: string
+        owner:
+          type: string
+        subject:
+          type: string
+        description:
+          type: string
+        parent:
+          type: integer
+          format: int64
+        before:
+          type: integer
+          format: int64
+        after:
+          type: integer
+          format: int64
+        add_blocked_by:
+          type: array
+          items:
+            type: integer
+            format: int64
+        remove_blocked_by:
+          type: array
+          items:
+            type: integer
+            format: int64
+        leased_until:
+          type: integer
+          format: int64
+        metadata:
+          type: object
+          additionalProperties:
+            type: string
+        delete:
+          type: boolean
+        force:
+          type: boolean
+    TaskUpdateResult:
+      type: object
+      required: [task, replaced]
+      properties:
+        task:
+          $ref: "#/components/schemas/Task"
+        replaced:
+          type: integer
+          format: int64
+        deleted:
+          type: boolean
+    ClaimTaskRequest:
+      type: object
+      properties:
+        leased_until:
+          type: integer
+          format: int64
+    Notice:
+      type: object
+      required: [kind, message, set_at]
+      properties:
+        kind:
+          type: string
+        message:
+          type: string
+        set_at:
+          type: integer
+          format: int64
+    Status:
+      type: object
+      required: [sessions, channels, notices, embedding_backlog, embedding_rejected]
+      properties:
+        sessions:
+          type: array
+          items:
+            $ref: "#/components/schemas/SessionInfo"
+        channels:
+          type: array
+          items:
+            $ref: "#/components/schemas/ChannelInfo"
+        notices:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notice"
+        embedding_backlog:
+          type: integer
+        embedding_rejected:
+          type: integer
+        embedding_rejected_last:
+          type: string
+        embedding_error:
+          type: string
+        embedding_error_at:
+          type: integer
+          format: int64

@@ -129,6 +129,19 @@ block_gen_stray() {
 	revert
 }
 
+# --- gen-spec-hand-edited ------------------------------------------------------------
+# make generate-check regenerates before it looks at git status, so it cannot
+# be the negative proof for a hand edit of the embedded document; check 4 can.
+block_gen_spec_edited() {
+	local label=gen-spec-hand-edited log="$tmp/b4s.log"
+	begin
+	printf '\n' >>"$wt/internal/gen/spec/spec.go"
+	run_gates "$log"
+	expect_checks "$label" "$log" generator-reacts-to-schema
+	finish "$label"
+	revert
+}
+
 # --- 5. ci-gate-negative-fires ---------------------------------------------------------
 block_ci_gate_negative() {
 	local label=ci-gate-negative-fires log="$tmp/b5a.log" rc
@@ -248,6 +261,7 @@ block_skip_in_wiring
 block_unit_leak
 block_gen_edited
 block_gen_stray
+block_gen_spec_edited
 block_ci_gate_negative
 block_ci_sim
 block_search_postgres_phrase

@@ -43,6 +43,15 @@ func TestErrorfRejectsUnknownCode(t *testing.T) {
 	_ = Errorf(Code("bogus"), false, "x")
 }
 
+func TestValidCodeKnowsUnauthenticated(t *testing.T) {
+	if !ValidCode(CodeUnauthenticated) || CodeUnauthenticated != "unauthenticated" {
+		t.Fatalf("CodeUnauthenticated = %q, valid %v", CodeUnauthenticated, ValidCode(CodeUnauthenticated))
+	}
+	if e := Errorf(CodeUnauthenticated, false, "no identity"); e.Code != CodeUnauthenticated || e.Retryable {
+		t.Fatalf("%+v", e)
+	}
+}
+
 func TestValidCode(t *testing.T) {
 	for _, c := range []Code{CodeValidation, CodeNotFound, CodeConflict, CodeForbidden, CodeNotRegistered, CodeRateLimited, CodeReplaced, CodeSessionLapsed, CodeSessionClosed, CodeUnavailable, CodeInternal} {
 		if !ValidCode(c) {

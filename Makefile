@@ -20,6 +20,7 @@ tidy-check:  ## go.mod and go.sum are tidy (CI step; not in verify, pending Eric
 	go mod tidy -diff
 generate:    ## Regenerate internal/gen from api/openapi.yaml with the pinned oapi-codegen
 	go tool oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
+	go tool oapi-codegen -config api/oapi-codegen-spec.yaml api/openapi.yaml
 generate-check: generate  ## Fail when internal/gen is not exactly what api/ generates (modified, staged, deleted or untracked files after regeneration)
 	@dirty=$$(git status --porcelain --untracked-files=all -- internal/gen); if [ -n "$$dirty" ]; then echo "internal/gen is stale or polluted (run make generate, then commit or remove):"; echo "$$dirty"; git --no-pager diff --stat -- internal/gen; exit 1; fi
 test-conformance:  ## Store and Bus conformance suites on SQLite and Postgres; -count=1 so an unreachable Postgres can never be masked by the test cache

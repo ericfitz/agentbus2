@@ -94,6 +94,12 @@ check_generator() {
 		fail "$name" "regenerating the unmodified schema differs from internal/gen/gen.go (hand-edited or stale)"
 		return
 	fi
+	sed "s#^output:.*#output: $tmp/same-spec.go#" api/oapi-codegen-spec.yaml >"$tmp/cfg-spec.yaml"
+	go tool oapi-codegen -config "$tmp/cfg-spec.yaml" api/openapi.yaml >"$tmp/spec.out" 2>&1 || { fail "$name" "oapi-codegen failed on the real schema (embedded spec): $(tail -n 3 "$tmp/spec.out" | tr '\n' ' ')"; return; }
+	if ! diff -q "$tmp/same-spec.go" internal/gen/spec/spec.go >/dev/null; then
+		fail "$name" "regenerating the unmodified schema differs from internal/gen/spec/spec.go (hand-edited or stale)"
+		return
+	fi
 	pass "$name"
 }
 

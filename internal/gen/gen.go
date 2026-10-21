@@ -9,17 +9,749 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/oapi-codegen/runtime"
 )
+
+// Defines values for ACLEntryPermissions.
+const (
+	Admin ACLEntryPermissions = "admin"
+	Read  ACLEntryPermissions = "read"
+	Write ACLEntryPermissions = "write"
+)
+
+// Valid indicates whether the value is a known member of the ACLEntryPermissions enum.
+func (e ACLEntryPermissions) Valid() bool {
+	switch e {
+	case Admin:
+		return true
+	case Read:
+		return true
+	case Write:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChannelKind.
+const (
+	ChannelKindMemory   ChannelKind = "memory"
+	ChannelKindOrdinary ChannelKind = "ordinary"
+	ChannelKindTasks    ChannelKind = "tasks"
+)
+
+// Valid indicates whether the value is a known member of the ChannelKind enum.
+func (e ChannelKind) Valid() bool {
+	switch e {
+	case ChannelKindMemory:
+		return true
+	case ChannelKindOrdinary:
+		return true
+	case ChannelKindTasks:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ChannelInfoKind.
+const (
+	ChannelInfoKindMemory   ChannelInfoKind = "memory"
+	ChannelInfoKindOrdinary ChannelInfoKind = "ordinary"
+	ChannelInfoKindTasks    ChannelInfoKind = "tasks"
+)
+
+// Valid indicates whether the value is a known member of the ChannelInfoKind enum.
+func (e ChannelInfoKind) Valid() bool {
+	switch e {
+	case ChannelInfoKindMemory:
+		return true
+	case ChannelInfoKindOrdinary:
+		return true
+	case ChannelInfoKindTasks:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for CreateChannelRequestKind.
+const (
+	CreateChannelRequestKindMemory   CreateChannelRequestKind = "memory"
+	CreateChannelRequestKindOrdinary CreateChannelRequestKind = "ordinary"
+	CreateChannelRequestKindTasks    CreateChannelRequestKind = "tasks"
+)
+
+// Valid indicates whether the value is a known member of the CreateChannelRequestKind enum.
+func (e CreateChannelRequestKind) Valid() bool {
+	switch e {
+	case CreateChannelRequestKindMemory:
+		return true
+	case CreateChannelRequestKindOrdinary:
+		return true
+	case CreateChannelRequestKindTasks:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ProblemCode.
+const (
+	Conflict        ProblemCode = "conflict"
+	Forbidden       ProblemCode = "forbidden"
+	Internal        ProblemCode = "internal"
+	NotFound        ProblemCode = "not_found"
+	NotRegistered   ProblemCode = "not_registered"
+	RateLimited     ProblemCode = "rate_limited"
+	Replaced        ProblemCode = "replaced"
+	SessionClosed   ProblemCode = "session_closed"
+	SessionLapsed   ProblemCode = "session_lapsed"
+	Unauthenticated ProblemCode = "unauthenticated"
+	Unavailable     ProblemCode = "unavailable"
+	Validation      ProblemCode = "validation"
+)
+
+// Valid indicates whether the value is a known member of the ProblemCode enum.
+func (e ProblemCode) Valid() bool {
+	switch e {
+	case Conflict:
+		return true
+	case Forbidden:
+		return true
+	case Internal:
+		return true
+	case NotFound:
+		return true
+	case NotRegistered:
+		return true
+	case RateLimited:
+		return true
+	case Replaced:
+		return true
+	case SessionClosed:
+		return true
+	case SessionLapsed:
+		return true
+	case Unauthenticated:
+		return true
+	case Unavailable:
+		return true
+	case Validation:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for RejectedCursorReason.
+const (
+	Ahead           RejectedCursorReason = "ahead"
+	BeforeRetention RejectedCursorReason = "before_retention"
+	Unreadable      RejectedCursorReason = "unreadable"
+	Unsubscribed    RejectedCursorReason = "unsubscribed"
+)
+
+// Valid indicates whether the value is a known member of the RejectedCursorReason enum.
+func (e RejectedCursorReason) Valid() bool {
+	switch e {
+	case Ahead:
+		return true
+	case BeforeRetention:
+		return true
+	case Unreadable:
+		return true
+	case Unsubscribed:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SubscribeRequestFrom.
+const (
+	Now    SubscribeRequestFrom = "now"
+	Oldest SubscribeRequestFrom = "oldest"
+)
+
+// Valid indicates whether the value is a known member of the SubscribeRequestFrom enum.
+func (e SubscribeRequestFrom) Valid() bool {
+	switch e {
+	case Now:
+		return true
+	case Oldest:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SearchParamsMode.
+const (
+	Both     SearchParamsMode = "both"
+	Semantic SearchParamsMode = "semantic"
+	Text     SearchParamsMode = "text"
+)
+
+// Valid indicates whether the value is a known member of the SearchParamsMode enum.
+func (e SearchParamsMode) Valid() bool {
+	switch e {
+	case Both:
+		return true
+	case Semantic:
+		return true
+	case Text:
+		return true
+	default:
+		return false
+	}
+}
+
+// ACLEntry defines model for ACLEntry.
+type ACLEntry struct {
+	Identity    string                `json:"identity"`
+	Permissions []ACLEntryPermissions `json:"permissions"`
+}
+
+// ACLEntryPermissions defines model for ACLEntry.Permissions.
+type ACLEntryPermissions string
+
+// AuthMethod defines model for AuthMethod.
+type AuthMethod struct {
+	BearerFormat        *string `json:"bearer_format,omitempty"`
+	Name                string  `json:"name"`
+	OpenidConfiguration *string `json:"openid_configuration,omitempty"`
+	Scheme              *string `json:"scheme,omitempty"`
+	Type                string  `json:"type"`
+}
+
+// Channel defines model for Channel.
+type Channel struct {
+	Kind ChannelKind `json:"kind"`
+	Name string      `json:"name"`
+}
+
+// ChannelKind defines model for Channel.Kind.
+type ChannelKind string
+
+// ChannelInfo defines model for ChannelInfo.
+type ChannelInfo struct {
+	CreatedAt int64           `json:"created_at"`
+	Creator   string          `json:"creator"`
+	Kind      ChannelInfoKind `json:"kind"`
+	Name      string          `json:"name"`
+}
+
+// ChannelInfoKind defines model for ChannelInfo.Kind.
+type ChannelInfoKind string
+
+// ClaimTaskRequest defines model for ClaimTaskRequest.
+type ClaimTaskRequest struct {
+	LeasedUntil *int64 `json:"leased_until,omitempty"`
+}
+
+// CreateChannelRequest defines model for CreateChannelRequest.
+type CreateChannelRequest struct {
+	Acl  *[]ACLEntry               `json:"acl,omitempty"`
+	Kind *CreateChannelRequestKind `json:"kind,omitempty"`
+	Name string                    `json:"name"`
+}
+
+// CreateChannelRequestKind defines model for CreateChannelRequest.Kind.
+type CreateChannelRequestKind string
+
+// Discovery defines model for Discovery.
+type Discovery struct {
+	ApiVersions         []string     `json:"api_versions"`
+	AuthMethods         []AuthMethod `json:"auth_methods"`
+	Capabilities        []string     `json:"capabilities"`
+	Issuers             []string     `json:"issuers"`
+	OpenidConfiguration *string      `json:"openid_configuration,omitempty"`
+	ServerVersion       string       `json:"server_version"`
+}
+
+// EditMemoryRequest defines model for EditMemoryRequest.
+type EditMemoryRequest struct {
+	Content  string             `json:"content"`
+	Metadata *map[string]string `json:"metadata,omitempty"`
+	Subject  *string            `json:"subject,omitempty"`
+	Tags     *[]string          `json:"tags,omitempty"`
+	Type     *string            `json:"type,omitempty"`
+}
+
+// EditResult defines model for EditResult.
+type EditResult struct {
+	MemoryId int64 `json:"memory_id"`
+	Replaced int64 `json:"replaced"`
+	Revision int64 `json:"revision"`
+	Seq      int64 `json:"seq"`
+}
+
+// Gap defines model for Gap.
+type Gap struct {
+	Channel string `json:"channel"`
+	From    int64  `json:"from"`
+	To      int64  `json:"to"`
+}
+
+// Identity defines model for Identity.
+type Identity struct {
+	Admin    bool          `json:"admin"`
+	Name     string        `json:"name"`
+	Sessions []SessionInfo `json:"sessions"`
+}
+
+// Message defines model for Message.
+type Message struct {
+	Channel     string             `json:"channel"`
+	Content     string             `json:"content"`
+	CreatedAt   int64              `json:"created_at"`
+	Display     string             `json:"display"`
+	MatchedTags *[]string          `json:"matched_tags,omitempty"`
+	MemoryId    *int64             `json:"memory_id,omitempty"`
+	Metadata    *map[string]string `json:"metadata,omitempty"`
+	ReplyTo     *int64             `json:"reply_to,omitempty"`
+	Revision    *int64             `json:"revision,omitempty"`
+	Sender      string             `json:"sender"`
+	Seq         int64              `json:"seq"`
+	Session     *string            `json:"session,omitempty"`
+	Subject     string             `json:"subject"`
+	Tags        *[]string          `json:"tags,omitempty"`
+	Type        string             `json:"type"`
+}
+
+// Notice defines model for Notice.
+type Notice struct {
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
+	SetAt   int64  `json:"set_at"`
+}
+
+// OfferedCursor defines model for OfferedCursor.
+type OfferedCursor struct {
+	Channel string `json:"channel"`
+	Seq     int64  `json:"seq"`
+}
+
+// OpenIDConfiguration defines model for OpenIDConfiguration.
+type OpenIDConfiguration struct {
+	Issuer                                     string   `json:"issuer"`
+	JwksUri                                    string   `json:"jwks_uri"`
+	TokenEndpoint                              string   `json:"token_endpoint"`
+	TokenEndpointAuthMethodsSupported          []string `json:"token_endpoint_auth_methods_supported"`
+	TokenEndpointAuthSigningAlgValuesSupported []string `json:"token_endpoint_auth_signing_alg_values_supported"`
+}
+
+// OpenSessionRequest defines model for OpenSessionRequest.
+type OpenSessionRequest struct {
+	Cursors     *[]OfferedCursor `json:"cursors,omitempty"`
+	Hint        *string          `json:"hint,omitempty"`
+	ResumeToken *string          `json:"resume_token,omitempty"`
+}
+
+// PendingChannel defines model for PendingChannel.
+type PendingChannel struct {
+	Channel string `json:"channel"`
+	Pending int64  `json:"pending"`
+}
+
+// Problem defines model for Problem.
+type Problem struct {
+	// Code agentbus2 extension member (RFC 9457 section 3.2).
+	Code     ProblemCode `json:"code"`
+	Detail   *string     `json:"detail,omitempty"`
+	Instance *string     `json:"instance,omitempty"`
+
+	// Retryable agentbus2 extension member (RFC 9457 section 3.2).
+	Retryable bool   `json:"retryable"`
+	Status    int    `json:"status"`
+	Title     string `json:"title"`
+	Type      string `json:"type"`
+}
+
+// ProblemCode agentbus2 extension member (RFC 9457 section 3.2).
+type ProblemCode string
+
+// ReceiveRequest defines model for ReceiveRequest.
+type ReceiveRequest struct {
+	Ack        *string   `json:"ack,omitempty"`
+	Channels   *[]string `json:"channels,omitempty"`
+	Count      *int      `json:"count,omitempty"`
+	IncludeOwn *bool     `json:"include_own,omitempty"`
+}
+
+// ReceiveResult defines model for ReceiveResult.
+type ReceiveResult struct {
+	AckIgnored  bool      `json:"ack_ignored"`
+	Batch       string    `json:"batch"`
+	Gaps        []Gap     `json:"gaps"`
+	Instruction *string   `json:"instruction,omitempty"`
+	Messages    []Message `json:"messages"`
+	Notice      *string   `json:"notice,omitempty"`
+	Redelivered bool      `json:"redelivered"`
+}
+
+// RejectedCursor defines model for RejectedCursor.
+type RejectedCursor struct {
+	Channel string               `json:"channel"`
+	Reason  RejectedCursorReason `json:"reason"`
+}
+
+// RejectedCursorReason defines model for RejectedCursor.Reason.
+type RejectedCursorReason string
+
+// RenameChannelRequest defines model for RenameChannelRequest.
+type RenameChannelRequest struct {
+	Name string `json:"name"`
+}
+
+// SearchHit defines model for SearchHit.
+type SearchHit struct {
+	Message Message `json:"message"`
+	Score   float64 `json:"score"`
+}
+
+// SearchResult defines model for SearchResult.
+type SearchResult struct {
+	Hits                []SearchHit `json:"hits"`
+	Next                *string     `json:"next,omitempty"`
+	SemanticUnavailable *bool       `json:"semantic_unavailable,omitempty"`
+}
+
+// SendRequest defines model for SendRequest.
+type SendRequest struct {
+	Content  string             `json:"content"`
+	Metadata *map[string]string `json:"metadata,omitempty"`
+	ReplyTo  *int64             `json:"reply_to,omitempty"`
+	Session  *string            `json:"session,omitempty"`
+	Subject  *string            `json:"subject,omitempty"`
+	Tags     *[]string          `json:"tags,omitempty"`
+	Type     *string            `json:"type,omitempty"`
+}
+
+// SendResult defines model for SendResult.
+type SendResult struct {
+	MemoryId *int64 `json:"memory_id,omitempty"`
+	Seq      int64  `json:"seq"`
+}
+
+// Session defines model for Session.
+type Session struct {
+	DisplayName     string           `json:"display_name"`
+	Id              string           `json:"id"`
+	Identity        string           `json:"identity"`
+	Pending         []PendingChannel `json:"pending"`
+	RejectedCursors []RejectedCursor `json:"rejected_cursors"`
+	ResumeToken     string           `json:"resume_token"`
+	Resumed         bool             `json:"resumed"`
+}
+
+// SessionInfo defines model for SessionInfo.
+type SessionInfo struct {
+	DisplayName string `json:"display_name"`
+	Id          string `json:"id"`
+	Identity    string `json:"identity"`
+	OpenedAt    int64  `json:"opened_at"`
+}
+
+// Status defines model for Status.
+type Status struct {
+	Channels              []ChannelInfo `json:"channels"`
+	EmbeddingBacklog      int           `json:"embedding_backlog"`
+	EmbeddingError        *string       `json:"embedding_error,omitempty"`
+	EmbeddingErrorAt      *int64        `json:"embedding_error_at,omitempty"`
+	EmbeddingRejected     int           `json:"embedding_rejected"`
+	EmbeddingRejectedLast *string       `json:"embedding_rejected_last,omitempty"`
+	Notices               []Notice      `json:"notices"`
+	Sessions              []SessionInfo `json:"sessions"`
+}
+
+// SubscribeRequest defines model for SubscribeRequest.
+type SubscribeRequest struct {
+	From *SubscribeRequestFrom `json:"from,omitempty"`
+}
+
+// SubscribeRequestFrom defines model for SubscribeRequest.From.
+type SubscribeRequestFrom string
+
+// TagPatterns defines model for TagPatterns.
+type TagPatterns struct {
+	Patterns []string `json:"patterns"`
+}
+
+// Task defines model for Task.
+type Task struct {
+	Blocked      bool               `json:"blocked"`
+	BlockedBy    *[]int64           `json:"blocked_by,omitempty"`
+	Channel      string             `json:"channel"`
+	Description  *string            `json:"description,omitempty"`
+	Id           int64              `json:"id"`
+	LeasedUntil  *int64             `json:"leased_until,omitempty"`
+	Metadata     *map[string]string `json:"metadata,omitempty"`
+	OpenBlockers *[]int64           `json:"open_blockers,omitempty"`
+	Owner        *string            `json:"owner,omitempty"`
+	Parent       *int64             `json:"parent,omitempty"`
+	Rank         string             `json:"rank"`
+	Revision     int64              `json:"revision"`
+	Status       string             `json:"status"`
+	Subject      string             `json:"subject"`
+	UpdatedAt    int64              `json:"updated_at"`
+	UpdatedBy    string             `json:"updated_by"`
+}
+
+// TaskCreateRequest defines model for TaskCreateRequest.
+type TaskCreateRequest struct {
+	After       *int64             `json:"after,omitempty"`
+	Before      *int64             `json:"before,omitempty"`
+	BlockedBy   *[]int64           `json:"blocked_by,omitempty"`
+	Description *string            `json:"description,omitempty"`
+	Metadata    *map[string]string `json:"metadata,omitempty"`
+	Parent      *int64             `json:"parent,omitempty"`
+	Subject     string             `json:"subject"`
+}
+
+// TaskPatch defines model for TaskPatch.
+type TaskPatch struct {
+	AddBlockedBy    *[]int64           `json:"add_blocked_by,omitempty"`
+	After           *int64             `json:"after,omitempty"`
+	Before          *int64             `json:"before,omitempty"`
+	Delete          *bool              `json:"delete,omitempty"`
+	Description     *string            `json:"description,omitempty"`
+	Force           *bool              `json:"force,omitempty"`
+	LeasedUntil     *int64             `json:"leased_until,omitempty"`
+	Metadata        *map[string]string `json:"metadata,omitempty"`
+	Owner           *string            `json:"owner,omitempty"`
+	Parent          *int64             `json:"parent,omitempty"`
+	RemoveBlockedBy *[]int64           `json:"remove_blocked_by,omitempty"`
+	Status          *string            `json:"status,omitempty"`
+	Subject         *string            `json:"subject,omitempty"`
+}
+
+// TaskSummary defines model for TaskSummary.
+type TaskSummary struct {
+	Depth        int      `json:"depth"`
+	HasDetails   *bool    `json:"has_details,omitempty"`
+	Id           int64    `json:"id"`
+	LeasedUntil  *int64   `json:"leased_until,omitempty"`
+	OpenBlockers *[]int64 `json:"open_blockers,omitempty"`
+	Owner        *string  `json:"owner,omitempty"`
+	Parent       *int64   `json:"parent,omitempty"`
+	Status       string   `json:"status"`
+	Subject      string   `json:"subject"`
+}
+
+// TaskUpdateResult defines model for TaskUpdateResult.
+type TaskUpdateResult struct {
+	Deleted  *bool `json:"deleted,omitempty"`
+	Replaced int64 `json:"replaced"`
+	Task     Task  `json:"task"`
+}
+
+// Wake defines model for Wake.
+type Wake struct {
+	Channels []string `json:"channels"`
+	Count    int      `json:"count"`
+	Seq      int64    `json:"seq"`
+}
 
 // WellKnown defines model for WellKnown.
 type WellKnown struct {
 	Discover string `json:"discover"`
 }
+
+// ChannelParam defines model for ChannelParam.
+type ChannelParam = string
+
+// IdParam defines model for IdParam.
+type IdParam = int64
+
+// IdempotencyKeyParam defines model for IdempotencyKeyParam.
+type IdempotencyKeyParam = string
+
+// SessionParam defines model for SessionParam.
+type SessionParam = string
+
+// CreateChannelParams defines parameters for CreateChannel.
+type CreateChannelParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// DeleteChannelParams defines parameters for DeleteChannel.
+type DeleteChannelParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// RenameChannelParams defines parameters for RenameChannel.
+type RenameChannelParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// SetACLJSONBody defines parameters for SetACL.
+type SetACLJSONBody = []ACLEntry
+
+// SetACLParams defines parameters for SetACL.
+type SetACLParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// HistoryParams defines parameters for History.
+type HistoryParams struct {
+	Before *int64    `form:"before,omitempty" json:"before,omitempty"`
+	After  *int64    `form:"after,omitempty" json:"after,omitempty"`
+	Count  *int      `form:"count,omitempty" json:"count,omitempty"`
+	Tags   *[]string `form:"tags,omitempty" json:"tags,omitempty"`
+}
+
+// SendMessageParams defines parameters for SendMessage.
+type SendMessageParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// UnsubscribeParams defines parameters for Unsubscribe.
+type UnsubscribeParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// SubscribeParams defines parameters for Subscribe.
+type SubscribeParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// ListTasksParams defines parameters for ListTasks.
+type ListTasksParams struct {
+	Status *string `form:"status,omitempty" json:"status,omitempty"`
+	Owner  *string `form:"owner,omitempty" json:"owner,omitempty"`
+}
+
+// CreateTaskParams defines parameters for CreateTask.
+type CreateTaskParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// DeleteMemoryParams defines parameters for DeleteMemory.
+type DeleteMemoryParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// EditMemoryParams defines parameters for EditMemory.
+type EditMemoryParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// SearchParams defines parameters for Search.
+type SearchParams struct {
+	Q       *string           `form:"q,omitempty" json:"q,omitempty"`
+	Mode    *SearchParamsMode `form:"mode,omitempty" json:"mode,omitempty"`
+	Channel *string           `form:"channel,omitempty" json:"channel,omitempty"`
+	Sender  *string           `form:"sender,omitempty" json:"sender,omitempty"`
+	Since   *int64            `form:"since,omitempty" json:"since,omitempty"`
+	Until   *int64            `form:"until,omitempty" json:"until,omitempty"`
+	Thread  *int64            `form:"thread,omitempty" json:"thread,omitempty"`
+	Tags    *[]string         `form:"tags,omitempty" json:"tags,omitempty"`
+	Count   *int              `form:"count,omitempty" json:"count,omitempty"`
+	Cursor  *string           `form:"cursor,omitempty" json:"cursor,omitempty"`
+}
+
+// SearchParamsMode defines parameters for Search.
+type SearchParamsMode string
+
+// CloseSessionParams defines parameters for CloseSession.
+type CloseSessionParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// WatchParams defines parameters for Watch.
+type WatchParams struct {
+	After *int64 `form:"after,omitempty" json:"after,omitempty"`
+
+	// Timeout Seconds to wait; fractional allowed; 0 or absent means the server cap.
+	Timeout    *float64 `form:"timeout,omitempty" json:"timeout,omitempty"`
+	IncludeOwn *bool    `form:"include_own,omitempty" json:"include_own,omitempty"`
+}
+
+// SubscribeTagsParams defines parameters for SubscribeTags.
+type SubscribeTagsParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// UnsubscribeTagsParams defines parameters for UnsubscribeTags.
+type UnsubscribeTagsParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// UpdateTaskParams defines parameters for UpdateTask.
+type UpdateTaskParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// ClaimTaskParams defines parameters for ClaimTask.
+type ClaimTaskParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// ReleaseTaskParams defines parameters for ReleaseTask.
+type ReleaseTaskParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// CreateChannelJSONRequestBody defines body for CreateChannel for application/json ContentType.
+type CreateChannelJSONRequestBody = CreateChannelRequest
+
+// RenameChannelJSONRequestBody defines body for RenameChannel for application/json ContentType.
+type RenameChannelJSONRequestBody = RenameChannelRequest
+
+// SetACLJSONRequestBody defines body for SetACL for application/json ContentType.
+type SetACLJSONRequestBody = SetACLJSONBody
+
+// SendMessageJSONRequestBody defines body for SendMessage for application/json ContentType.
+type SendMessageJSONRequestBody = SendRequest
+
+// SubscribeJSONRequestBody defines body for Subscribe for application/json ContentType.
+type SubscribeJSONRequestBody = SubscribeRequest
+
+// CreateTaskJSONRequestBody defines body for CreateTask for application/json ContentType.
+type CreateTaskJSONRequestBody = TaskCreateRequest
+
+// EditMemoryJSONRequestBody defines body for EditMemory for application/json ContentType.
+type EditMemoryJSONRequestBody = EditMemoryRequest
+
+// OpenSessionJSONRequestBody defines body for OpenSession for application/json ContentType.
+type OpenSessionJSONRequestBody = OpenSessionRequest
+
+// ReceiveJSONRequestBody defines body for Receive for application/json ContentType.
+type ReceiveJSONRequestBody = ReceiveRequest
+
+// SubscribeTagsJSONRequestBody defines body for SubscribeTags for application/json ContentType.
+type SubscribeTagsJSONRequestBody = TagPatterns
+
+// UpdateTaskJSONRequestBody defines body for UpdateTask for application/json ContentType.
+type UpdateTaskJSONRequestBody = TaskPatch
+
+// ClaimTaskJSONRequestBody defines body for ClaimTask for application/json ContentType.
+type ClaimTaskJSONRequestBody = ClaimTaskRequest
 
 // RequestEditorFn is the function signature for the RequestEditor callback function
 type RequestEditorFn func(ctx context.Context, req *http.Request) error
@@ -97,11 +829,763 @@ type ClientInterface interface {
 
 	// WellKnown performs a GET /.well-known/agentbus2 (the `WellKnown` operationId) request.
 	WellKnown(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OpenidConfiguration performs a GET /.well-known/openid-configuration (the `OpenidConfiguration` operationId) request.
+	OpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AdminStatus performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
+	AdminStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListChannels performs a GET /v1/channels (the `ListChannels` operationId) request.
+	ListChannels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateChannelWithBody performs a POST /v1/channels (the `CreateChannel` operationId) request,
+	// with any type of body and a specified content type.
+	CreateChannelWithBody(ctx context.Context, params *CreateChannelParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateChannel performs a POST /v1/channels (the `CreateChannel` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateChannel(ctx context.Context, params *CreateChannelParams, body CreateChannelJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteChannel performs a DELETE /v1/channels/{channel} (the `DeleteChannel` operationId) request.
+	DeleteChannel(ctx context.Context, channel ChannelParam, params *DeleteChannelParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RenameChannelWithBody performs a PATCH /v1/channels/{channel} (the `RenameChannel` operationId) request,
+	// with any type of body and a specified content type.
+	RenameChannelWithBody(ctx context.Context, channel ChannelParam, params *RenameChannelParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RenameChannel performs a PATCH /v1/channels/{channel} (the `RenameChannel` operationId) request.
+	// Takes a body of the `application/json` content type.
+	RenameChannel(ctx context.Context, channel ChannelParam, params *RenameChannelParams, body RenameChannelJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetACL performs a GET /v1/channels/{channel}/acl (the `GetACL` operationId) request.
+	GetACL(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetACLWithBody performs a PUT /v1/channels/{channel}/acl (the `SetACL` operationId) request,
+	// with any type of body and a specified content type.
+	SetACLWithBody(ctx context.Context, channel ChannelParam, params *SetACLParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetACL performs a PUT /v1/channels/{channel}/acl (the `SetACL` operationId) request.
+	// Takes a body of the `application/json` content type.
+	SetACL(ctx context.Context, channel ChannelParam, params *SetACLParams, body SetACLJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// History performs a GET /v1/channels/{channel}/messages (the `History` operationId) request.
+	History(ctx context.Context, channel ChannelParam, params *HistoryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SendMessageWithBody performs a POST /v1/channels/{channel}/messages (the `SendMessage` operationId) request,
+	// with any type of body and a specified content type.
+	SendMessageWithBody(ctx context.Context, channel ChannelParam, params *SendMessageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SendMessage performs a POST /v1/channels/{channel}/messages (the `SendMessage` operationId) request.
+	// Takes a body of the `application/json` content type.
+	SendMessage(ctx context.Context, channel ChannelParam, params *SendMessageParams, body SendMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Unsubscribe performs a DELETE /v1/channels/{channel}/subscription (the `Unsubscribe` operationId) request.
+	Unsubscribe(ctx context.Context, channel ChannelParam, params *UnsubscribeParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubscribeWithBody performs a PUT /v1/channels/{channel}/subscription (the `Subscribe` operationId) request,
+	// with any type of body and a specified content type.
+	SubscribeWithBody(ctx context.Context, channel ChannelParam, params *SubscribeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Subscribe performs a PUT /v1/channels/{channel}/subscription (the `Subscribe` operationId) request.
+	// Takes a body of the `application/json` content type.
+	Subscribe(ctx context.Context, channel ChannelParam, params *SubscribeParams, body SubscribeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListTasks performs a GET /v1/channels/{channel}/tasks (the `ListTasks` operationId) request.
+	ListTasks(ctx context.Context, channel ChannelParam, params *ListTasksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateTaskWithBody performs a POST /v1/channels/{channel}/tasks (the `CreateTask` operationId) request,
+	// with any type of body and a specified content type.
+	CreateTaskWithBody(ctx context.Context, channel ChannelParam, params *CreateTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateTask performs a POST /v1/channels/{channel}/tasks (the `CreateTask` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateTask(ctx context.Context, channel ChannelParam, params *CreateTaskParams, body CreateTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Discover performs a GET /v1/discover (the `Discover` operationId) request.
+	Discover(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListIdentities performs a GET /v1/identities (the `ListIdentities` operationId) request.
+	ListIdentities(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DeleteMemory performs a DELETE /v1/memories/{id} (the `DeleteMemory` operationId) request.
+	DeleteMemory(ctx context.Context, id IdParam, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetMemory performs a GET /v1/memories/{id} (the `GetMemory` operationId) request.
+	GetMemory(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListMemoryRevisions performs a GET /v1/memories/{id}/revisions (the `ListMemoryRevisions` operationId) request.
+	ListMemoryRevisions(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditMemoryWithBody performs a POST /v1/memories/{id}/revisions (the `EditMemory` operationId) request,
+	// with any type of body and a specified content type.
+	EditMemoryWithBody(ctx context.Context, id IdParam, params *EditMemoryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// EditMemory performs a POST /v1/memories/{id}/revisions (the `EditMemory` operationId) request.
+	// Takes a body of the `application/json` content type.
+	EditMemory(ctx context.Context, id IdParam, params *EditMemoryParams, body EditMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Search performs a GET /v1/search (the `Search` operationId) request.
+	Search(ctx context.Context, params *SearchParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OpenSessionWithBody performs a POST /v1/sessions (the `OpenSession` operationId) request,
+	// with any type of body and a specified content type.
+	OpenSessionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// OpenSession performs a POST /v1/sessions (the `OpenSession` operationId) request.
+	// Takes a body of the `application/json` content type.
+	OpenSession(ctx context.Context, body OpenSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CloseSession performs a DELETE /v1/sessions/{session} (the `CloseSession` operationId) request.
+	CloseSession(ctx context.Context, session SessionParam, params *CloseSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReceiveWithBody performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request,
+	// with any type of body and a specified content type.
+	ReceiveWithBody(ctx context.Context, session SessionParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Receive performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request.
+	// Takes a body of the `application/json` content type.
+	Receive(ctx context.Context, session SessionParam, body ReceiveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Watch performs a GET /v1/sessions/{session}/watch (the `Watch` operationId) request.
+	Watch(ctx context.Context, session SessionParam, params *WatchParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListTagSubscriptions performs a GET /v1/tag-subscriptions (the `ListTagSubscriptions` operationId) request.
+	ListTagSubscriptions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubscribeTagsWithBody performs a POST /v1/tag-subscriptions (the `SubscribeTags` operationId) request,
+	// with any type of body and a specified content type.
+	SubscribeTagsWithBody(ctx context.Context, params *SubscribeTagsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SubscribeTags performs a POST /v1/tag-subscriptions (the `SubscribeTags` operationId) request.
+	// Takes a body of the `application/json` content type.
+	SubscribeTags(ctx context.Context, params *SubscribeTagsParams, body SubscribeTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UnsubscribeTags performs a DELETE /v1/tag-subscriptions/{patterns} (the `UnsubscribeTags` operationId) request.
+	UnsubscribeTags(ctx context.Context, patterns []string, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetTask performs a GET /v1/tasks/{id} (the `GetTask` operationId) request.
+	GetTask(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateTaskWithBody performs a PATCH /v1/tasks/{id} (the `UpdateTask` operationId) request,
+	// with any type of body and a specified content type.
+	UpdateTaskWithBody(ctx context.Context, id IdParam, params *UpdateTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// UpdateTask performs a PATCH /v1/tasks/{id} (the `UpdateTask` operationId) request.
+	// Takes a body of the `application/json` content type.
+	UpdateTask(ctx context.Context, id IdParam, params *UpdateTaskParams, body UpdateTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ClaimTaskWithBody performs a POST /v1/tasks/{id}/claim (the `ClaimTask` operationId) request,
+	// with any type of body and a specified content type.
+	ClaimTaskWithBody(ctx context.Context, id IdParam, params *ClaimTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ClaimTask performs a POST /v1/tasks/{id}/claim (the `ClaimTask` operationId) request.
+	// Takes a body of the `application/json` content type.
+	ClaimTask(ctx context.Context, id IdParam, params *ClaimTaskParams, body ClaimTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ReleaseTask performs a POST /v1/tasks/{id}/release (the `ReleaseTask` operationId) request.
+	ReleaseTask(ctx context.Context, id IdParam, params *ReleaseTaskParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
 // WellKnown performs a GET /.well-known/agentbus2 (the `WellKnown` operationId) request.
 func (c *Client) WellKnown(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewWellKnownRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OpenidConfiguration performs a GET /.well-known/openid-configuration (the `OpenidConfiguration` operationId) request.
+func (c *Client) OpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOpenidConfigurationRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AdminStatus performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
+func (c *Client) AdminStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAdminStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListChannels performs a GET /v1/channels (the `ListChannels` operationId) request.
+func (c *Client) ListChannels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListChannelsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateChannelWithBody performs a POST /v1/channels (the `CreateChannel` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateChannelWithBody(ctx context.Context, params *CreateChannelParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateChannelRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateChannel performs a POST /v1/channels (the `CreateChannel` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateChannel(ctx context.Context, params *CreateChannelParams, body CreateChannelJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateChannelRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteChannel performs a DELETE /v1/channels/{channel} (the `DeleteChannel` operationId) request.
+func (c *Client) DeleteChannel(ctx context.Context, channel ChannelParam, params *DeleteChannelParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteChannelRequest(c.Server, channel, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RenameChannelWithBody performs a PATCH /v1/channels/{channel} (the `RenameChannel` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) RenameChannelWithBody(ctx context.Context, channel ChannelParam, params *RenameChannelParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenameChannelRequestWithBody(c.Server, channel, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RenameChannel performs a PATCH /v1/channels/{channel} (the `RenameChannel` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) RenameChannel(ctx context.Context, channel ChannelParam, params *RenameChannelParams, body RenameChannelJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRenameChannelRequest(c.Server, channel, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetACL performs a GET /v1/channels/{channel}/acl (the `GetACL` operationId) request.
+func (c *Client) GetACL(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetACLRequest(c.Server, channel)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetACLWithBody performs a PUT /v1/channels/{channel}/acl (the `SetACL` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) SetACLWithBody(ctx context.Context, channel ChannelParam, params *SetACLParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetACLRequestWithBody(c.Server, channel, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetACL performs a PUT /v1/channels/{channel}/acl (the `SetACL` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) SetACL(ctx context.Context, channel ChannelParam, params *SetACLParams, body SetACLJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetACLRequest(c.Server, channel, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// History performs a GET /v1/channels/{channel}/messages (the `History` operationId) request.
+func (c *Client) History(ctx context.Context, channel ChannelParam, params *HistoryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewHistoryRequest(c.Server, channel, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SendMessageWithBody performs a POST /v1/channels/{channel}/messages (the `SendMessage` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) SendMessageWithBody(ctx context.Context, channel ChannelParam, params *SendMessageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSendMessageRequestWithBody(c.Server, channel, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SendMessage performs a POST /v1/channels/{channel}/messages (the `SendMessage` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) SendMessage(ctx context.Context, channel ChannelParam, params *SendMessageParams, body SendMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSendMessageRequest(c.Server, channel, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Unsubscribe performs a DELETE /v1/channels/{channel}/subscription (the `Unsubscribe` operationId) request.
+func (c *Client) Unsubscribe(ctx context.Context, channel ChannelParam, params *UnsubscribeParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUnsubscribeRequest(c.Server, channel, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SubscribeWithBody performs a PUT /v1/channels/{channel}/subscription (the `Subscribe` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) SubscribeWithBody(ctx context.Context, channel ChannelParam, params *SubscribeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubscribeRequestWithBody(c.Server, channel, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Subscribe performs a PUT /v1/channels/{channel}/subscription (the `Subscribe` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) Subscribe(ctx context.Context, channel ChannelParam, params *SubscribeParams, body SubscribeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubscribeRequest(c.Server, channel, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListTasks performs a GET /v1/channels/{channel}/tasks (the `ListTasks` operationId) request.
+func (c *Client) ListTasks(ctx context.Context, channel ChannelParam, params *ListTasksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListTasksRequest(c.Server, channel, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateTaskWithBody performs a POST /v1/channels/{channel}/tasks (the `CreateTask` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateTaskWithBody(ctx context.Context, channel ChannelParam, params *CreateTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTaskRequestWithBody(c.Server, channel, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateTask performs a POST /v1/channels/{channel}/tasks (the `CreateTask` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateTask(ctx context.Context, channel ChannelParam, params *CreateTaskParams, body CreateTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateTaskRequest(c.Server, channel, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Discover performs a GET /v1/discover (the `Discover` operationId) request.
+func (c *Client) Discover(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDiscoverRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListIdentities performs a GET /v1/identities (the `ListIdentities` operationId) request.
+func (c *Client) ListIdentities(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListIdentitiesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DeleteMemory performs a DELETE /v1/memories/{id} (the `DeleteMemory` operationId) request.
+func (c *Client) DeleteMemory(ctx context.Context, id IdParam, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDeleteMemoryRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetMemory performs a GET /v1/memories/{id} (the `GetMemory` operationId) request.
+func (c *Client) GetMemory(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetMemoryRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListMemoryRevisions performs a GET /v1/memories/{id}/revisions (the `ListMemoryRevisions` operationId) request.
+func (c *Client) ListMemoryRevisions(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListMemoryRevisionsRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// EditMemoryWithBody performs a POST /v1/memories/{id}/revisions (the `EditMemory` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) EditMemoryWithBody(ctx context.Context, id IdParam, params *EditMemoryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditMemoryRequestWithBody(c.Server, id, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// EditMemory performs a POST /v1/memories/{id}/revisions (the `EditMemory` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) EditMemory(ctx context.Context, id IdParam, params *EditMemoryParams, body EditMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewEditMemoryRequest(c.Server, id, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Search performs a GET /v1/search (the `Search` operationId) request.
+func (c *Client) Search(ctx context.Context, params *SearchParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSearchRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OpenSessionWithBody performs a POST /v1/sessions (the `OpenSession` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) OpenSessionWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOpenSessionRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// OpenSession performs a POST /v1/sessions (the `OpenSession` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) OpenSession(ctx context.Context, body OpenSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewOpenSessionRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CloseSession performs a DELETE /v1/sessions/{session} (the `CloseSession` operationId) request.
+func (c *Client) CloseSession(ctx context.Context, session SessionParam, params *CloseSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCloseSessionRequest(c.Server, session, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReceiveWithBody performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) ReceiveWithBody(ctx context.Context, session SessionParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReceiveRequestWithBody(c.Server, session, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Receive performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) Receive(ctx context.Context, session SessionParam, body ReceiveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReceiveRequest(c.Server, session, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Watch performs a GET /v1/sessions/{session}/watch (the `Watch` operationId) request.
+func (c *Client) Watch(ctx context.Context, session SessionParam, params *WatchParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewWatchRequest(c.Server, session, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListTagSubscriptions performs a GET /v1/tag-subscriptions (the `ListTagSubscriptions` operationId) request.
+func (c *Client) ListTagSubscriptions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListTagSubscriptionsRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SubscribeTagsWithBody performs a POST /v1/tag-subscriptions (the `SubscribeTags` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) SubscribeTagsWithBody(ctx context.Context, params *SubscribeTagsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubscribeTagsRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SubscribeTags performs a POST /v1/tag-subscriptions (the `SubscribeTags` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) SubscribeTags(ctx context.Context, params *SubscribeTagsParams, body SubscribeTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSubscribeTagsRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UnsubscribeTags performs a DELETE /v1/tag-subscriptions/{patterns} (the `UnsubscribeTags` operationId) request.
+func (c *Client) UnsubscribeTags(ctx context.Context, patterns []string, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUnsubscribeTagsRequest(c.Server, patterns, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetTask performs a GET /v1/tasks/{id} (the `GetTask` operationId) request.
+func (c *Client) GetTask(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetTaskRequest(c.Server, id)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateTaskWithBody performs a PATCH /v1/tasks/{id} (the `UpdateTask` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) UpdateTaskWithBody(ctx context.Context, id IdParam, params *UpdateTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateTaskRequestWithBody(c.Server, id, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// UpdateTask performs a PATCH /v1/tasks/{id} (the `UpdateTask` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) UpdateTask(ctx context.Context, id IdParam, params *UpdateTaskParams, body UpdateTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUpdateTaskRequest(c.Server, id, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ClaimTaskWithBody performs a POST /v1/tasks/{id}/claim (the `ClaimTask` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) ClaimTaskWithBody(ctx context.Context, id IdParam, params *ClaimTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewClaimTaskRequestWithBody(c.Server, id, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ClaimTask performs a POST /v1/tasks/{id}/claim (the `ClaimTask` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) ClaimTask(ctx context.Context, id IdParam, params *ClaimTaskParams, body ClaimTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewClaimTaskRequest(c.Server, id, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ReleaseTask performs a POST /v1/tasks/{id}/release (the `ReleaseTask` operationId) request.
+func (c *Client) ReleaseTask(ctx context.Context, id IdParam, params *ReleaseTaskParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewReleaseTaskRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -134,6 +1618,1708 @@ func NewWellKnownRequest(server string) (*http.Request, error) {
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewOpenidConfigurationRequest constructs an http.Request for the OpenidConfiguration method
+func NewOpenidConfigurationRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/.well-known/openid-configuration")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAdminStatusRequest constructs an http.Request for the AdminStatus method
+func NewAdminStatusRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/status")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListChannelsRequest constructs an http.Request for the ListChannels method
+func NewListChannelsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateChannelRequest calls the generic CreateChannel builder with application/json body
+func NewCreateChannelRequest(server string, params *CreateChannelParams, body CreateChannelJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateChannelRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewCreateChannelRequestWithBody constructs an http.Request for the CreateChannel method, with any body, and a specified content type
+func NewCreateChannelRequestWithBody(server string, params *CreateChannelParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewDeleteChannelRequest constructs an http.Request for the DeleteChannel method
+func NewDeleteChannelRequest(server string, channel ChannelParam, params *DeleteChannelParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewRenameChannelRequest calls the generic RenameChannel builder with application/json body
+func NewRenameChannelRequest(server string, channel ChannelParam, params *RenameChannelParams, body RenameChannelJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRenameChannelRequestWithBody(server, channel, params, "application/json", bodyReader)
+}
+
+// NewRenameChannelRequestWithBody constructs an http.Request for the RenameChannel method, with any body, and a specified content type
+func NewRenameChannelRequestWithBody(server string, channel ChannelParam, params *RenameChannelParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewGetACLRequest constructs an http.Request for the GetACL method
+func NewGetACLRequest(server string, channel ChannelParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels/%s/acl", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSetACLRequest calls the generic SetACL builder with application/json body
+func NewSetACLRequest(server string, channel ChannelParam, params *SetACLParams, body SetACLJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetACLRequestWithBody(server, channel, params, "application/json", bodyReader)
+}
+
+// NewSetACLRequestWithBody constructs an http.Request for the SetACL method, with any body, and a specified content type
+func NewSetACLRequestWithBody(server string, channel ChannelParam, params *SetACLParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels/%s/acl", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewHistoryRequest constructs an http.Request for the History method
+func NewHistoryRequest(server string, channel ChannelParam, params *HistoryParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels/%s/messages", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Before != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "before", *params.Before, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.After != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "after", *params.After, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Count != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "count", *params.Count, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Tags != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "tags", *params.Tags, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSendMessageRequest calls the generic SendMessage builder with application/json body
+func NewSendMessageRequest(server string, channel ChannelParam, params *SendMessageParams, body SendMessageJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSendMessageRequestWithBody(server, channel, params, "application/json", bodyReader)
+}
+
+// NewSendMessageRequestWithBody constructs an http.Request for the SendMessage method, with any body, and a specified content type
+func NewSendMessageRequestWithBody(server string, channel ChannelParam, params *SendMessageParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels/%s/messages", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewUnsubscribeRequest constructs an http.Request for the Unsubscribe method
+func NewUnsubscribeRequest(server string, channel ChannelParam, params *UnsubscribeParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels/%s/subscription", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewSubscribeRequest calls the generic Subscribe builder with application/json body
+func NewSubscribeRequest(server string, channel ChannelParam, params *SubscribeParams, body SubscribeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSubscribeRequestWithBody(server, channel, params, "application/json", bodyReader)
+}
+
+// NewSubscribeRequestWithBody constructs an http.Request for the Subscribe method, with any body, and a specified content type
+func NewSubscribeRequestWithBody(server string, channel ChannelParam, params *SubscribeParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels/%s/subscription", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPut, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewListTasksRequest constructs an http.Request for the ListTasks method
+func NewListTasksRequest(server string, channel ChannelParam, params *ListTasksParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels/%s/tasks", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Status != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "status", *params.Status, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Owner != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "owner", *params.Owner, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateTaskRequest calls the generic CreateTask builder with application/json body
+func NewCreateTaskRequest(server string, channel ChannelParam, params *CreateTaskParams, body CreateTaskJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateTaskRequestWithBody(server, channel, params, "application/json", bodyReader)
+}
+
+// NewCreateTaskRequestWithBody constructs an http.Request for the CreateTask method, with any body, and a specified content type
+func NewCreateTaskRequestWithBody(server string, channel ChannelParam, params *CreateTaskParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/channels/%s/tasks", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewDiscoverRequest constructs an http.Request for the Discover method
+func NewDiscoverRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/discover")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListIdentitiesRequest constructs an http.Request for the ListIdentities method
+func NewListIdentitiesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/identities")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDeleteMemoryRequest constructs an http.Request for the DeleteMemory method
+func NewDeleteMemoryRequest(server string, id IdParam, params *DeleteMemoryParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/memories/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewGetMemoryRequest constructs an http.Request for the GetMemory method
+func NewGetMemoryRequest(server string, id IdParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/memories/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListMemoryRevisionsRequest constructs an http.Request for the ListMemoryRevisions method
+func NewListMemoryRevisionsRequest(server string, id IdParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/memories/%s/revisions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewEditMemoryRequest calls the generic EditMemory builder with application/json body
+func NewEditMemoryRequest(server string, id IdParam, params *EditMemoryParams, body EditMemoryJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewEditMemoryRequestWithBody(server, id, params, "application/json", bodyReader)
+}
+
+// NewEditMemoryRequestWithBody constructs an http.Request for the EditMemory method, with any body, and a specified content type
+func NewEditMemoryRequestWithBody(server string, id IdParam, params *EditMemoryParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/memories/%s/revisions", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewSearchRequest constructs an http.Request for the Search method
+func NewSearchRequest(server string, params *SearchParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/search")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Q != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "q", *params.Q, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Mode != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "mode", *params.Mode, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Channel != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "channel", *params.Channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Sender != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "sender", *params.Sender, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Since != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "since", *params.Since, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Until != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "until", *params.Until, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Thread != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "thread", *params.Thread, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Tags != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", false, "tags", *params.Tags, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Count != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "count", *params.Count, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Cursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "cursor", *params.Cursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewOpenSessionRequest calls the generic OpenSession builder with application/json body
+func NewOpenSessionRequest(server string, body OpenSessionJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewOpenSessionRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewOpenSessionRequestWithBody constructs an http.Request for the OpenSession method, with any body, and a specified content type
+func NewOpenSessionRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sessions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewCloseSessionRequest constructs an http.Request for the CloseSession method
+func NewCloseSessionRequest(server string, session SessionParam, params *CloseSessionParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session", session, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sessions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewReceiveRequest calls the generic Receive builder with application/json body
+func NewReceiveRequest(server string, session SessionParam, body ReceiveJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewReceiveRequestWithBody(server, session, "application/json", bodyReader)
+}
+
+// NewReceiveRequestWithBody constructs an http.Request for the Receive method, with any body, and a specified content type
+func NewReceiveRequestWithBody(server string, session SessionParam, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session", session, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sessions/%s/receive", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewWatchRequest constructs an http.Request for the Watch method
+func NewWatchRequest(server string, session SessionParam, params *WatchParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session", session, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sessions/%s/watch", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.After != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "after", *params.After, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Timeout != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "timeout", *params.Timeout, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "number", Format: "double"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.IncludeOwn != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "include_own", *params.IncludeOwn, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewListTagSubscriptionsRequest constructs an http.Request for the ListTagSubscriptions method
+func NewListTagSubscriptionsRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/tag-subscriptions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewSubscribeTagsRequest calls the generic SubscribeTags builder with application/json body
+func NewSubscribeTagsRequest(server string, params *SubscribeTagsParams, body SubscribeTagsJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSubscribeTagsRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewSubscribeTagsRequestWithBody constructs an http.Request for the SubscribeTags method, with any body, and a specified content type
+func NewSubscribeTagsRequestWithBody(server string, params *SubscribeTagsParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/tag-subscriptions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewUnsubscribeTagsRequest constructs an http.Request for the UnsubscribeTags method
+func NewUnsubscribeTagsRequest(server string, patterns []string, params *UnsubscribeTagsParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "patterns", patterns, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "array", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/tag-subscriptions/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewGetTaskRequest constructs an http.Request for the GetTask method
+func NewGetTaskRequest(server string, id IdParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/tasks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewUpdateTaskRequest calls the generic UpdateTask builder with application/json body
+func NewUpdateTaskRequest(server string, id IdParam, params *UpdateTaskParams, body UpdateTaskJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewUpdateTaskRequestWithBody(server, id, params, "application/json", bodyReader)
+}
+
+// NewUpdateTaskRequestWithBody constructs an http.Request for the UpdateTask method, with any body, and a specified content type
+func NewUpdateTaskRequestWithBody(server string, id IdParam, params *UpdateTaskParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/tasks/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPatch, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewClaimTaskRequest calls the generic ClaimTask builder with application/json body
+func NewClaimTaskRequest(server string, id IdParam, params *ClaimTaskParams, body ClaimTaskJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewClaimTaskRequestWithBody(server, id, params, "application/json", bodyReader)
+}
+
+// NewClaimTaskRequestWithBody constructs an http.Request for the ClaimTask method, with any body, and a specified content type
+func NewClaimTaskRequestWithBody(server string, id IdParam, params *ClaimTaskParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/tasks/%s/claim", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewReleaseTaskRequest constructs an http.Request for the ReleaseTask method
+func NewReleaseTaskRequest(server string, id IdParam, params *ReleaseTaskParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "integer", Format: "int64"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/tasks/%s/release", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
 	}
 
 	return req, nil
@@ -187,6 +3373,226 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns a wrapper object for the known response body format(s).
 	WellKnownWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*WellKnownResponse, error)
+
+	// OpenidConfigurationWithResponse performs a GET /.well-known/openid-configuration (the `OpenidConfiguration` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	OpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpenidConfigurationResponse, error)
+
+	// AdminStatusWithResponse performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	AdminStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AdminStatusResponse, error)
+
+	// ListChannelsWithResponse performs a GET /v1/channels (the `ListChannels` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListChannelsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListChannelsResponse, error)
+
+	// CreateChannelWithBodyWithResponse performs a POST /v1/channels (the `CreateChannel` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateChannelWithBodyWithResponse(ctx context.Context, params *CreateChannelParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateChannelResponse, error)
+
+	// CreateChannelWithResponse performs a POST /v1/channels (the `CreateChannel` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateChannelWithResponse(ctx context.Context, params *CreateChannelParams, body CreateChannelJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateChannelResponse, error)
+
+	// DeleteChannelWithResponse performs a DELETE /v1/channels/{channel} (the `DeleteChannel` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteChannelWithResponse(ctx context.Context, channel ChannelParam, params *DeleteChannelParams, reqEditors ...RequestEditorFn) (*DeleteChannelResponse, error)
+
+	// RenameChannelWithBodyWithResponse performs a PATCH /v1/channels/{channel} (the `RenameChannel` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RenameChannelWithBodyWithResponse(ctx context.Context, channel ChannelParam, params *RenameChannelParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenameChannelResponse, error)
+
+	// RenameChannelWithResponse performs a PATCH /v1/channels/{channel} (the `RenameChannel` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	RenameChannelWithResponse(ctx context.Context, channel ChannelParam, params *RenameChannelParams, body RenameChannelJSONRequestBody, reqEditors ...RequestEditorFn) (*RenameChannelResponse, error)
+
+	// GetACLWithResponse performs a GET /v1/channels/{channel}/acl (the `GetACL` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetACLWithResponse(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*GetACLResponse, error)
+
+	// SetACLWithBodyWithResponse performs a PUT /v1/channels/{channel}/acl (the `SetACL` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	SetACLWithBodyWithResponse(ctx context.Context, channel ChannelParam, params *SetACLParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetACLResponse, error)
+
+	// SetACLWithResponse performs a PUT /v1/channels/{channel}/acl (the `SetACL` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	SetACLWithResponse(ctx context.Context, channel ChannelParam, params *SetACLParams, body SetACLJSONRequestBody, reqEditors ...RequestEditorFn) (*SetACLResponse, error)
+
+	// HistoryWithResponse performs a GET /v1/channels/{channel}/messages (the `History` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	HistoryWithResponse(ctx context.Context, channel ChannelParam, params *HistoryParams, reqEditors ...RequestEditorFn) (*HistoryResponse, error)
+
+	// SendMessageWithBodyWithResponse performs a POST /v1/channels/{channel}/messages (the `SendMessage` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	SendMessageWithBodyWithResponse(ctx context.Context, channel ChannelParam, params *SendMessageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SendMessageResponse, error)
+
+	// SendMessageWithResponse performs a POST /v1/channels/{channel}/messages (the `SendMessage` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	SendMessageWithResponse(ctx context.Context, channel ChannelParam, params *SendMessageParams, body SendMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*SendMessageResponse, error)
+
+	// UnsubscribeWithResponse performs a DELETE /v1/channels/{channel}/subscription (the `Unsubscribe` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	UnsubscribeWithResponse(ctx context.Context, channel ChannelParam, params *UnsubscribeParams, reqEditors ...RequestEditorFn) (*UnsubscribeResponse, error)
+
+	// SubscribeWithBodyWithResponse performs a PUT /v1/channels/{channel}/subscription (the `Subscribe` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	SubscribeWithBodyWithResponse(ctx context.Context, channel ChannelParam, params *SubscribeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubscribeResponse, error)
+
+	// SubscribeWithResponse performs a PUT /v1/channels/{channel}/subscription (the `Subscribe` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	SubscribeWithResponse(ctx context.Context, channel ChannelParam, params *SubscribeParams, body SubscribeJSONRequestBody, reqEditors ...RequestEditorFn) (*SubscribeResponse, error)
+
+	// ListTasksWithResponse performs a GET /v1/channels/{channel}/tasks (the `ListTasks` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListTasksWithResponse(ctx context.Context, channel ChannelParam, params *ListTasksParams, reqEditors ...RequestEditorFn) (*ListTasksResponse, error)
+
+	// CreateTaskWithBodyWithResponse performs a POST /v1/channels/{channel}/tasks (the `CreateTask` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateTaskWithBodyWithResponse(ctx context.Context, channel ChannelParam, params *CreateTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTaskResponse, error)
+
+	// CreateTaskWithResponse performs a POST /v1/channels/{channel}/tasks (the `CreateTask` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateTaskWithResponse(ctx context.Context, channel ChannelParam, params *CreateTaskParams, body CreateTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTaskResponse, error)
+
+	// DiscoverWithResponse performs a GET /v1/discover (the `Discover` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DiscoverWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DiscoverResponse, error)
+
+	// ListIdentitiesWithResponse performs a GET /v1/identities (the `ListIdentities` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListIdentitiesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListIdentitiesResponse, error)
+
+	// DeleteMemoryWithResponse performs a DELETE /v1/memories/{id} (the `DeleteMemory` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DeleteMemoryWithResponse(ctx context.Context, id IdParam, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*DeleteMemoryResponse, error)
+
+	// GetMemoryWithResponse performs a GET /v1/memories/{id} (the `GetMemory` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetMemoryWithResponse(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*GetMemoryResponse, error)
+
+	// ListMemoryRevisionsWithResponse performs a GET /v1/memories/{id}/revisions (the `ListMemoryRevisions` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListMemoryRevisionsWithResponse(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*ListMemoryRevisionsResponse, error)
+
+	// EditMemoryWithBodyWithResponse performs a POST /v1/memories/{id}/revisions (the `EditMemory` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	EditMemoryWithBodyWithResponse(ctx context.Context, id IdParam, params *EditMemoryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditMemoryResponse, error)
+
+	// EditMemoryWithResponse performs a POST /v1/memories/{id}/revisions (the `EditMemory` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	EditMemoryWithResponse(ctx context.Context, id IdParam, params *EditMemoryParams, body EditMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*EditMemoryResponse, error)
+
+	// SearchWithResponse performs a GET /v1/search (the `Search` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	SearchWithResponse(ctx context.Context, params *SearchParams, reqEditors ...RequestEditorFn) (*SearchResponse, error)
+
+	// OpenSessionWithBodyWithResponse performs a POST /v1/sessions (the `OpenSession` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	OpenSessionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OpenSessionResponse, error)
+
+	// OpenSessionWithResponse performs a POST /v1/sessions (the `OpenSession` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	OpenSessionWithResponse(ctx context.Context, body OpenSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*OpenSessionResponse, error)
+
+	// CloseSessionWithResponse performs a DELETE /v1/sessions/{session} (the `CloseSession` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CloseSessionWithResponse(ctx context.Context, session SessionParam, params *CloseSessionParams, reqEditors ...RequestEditorFn) (*CloseSessionResponse, error)
+
+	// ReceiveWithBodyWithResponse performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ReceiveWithBodyWithResponse(ctx context.Context, session SessionParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveResponse, error)
+
+	// ReceiveWithResponse performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	ReceiveWithResponse(ctx context.Context, session SessionParam, body ReceiveJSONRequestBody, reqEditors ...RequestEditorFn) (*ReceiveResponse, error)
+
+	// WatchWithResponse performs a GET /v1/sessions/{session}/watch (the `Watch` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	WatchWithResponse(ctx context.Context, session SessionParam, params *WatchParams, reqEditors ...RequestEditorFn) (*WatchResponse, error)
+
+	// ListTagSubscriptionsWithResponse performs a GET /v1/tag-subscriptions (the `ListTagSubscriptions` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListTagSubscriptionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListTagSubscriptionsResponse, error)
+
+	// SubscribeTagsWithBodyWithResponse performs a POST /v1/tag-subscriptions (the `SubscribeTags` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	SubscribeTagsWithBodyWithResponse(ctx context.Context, params *SubscribeTagsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubscribeTagsResponse, error)
+
+	// SubscribeTagsWithResponse performs a POST /v1/tag-subscriptions (the `SubscribeTags` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	SubscribeTagsWithResponse(ctx context.Context, params *SubscribeTagsParams, body SubscribeTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*SubscribeTagsResponse, error)
+
+	// UnsubscribeTagsWithResponse performs a DELETE /v1/tag-subscriptions/{patterns} (the `UnsubscribeTags` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	UnsubscribeTagsWithResponse(ctx context.Context, patterns []string, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*UnsubscribeTagsResponse, error)
+
+	// GetTaskWithResponse performs a GET /v1/tasks/{id} (the `GetTask` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetTaskWithResponse(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*GetTaskResponse, error)
+
+	// UpdateTaskWithBodyWithResponse performs a PATCH /v1/tasks/{id} (the `UpdateTask` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	UpdateTaskWithBodyWithResponse(ctx context.Context, id IdParam, params *UpdateTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateTaskResponse, error)
+
+	// UpdateTaskWithResponse performs a PATCH /v1/tasks/{id} (the `UpdateTask` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	UpdateTaskWithResponse(ctx context.Context, id IdParam, params *UpdateTaskParams, body UpdateTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTaskResponse, error)
+
+	// ClaimTaskWithBodyWithResponse performs a POST /v1/tasks/{id}/claim (the `ClaimTask` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ClaimTaskWithBodyWithResponse(ctx context.Context, id IdParam, params *ClaimTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ClaimTaskResponse, error)
+
+	// ClaimTaskWithResponse performs a POST /v1/tasks/{id}/claim (the `ClaimTask` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	ClaimTaskWithResponse(ctx context.Context, id IdParam, params *ClaimTaskParams, body ClaimTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*ClaimTaskResponse, error)
+
+	// ReleaseTaskWithResponse performs a POST /v1/tasks/{id}/release (the `ReleaseTask` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ReleaseTaskWithResponse(ctx context.Context, id IdParam, params *ReleaseTaskParams, reqEditors ...RequestEditorFn) (*ReleaseTaskResponse, error)
 }
 
 type WellKnownResponse struct {
@@ -194,11 +3600,18 @@ type WellKnownResponse struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *WellKnown
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
 func (r WellKnownResponse) GetJSON200() *WellKnown {
 	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r WellKnownResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
 }
 
 // GetBody returns the raw response body bytes
@@ -230,6 +3643,1486 @@ func (r WellKnownResponse) ContentType() string {
 	return ""
 }
 
+type OpenidConfigurationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *OpenIDConfiguration
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r OpenidConfigurationResponse) GetJSON200() *OpenIDConfiguration {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r OpenidConfigurationResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r OpenidConfigurationResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r OpenidConfigurationResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OpenidConfigurationResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OpenidConfigurationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AdminStatusResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Status
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AdminStatusResponse) GetJSON200() *Status {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r AdminStatusResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AdminStatusResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AdminStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AdminStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AdminStatusResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListChannelsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]Channel
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListChannelsResponse) GetJSON200() *[]Channel {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListChannelsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListChannelsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListChannelsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListChannelsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListChannelsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateChannelResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *ChannelInfo
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateChannelResponse) GetJSON201() *ChannelInfo {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateChannelResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateChannelResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateChannelResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateChannelResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateChannelResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteChannelResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r DeleteChannelResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteChannelResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteChannelResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteChannelResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteChannelResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RenameChannelResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RenameChannelResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RenameChannelResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RenameChannelResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RenameChannelResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RenameChannelResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetACLResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]ACLEntry
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetACLResponse) GetJSON200() *[]ACLEntry {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetACLResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetACLResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetACLResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetACLResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetACLResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetACLResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r SetACLResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SetACLResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SetACLResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetACLResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetACLResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type HistoryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]Message
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r HistoryResponse) GetJSON200() *[]Message {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r HistoryResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r HistoryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r HistoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r HistoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r HistoryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SendMessageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *SendResult
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r SendMessageResponse) GetJSON201() *SendResult {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r SendMessageResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SendMessageResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SendMessageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SendMessageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SendMessageResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UnsubscribeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r UnsubscribeResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UnsubscribeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UnsubscribeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UnsubscribeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UnsubscribeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SubscribeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r SubscribeResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SubscribeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SubscribeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SubscribeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SubscribeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListTasksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]TaskSummary
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListTasksResponse) GetJSON200() *[]TaskSummary {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListTasksResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListTasksResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListTasksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListTasksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListTasksResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateTaskResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Task
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r CreateTaskResponse) GetJSON201() *Task {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateTaskResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateTaskResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateTaskResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateTaskResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateTaskResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DiscoverResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Discovery
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r DiscoverResponse) GetJSON200() *Discovery {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r DiscoverResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DiscoverResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DiscoverResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DiscoverResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DiscoverResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListIdentitiesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]Identity
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListIdentitiesResponse) GetJSON200() *[]Identity {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListIdentitiesResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListIdentitiesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListIdentitiesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListIdentitiesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListIdentitiesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DeleteMemoryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r DeleteMemoryResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DeleteMemoryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DeleteMemoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DeleteMemoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DeleteMemoryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetMemoryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Message
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetMemoryResponse) GetJSON200() *Message {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetMemoryResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetMemoryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetMemoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetMemoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetMemoryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListMemoryRevisionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]Message
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListMemoryRevisionsResponse) GetJSON200() *[]Message {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListMemoryRevisionsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListMemoryRevisionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListMemoryRevisionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListMemoryRevisionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListMemoryRevisionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type EditMemoryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *EditResult
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r EditMemoryResponse) GetJSON201() *EditResult {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r EditMemoryResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r EditMemoryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r EditMemoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r EditMemoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r EditMemoryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SearchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SearchResult
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SearchResponse) GetJSON200() *SearchResult {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r SearchResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SearchResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SearchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SearchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SearchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type OpenSessionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Session
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r OpenSessionResponse) GetJSON201() *Session {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r OpenSessionResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r OpenSessionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r OpenSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r OpenSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r OpenSessionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CloseSessionResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CloseSessionResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CloseSessionResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CloseSessionResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CloseSessionResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CloseSessionResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ReceiveResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ReceiveResult
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ReceiveResponse) GetJSON200() *ReceiveResult {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ReceiveResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ReceiveResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ReceiveResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReceiveResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ReceiveResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type WatchResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Wake
+	// ApplicationproblemJSON409 the response for an HTTP 409 `application/problem+json` response
+	ApplicationproblemJSON409 *Problem
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r WatchResponse) GetJSON200() *Wake {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSON409 returns the response for an HTTP 409 `application/problem+json` response
+func (r WatchResponse) GetApplicationproblemJSON409() *Problem {
+	return r.ApplicationproblemJSON409
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r WatchResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r WatchResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r WatchResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r WatchResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r WatchResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListTagSubscriptionsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[][]string
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListTagSubscriptionsResponse) GetJSON200() *[][]string {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListTagSubscriptionsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListTagSubscriptionsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListTagSubscriptionsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListTagSubscriptionsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListTagSubscriptionsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SubscribeTagsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r SubscribeTagsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SubscribeTagsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SubscribeTagsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SubscribeTagsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SubscribeTagsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UnsubscribeTagsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r UnsubscribeTagsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UnsubscribeTagsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UnsubscribeTagsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UnsubscribeTagsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UnsubscribeTagsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetTaskResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Task
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetTaskResponse) GetJSON200() *Task {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetTaskResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetTaskResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetTaskResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetTaskResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetTaskResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type UpdateTaskResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TaskUpdateResult
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r UpdateTaskResponse) GetJSON200() *TaskUpdateResult {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r UpdateTaskResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UpdateTaskResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UpdateTaskResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UpdateTaskResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UpdateTaskResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ClaimTaskResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TaskUpdateResult
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ClaimTaskResponse) GetJSON200() *TaskUpdateResult {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ClaimTaskResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ClaimTaskResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ClaimTaskResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ClaimTaskResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ClaimTaskResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ReleaseTaskResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *TaskUpdateResult
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ReleaseTaskResponse) GetJSON200() *TaskUpdateResult {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ReleaseTaskResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ReleaseTaskResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ReleaseTaskResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ReleaseTaskResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ReleaseTaskResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 // WellKnownWithResponse performs a GET /.well-known/agentbus2 (the `WellKnown` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -239,6 +5132,490 @@ func (c *ClientWithResponses) WellKnownWithResponse(ctx context.Context, reqEdit
 		return nil, err
 	}
 	return ParseWellKnownResponse(rsp)
+}
+
+// OpenidConfigurationWithResponse performs a GET /.well-known/openid-configuration (the `OpenidConfiguration` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) OpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpenidConfigurationResponse, error) {
+	rsp, err := c.OpenidConfiguration(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOpenidConfigurationResponse(rsp)
+}
+
+// AdminStatusWithResponse performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) AdminStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AdminStatusResponse, error) {
+	rsp, err := c.AdminStatus(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAdminStatusResponse(rsp)
+}
+
+// ListChannelsWithResponse performs a GET /v1/channels (the `ListChannels` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListChannelsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListChannelsResponse, error) {
+	rsp, err := c.ListChannels(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListChannelsResponse(rsp)
+}
+
+// CreateChannelWithBodyWithResponse performs a POST /v1/channels (the `CreateChannel` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateChannelWithBodyWithResponse(ctx context.Context, params *CreateChannelParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateChannelResponse, error) {
+	rsp, err := c.CreateChannelWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateChannelResponse(rsp)
+}
+
+// CreateChannelWithResponse performs a POST /v1/channels (the `CreateChannel` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateChannelWithResponse(ctx context.Context, params *CreateChannelParams, body CreateChannelJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateChannelResponse, error) {
+	rsp, err := c.CreateChannel(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateChannelResponse(rsp)
+}
+
+// DeleteChannelWithResponse performs a DELETE /v1/channels/{channel} (the `DeleteChannel` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteChannelWithResponse(ctx context.Context, channel ChannelParam, params *DeleteChannelParams, reqEditors ...RequestEditorFn) (*DeleteChannelResponse, error) {
+	rsp, err := c.DeleteChannel(ctx, channel, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteChannelResponse(rsp)
+}
+
+// RenameChannelWithBodyWithResponse performs a PATCH /v1/channels/{channel} (the `RenameChannel` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RenameChannelWithBodyWithResponse(ctx context.Context, channel ChannelParam, params *RenameChannelParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RenameChannelResponse, error) {
+	rsp, err := c.RenameChannelWithBody(ctx, channel, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenameChannelResponse(rsp)
+}
+
+// RenameChannelWithResponse performs a PATCH /v1/channels/{channel} (the `RenameChannel` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RenameChannelWithResponse(ctx context.Context, channel ChannelParam, params *RenameChannelParams, body RenameChannelJSONRequestBody, reqEditors ...RequestEditorFn) (*RenameChannelResponse, error) {
+	rsp, err := c.RenameChannel(ctx, channel, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRenameChannelResponse(rsp)
+}
+
+// GetACLWithResponse performs a GET /v1/channels/{channel}/acl (the `GetACL` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetACLWithResponse(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*GetACLResponse, error) {
+	rsp, err := c.GetACL(ctx, channel, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetACLResponse(rsp)
+}
+
+// SetACLWithBodyWithResponse performs a PUT /v1/channels/{channel}/acl (the `SetACL` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SetACLWithBodyWithResponse(ctx context.Context, channel ChannelParam, params *SetACLParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetACLResponse, error) {
+	rsp, err := c.SetACLWithBody(ctx, channel, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetACLResponse(rsp)
+}
+
+// SetACLWithResponse performs a PUT /v1/channels/{channel}/acl (the `SetACL` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SetACLWithResponse(ctx context.Context, channel ChannelParam, params *SetACLParams, body SetACLJSONRequestBody, reqEditors ...RequestEditorFn) (*SetACLResponse, error) {
+	rsp, err := c.SetACL(ctx, channel, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetACLResponse(rsp)
+}
+
+// HistoryWithResponse performs a GET /v1/channels/{channel}/messages (the `History` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) HistoryWithResponse(ctx context.Context, channel ChannelParam, params *HistoryParams, reqEditors ...RequestEditorFn) (*HistoryResponse, error) {
+	rsp, err := c.History(ctx, channel, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseHistoryResponse(rsp)
+}
+
+// SendMessageWithBodyWithResponse performs a POST /v1/channels/{channel}/messages (the `SendMessage` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SendMessageWithBodyWithResponse(ctx context.Context, channel ChannelParam, params *SendMessageParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SendMessageResponse, error) {
+	rsp, err := c.SendMessageWithBody(ctx, channel, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSendMessageResponse(rsp)
+}
+
+// SendMessageWithResponse performs a POST /v1/channels/{channel}/messages (the `SendMessage` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SendMessageWithResponse(ctx context.Context, channel ChannelParam, params *SendMessageParams, body SendMessageJSONRequestBody, reqEditors ...RequestEditorFn) (*SendMessageResponse, error) {
+	rsp, err := c.SendMessage(ctx, channel, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSendMessageResponse(rsp)
+}
+
+// UnsubscribeWithResponse performs a DELETE /v1/channels/{channel}/subscription (the `Unsubscribe` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UnsubscribeWithResponse(ctx context.Context, channel ChannelParam, params *UnsubscribeParams, reqEditors ...RequestEditorFn) (*UnsubscribeResponse, error) {
+	rsp, err := c.Unsubscribe(ctx, channel, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUnsubscribeResponse(rsp)
+}
+
+// SubscribeWithBodyWithResponse performs a PUT /v1/channels/{channel}/subscription (the `Subscribe` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SubscribeWithBodyWithResponse(ctx context.Context, channel ChannelParam, params *SubscribeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubscribeResponse, error) {
+	rsp, err := c.SubscribeWithBody(ctx, channel, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubscribeResponse(rsp)
+}
+
+// SubscribeWithResponse performs a PUT /v1/channels/{channel}/subscription (the `Subscribe` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SubscribeWithResponse(ctx context.Context, channel ChannelParam, params *SubscribeParams, body SubscribeJSONRequestBody, reqEditors ...RequestEditorFn) (*SubscribeResponse, error) {
+	rsp, err := c.Subscribe(ctx, channel, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubscribeResponse(rsp)
+}
+
+// ListTasksWithResponse performs a GET /v1/channels/{channel}/tasks (the `ListTasks` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListTasksWithResponse(ctx context.Context, channel ChannelParam, params *ListTasksParams, reqEditors ...RequestEditorFn) (*ListTasksResponse, error) {
+	rsp, err := c.ListTasks(ctx, channel, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListTasksResponse(rsp)
+}
+
+// CreateTaskWithBodyWithResponse performs a POST /v1/channels/{channel}/tasks (the `CreateTask` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateTaskWithBodyWithResponse(ctx context.Context, channel ChannelParam, params *CreateTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateTaskResponse, error) {
+	rsp, err := c.CreateTaskWithBody(ctx, channel, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateTaskResponse(rsp)
+}
+
+// CreateTaskWithResponse performs a POST /v1/channels/{channel}/tasks (the `CreateTask` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateTaskWithResponse(ctx context.Context, channel ChannelParam, params *CreateTaskParams, body CreateTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateTaskResponse, error) {
+	rsp, err := c.CreateTask(ctx, channel, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateTaskResponse(rsp)
+}
+
+// DiscoverWithResponse performs a GET /v1/discover (the `Discover` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DiscoverWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DiscoverResponse, error) {
+	rsp, err := c.Discover(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDiscoverResponse(rsp)
+}
+
+// ListIdentitiesWithResponse performs a GET /v1/identities (the `ListIdentities` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListIdentitiesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListIdentitiesResponse, error) {
+	rsp, err := c.ListIdentities(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListIdentitiesResponse(rsp)
+}
+
+// DeleteMemoryWithResponse performs a DELETE /v1/memories/{id} (the `DeleteMemory` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DeleteMemoryWithResponse(ctx context.Context, id IdParam, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*DeleteMemoryResponse, error) {
+	rsp, err := c.DeleteMemory(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDeleteMemoryResponse(rsp)
+}
+
+// GetMemoryWithResponse performs a GET /v1/memories/{id} (the `GetMemory` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetMemoryWithResponse(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*GetMemoryResponse, error) {
+	rsp, err := c.GetMemory(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetMemoryResponse(rsp)
+}
+
+// ListMemoryRevisionsWithResponse performs a GET /v1/memories/{id}/revisions (the `ListMemoryRevisions` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListMemoryRevisionsWithResponse(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*ListMemoryRevisionsResponse, error) {
+	rsp, err := c.ListMemoryRevisions(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListMemoryRevisionsResponse(rsp)
+}
+
+// EditMemoryWithBodyWithResponse performs a POST /v1/memories/{id}/revisions (the `EditMemory` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) EditMemoryWithBodyWithResponse(ctx context.Context, id IdParam, params *EditMemoryParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*EditMemoryResponse, error) {
+	rsp, err := c.EditMemoryWithBody(ctx, id, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditMemoryResponse(rsp)
+}
+
+// EditMemoryWithResponse performs a POST /v1/memories/{id}/revisions (the `EditMemory` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) EditMemoryWithResponse(ctx context.Context, id IdParam, params *EditMemoryParams, body EditMemoryJSONRequestBody, reqEditors ...RequestEditorFn) (*EditMemoryResponse, error) {
+	rsp, err := c.EditMemory(ctx, id, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseEditMemoryResponse(rsp)
+}
+
+// SearchWithResponse performs a GET /v1/search (the `Search` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SearchWithResponse(ctx context.Context, params *SearchParams, reqEditors ...RequestEditorFn) (*SearchResponse, error) {
+	rsp, err := c.Search(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSearchResponse(rsp)
+}
+
+// OpenSessionWithBodyWithResponse performs a POST /v1/sessions (the `OpenSession` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) OpenSessionWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*OpenSessionResponse, error) {
+	rsp, err := c.OpenSessionWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOpenSessionResponse(rsp)
+}
+
+// OpenSessionWithResponse performs a POST /v1/sessions (the `OpenSession` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) OpenSessionWithResponse(ctx context.Context, body OpenSessionJSONRequestBody, reqEditors ...RequestEditorFn) (*OpenSessionResponse, error) {
+	rsp, err := c.OpenSession(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseOpenSessionResponse(rsp)
+}
+
+// CloseSessionWithResponse performs a DELETE /v1/sessions/{session} (the `CloseSession` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CloseSessionWithResponse(ctx context.Context, session SessionParam, params *CloseSessionParams, reqEditors ...RequestEditorFn) (*CloseSessionResponse, error) {
+	rsp, err := c.CloseSession(ctx, session, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCloseSessionResponse(rsp)
+}
+
+// ReceiveWithBodyWithResponse performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ReceiveWithBodyWithResponse(ctx context.Context, session SessionParam, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ReceiveResponse, error) {
+	rsp, err := c.ReceiveWithBody(ctx, session, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReceiveResponse(rsp)
+}
+
+// ReceiveWithResponse performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ReceiveWithResponse(ctx context.Context, session SessionParam, body ReceiveJSONRequestBody, reqEditors ...RequestEditorFn) (*ReceiveResponse, error) {
+	rsp, err := c.Receive(ctx, session, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReceiveResponse(rsp)
+}
+
+// WatchWithResponse performs a GET /v1/sessions/{session}/watch (the `Watch` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) WatchWithResponse(ctx context.Context, session SessionParam, params *WatchParams, reqEditors ...RequestEditorFn) (*WatchResponse, error) {
+	rsp, err := c.Watch(ctx, session, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseWatchResponse(rsp)
+}
+
+// ListTagSubscriptionsWithResponse performs a GET /v1/tag-subscriptions (the `ListTagSubscriptions` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListTagSubscriptionsWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListTagSubscriptionsResponse, error) {
+	rsp, err := c.ListTagSubscriptions(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListTagSubscriptionsResponse(rsp)
+}
+
+// SubscribeTagsWithBodyWithResponse performs a POST /v1/tag-subscriptions (the `SubscribeTags` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SubscribeTagsWithBodyWithResponse(ctx context.Context, params *SubscribeTagsParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SubscribeTagsResponse, error) {
+	rsp, err := c.SubscribeTagsWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubscribeTagsResponse(rsp)
+}
+
+// SubscribeTagsWithResponse performs a POST /v1/tag-subscriptions (the `SubscribeTags` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SubscribeTagsWithResponse(ctx context.Context, params *SubscribeTagsParams, body SubscribeTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*SubscribeTagsResponse, error) {
+	rsp, err := c.SubscribeTags(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSubscribeTagsResponse(rsp)
+}
+
+// UnsubscribeTagsWithResponse performs a DELETE /v1/tag-subscriptions/{patterns} (the `UnsubscribeTags` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UnsubscribeTagsWithResponse(ctx context.Context, patterns []string, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*UnsubscribeTagsResponse, error) {
+	rsp, err := c.UnsubscribeTags(ctx, patterns, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUnsubscribeTagsResponse(rsp)
+}
+
+// GetTaskWithResponse performs a GET /v1/tasks/{id} (the `GetTask` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetTaskWithResponse(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*GetTaskResponse, error) {
+	rsp, err := c.GetTask(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetTaskResponse(rsp)
+}
+
+// UpdateTaskWithBodyWithResponse performs a PATCH /v1/tasks/{id} (the `UpdateTask` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateTaskWithBodyWithResponse(ctx context.Context, id IdParam, params *UpdateTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateTaskResponse, error) {
+	rsp, err := c.UpdateTaskWithBody(ctx, id, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateTaskResponse(rsp)
+}
+
+// UpdateTaskWithResponse performs a PATCH /v1/tasks/{id} (the `UpdateTask` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UpdateTaskWithResponse(ctx context.Context, id IdParam, params *UpdateTaskParams, body UpdateTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateTaskResponse, error) {
+	rsp, err := c.UpdateTask(ctx, id, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUpdateTaskResponse(rsp)
+}
+
+// ClaimTaskWithBodyWithResponse performs a POST /v1/tasks/{id}/claim (the `ClaimTask` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ClaimTaskWithBodyWithResponse(ctx context.Context, id IdParam, params *ClaimTaskParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ClaimTaskResponse, error) {
+	rsp, err := c.ClaimTaskWithBody(ctx, id, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseClaimTaskResponse(rsp)
+}
+
+// ClaimTaskWithResponse performs a POST /v1/tasks/{id}/claim (the `ClaimTask` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ClaimTaskWithResponse(ctx context.Context, id IdParam, params *ClaimTaskParams, body ClaimTaskJSONRequestBody, reqEditors ...RequestEditorFn) (*ClaimTaskResponse, error) {
+	rsp, err := c.ClaimTask(ctx, id, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseClaimTaskResponse(rsp)
+}
+
+// ReleaseTaskWithResponse performs a POST /v1/tasks/{id}/release (the `ReleaseTask` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ReleaseTaskWithResponse(ctx context.Context, id IdParam, params *ReleaseTaskParams, reqEditors ...RequestEditorFn) (*ReleaseTaskResponse, error) {
+	rsp, err := c.ReleaseTask(ctx, id, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseReleaseTaskResponse(rsp)
 }
 
 // ParseWellKnownResponse parses an HTTP response from a WellKnownWithResponse call
@@ -262,6 +5639,1043 @@ func ParseWellKnownResponse(rsp *http.Response) (*WellKnownResponse, error) {
 		}
 		response.JSON200 = &dest
 
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseOpenidConfigurationResponse parses an HTTP response from a OpenidConfigurationWithResponse call
+func ParseOpenidConfigurationResponse(rsp *http.Response) (*OpenidConfigurationResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OpenidConfigurationResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest OpenIDConfiguration
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAdminStatusResponse parses an HTTP response from a AdminStatusWithResponse call
+func ParseAdminStatusResponse(rsp *http.Response) (*AdminStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AdminStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Status
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListChannelsResponse parses an HTTP response from a ListChannelsWithResponse call
+func ParseListChannelsResponse(rsp *http.Response) (*ListChannelsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListChannelsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Channel
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateChannelResponse parses an HTTP response from a CreateChannelWithResponse call
+func ParseCreateChannelResponse(rsp *http.Response) (*CreateChannelResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateChannelResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest ChannelInfo
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteChannelResponse parses an HTTP response from a DeleteChannelWithResponse call
+func ParseDeleteChannelResponse(rsp *http.Response) (*DeleteChannelResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteChannelResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRenameChannelResponse parses an HTTP response from a RenameChannelWithResponse call
+func ParseRenameChannelResponse(rsp *http.Response) (*RenameChannelResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RenameChannelResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetACLResponse parses an HTTP response from a GetACLWithResponse call
+func ParseGetACLResponse(rsp *http.Response) (*GetACLResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetACLResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []ACLEntry
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetACLResponse parses an HTTP response from a SetACLWithResponse call
+func ParseSetACLResponse(rsp *http.Response) (*SetACLResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetACLResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseHistoryResponse parses an HTTP response from a HistoryWithResponse call
+func ParseHistoryResponse(rsp *http.Response) (*HistoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &HistoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Message
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSendMessageResponse parses an HTTP response from a SendMessageWithResponse call
+func ParseSendMessageResponse(rsp *http.Response) (*SendMessageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SendMessageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest SendResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUnsubscribeResponse parses an HTTP response from a UnsubscribeWithResponse call
+func ParseUnsubscribeResponse(rsp *http.Response) (*UnsubscribeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UnsubscribeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSubscribeResponse parses an HTTP response from a SubscribeWithResponse call
+func ParseSubscribeResponse(rsp *http.Response) (*SubscribeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SubscribeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListTasksResponse parses an HTTP response from a ListTasksWithResponse call
+func ParseListTasksResponse(rsp *http.Response) (*ListTasksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListTasksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []TaskSummary
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateTaskResponse parses an HTTP response from a CreateTaskWithResponse call
+func ParseCreateTaskResponse(rsp *http.Response) (*CreateTaskResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateTaskResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Task
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDiscoverResponse parses an HTTP response from a DiscoverWithResponse call
+func ParseDiscoverResponse(rsp *http.Response) (*DiscoverResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DiscoverResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Discovery
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListIdentitiesResponse parses an HTTP response from a ListIdentitiesWithResponse call
+func ParseListIdentitiesResponse(rsp *http.Response) (*ListIdentitiesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListIdentitiesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Identity
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDeleteMemoryResponse parses an HTTP response from a DeleteMemoryWithResponse call
+func ParseDeleteMemoryResponse(rsp *http.Response) (*DeleteMemoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DeleteMemoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetMemoryResponse parses an HTTP response from a GetMemoryWithResponse call
+func ParseGetMemoryResponse(rsp *http.Response) (*GetMemoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetMemoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Message
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListMemoryRevisionsResponse parses an HTTP response from a ListMemoryRevisionsWithResponse call
+func ParseListMemoryRevisionsResponse(rsp *http.Response) (*ListMemoryRevisionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListMemoryRevisionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []Message
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseEditMemoryResponse parses an HTTP response from a EditMemoryWithResponse call
+func ParseEditMemoryResponse(rsp *http.Response) (*EditMemoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &EditMemoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest EditResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSearchResponse parses an HTTP response from a SearchWithResponse call
+func ParseSearchResponse(rsp *http.Response) (*SearchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SearchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SearchResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseOpenSessionResponse parses an HTTP response from a OpenSessionWithResponse call
+func ParseOpenSessionResponse(rsp *http.Response) (*OpenSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &OpenSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Session
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCloseSessionResponse parses an HTTP response from a CloseSessionWithResponse call
+func ParseCloseSessionResponse(rsp *http.Response) (*CloseSessionResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CloseSessionResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReceiveResponse parses an HTTP response from a ReceiveWithResponse call
+func ParseReceiveResponse(rsp *http.Response) (*ReceiveResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReceiveResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ReceiveResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseWatchResponse parses an HTTP response from a WatchWithResponse call
+func ParseWatchResponse(rsp *http.Response) (*WatchResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &WatchResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Wake
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSON409 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListTagSubscriptionsResponse parses an HTTP response from a ListTagSubscriptionsWithResponse call
+func ParseListTagSubscriptionsResponse(rsp *http.Response) (*ListTagSubscriptionsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListTagSubscriptionsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest [][]string
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSubscribeTagsResponse parses an HTTP response from a SubscribeTagsWithResponse call
+func ParseSubscribeTagsResponse(rsp *http.Response) (*SubscribeTagsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SubscribeTagsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUnsubscribeTagsResponse parses an HTTP response from a UnsubscribeTagsWithResponse call
+func ParseUnsubscribeTagsResponse(rsp *http.Response) (*UnsubscribeTagsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UnsubscribeTagsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetTaskResponse parses an HTTP response from a GetTaskWithResponse call
+func ParseGetTaskResponse(rsp *http.Response) (*GetTaskResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetTaskResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Task
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseUpdateTaskResponse parses an HTTP response from a UpdateTaskWithResponse call
+func ParseUpdateTaskResponse(rsp *http.Response) (*UpdateTaskResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UpdateTaskResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TaskUpdateResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseClaimTaskResponse parses an HTTP response from a ClaimTaskWithResponse call
+func ParseClaimTaskResponse(rsp *http.Response) (*ClaimTaskResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ClaimTaskResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TaskUpdateResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseReleaseTaskResponse parses an HTTP response from a ReleaseTaskWithResponse call
+func ParseReleaseTaskResponse(rsp *http.Response) (*ReleaseTaskResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ReleaseTaskResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest TaskUpdateResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
 	}
 
 	return response, nil
@@ -272,6 +6686,102 @@ type ServerInterface interface {
 
 	// (GET /.well-known/agentbus2)
 	WellKnown(w http.ResponseWriter, r *http.Request)
+
+	// (GET /.well-known/openid-configuration)
+	OpenidConfiguration(w http.ResponseWriter, r *http.Request)
+
+	// (GET /v1/admin/status)
+	AdminStatus(w http.ResponseWriter, r *http.Request)
+
+	// (GET /v1/channels)
+	ListChannels(w http.ResponseWriter, r *http.Request)
+
+	// (POST /v1/channels)
+	CreateChannel(w http.ResponseWriter, r *http.Request, params CreateChannelParams)
+
+	// (DELETE /v1/channels/{channel})
+	DeleteChannel(w http.ResponseWriter, r *http.Request, channel ChannelParam, params DeleteChannelParams)
+
+	// (PATCH /v1/channels/{channel})
+	RenameChannel(w http.ResponseWriter, r *http.Request, channel ChannelParam, params RenameChannelParams)
+
+	// (GET /v1/channels/{channel}/acl)
+	GetACL(w http.ResponseWriter, r *http.Request, channel ChannelParam)
+
+	// (PUT /v1/channels/{channel}/acl)
+	SetACL(w http.ResponseWriter, r *http.Request, channel ChannelParam, params SetACLParams)
+
+	// (GET /v1/channels/{channel}/messages)
+	History(w http.ResponseWriter, r *http.Request, channel ChannelParam, params HistoryParams)
+
+	// (POST /v1/channels/{channel}/messages)
+	SendMessage(w http.ResponseWriter, r *http.Request, channel ChannelParam, params SendMessageParams)
+
+	// (DELETE /v1/channels/{channel}/subscription)
+	Unsubscribe(w http.ResponseWriter, r *http.Request, channel ChannelParam, params UnsubscribeParams)
+
+	// (PUT /v1/channels/{channel}/subscription)
+	Subscribe(w http.ResponseWriter, r *http.Request, channel ChannelParam, params SubscribeParams)
+
+	// (GET /v1/channels/{channel}/tasks)
+	ListTasks(w http.ResponseWriter, r *http.Request, channel ChannelParam, params ListTasksParams)
+
+	// (POST /v1/channels/{channel}/tasks)
+	CreateTask(w http.ResponseWriter, r *http.Request, channel ChannelParam, params CreateTaskParams)
+
+	// (GET /v1/discover)
+	Discover(w http.ResponseWriter, r *http.Request)
+
+	// (GET /v1/identities)
+	ListIdentities(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /v1/memories/{id})
+	DeleteMemory(w http.ResponseWriter, r *http.Request, id IdParam, params DeleteMemoryParams)
+
+	// (GET /v1/memories/{id})
+	GetMemory(w http.ResponseWriter, r *http.Request, id IdParam)
+
+	// (GET /v1/memories/{id}/revisions)
+	ListMemoryRevisions(w http.ResponseWriter, r *http.Request, id IdParam)
+
+	// (POST /v1/memories/{id}/revisions)
+	EditMemory(w http.ResponseWriter, r *http.Request, id IdParam, params EditMemoryParams)
+
+	// (GET /v1/search)
+	Search(w http.ResponseWriter, r *http.Request, params SearchParams)
+
+	// (POST /v1/sessions)
+	OpenSession(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /v1/sessions/{session})
+	CloseSession(w http.ResponseWriter, r *http.Request, session SessionParam, params CloseSessionParams)
+
+	// (POST /v1/sessions/{session}/receive)
+	Receive(w http.ResponseWriter, r *http.Request, session SessionParam)
+
+	// (GET /v1/sessions/{session}/watch)
+	Watch(w http.ResponseWriter, r *http.Request, session SessionParam, params WatchParams)
+
+	// (GET /v1/tag-subscriptions)
+	ListTagSubscriptions(w http.ResponseWriter, r *http.Request)
+
+	// (POST /v1/tag-subscriptions)
+	SubscribeTags(w http.ResponseWriter, r *http.Request, params SubscribeTagsParams)
+
+	// (DELETE /v1/tag-subscriptions/{patterns})
+	UnsubscribeTags(w http.ResponseWriter, r *http.Request, patterns []string, params UnsubscribeTagsParams)
+
+	// (GET /v1/tasks/{id})
+	GetTask(w http.ResponseWriter, r *http.Request, id IdParam)
+
+	// (PATCH /v1/tasks/{id})
+	UpdateTask(w http.ResponseWriter, r *http.Request, id IdParam, params UpdateTaskParams)
+
+	// (POST /v1/tasks/{id}/claim)
+	ClaimTask(w http.ResponseWriter, r *http.Request, id IdParam, params ClaimTaskParams)
+
+	// (POST /v1/tasks/{id}/release)
+	ReleaseTask(w http.ResponseWriter, r *http.Request, id IdParam, params ReleaseTaskParams)
 }
 
 // ServerInterfaceWrapper converts contexts to parameters.
@@ -288,6 +6798,1370 @@ func (siw *ServerInterfaceWrapper) WellKnown(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.WellKnown(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// OpenidConfiguration operation middleware
+func (siw *ServerInterfaceWrapper) OpenidConfiguration(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.OpenidConfiguration(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminStatus operation middleware
+func (siw *ServerInterfaceWrapper) AdminStatus(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListChannels operation middleware
+func (siw *ServerInterfaceWrapper) ListChannels(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListChannels(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateChannel operation middleware
+func (siw *ServerInterfaceWrapper) CreateChannel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateChannelParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateChannel(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteChannel operation middleware
+func (siw *ServerInterfaceWrapper) DeleteChannel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteChannelParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteChannel(w, r, channel, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RenameChannel operation middleware
+func (siw *ServerInterfaceWrapper) RenameChannel(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RenameChannelParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RenameChannel(w, r, channel, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetACL operation middleware
+func (siw *ServerInterfaceWrapper) GetACL(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetACL(w, r, channel)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetACL operation middleware
+func (siw *ServerInterfaceWrapper) SetACL(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SetACLParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetACL(w, r, channel, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// History operation middleware
+func (siw *ServerInterfaceWrapper) History(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params HistoryParams
+
+	// ------------- Optional query parameter "before" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "before", r.URL.Query(), &params.Before, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "before"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "before", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after", r.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "count" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "count", r.URL.Query(), &params.Count, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "count"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "count", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "tags" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", false, false, "tags", r.URL.Query(), &params.Tags, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tags"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tags", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.History(w, r, channel, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SendMessage operation middleware
+func (siw *ServerInterfaceWrapper) SendMessage(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SendMessageParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SendMessage(w, r, channel, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Unsubscribe operation middleware
+func (siw *ServerInterfaceWrapper) Unsubscribe(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UnsubscribeParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Unsubscribe(w, r, channel, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Subscribe operation middleware
+func (siw *ServerInterfaceWrapper) Subscribe(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SubscribeParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Subscribe(w, r, channel, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTasks operation middleware
+func (siw *ServerInterfaceWrapper) ListTasks(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ListTasksParams
+
+	// ------------- Optional query parameter "status" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "status", r.URL.Query(), &params.Status, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "status"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "status", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "owner" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "owner", r.URL.Query(), &params.Owner, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "owner"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "owner", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTasks(w, r, channel, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateTask operation middleware
+func (siw *ServerInterfaceWrapper) CreateTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateTaskParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateTask(w, r, channel, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Discover operation middleware
+func (siw *ServerInterfaceWrapper) Discover(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Discover(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListIdentities operation middleware
+func (siw *ServerInterfaceWrapper) ListIdentities(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListIdentities(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DeleteMemory operation middleware
+func (siw *ServerInterfaceWrapper) DeleteMemory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DeleteMemoryParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DeleteMemory(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetMemory operation middleware
+func (siw *ServerInterfaceWrapper) GetMemory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetMemory(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListMemoryRevisions operation middleware
+func (siw *ServerInterfaceWrapper) ListMemoryRevisions(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListMemoryRevisions(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// EditMemory operation middleware
+func (siw *ServerInterfaceWrapper) EditMemory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params EditMemoryParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.EditMemory(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Search operation middleware
+func (siw *ServerInterfaceWrapper) Search(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SearchParams
+
+	// ------------- Optional query parameter "q" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "q", r.URL.Query(), &params.Q, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "q"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "q", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "mode" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "mode", r.URL.Query(), &params.Mode, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "mode"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "mode", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "channel" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "channel", r.URL.Query(), &params.Channel, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "channel"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "sender" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "sender", r.URL.Query(), &params.Sender, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "sender"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "sender", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "since" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "since", r.URL.Query(), &params.Since, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "since"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "since", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "until" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "until", r.URL.Query(), &params.Until, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "until"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "until", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "thread" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "thread", r.URL.Query(), &params.Thread, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "thread"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "thread", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "tags" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", false, false, "tags", r.URL.Query(), &params.Tags, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "tags"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "tags", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "count" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "count", r.URL.Query(), &params.Count, runtime.BindQueryParameterOptions{Type: "integer", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "count"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "count", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "cursor" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "cursor", r.URL.Query(), &params.Cursor, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "cursor"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "cursor", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Search(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// OpenSession operation middleware
+func (siw *ServerInterfaceWrapper) OpenSession(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.OpenSession(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CloseSession operation middleware
+func (siw *ServerInterfaceWrapper) CloseSession(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "session" -------------
+	var session SessionParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "session", r.PathValue("session"), &session, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "session", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CloseSessionParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CloseSession(w, r, session, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Receive operation middleware
+func (siw *ServerInterfaceWrapper) Receive(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "session" -------------
+	var session SessionParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "session", r.PathValue("session"), &session, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "session", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Receive(w, r, session)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Watch operation middleware
+func (siw *ServerInterfaceWrapper) Watch(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "session" -------------
+	var session SessionParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "session", r.PathValue("session"), &session, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "session", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params WatchParams
+
+	// ------------- Optional query parameter "after" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "after", r.URL.Query(), &params.After, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "after"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "after", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "timeout" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "timeout", r.URL.Query(), &params.Timeout, runtime.BindQueryParameterOptions{Type: "number", Format: "double"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "timeout"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "timeout", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "include_own" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "include_own", r.URL.Query(), &params.IncludeOwn, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "include_own"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "include_own", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Watch(w, r, session, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListTagSubscriptions operation middleware
+func (siw *ServerInterfaceWrapper) ListTagSubscriptions(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListTagSubscriptions(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SubscribeTags operation middleware
+func (siw *ServerInterfaceWrapper) SubscribeTags(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SubscribeTagsParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SubscribeTags(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UnsubscribeTags operation middleware
+func (siw *ServerInterfaceWrapper) UnsubscribeTags(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "patterns" -------------
+	var patterns []string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "patterns", r.PathValue("patterns"), &patterns, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "array", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "patterns", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UnsubscribeTagsParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnsubscribeTags(w, r, patterns, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetTask operation middleware
+func (siw *ServerInterfaceWrapper) GetTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetTask(w, r, id)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// UpdateTask operation middleware
+func (siw *ServerInterfaceWrapper) UpdateTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UpdateTaskParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UpdateTask(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ClaimTask operation middleware
+func (siw *ServerInterfaceWrapper) ClaimTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ClaimTaskParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ClaimTask(w, r, id, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ReleaseTask operation middleware
+func (siw *ServerInterfaceWrapper) ReleaseTask(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id IdParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", r.PathValue("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "integer", Format: "int64", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "id", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ReleaseTaskParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ReleaseTask(w, r, id, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -418,9 +8292,43 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/agentbus2", wrapper.WellKnown)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/openid-configuration", wrapper.OpenidConfiguration)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/discover", wrapper.Discover)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions", wrapper.OpenSession)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions/{session}", wrapper.CloseSession)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions/{session}/receive", wrapper.Receive)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sessions/{session}/watch", wrapper.Watch)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/identities", wrapper.ListIdentities)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/channels", wrapper.ListChannels)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/channels", wrapper.CreateChannel)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/channels/{channel}", wrapper.DeleteChannel)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/channels/{channel}", wrapper.RenameChannel)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/channels/{channel}/acl", wrapper.GetACL)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/channels/{channel}/acl", wrapper.SetACL)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/channels/{channel}/subscription", wrapper.Unsubscribe)
+	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/channels/{channel}/subscription", wrapper.Subscribe)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/tag-subscriptions", wrapper.ListTagSubscriptions)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tag-subscriptions", wrapper.SubscribeTags)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/tag-subscriptions/{patterns}", wrapper.UnsubscribeTags)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/channels/{channel}/messages", wrapper.History)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/channels/{channel}/messages", wrapper.SendMessage)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/search", wrapper.Search)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/memories/{id}", wrapper.DeleteMemory)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/memories/{id}", wrapper.GetMemory)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/memories/{id}/revisions", wrapper.ListMemoryRevisions)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/memories/{id}/revisions", wrapper.EditMemory)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/channels/{channel}/tasks", wrapper.ListTasks)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/channels/{channel}/tasks", wrapper.CreateTask)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/tasks/{id}", wrapper.GetTask)
+	m.HandleFunc(http.MethodPatch+" "+options.BaseURL+"/v1/tasks/{id}", wrapper.UpdateTask)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tasks/{id}/claim", wrapper.ClaimTask)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tasks/{id}/release", wrapper.ReleaseTask)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/status", wrapper.AdminStatus)
 
 	return m
 }
+
+type ProblemApplicationProblemPlusJSONResponse Problem
 
 type WellKnownRequestObject struct {
 }
@@ -443,11 +8351,1362 @@ func (response WellKnown200JSONResponse) VisitWellKnownResponse(w http.ResponseW
 	return err
 }
 
+type WellKnowndefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response WellKnowndefaultApplicationProblemPlusJSONResponse) VisitWellKnownResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenidConfigurationRequestObject struct {
+}
+
+type OpenidConfigurationResponseObject interface {
+	VisitOpenidConfigurationResponse(w http.ResponseWriter) error
+}
+
+type OpenidConfiguration200JSONResponse OpenIDConfiguration
+
+func (response OpenidConfiguration200JSONResponse) VisitOpenidConfigurationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenidConfigurationdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response OpenidConfigurationdefaultApplicationProblemPlusJSONResponse) VisitOpenidConfigurationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminStatusRequestObject struct {
+}
+
+type AdminStatusResponseObject interface {
+	VisitAdminStatusResponse(w http.ResponseWriter) error
+}
+
+type AdminStatus200JSONResponse Status
+
+func (response AdminStatus200JSONResponse) VisitAdminStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminStatusdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AdminStatusdefaultApplicationProblemPlusJSONResponse) VisitAdminStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListChannelsRequestObject struct {
+}
+
+type ListChannelsResponseObject interface {
+	VisitListChannelsResponse(w http.ResponseWriter) error
+}
+
+type ListChannels200JSONResponse []Channel
+
+func (response ListChannels200JSONResponse) VisitListChannelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListChannelsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListChannelsdefaultApplicationProblemPlusJSONResponse) VisitListChannelsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateChannelRequestObject struct {
+	Params CreateChannelParams
+	Body   *CreateChannelJSONRequestBody
+}
+
+type CreateChannelResponseObject interface {
+	VisitCreateChannelResponse(w http.ResponseWriter) error
+}
+
+type CreateChannel201JSONResponse ChannelInfo
+
+func (response CreateChannel201JSONResponse) VisitCreateChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateChanneldefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateChanneldefaultApplicationProblemPlusJSONResponse) VisitCreateChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteChannelRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+	Params  DeleteChannelParams
+}
+
+type DeleteChannelResponseObject interface {
+	VisitDeleteChannelResponse(w http.ResponseWriter) error
+}
+
+type DeleteChannel204Response struct {
+}
+
+func (response DeleteChannel204Response) VisitDeleteChannelResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteChanneldefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteChanneldefaultApplicationProblemPlusJSONResponse) VisitDeleteChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RenameChannelRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+	Params  RenameChannelParams
+	Body    *RenameChannelJSONRequestBody
+}
+
+type RenameChannelResponseObject interface {
+	VisitRenameChannelResponse(w http.ResponseWriter) error
+}
+
+type RenameChannel204Response struct {
+}
+
+func (response RenameChannel204Response) VisitRenameChannelResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RenameChanneldefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RenameChanneldefaultApplicationProblemPlusJSONResponse) VisitRenameChannelResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetACLRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+}
+
+type GetACLResponseObject interface {
+	VisitGetACLResponse(w http.ResponseWriter) error
+}
+
+type GetACL200JSONResponse []ACLEntry
+
+func (response GetACL200JSONResponse) VisitGetACLResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetACLdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetACLdefaultApplicationProblemPlusJSONResponse) VisitGetACLResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetACLRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+	Params  SetACLParams
+	Body    *SetACLJSONRequestBody
+}
+
+type SetACLResponseObject interface {
+	VisitSetACLResponse(w http.ResponseWriter) error
+}
+
+type SetACL204Response struct {
+}
+
+func (response SetACL204Response) VisitSetACLResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SetACLdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SetACLdefaultApplicationProblemPlusJSONResponse) VisitSetACLResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HistoryRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+	Params  HistoryParams
+}
+
+type HistoryResponseObject interface {
+	VisitHistoryResponse(w http.ResponseWriter) error
+}
+
+type History200JSONResponse []Message
+
+func (response History200JSONResponse) VisitHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HistorydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response HistorydefaultApplicationProblemPlusJSONResponse) VisitHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendMessageRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+	Params  SendMessageParams
+	Body    *SendMessageJSONRequestBody
+}
+
+type SendMessageResponseObject interface {
+	VisitSendMessageResponse(w http.ResponseWriter) error
+}
+
+type SendMessage201JSONResponse SendResult
+
+func (response SendMessage201JSONResponse) VisitSendMessageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SendMessagedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SendMessagedefaultApplicationProblemPlusJSONResponse) VisitSendMessageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnsubscribeRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+	Params  UnsubscribeParams
+}
+
+type UnsubscribeResponseObject interface {
+	VisitUnsubscribeResponse(w http.ResponseWriter) error
+}
+
+type Unsubscribe204Response struct {
+}
+
+func (response Unsubscribe204Response) VisitUnsubscribeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type UnsubscribedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UnsubscribedefaultApplicationProblemPlusJSONResponse) VisitUnsubscribeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubscribeRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+	Params  SubscribeParams
+	Body    *SubscribeJSONRequestBody
+}
+
+type SubscribeResponseObject interface {
+	VisitSubscribeResponse(w http.ResponseWriter) error
+}
+
+type Subscribe204Response struct {
+}
+
+func (response Subscribe204Response) VisitSubscribeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SubscribedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SubscribedefaultApplicationProblemPlusJSONResponse) VisitSubscribeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTasksRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+	Params  ListTasksParams
+}
+
+type ListTasksResponseObject interface {
+	VisitListTasksResponse(w http.ResponseWriter) error
+}
+
+type ListTasks200JSONResponse []TaskSummary
+
+func (response ListTasks200JSONResponse) VisitListTasksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTasksdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListTasksdefaultApplicationProblemPlusJSONResponse) VisitListTasksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTaskRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+	Params  CreateTaskParams
+	Body    *CreateTaskJSONRequestBody
+}
+
+type CreateTaskResponseObject interface {
+	VisitCreateTaskResponse(w http.ResponseWriter) error
+}
+
+type CreateTask201JSONResponse Task
+
+func (response CreateTask201JSONResponse) VisitCreateTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateTaskdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateTaskdefaultApplicationProblemPlusJSONResponse) VisitCreateTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscoverRequestObject struct {
+}
+
+type DiscoverResponseObject interface {
+	VisitDiscoverResponse(w http.ResponseWriter) error
+}
+
+type Discover200JSONResponse Discovery
+
+func (response Discover200JSONResponse) VisitDiscoverResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DiscoverdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DiscoverdefaultApplicationProblemPlusJSONResponse) VisitDiscoverResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListIdentitiesRequestObject struct {
+}
+
+type ListIdentitiesResponseObject interface {
+	VisitListIdentitiesResponse(w http.ResponseWriter) error
+}
+
+type ListIdentities200JSONResponse []Identity
+
+func (response ListIdentities200JSONResponse) VisitListIdentitiesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListIdentitiesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListIdentitiesdefaultApplicationProblemPlusJSONResponse) VisitListIdentitiesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DeleteMemoryRequestObject struct {
+	Id     IdParam `json:"id"`
+	Params DeleteMemoryParams
+}
+
+type DeleteMemoryResponseObject interface {
+	VisitDeleteMemoryResponse(w http.ResponseWriter) error
+}
+
+type DeleteMemory204Response struct {
+}
+
+func (response DeleteMemory204Response) VisitDeleteMemoryResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type DeleteMemorydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DeleteMemorydefaultApplicationProblemPlusJSONResponse) VisitDeleteMemoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMemoryRequestObject struct {
+	Id IdParam `json:"id"`
+}
+
+type GetMemoryResponseObject interface {
+	VisitGetMemoryResponse(w http.ResponseWriter) error
+}
+
+type GetMemory200JSONResponse Message
+
+func (response GetMemory200JSONResponse) VisitGetMemoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetMemorydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetMemorydefaultApplicationProblemPlusJSONResponse) VisitGetMemoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMemoryRevisionsRequestObject struct {
+	Id IdParam `json:"id"`
+}
+
+type ListMemoryRevisionsResponseObject interface {
+	VisitListMemoryRevisionsResponse(w http.ResponseWriter) error
+}
+
+type ListMemoryRevisions200JSONResponse []Message
+
+func (response ListMemoryRevisions200JSONResponse) VisitListMemoryRevisionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListMemoryRevisionsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListMemoryRevisionsdefaultApplicationProblemPlusJSONResponse) VisitListMemoryRevisionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EditMemoryRequestObject struct {
+	Id     IdParam `json:"id"`
+	Params EditMemoryParams
+	Body   *EditMemoryJSONRequestBody
+}
+
+type EditMemoryResponseObject interface {
+	VisitEditMemoryResponse(w http.ResponseWriter) error
+}
+
+type EditMemory201JSONResponse EditResult
+
+func (response EditMemory201JSONResponse) VisitEditMemoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type EditMemorydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response EditMemorydefaultApplicationProblemPlusJSONResponse) VisitEditMemoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchRequestObject struct {
+	Params SearchParams
+}
+
+type SearchResponseObject interface {
+	VisitSearchResponse(w http.ResponseWriter) error
+}
+
+type Search200JSONResponse SearchResult
+
+func (response Search200JSONResponse) VisitSearchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SearchdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SearchdefaultApplicationProblemPlusJSONResponse) VisitSearchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenSessionRequestObject struct {
+	Body *OpenSessionJSONRequestBody
+}
+
+type OpenSessionResponseObject interface {
+	VisitOpenSessionResponse(w http.ResponseWriter) error
+}
+
+type OpenSession201JSONResponse Session
+
+func (response OpenSession201JSONResponse) VisitOpenSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type OpenSessiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response OpenSessiondefaultApplicationProblemPlusJSONResponse) VisitOpenSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CloseSessionRequestObject struct {
+	Session SessionParam `json:"session"`
+	Params  CloseSessionParams
+}
+
+type CloseSessionResponseObject interface {
+	VisitCloseSessionResponse(w http.ResponseWriter) error
+}
+
+type CloseSession204Response struct {
+}
+
+func (response CloseSession204Response) VisitCloseSessionResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type CloseSessiondefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CloseSessiondefaultApplicationProblemPlusJSONResponse) VisitCloseSessionResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReceiveRequestObject struct {
+	Session SessionParam `json:"session"`
+	Body    *ReceiveJSONRequestBody
+}
+
+type ReceiveResponseObject interface {
+	VisitReceiveResponse(w http.ResponseWriter) error
+}
+
+type Receive200JSONResponse ReceiveResult
+
+func (response Receive200JSONResponse) VisitReceiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReceivedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ReceivedefaultApplicationProblemPlusJSONResponse) VisitReceiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type WatchRequestObject struct {
+	Session SessionParam `json:"session"`
+	Params  WatchParams
+}
+
+type WatchResponseObject interface {
+	VisitWatchResponse(w http.ResponseWriter) error
+}
+
+type Watch200JSONResponse Wake
+
+func (response Watch200JSONResponse) VisitWatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Watch204Response struct {
+}
+
+func (response Watch204Response) VisitWatchResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type Watch409ApplicationProblemPlusJSONResponse Problem
+
+func (response Watch409ApplicationProblemPlusJSONResponse) VisitWatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(409)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type WatchdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response WatchdefaultApplicationProblemPlusJSONResponse) VisitWatchResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTagSubscriptionsRequestObject struct {
+}
+
+type ListTagSubscriptionsResponseObject interface {
+	VisitListTagSubscriptionsResponse(w http.ResponseWriter) error
+}
+
+type ListTagSubscriptions200JSONResponse [][]string
+
+func (response ListTagSubscriptions200JSONResponse) VisitListTagSubscriptionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListTagSubscriptionsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListTagSubscriptionsdefaultApplicationProblemPlusJSONResponse) VisitListTagSubscriptionsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SubscribeTagsRequestObject struct {
+	Params SubscribeTagsParams
+	Body   *SubscribeTagsJSONRequestBody
+}
+
+type SubscribeTagsResponseObject interface {
+	VisitSubscribeTagsResponse(w http.ResponseWriter) error
+}
+
+type SubscribeTags204Response struct {
+}
+
+func (response SubscribeTags204Response) VisitSubscribeTagsResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type SubscribeTagsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SubscribeTagsdefaultApplicationProblemPlusJSONResponse) VisitSubscribeTagsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UnsubscribeTagsRequestObject struct {
+	Patterns []string `json:"patterns"`
+	Params   UnsubscribeTagsParams
+}
+
+type UnsubscribeTagsResponseObject interface {
+	VisitUnsubscribeTagsResponse(w http.ResponseWriter) error
+}
+
+type UnsubscribeTags204Response struct {
+}
+
+func (response UnsubscribeTags204Response) VisitUnsubscribeTagsResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type UnsubscribeTagsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UnsubscribeTagsdefaultApplicationProblemPlusJSONResponse) VisitUnsubscribeTagsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTaskRequestObject struct {
+	Id IdParam `json:"id"`
+}
+
+type GetTaskResponseObject interface {
+	VisitGetTaskResponse(w http.ResponseWriter) error
+}
+
+type GetTask200JSONResponse Task
+
+func (response GetTask200JSONResponse) VisitGetTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetTaskdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetTaskdefaultApplicationProblemPlusJSONResponse) VisitGetTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTaskRequestObject struct {
+	Id     IdParam `json:"id"`
+	Params UpdateTaskParams
+	Body   *UpdateTaskJSONRequestBody
+}
+
+type UpdateTaskResponseObject interface {
+	VisitUpdateTaskResponse(w http.ResponseWriter) error
+}
+
+type UpdateTask200JSONResponse TaskUpdateResult
+
+func (response UpdateTask200JSONResponse) VisitUpdateTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type UpdateTaskdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UpdateTaskdefaultApplicationProblemPlusJSONResponse) VisitUpdateTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClaimTaskRequestObject struct {
+	Id     IdParam `json:"id"`
+	Params ClaimTaskParams
+	Body   *ClaimTaskJSONRequestBody
+}
+
+type ClaimTaskResponseObject interface {
+	VisitClaimTaskResponse(w http.ResponseWriter) error
+}
+
+type ClaimTask200JSONResponse TaskUpdateResult
+
+func (response ClaimTask200JSONResponse) VisitClaimTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ClaimTaskdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ClaimTaskdefaultApplicationProblemPlusJSONResponse) VisitClaimTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReleaseTaskRequestObject struct {
+	Id     IdParam `json:"id"`
+	Params ReleaseTaskParams
+}
+
+type ReleaseTaskResponseObject interface {
+	VisitReleaseTaskResponse(w http.ResponseWriter) error
+}
+
+type ReleaseTask200JSONResponse TaskUpdateResult
+
+func (response ReleaseTask200JSONResponse) VisitReleaseTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ReleaseTaskdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ReleaseTaskdefaultApplicationProblemPlusJSONResponse) VisitReleaseTaskResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
 	// (GET /.well-known/agentbus2)
 	WellKnown(ctx context.Context, request WellKnownRequestObject) (WellKnownResponseObject, error)
+
+	// (GET /.well-known/openid-configuration)
+	OpenidConfiguration(ctx context.Context, request OpenidConfigurationRequestObject) (OpenidConfigurationResponseObject, error)
+
+	// (GET /v1/admin/status)
+	AdminStatus(ctx context.Context, request AdminStatusRequestObject) (AdminStatusResponseObject, error)
+
+	// (GET /v1/channels)
+	ListChannels(ctx context.Context, request ListChannelsRequestObject) (ListChannelsResponseObject, error)
+
+	// (POST /v1/channels)
+	CreateChannel(ctx context.Context, request CreateChannelRequestObject) (CreateChannelResponseObject, error)
+
+	// (DELETE /v1/channels/{channel})
+	DeleteChannel(ctx context.Context, request DeleteChannelRequestObject) (DeleteChannelResponseObject, error)
+
+	// (PATCH /v1/channels/{channel})
+	RenameChannel(ctx context.Context, request RenameChannelRequestObject) (RenameChannelResponseObject, error)
+
+	// (GET /v1/channels/{channel}/acl)
+	GetACL(ctx context.Context, request GetACLRequestObject) (GetACLResponseObject, error)
+
+	// (PUT /v1/channels/{channel}/acl)
+	SetACL(ctx context.Context, request SetACLRequestObject) (SetACLResponseObject, error)
+
+	// (GET /v1/channels/{channel}/messages)
+	History(ctx context.Context, request HistoryRequestObject) (HistoryResponseObject, error)
+
+	// (POST /v1/channels/{channel}/messages)
+	SendMessage(ctx context.Context, request SendMessageRequestObject) (SendMessageResponseObject, error)
+
+	// (DELETE /v1/channels/{channel}/subscription)
+	Unsubscribe(ctx context.Context, request UnsubscribeRequestObject) (UnsubscribeResponseObject, error)
+
+	// (PUT /v1/channels/{channel}/subscription)
+	Subscribe(ctx context.Context, request SubscribeRequestObject) (SubscribeResponseObject, error)
+
+	// (GET /v1/channels/{channel}/tasks)
+	ListTasks(ctx context.Context, request ListTasksRequestObject) (ListTasksResponseObject, error)
+
+	// (POST /v1/channels/{channel}/tasks)
+	CreateTask(ctx context.Context, request CreateTaskRequestObject) (CreateTaskResponseObject, error)
+
+	// (GET /v1/discover)
+	Discover(ctx context.Context, request DiscoverRequestObject) (DiscoverResponseObject, error)
+
+	// (GET /v1/identities)
+	ListIdentities(ctx context.Context, request ListIdentitiesRequestObject) (ListIdentitiesResponseObject, error)
+
+	// (DELETE /v1/memories/{id})
+	DeleteMemory(ctx context.Context, request DeleteMemoryRequestObject) (DeleteMemoryResponseObject, error)
+
+	// (GET /v1/memories/{id})
+	GetMemory(ctx context.Context, request GetMemoryRequestObject) (GetMemoryResponseObject, error)
+
+	// (GET /v1/memories/{id}/revisions)
+	ListMemoryRevisions(ctx context.Context, request ListMemoryRevisionsRequestObject) (ListMemoryRevisionsResponseObject, error)
+
+	// (POST /v1/memories/{id}/revisions)
+	EditMemory(ctx context.Context, request EditMemoryRequestObject) (EditMemoryResponseObject, error)
+
+	// (GET /v1/search)
+	Search(ctx context.Context, request SearchRequestObject) (SearchResponseObject, error)
+
+	// (POST /v1/sessions)
+	OpenSession(ctx context.Context, request OpenSessionRequestObject) (OpenSessionResponseObject, error)
+
+	// (DELETE /v1/sessions/{session})
+	CloseSession(ctx context.Context, request CloseSessionRequestObject) (CloseSessionResponseObject, error)
+
+	// (POST /v1/sessions/{session}/receive)
+	Receive(ctx context.Context, request ReceiveRequestObject) (ReceiveResponseObject, error)
+
+	// (GET /v1/sessions/{session}/watch)
+	Watch(ctx context.Context, request WatchRequestObject) (WatchResponseObject, error)
+
+	// (GET /v1/tag-subscriptions)
+	ListTagSubscriptions(ctx context.Context, request ListTagSubscriptionsRequestObject) (ListTagSubscriptionsResponseObject, error)
+
+	// (POST /v1/tag-subscriptions)
+	SubscribeTags(ctx context.Context, request SubscribeTagsRequestObject) (SubscribeTagsResponseObject, error)
+
+	// (DELETE /v1/tag-subscriptions/{patterns})
+	UnsubscribeTags(ctx context.Context, request UnsubscribeTagsRequestObject) (UnsubscribeTagsResponseObject, error)
+
+	// (GET /v1/tasks/{id})
+	GetTask(ctx context.Context, request GetTaskRequestObject) (GetTaskResponseObject, error)
+
+	// (PATCH /v1/tasks/{id})
+	UpdateTask(ctx context.Context, request UpdateTaskRequestObject) (UpdateTaskResponseObject, error)
+
+	// (POST /v1/tasks/{id}/claim)
+	ClaimTask(ctx context.Context, request ClaimTaskRequestObject) (ClaimTaskResponseObject, error)
+
+	// (POST /v1/tasks/{id}/release)
+	ReleaseTask(ctx context.Context, request ReleaseTaskRequestObject) (ReleaseTaskResponseObject, error)
 }
 
 type StrictHandlerFunc func(ctx context.Context, w http.ResponseWriter, r *http.Request, request any) (any, error)
@@ -506,6 +9765,925 @@ func (sh *strictHandler) WellKnown(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(WellKnownResponseObject); ok {
 		if err := validResponse.VisitWellKnownResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// OpenidConfiguration operation middleware
+func (sh *strictHandler) OpenidConfiguration(w http.ResponseWriter, r *http.Request) {
+	var request OpenidConfigurationRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.OpenidConfiguration(ctx, request.(OpenidConfigurationRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "OpenidConfiguration")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(OpenidConfigurationResponseObject); ok {
+		if err := validResponse.VisitOpenidConfigurationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminStatus operation middleware
+func (sh *strictHandler) AdminStatus(w http.ResponseWriter, r *http.Request) {
+	var request AdminStatusRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminStatus(ctx, request.(AdminStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminStatusResponseObject); ok {
+		if err := validResponse.VisitAdminStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListChannels operation middleware
+func (sh *strictHandler) ListChannels(w http.ResponseWriter, r *http.Request) {
+	var request ListChannelsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListChannels(ctx, request.(ListChannelsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListChannels")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListChannelsResponseObject); ok {
+		if err := validResponse.VisitListChannelsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateChannel operation middleware
+func (sh *strictHandler) CreateChannel(w http.ResponseWriter, r *http.Request, params CreateChannelParams) {
+	var request CreateChannelRequestObject
+
+	request.Params = params
+
+	var body CreateChannelJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateChannel(ctx, request.(CreateChannelRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateChannel")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateChannelResponseObject); ok {
+		if err := validResponse.VisitCreateChannelResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteChannel operation middleware
+func (sh *strictHandler) DeleteChannel(w http.ResponseWriter, r *http.Request, channel ChannelParam, params DeleteChannelParams) {
+	var request DeleteChannelRequestObject
+
+	request.Channel = channel
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteChannel(ctx, request.(DeleteChannelRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteChannel")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteChannelResponseObject); ok {
+		if err := validResponse.VisitDeleteChannelResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RenameChannel operation middleware
+func (sh *strictHandler) RenameChannel(w http.ResponseWriter, r *http.Request, channel ChannelParam, params RenameChannelParams) {
+	var request RenameChannelRequestObject
+
+	request.Channel = channel
+	request.Params = params
+
+	var body RenameChannelJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RenameChannel(ctx, request.(RenameChannelRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RenameChannel")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RenameChannelResponseObject); ok {
+		if err := validResponse.VisitRenameChannelResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetACL operation middleware
+func (sh *strictHandler) GetACL(w http.ResponseWriter, r *http.Request, channel ChannelParam) {
+	var request GetACLRequestObject
+
+	request.Channel = channel
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetACL(ctx, request.(GetACLRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetACL")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetACLResponseObject); ok {
+		if err := validResponse.VisitGetACLResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetACL operation middleware
+func (sh *strictHandler) SetACL(w http.ResponseWriter, r *http.Request, channel ChannelParam, params SetACLParams) {
+	var request SetACLRequestObject
+
+	request.Channel = channel
+	request.Params = params
+
+	var body SetACLJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetACL(ctx, request.(SetACLRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetACL")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetACLResponseObject); ok {
+		if err := validResponse.VisitSetACLResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// History operation middleware
+func (sh *strictHandler) History(w http.ResponseWriter, r *http.Request, channel ChannelParam, params HistoryParams) {
+	var request HistoryRequestObject
+
+	request.Channel = channel
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.History(ctx, request.(HistoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "History")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(HistoryResponseObject); ok {
+		if err := validResponse.VisitHistoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SendMessage operation middleware
+func (sh *strictHandler) SendMessage(w http.ResponseWriter, r *http.Request, channel ChannelParam, params SendMessageParams) {
+	var request SendMessageRequestObject
+
+	request.Channel = channel
+	request.Params = params
+
+	var body SendMessageJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SendMessage(ctx, request.(SendMessageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SendMessage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SendMessageResponseObject); ok {
+		if err := validResponse.VisitSendMessageResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Unsubscribe operation middleware
+func (sh *strictHandler) Unsubscribe(w http.ResponseWriter, r *http.Request, channel ChannelParam, params UnsubscribeParams) {
+	var request UnsubscribeRequestObject
+
+	request.Channel = channel
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Unsubscribe(ctx, request.(UnsubscribeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Unsubscribe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UnsubscribeResponseObject); ok {
+		if err := validResponse.VisitUnsubscribeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Subscribe operation middleware
+func (sh *strictHandler) Subscribe(w http.ResponseWriter, r *http.Request, channel ChannelParam, params SubscribeParams) {
+	var request SubscribeRequestObject
+
+	request.Channel = channel
+	request.Params = params
+
+	var body SubscribeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Subscribe(ctx, request.(SubscribeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Subscribe")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubscribeResponseObject); ok {
+		if err := validResponse.VisitSubscribeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTasks operation middleware
+func (sh *strictHandler) ListTasks(w http.ResponseWriter, r *http.Request, channel ChannelParam, params ListTasksParams) {
+	var request ListTasksRequestObject
+
+	request.Channel = channel
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTasks(ctx, request.(ListTasksRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTasks")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTasksResponseObject); ok {
+		if err := validResponse.VisitListTasksResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateTask operation middleware
+func (sh *strictHandler) CreateTask(w http.ResponseWriter, r *http.Request, channel ChannelParam, params CreateTaskParams) {
+	var request CreateTaskRequestObject
+
+	request.Channel = channel
+	request.Params = params
+
+	var body CreateTaskJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateTask(ctx, request.(CreateTaskRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateTask")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateTaskResponseObject); ok {
+		if err := validResponse.VisitCreateTaskResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Discover operation middleware
+func (sh *strictHandler) Discover(w http.ResponseWriter, r *http.Request) {
+	var request DiscoverRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Discover(ctx, request.(DiscoverRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Discover")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DiscoverResponseObject); ok {
+		if err := validResponse.VisitDiscoverResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListIdentities operation middleware
+func (sh *strictHandler) ListIdentities(w http.ResponseWriter, r *http.Request) {
+	var request ListIdentitiesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListIdentities(ctx, request.(ListIdentitiesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListIdentities")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListIdentitiesResponseObject); ok {
+		if err := validResponse.VisitListIdentitiesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DeleteMemory operation middleware
+func (sh *strictHandler) DeleteMemory(w http.ResponseWriter, r *http.Request, id IdParam, params DeleteMemoryParams) {
+	var request DeleteMemoryRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DeleteMemory(ctx, request.(DeleteMemoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DeleteMemory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DeleteMemoryResponseObject); ok {
+		if err := validResponse.VisitDeleteMemoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetMemory operation middleware
+func (sh *strictHandler) GetMemory(w http.ResponseWriter, r *http.Request, id IdParam) {
+	var request GetMemoryRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetMemory(ctx, request.(GetMemoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetMemory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetMemoryResponseObject); ok {
+		if err := validResponse.VisitGetMemoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListMemoryRevisions operation middleware
+func (sh *strictHandler) ListMemoryRevisions(w http.ResponseWriter, r *http.Request, id IdParam) {
+	var request ListMemoryRevisionsRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListMemoryRevisions(ctx, request.(ListMemoryRevisionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListMemoryRevisions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListMemoryRevisionsResponseObject); ok {
+		if err := validResponse.VisitListMemoryRevisionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// EditMemory operation middleware
+func (sh *strictHandler) EditMemory(w http.ResponseWriter, r *http.Request, id IdParam, params EditMemoryParams) {
+	var request EditMemoryRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	var body EditMemoryJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.EditMemory(ctx, request.(EditMemoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "EditMemory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(EditMemoryResponseObject); ok {
+		if err := validResponse.VisitEditMemoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Search operation middleware
+func (sh *strictHandler) Search(w http.ResponseWriter, r *http.Request, params SearchParams) {
+	var request SearchRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Search(ctx, request.(SearchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Search")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SearchResponseObject); ok {
+		if err := validResponse.VisitSearchResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// OpenSession operation middleware
+func (sh *strictHandler) OpenSession(w http.ResponseWriter, r *http.Request) {
+	var request OpenSessionRequestObject
+
+	var body OpenSessionJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.OpenSession(ctx, request.(OpenSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "OpenSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(OpenSessionResponseObject); ok {
+		if err := validResponse.VisitOpenSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CloseSession operation middleware
+func (sh *strictHandler) CloseSession(w http.ResponseWriter, r *http.Request, session SessionParam, params CloseSessionParams) {
+	var request CloseSessionRequestObject
+
+	request.Session = session
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CloseSession(ctx, request.(CloseSessionRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CloseSession")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CloseSessionResponseObject); ok {
+		if err := validResponse.VisitCloseSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Receive operation middleware
+func (sh *strictHandler) Receive(w http.ResponseWriter, r *http.Request, session SessionParam) {
+	var request ReceiveRequestObject
+
+	request.Session = session
+
+	var body ReceiveJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Receive(ctx, request.(ReceiveRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Receive")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReceiveResponseObject); ok {
+		if err := validResponse.VisitReceiveResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Watch operation middleware
+func (sh *strictHandler) Watch(w http.ResponseWriter, r *http.Request, session SessionParam, params WatchParams) {
+	var request WatchRequestObject
+
+	request.Session = session
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Watch(ctx, request.(WatchRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Watch")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(WatchResponseObject); ok {
+		if err := validResponse.VisitWatchResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListTagSubscriptions operation middleware
+func (sh *strictHandler) ListTagSubscriptions(w http.ResponseWriter, r *http.Request) {
+	var request ListTagSubscriptionsRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListTagSubscriptions(ctx, request.(ListTagSubscriptionsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListTagSubscriptions")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListTagSubscriptionsResponseObject); ok {
+		if err := validResponse.VisitListTagSubscriptionsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SubscribeTags operation middleware
+func (sh *strictHandler) SubscribeTags(w http.ResponseWriter, r *http.Request, params SubscribeTagsParams) {
+	var request SubscribeTagsRequestObject
+
+	request.Params = params
+
+	var body SubscribeTagsJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SubscribeTags(ctx, request.(SubscribeTagsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SubscribeTags")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SubscribeTagsResponseObject); ok {
+		if err := validResponse.VisitSubscribeTagsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UnsubscribeTags operation middleware
+func (sh *strictHandler) UnsubscribeTags(w http.ResponseWriter, r *http.Request, patterns []string, params UnsubscribeTagsParams) {
+	var request UnsubscribeTagsRequestObject
+
+	request.Patterns = patterns
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UnsubscribeTags(ctx, request.(UnsubscribeTagsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UnsubscribeTags")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UnsubscribeTagsResponseObject); ok {
+		if err := validResponse.VisitUnsubscribeTagsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetTask operation middleware
+func (sh *strictHandler) GetTask(w http.ResponseWriter, r *http.Request, id IdParam) {
+	var request GetTaskRequestObject
+
+	request.Id = id
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetTask(ctx, request.(GetTaskRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetTask")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetTaskResponseObject); ok {
+		if err := validResponse.VisitGetTaskResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// UpdateTask operation middleware
+func (sh *strictHandler) UpdateTask(w http.ResponseWriter, r *http.Request, id IdParam, params UpdateTaskParams) {
+	var request UpdateTaskRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	var body UpdateTaskJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UpdateTask(ctx, request.(UpdateTaskRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UpdateTask")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UpdateTaskResponseObject); ok {
+		if err := validResponse.VisitUpdateTaskResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ClaimTask operation middleware
+func (sh *strictHandler) ClaimTask(w http.ResponseWriter, r *http.Request, id IdParam, params ClaimTaskParams) {
+	var request ClaimTaskRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	var body ClaimTaskJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ClaimTask(ctx, request.(ClaimTaskRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ClaimTask")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ClaimTaskResponseObject); ok {
+		if err := validResponse.VisitClaimTaskResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ReleaseTask operation middleware
+func (sh *strictHandler) ReleaseTask(w http.ResponseWriter, r *http.Request, id IdParam, params ReleaseTaskParams) {
+	var request ReleaseTaskRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ReleaseTask(ctx, request.(ReleaseTaskRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ReleaseTask")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ReleaseTaskResponseObject); ok {
+		if err := validResponse.VisitReleaseTaskResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
