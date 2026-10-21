@@ -1,0 +1,27 @@
+openapi: 3.1.0
+info:
+  title: agentbus2
+  version: 2.0.0-dev
+  description: >-
+    Milestone 1 stub so that make generate and the freshness check are real.
+    Milestone 4 writes the real document (spec section 7, Decision 65).
+paths:
+  /.well-known/agentbus2:
+    get:
+      operationId: wellKnown
+      security: []
+      responses:
+        "200":
+          description: Pointer to the versioned discovery endpoint (Decision 43).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WellKnown"
+components:
+  schemas:
+    WellKnown:
+      type: object
+      required: [discover]
+      properties:
+        discover:
+          type: string

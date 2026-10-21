@@ -1,4 +1,4 @@
-.PHONY: build build-all vet fmt-check lint test test-race tidy-check
+.PHONY: build build-all vet fmt-check lint test test-race tidy-check generate
 export CGO_ENABLED=0
 PKGS_UNIT = $$(go list ./... | grep -v '/internal/conformance')
 
@@ -18,3 +18,5 @@ test-race:   ## Every package under the race detector, suites included (needs Po
 	go test -race -count=1 ./...
 tidy-check:  ## go.mod and go.sum are tidy (CI step; not in verify, pending Eric)
 	go mod tidy -diff
+generate:    ## Regenerate internal/gen from api/openapi.yaml with the pinned oapi-codegen
+	go tool oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
