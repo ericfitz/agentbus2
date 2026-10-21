@@ -331,3 +331,86 @@ equivalent to admin.
   transaction after `ErrConflict` at most twice, and
   `LoadOrCreateSigningKey` once. The `Tx` contract is unchanged:
   `ErrConflict` still ends the transaction, and the rerun is the core's.
+
+## Milestone 7 addendum (2026-10-21)
+
+Choices the plan made where the spec delegated them, and the Gate 0 items as
+decided. Items 1, 2 and 3 are each `Decision (Eric, 2026-10-21)`
+(`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`, "Milestone 7"); the
+rest are choices of the plan, not new design decisions.
+
+- **Choice 1, lock shape.** `store.Store` embeds `Locks{TryLock, Unlock}` at
+  the Store level, not `Tx`, because an advisory lock is session-scoped and
+  must live on one pinned connection across the transactions of a tick.
+  SQLite takes the `leases` row through `Meta.TryLease` (expiry at `until`;
+  `Unlock` sets `expires_at = 0` for the owner). Postgres takes
+  `pg_try_advisory_lock(hashtext(current_schema()), hashtext(name))` on a
+  `*sql.Conn` pinned per name (`now` and `until` are ignored); `Unlock`
+  releases the session's locks and returns the connection. The Store
+  remembers the `(name, owner)` pairs it holds: a different owner on the same
+  handle gets `(false, nil)` and a foreign `Unlock` is a no-op, and
+  `Store.Close` unlocks before closing the pool. The lock is held across
+  ticks (`Tick` renews or re-asserts each interval, `cmd.Serve` unlocks at
+  shutdown), so two replicas never alternate. Failover is immediate on
+  Postgres when the holder's session ends and after `2 * interval` on SQLite.
+  A silently partitioned holder keeps the Postgres lock until TCP keepalive
+  ends the session (`tcp_keepalives_idle`, Linux default 2 h); the cost is a
+  pause of maintenance, never a double run, and the operations docs say to
+  set it. Encoded in the Store suite's `TestLock*` (including
+  `TestLockHolderSurvivesLostHold` and `TestLockFailedCallsNeverLeakTheSession`)
+  and in `TestReplicasMaintenanceExclusive`; blocks `advisory-lock-ignored`
+  and `sqlite-lease-ignored` of `scripts/check-gates-selftest.sh` break the
+  latter.
+- **Choice 2, `NOTIFY` channel and payload.** One channel per schema,
+  `'agentbus2_' ||` the first 24 hex digits of the SHA-256 of
+  `current_schema()`, computed in SQL by both `pg_notify` and the listener,
+  so a replica on another schema of the same database hears nothing. The
+  payload is `<channelID>:<seq>` for an append and `0:0` for a control hint;
+  `postgres.ParsePayload` accepts exactly `^\d+:\d+$`, and a malformed
+  payload degrades to `Hint{}` with a log line. `NOTIFY` runs inside the
+  append transaction, so a rolled-back attempt drops its own. Hints only:
+  every consumer re-checks the store.
+- **Choice 4, usage and reclaim.** `store.Usage{Bytes, Evictable}`. SQLite
+  reports `(page_count - freelist_count) * page_size` and is `Evictable`;
+  Postgres reports the sum of `pg_total_relation_size` over the plain
+  relations of `current_schema()` and is not `Evictable`, because relation
+  size keeps dead tuples until vacuum. `Reclaim` is
+  `PRAGMA incremental_vacuum(256)` on SQLite, outside any transaction, and a
+  no-op on Postgres. `sqlite.Open` converts a file to `auto_vacuum =
+  INCREMENTAL` once, with a `VACUUM` after the schema exists (a second open
+  finds the mode set and does nothing).
+- **Choice 5, the two jobs.** "budget eviction" and "capacity notices" run
+  after "empty channels" and before "embeddings". Eviction sweeps only when
+  usage exceeds `sqlite_budget_mib`, then down to the budget minus
+  `cleanup_free_percent`, deleting the oldest ordinary messages, then calls
+  `Reclaim` once (v1's separate vacuum step, folded in). The notice is set
+  while usage still exceeds the budget and cleared otherwise.
+- **`ControlNotifier`.** An optional `sqlstore.Dialect` extension that
+  `RegisterWatch` calls inside its transaction; Postgres sends the `0:0`
+  control payload, SQLite does not implement it.
+- **Version 3 and `AssertionReplays`.** Schema version 3 adds
+  `assertion_jti (jti PRIMARY KEY, expires_at)` with an index on
+  `expires_at`, on both engines. `Tx` embeds `AssertionReplays`:
+  `PutAssertionJTI` answers `ErrConflict` for a repeated `jti` whichever
+  process wrote it, and `DeleteAssertionJTIBefore` removes rows with
+  `expires_at < now`. Two replicas starting on a version 2 database run the
+  migration once, under the Decision 68 migration lock. The token endpoint
+  and the "assertion replay expiry" job use it (ADR 0002, Milestone 7
+  addendum).
+- **Item 1 (Gate 0), as decided.** `RegisterWatch` sends the control
+  `NOTIFY`, so a watch replaced through another replica answers
+  `409 replaced` within the reconnect bound. Encoded in
+  `TestPgnotifyHintOnWatchRegistration` and the
+  `watch-replaced-across-servers` leaf of `TestReplicasWake`.
+- **Item 2 (Gate 0), as decided.** Budget eviction and capacity notices act
+  only where `Usage.Evictable` (SQLite); on Postgres `Usage` is reported to
+  the admin operation and the notice is never set; the setting keeps the name
+  `sqlite_budget_mib`. Postgres eviction is issue #7. Encoded in
+  `TestMaintenanceBudgetEviction`.
+- **Item 3 (Gate 0), as decided.** v1's inline `checkCapacity` is not ported:
+  eviction is tick-only and writes are never refused; the notice reaches
+  agents through `receive` and operators through `admin usage`. Encoded in
+  `TestMaintenanceCapacityNotice`.
+- **Milestone 3 item 3, closed as Eric decided.** The deferred maintenance
+  deliverables (budget eviction, capacity notices, the usage number) landed
+  in Milestone 7 for SQLite only.

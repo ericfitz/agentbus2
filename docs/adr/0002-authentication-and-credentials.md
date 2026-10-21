@@ -219,7 +219,8 @@ addendum restates the item with its test when it lands.
 - **Milestone 7 item 4.** The assertion `jti` replay set is a shared Store
   table (`assertion_jti`) consulted and written in the token transaction,
   so an assertion is single-use across replicas; Milestone 5's per-process
-  `token.Replay` is the interim form until Milestone 7 lands.
+  `token.Replay` was the interim form and is deleted (Milestone 7 Task 9;
+  see the Milestone 7 addendum).
 
 ## Milestone 5 addendum (2026-10-21)
 
@@ -253,12 +254,12 @@ the choice numbers below are its.
 4. **Client assertion rules.** `alg` `EdDSA` or `ES256`, `kid` the key's
    thumbprint, `iss` = `sub` = the identity, `aud` the token endpoint,
    `jti` required, `exp` at most `assertion.MaxLifetime` (5 minutes) plus
-   the 60 s leeway ahead. `token.Replay` rejects a repeated `jti`, per
-   process: a restart, or Milestone 7's replicas, each accept one reuse of a
-   still-valid assertion, bounded by `assertion.MaxLifetime` plus leeway.
-   Decision (Eric, 2026-10-21), Milestone 7 item 4, B: Milestone 7 replaces
-   it with a shared `assertion_jti` table consulted in the token
-   transaction.
+   the 60 s leeway ahead. The token endpoint rejects a repeated `jti` through the shared
+   `assertion_jti` table, written in the token transaction (Decision (Eric,
+   2026-10-21), Milestone 7 item 4, B). Milestone 5 built this as a
+   per-process `token.Replay`, which let a restart or each replica accept
+   one reuse of a still-valid assertion; Milestone 7 deleted it (see the
+   Milestone 7 addendum).
 5. **Bearer rules.** `iss` = `aud` = the issuer URL, `sub` the identity,
    `exp` = `iat` + `token_lifetime_seconds` (default 3600), `kid` must be
    the issuer's, 60 s leeway on every time claim. A token for a name with no
@@ -341,3 +342,38 @@ omits is refused read and write while the creator and an administrator
 succeed. Gate self-test blocks 14 and 15 break the bearer signature check
 and the admin flag check and require the exit test to fail.
 `scripts/m5-exit-checks.sh` counts the subtests and checks the import rule.
+
+## Milestone 7 addendum (2026-10-21)
+
+- **Milestone 7 item 4, as decided (B).** The assertion `jti` replay set is
+  the `assertion_jti` table (schema version 3, both engines), consulted and
+  written in the token transaction (Decision (Eric, 2026-10-21), Milestone 7
+  item 4; `docs/superpowers/specs/2026-10-21-gate-0-decisions.md`).
+  `token.Replay` is deleted. `Token` verifies the assertion, then one
+  `Store.Tx` calls `PutAssertionJTI(jti, exp + token.Leeway + 1 s)` and
+  nothing else (Decision 26); `store.ErrConflict` answers 401
+  `unauthenticated` "assertion replayed", and `Issuer.Mint` runs after the
+  transaction. Replicas racing on one `jti` serialize on the primary key and
+  exactly one commits. A replica that dies between the commit and the mint
+  leaves a row the client cannot reuse; it signs a fresh assertion, as it
+  does after any failed exchange. The "assertion replay expiry" maintenance
+  job deletes rows past their retention, so the table holds only assertions
+  still acceptable. Encoded in `TestReplayPutConcurrent`, `TestReplayExpiry`
+  and `TestTokenReplayIsShared`, and in the
+  `assertion-single-use-across-replicas` leaf of `TestReplicasWake` on both
+  engines (one assertion is 200 through replica A and 401 "assertion
+  replayed" through replica B); block `assertion-replay-ignored` of
+  `scripts/check-gates-selftest.sh` breaks it.
+- **Docker `-registration` pass-through (Decision 58).** The image's
+  entrypoint is `/agentbus2 server` with an empty `CMD`, so
+  `docker run <image> -registration open|enrollment|closed` reaches the
+  server; the container listens on a non-loopback address, where the default
+  is `enrollment` (Decision 72).
+- **Replicas share the issuer and the signing key.** Every replica must be
+  configured with the same `issuer`, because a bearer carries `iss` and
+  `aud` equal to it. The signing key is the `signing_keys` row of the shared
+  database (Milestone 5 item 2, as decided: database read access equals the
+  admin flag), so every replica reports the same `kid` with nothing to
+  configure; whichever replica starts first creates it. Encoded in
+  `TestReplicasWake/shared-key-and-issuer` and the check that exactly one
+  replica prints `generated signing key`.

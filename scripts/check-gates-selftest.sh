@@ -394,6 +394,66 @@ block_admin_flag_ignored() {
 		TestAuthEndToEnd/sqlite/admin-refused-as-non-admin
 }
 
+# --- 18 to 21. the Milestone 7 exit's negative halves ----------------------------------
+# The anchor line must stay on one line in the source, exactly once. Each
+# mutation must fail the named subtest of the replicas exit test; a block may
+# also fail other leaves of the same run (NotifyControl shares notifySQL).
+# Blocks 18 and 19 run the Postgres half under testcontainers (Docker, which
+# the self-test job has); blocks 20 and 21 run the SQLite half only.
+mutate_replicas_block() {
+	local label="$1" file="$2" from="$3" to="$4" runre="$5" want="$6"
+	local log="$tmp/$label.log" f="$wt/$file" content
+	begin
+	if [ "$(grep -cF -- "$from" "$f")" -ne 1 ]; then
+		problem "$label" "anchor text not exactly once in $file: $from"
+	else
+		content="$(cat "$f")"
+		printf '%s\n' "${content//"$from"/"$to"}" >"$tmp/x" && cp "$tmp/x" "$f"
+		if ! grep -qF -- "$to" "$f"; then
+			problem "$label" "mutation changed nothing ($to absent from $file)"
+		else
+			(cd "$wt" && go test -count=1 -p 1 -v -run "$runre" ./internal/conformance/bus/ >"$log" 2>&1) || true
+			grep -qF -- "--- FAIL: $want" "$log" || problem "$label" "log lacks '--- FAIL: $want': $(tail -n 3 "$log" | tr '\n' ' ')"
+		fi
+	fi
+	finish "$label"
+	revert
+}
+
+# 18. An append whose NOTIFY carries nothing: the watch on the other replica
+# times out at 3 s instead of waking inside the merge window plus 1 s.
+block_notify_append_removed() {
+	mutate_replicas_block notify-append-removed internal/store/postgres/notify.go \
+		'const notifySQL = "SELECT pg_notify(" + channelExpr + ", $1)"' \
+		'const notifySQL = "SELECT $1::text"' \
+		'^TestReplicasWake$/postgres' TestReplicasWake/postgres/wake-crosses-servers
+}
+
+# 19. A Postgres advisory lock that is always granted: both replicas run the jobs.
+block_advisory_lock_ignored() {
+	mutate_replicas_block advisory-lock-ignored internal/store/postgres/lock.go \
+		'const tryLockSQL = "SELECT pg_try_advisory_lock(hashtext(current_schema()), hashtext($1))"' \
+		'const tryLockSQL = "SELECT true OR $1::text IS NULL"' \
+		'^TestReplicasMaintenanceExclusive$/postgres' TestReplicasMaintenanceExclusive/postgres/one-holder
+}
+
+# 20. A SQLite lease that is always granted.
+block_sqlite_lease_ignored() {
+	mutate_replicas_block sqlite-lease-ignored internal/store/sqlstore/lock.go \
+		'held, err = t.TryLease(ctx, name, owner, now, until)' \
+		'held, err = true, error(nil)' \
+		'^TestReplicasMaintenanceExclusive$/sqlite' TestReplicasMaintenanceExclusive/sqlite/one-holder
+}
+
+# 21. A token endpoint that discards the conflict on the shared assertion
+# table: the second replica mints from the same assertion.
+block_assertion_replay_ignored() {
+	mutate_replicas_block assertion-replay-ignored internal/server/auth_handlers.go \
+		'return tx.PutAssertionJTI(ctx, p.JTI, keepUntil)' \
+		'_ = tx.PutAssertionJTI(ctx, p.JTI, keepUntil); return nil' \
+		'^TestReplicasWake$/sqlite' TestReplicasWake/sqlite/assertion-single-use-across-replicas
+}
+
 block_skip_in_wiring
 block_unit_leak
 block_gen_edited
@@ -411,6 +471,10 @@ block_transport_check_fires
 block_bearer_signature_ignored
 block_admin_flag_ignored
 block_m5_deps_rule_fires
+block_notify_append_removed
+block_advisory_lock_ignored
+block_sqlite_lease_ignored
+block_assertion_replay_ignored
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"

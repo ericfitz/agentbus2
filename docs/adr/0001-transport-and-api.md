@@ -180,11 +180,14 @@ source; Eric decided every one on 2026-10-21
 are removed as each decision lands (`rg -n 'pending Eric: Milestone 4'
 internal/` then prints nothing).
 
-- **Choice 1, the operation table.** `api/openapi.yaml` declares 33
-  operations, one `operationId` per `Bus` method (delete and rename channel
-  carry both the `channels` and `admin` tags and serve `Messaging` and
-  `Admin`). Three (`wellKnown`, `openidConfiguration`, `discover`) declare
-  `security: []`; the rest take the global requirement. Admin reset and
+- **Choice 1, the operation table.** `api/openapi.yaml` declared 33
+  operations when this addendum was written; it now declares 40 (34
+  protected and 6 open, counted from `operationId` and `security: []`), one
+  `operationId` per `Bus` method plus the authentication paths (delete and
+  rename channel carry both the `channels` and `admin` tags and serve
+  `Messaging` and `Admin`). Three (`wellKnown`, `openidConfiguration`,
+  `discover`) declared `security: []` then; with `token`, `jwks` and
+  `register` six do now, and the rest take the global requirement. Admin reset and
   reset-credential arrive with the Milestone 5 admin section; usage is
   Milestone 3 item 3 (Milestone 7, SQLite only: Decision (Eric,
   2026-10-21)); `peek` (read-only pending counts with the watch floor) is
@@ -273,3 +276,33 @@ internal/` then prints nothing).
   multi-process local mode of Decision 68 is the client with
   `notify.NewPolling`, exercised in `internal/server/cmd`
   (`replaced_test.go`).
+
+## Milestone 7 addendum (2026-10-21)
+
+- **Choice 8, replicas.** A watch is a plain long-poll that any replica
+  serves, so a deployment needs no session affinity. Over one Postgres, a
+  `send` through one replica wakes a watch armed on another within
+  `watch_merge_seconds` plus 1 s (the `NOTIFY` inside the append
+  transaction reaches the other replica's `LISTEN` connection; the hint only
+  prompts the re-check of the store), and a watch armed on a second replica
+  answers the first `409 replaced` within 1.5 s (Decision (Eric, 2026-10-21),
+  Milestone 7 item 1: `RegisterWatch` sends the control payload `0:0`).
+  Encoded in `TestReplicasWake` (`wake-crosses-servers`,
+  `watch-replaced-across-servers`, Postgres only); block
+  `notify-append-removed` of `scripts/check-gates-selftest.sh` breaks the
+  first by turning the `NOTIFY` into a plain `SELECT`. Delivery crosses
+  replicas through the shared database on both engines
+  (`deliver-crosses-servers`). The limitation stands for SQLite: two
+  `agentbus2 server` processes over one SQLite file share no hints
+  (Milestone 4 choice 14), so the two cross-server leaves exist for Postgres
+  only and Milestone 4's `TestWatchWakesAcrossProcesses` and
+  `TestWatchReplacedAcrossProcesses` keep the SQLite behavior pinned; local
+  multi-process mode relies on the client's polling (Milestone 6). The
+  per-identity rate-limit buckets are per process: N replicas each grant the
+  full rate.
+- **Choice 9, the exit test.** `TestReplicasWake` starts two real `cmd.Run`
+  commands over one database and has six leaves on Postgres and four on
+  SQLite; `TestReplicasMaintenanceExclusive` starts two `cmd.Serve` instances
+  with `Config.OnTick` and has two leaves on each engine (`one-holder`,
+  `failover`). `scripts/m7-exit-checks.sh` counts them (`wake_postgres=6`,
+  `wake_sqlite=4`, `maint_*=2`) and checks the import rule.

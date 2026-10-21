@@ -4,7 +4,15 @@ A message bus, shared memory and shared task queue that let multiple agents work
 
 agentbus2 is the successor to [agentbus](https://github.com/ericfitz/agentbus). It is a breaking redesign, not an upgrade: it uses its own binary, data directory, configuration and MCP server name, so it can be installed next to agentbus 1.x without touching 1.x data.
 
-Status: Milestone 5 (authentication, registration, policy) done; a server with enrollment or TOFU registration is usable from a hand-written client; the CLI and MCP server are Milestone 6.
+Status: Milestone 7 (server deployment) done; a server runs from the Docker image over SQLite or Postgres, and replicas over one Postgres share wakes, maintenance and the assertion replay set; the CLI and MCP server are Milestone 6.
+
+Docker quickstart (details in `docs/ops/deploy.md`):
+
+```sh
+make docker-image
+docker run --rm -p 8420:8420 -v agentbus2-data:/data agentbus2:local -listen 0.0.0.0:8420 -sqlite /data/agentbus2.db -registration enrollment
+# or two replicas over Postgres: docker compose -f deploy/docker-compose.yml up
+```
 
 ## Development
 

@@ -15,6 +15,8 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 - Host commands (no listener, no credential): `agentbus2 server admin [-config|-sqlite|-postgres|-set] make-admin NAME | reset-credential NAME | create-identity NAME | enrollment create|list|revoke`.
 - `scripts/m4-exit-checks.sh <local.log> <inproc.log>` checks the Milestone 4 exit counts and the import rule; `--deps-only` runs the import rule alone.
 - `scripts/m5-exit-checks.sh <auth.log>` checks the `TestAuthEndToEnd` counts (11 leaf subtests per engine) and the Milestone 5 import rule; `--deps-only` runs the import rule alone.
+- `make docker-image` builds `agentbus2:local`; `make docker-smoke` builds it and smoke-tests it (both need Docker and are not part of `verify`; CI runs the smoke as its own job).
+- `scripts/m7-exit-checks.sh <replicas.log>` checks the `TestReplicas*` counts (`TestReplicasWake` 4 leaves on SQLite and 6 on Postgres, `TestReplicasMaintenanceExclusive` 2 per engine) and the Milestone 7 import rule; `--deps-only` runs the import rule alone.
 - `make check-gates-selftest` tests the gate scripts themselves (minutes; CI runs it as its own job).
 
 ## Design
@@ -29,6 +31,11 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 - `internal/server` holds the handlers over the core, one file per aggregate; every error goes through `WriteProblem` (problem+json), and `Authenticator` is the authentication seam (`RefuseAll` by default). `internal/server/cmd` is `agentbus2 server`.
 - `internal/bus/remote` is the client side of Decision 47: a `Bus` over the generated client; it never imports `internal/gen/spec`, `internal/server`, `internal/core` or kin-openapi.
 - Decision 47 import rule (checked by `scripts/m4-exit-checks.sh`): `internal/bus`, `internal/core/...` and `internal/bus/local` do not import `internal/gen` or `internal/server`; `internal/server/...` does not import `internal/bus/local` or `internal/bus/remote`.
+- `internal/core/notify/pgnotify` is the Postgres doorbell: a native pgx `LISTEN` connection feeding the notifier, hints only, reconnecting; `cmd.Run` wires it for a Postgres store (SQLite gets the in-process notifier). `NOTIFY` runs inside the append transaction and on watch registration (`internal/store/postgres/notify.go`).
+- `Store.Locks` (`TryLock`, `Unlock`: the `leases` row on SQLite, a pinned-connection advisory lock on Postgres) guards maintenance, so one replica runs the jobs; `Store.Space` (`Usage`, `Reclaim`) feeds budget eviction and capacity notices (SQLite only).
+- Schema version 3 adds the `assertion_jti` table (`Tx.PutAssertionJTI`, `DeleteAssertionJTIBefore`); the token endpoint consults and writes it in one transaction, so a client assertion is single-use across replicas.
+- Milestone 7 import rule (checked by `scripts/m7-exit-checks.sh`): `internal/store/...` never imports `internal/core/...`; `internal/core/notify` is a leaf (no `internal/store`, no pgx); `internal/core/notify/pgnotify` never imports `internal/server` or `internal/gen`.
+- `docs/ops/` is the operator's entry point (deploy, configuration, admin bootstrap, backup, upgrade).
 - `internal/auth` (`keys`, `assertion`, `token`) is a leaf: it imports no `internal/store`, `internal/core`, `internal/server`, `internal/gen` or `internal/bus`, and `internal/bus/remote` never imports `internal/auth/token` (checked by `scripts/m5-exit-checks.sh`).
 - `internal/core/identities` holds registration, enrollment tokens, the admin flag, reset and the signing-key rules; the host commands and the handlers both call it. `internal/server/config` is Decision 85's configuration.
 - The server's token signing key is a Store row created at first start (`signing_keys`, plaintext PEM): read access to the database equals the admin flag. Rotation is issue #6, a key provider issue #8.
