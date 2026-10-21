@@ -9,7 +9,10 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 - Lint: `make lint` (golangci-lint v2), `make vet`, `make fmt-check`.
 - Done gate: `make verify` (build, vet, gofmt, lint, `generate-check`, unit tests, the Store and Bus conformance suites against both SQLite and Postgres, and `check-gates`). Postgres for the suites comes from testcontainers unless `AGENTBUS2_TEST_POSTGRES_DSN` names a reachable server (an empty value counts as unset). `make verify` needs Docker either way, because `check-gates` runs the suite binaries in a `busybox` container to prove the no-Docker path. A run that skips the Postgres suites is not a pass.
 - `make test` is Docker-free (every package except `internal/conformance`); `make test-conformance` runs the suites only.
-- `make generate` regenerates `internal/gen` from `api/openapi.yaml`.
+- `make generate` regenerates `internal/gen` and `internal/gen/spec` from `api/openapi.yaml`.
+- `make test-conformance` runs the bus suite twice: `go test ./internal/conformance/...` (the `local` transport), then the `bus` package with `AGENTBUS2_BUS_TRANSPORT=inproc` (the remote `Bus` over the generated client and the in-process transport). Any other value fails the suite.
+- Run the server: `agentbus2 server -listen <host:port> (-sqlite <path> | -postgres <dsn>)` (interim flags until Milestone 5; every authenticated operation is refused).
+- `scripts/m4-exit-checks.sh <local.log> <inproc.log>` checks the Milestone 4 exit counts and the import rule; `--deps-only` runs the import rule alone.
 - `make check-gates-selftest` tests the gate scripts themselves (minutes; CI runs it as its own job).
 
 ## Design
@@ -20,6 +23,10 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 - `internal/core` holds the rules over the Store, one aggregate package each (`channels`, `sessions`, `messaging`, `memories`, `tasks`, `search`, `delivery`, `maintenance`) plus `rules` (pure ports) and `notify`; every mutation obeys the Decision 26 rules (see Global Constraints in `docs/superpowers/plans/2026-10-21-milestone-3-core-bus.md`).
 - `internal/bus/local` is the in-process `Bus` bound to one identity; it delegates to the core.
 - `internal/conformance/bus` is the Bus suite on both engines, including the ACL matrix (`TestACLMatrix`); `scripts/m3-exit-counts.sh` checks a `-v` log of it against the Milestone 3 exit counts.
+- `api/openapi.yaml` is the wire protocol: read spec 3 and ADRs 0001 and 0007 before changing it, then `make generate` (it writes `internal/gen` and `internal/gen/spec`; never edit those by hand).
+- `internal/server` holds the handlers over the core, one file per aggregate; every error goes through `WriteProblem` (problem+json), and `Authenticator` is the authentication seam (`RefuseAll` by default). `internal/server/cmd` is `agentbus2 server`.
+- `internal/bus/remote` is the client side of Decision 47: a `Bus` over the generated client; it never imports `internal/gen/spec`, `internal/server`, `internal/core` or kin-openapi.
+- Decision 47 import rule (checked by `scripts/m4-exit-checks.sh`): `internal/bus`, `internal/core/...` and `internal/bus/local` do not import `internal/gen` or `internal/server`; `internal/server/...` does not import `internal/bus/local` or `internal/bus/remote`.
 - v1 code is ported deliberately: the commit message names the v1 source file. Do not port artifacts of decisions v2 changed (DMs, identity derived from the harness, `-filter`).
 
 ## Git

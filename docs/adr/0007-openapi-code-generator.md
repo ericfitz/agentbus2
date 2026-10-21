@@ -182,3 +182,42 @@ Resolved on 2026-10-20:
 
 1. The document carries the `openIdConnect` scheme alongside bearer
    (Decision 65).
+
+## Milestone 4 addendum (2026-10-21)
+
+- **The 3.1 re-test.** Generation and the kin-openapi request validator are
+  tested on the real OpenAPI 3.1 document (`api/openapi.yaml`, both security
+  schemes) by the tests in `internal/gen` and `internal/server`, which run in
+  `make test`; `make generate-check` and `scripts/check-gates.sh` check 4 fail
+  a stale `internal/gen`.
+- **Choice 6, the validator is adopted.** `nethttp-middleware` validates every
+  request against the document embedded by a second generator config into
+  `internal/gen/spec` (`spec.GetSwagger()`), imported by `internal/server`
+  only. The validator is the security enforcement point: the `Authenticator`
+  seam feeds its `AuthenticationFunc`. Its router answers an unknown path and
+  a wrong method as 404. `internal/bus/remote` never imports `internal/gen/spec`
+  or kin-openapi, so the MCP server and CLI of Milestone 6 do not link them;
+  `scripts/m4-exit-checks.sh` enforces the Decision 47 import rule
+  (`--deps-only` runs it alone, in CI). The measured
+  `go list -deps ./internal/bus/remote | wc -l` is 207 packages (standard
+  library included), against the count of 5 non-standard packages without the
+  embedded document and 24 with it that this ADR gave.
+- **Choice 7, discovery.** `auth_methods` is computed from
+  `components.securitySchemes`; `capabilities` from what the core has
+  (`long_poll` always, `semantic_search` with an embedder); the document's
+  `openIdConnectUrl` is server-relative.
+- **Choice 8 and pending item 2.** The auth operations (`/v1/auth/token`,
+  `/v1/auth/jwks`) are not declared until Milestone 5; the
+  `/.well-known/openid-configuration` response names them now and they answer
+  404 `not_found` meanwhile (proceeded on recommendation A; test
+  `TestOpenIDConfigurationNamesMilestone5Paths`).
+- **Path-parameter facts.** The runtime's path styling uses `url.PathEscape`;
+  the v2.8.0 std-http template binds `r.PathValue` with `ValueIsUnescaped:
+  true`; the validator's router is built with gorillamux `UseEncodedPath()`, so
+  `a%2Fb` reaches the handler as `a/b`; the empty segment is the only router
+  404.
+- **The body-read fact.** The validator reads every protected request's body
+  before `AuthenticationFunc` runs and flattens its errors to plain strings.
+  That is why the body limit is the outermost middleware with its own
+  read-ahead, and why Milestone 5's authentication middleware sits in front of
+  the validator, not inside it.

@@ -39,6 +39,17 @@ func TestChannelNameRoundTripsOnTheWire(t *testing.T) {
 				if err := pat.RenameChannel(ctx, ab2bus.RenameChannelInput{Name: other, NewName: name}); err != nil {
 					t.Fatalf("Rename back: %v", err)
 				}
+				sent, err := pat.Send(ctx, ab2bus.SendInput{Channel: name, Content: "hello " + name})
+				if err != nil {
+					t.Fatalf("Send: %v", err)
+				}
+				hist, err := pat.History(ctx, ab2bus.HistoryInput{Channel: name})
+				if err != nil {
+					t.Fatalf("History: %v", err)
+				}
+				if len(hist) != 1 || hist[0].Seq != sent.Seq || hist[0].Content != "hello "+name {
+					t.Fatalf("History = %+v, want the one message at seq %d", hist, sent.Seq)
+				}
 				chs, err := pat.ListChannels(ctx)
 				if err != nil {
 					t.Fatalf("ListChannels: %v", err)
@@ -78,6 +89,18 @@ func TestChannelNameRoundTripsOnTheWire(t *testing.T) {
 				}
 				if err := pat.DeleteChannel(ctx, ab2bus.DeleteChannelInput{Name: name}); ab2bus.CodeOf(err) != ab2bus.CodeNotFound {
 					t.Errorf("DeleteChannel = %v, want not_found", err)
+				}
+				// Send names the channel in the body, not the path: an empty
+				// name is the core's required-field validation on both transports.
+				wantSend := ab2bus.CodeNotFound
+				if name == "" {
+					wantSend = ab2bus.CodeValidation
+				}
+				if _, err := pat.Send(ctx, ab2bus.SendInput{Channel: name, Content: "x"}); ab2bus.CodeOf(err) != wantSend {
+					t.Errorf("Send = %v, want %s", err, wantSend)
+				}
+				if _, err := pat.History(ctx, ab2bus.HistoryInput{Channel: name}); ab2bus.CodeOf(err) != ab2bus.CodeNotFound {
+					t.Errorf("History = %v, want not_found", err)
 				}
 				if _, err := pat.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: name}); ab2bus.CodeOf(err) != ab2bus.CodeValidation {
 					t.Errorf("CreateChannel = %v, want validation", err)

@@ -68,9 +68,23 @@ func TestTransportInUse(t *testing.T) {
 			if _, ok := b.(*local.Bus); !ok {
 				t.Fatalf("newBus returned %T, want *local.Bus", b)
 			}
+			if _, err := b.ListChannels(context.Background()); err != nil {
+				t.Fatalf("ListChannels: %v", err)
+			}
+			if n := countingFor(h).n.Load(); n != 0 {
+				t.Fatalf("request counter = %d after a local ListChannels, want 0 (no wire)", n)
+			}
 		case "inproc":
 			if _, ok := b.(*remote.Bus); !ok {
 				t.Fatalf("newBus returned %T, want *remote.Bus", b)
+			}
+			// A call through newBus must reach the harness's server: the
+			// counter is what separates "inproc" from a local Bus in disguise.
+			if _, err := b.ListChannels(context.Background()); err != nil {
+				t.Fatalf("ListChannels: %v", err)
+			}
+			if n := countingFor(h).n.Load(); n != 1 {
+				t.Fatalf("request counter = %d after one ListChannels through newBus, want 1", n)
 			}
 			c, err := gen.NewClientWithResponses("http://inproc", gen.WithHTTPClient(&http.Client{Transport: server.InProcessTransport(handlerFor(h), "pat")}))
 			if err != nil {
@@ -83,8 +97,8 @@ func TestTransportInUse(t *testing.T) {
 			if resp.StatusCode() != http.StatusOK {
 				t.Fatalf("discover status = %d, want 200", resp.StatusCode())
 			}
-			if n := countingFor(h).n.Load(); n != 1 {
-				t.Fatalf("request counter = %d, want 1", n)
+			if n := countingFor(h).n.Load(); n != 2 {
+				t.Fatalf("request counter = %d, want 2", n)
 			}
 		}
 	})

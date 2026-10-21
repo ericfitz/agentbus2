@@ -532,3 +532,20 @@ func TestSessionIdentitiesListsLive(t *testing.T) {
 		codeOf(t, err, ab2bus.CodeNotRegistered)
 	})
 }
+
+// An empty session id: Close is the core's required-field validation, Receive
+// and Watch look the session up and find none (not_found). On the wire the id
+// is an empty path segment, the router's 404, so the remote Bus judges Close
+// itself (as for Send's empty channel); the other two agree without a guard.
+func TestEmptySessionIDAgreesAcrossTransports(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		b := h.as("pat")
+		codeOf(t, b.Close(ctx, ab2bus.CloseSessionInput{}), ab2bus.CodeValidation)
+		_, err := b.Receive(ctx, ab2bus.ReceiveInput{})
+		codeOf(t, err, ab2bus.CodeNotFound)
+		_, err = b.Watch(ctx, ab2bus.WatchInput{Timeout: 10 * time.Millisecond})
+		codeOf(t, err, ab2bus.CodeNotFound)
+	})
+}

@@ -168,3 +168,70 @@ Both resolved on 2026-10-20:
    newer registration (Decision 68).
 2. Idempotency key scope and retention: per identity, for the ported
    `receipt_retention_minutes` setting (Decision 67).
+
+## Milestone 4 addendum (2026-10-21)
+
+Choices the plan made where the spec delegated them (Milestone 4 plan,
+"Choices this milestone makes"). Each is a choice of the plan, not a new
+design decision; the items marked pending Eric proceeded on the
+recommendation (A) and carry a `pending Eric: Milestone 4 item N` marker in
+the source (`rg -n 'pending Eric: Milestone 4' internal/`).
+
+- **Choice 1, the operation table.** `api/openapi.yaml` declares 33
+  operations, one `operationId` per `Bus` method (delete and rename channel
+  carry both the `channels` and `admin` tags and serve `Messaging` and
+  `Admin`). Three (`wellKnown`, `openidConfiguration`, `discover`) declare
+  `security: []`; the rest take the global requirement. Admin reset and
+  reset-credential arrive with the Milestone 5 admin section; usage is
+  Milestone 3 pending item 3 (Milestone 7). These are deliberate deferrals.
+- **Choice 2.** `Idempotency-Key` is an optional header on every mutating
+  operation; absent or empty means no receipt, as `core.WithReceipt` treats
+  an empty key. The remote `Bus` sends the header only for a non-empty key.
+- **Choice 3.** `Problem.code` is the eleven codes of the `Bus` plus
+  `unauthenticated` (`CodeUnauthenticated`, 401). `server.StatusFor` fixes
+  the status per code; `Problem.type` is `urn:agentbus2:problem:<code>`.
+- **Choice 4.** Handlers return `nil, err` for every failure and one hook
+  (`server.ProblemFor`) writes the problem.
+- **Choice 9.** The watch `timeout` is a JSON number of seconds, fractional
+  allowed (pending item 4, test `TestWatchTimeoutWire`); `after` defaults to
+  0 and `include_own` to false.
+- **Choice 10.** `receive` is a `POST` with a body and no `Idempotency-Key`.
+- **Choice 11.** `limitBody` is the outermost middleware (order: `limitBody`,
+  authentication, validator, mux). It reads the body ahead with its own
+  limit and answers 413 `validation`; it never uses `http.MaxBytesReader`.
+- **Choice 13.** The remote `Bus` maps a problem+json body to a `*bus.Error`
+  by struct literal (an unknown code is kept as received), a non-problem 5xx
+  to `unavailable`, other non-problem statuses to `internal`, and a
+  transport error to `ctx.Err()` or `unavailable`.
+- **Choice 15.** `http.Server`: `ReadHeaderTimeout` 10 s, `ReadTimeout` 30 s,
+  `WriteTimeout` 0, `IdleTimeout` 120 s, graceful shutdown for 60 s.
+  `ReadTimeout` does not end a long-poll (test `TestWatchLongPollSurvivesReadTimeout`
+  over a real socket).
+- **Choice 17, path parameters.** The generated client percent-encodes each
+  path parameter once; `ServeMux` decodes once; the binder treats the value
+  as already unescaped. The one shape no route matches is the empty segment
+  (router 404 `not_found`, the code the core gives an empty name). The suite
+  runs odd names (`TestChannelNameRoundTripsOnTheWire`, now including `Send`
+  and `History`) under both transports.
+- **Pending item 1** (`Idempotency-Key` optional; test
+  `TestSendIdempotencyWire`), **item 2** (auth paths declared in Milestone 5;
+  test `TestOpenIDConfigurationNamesMilestone5Paths`), **item 3** (interim
+  server flags; test `TestRunFlags`) and **item 4** (fractional watch
+  timeout) proceed on recommendation A. Their ADR 0002 and 0007 parts are
+  in those addenda.
+- **Former item 5 (withdrawn in the plan; client-side path-parameter rule).**
+  The probe showed no client-side rule is needed for names containing `/`
+  (Decision 80 stands for them): they travel as one escaped segment and the
+  core judges them. Three narrow client-side guards exist anyway, all
+  departures from Decision 80 reported by their tasks and marked in the
+  source: `Send` with an empty channel and `Close` with an empty session id
+  (the core answers `validation`, the wire's
+  empty segment answers 404) and `UnsubscribeTags` with an empty pattern set
+  (same cause); a comma inside one pattern still splits the `{patterns}`
+  segment into two patterns on the wire and is not guarded.
+- **Choice 14 limitation.** `agentbus2 server` uses `notify.NewMemory()`
+  (Decision 52); two server processes over one SQLite file are unsupported
+  (each misses the other's hints; a watch still ends at its timeout). The
+  multi-process local mode of Decision 68 is the client with
+  `notify.NewPolling`, exercised in `internal/server/cmd`
+  (`replaced_test.go`).

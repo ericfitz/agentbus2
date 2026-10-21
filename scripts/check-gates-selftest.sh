@@ -257,6 +257,83 @@ block_pending_batch_wakes() {
 		'--- FAIL: TestWatchIgnoresPendingBatch/sqlite' '--- FAIL: TestWatchIgnoresPendingBatch/postgres'
 }
 
+# --- 11. inproc-crosses-the-wire -----------------------------------------------------
+# Dropping the send's idempotency key in the remote Bus must break the replay
+# test under inproc (two rows instead of one replay) and be invisible under
+# local, which proves the inproc run goes through the wire.
+block_inproc_crosses_the_wire() {
+	local label=inproc-crosses-the-wire f="$wt/internal/bus/remote/messages.go" from='IdempotencyKey: key(in.IdempotencyKey)' log t=TestSendIdempotencyReplay
+	begin
+	if ! grep -qF -- "$from" "$f"; then
+		problem "$label" "anchor text absent from internal/bus/remote/messages.go: $from"
+	else
+		sed 's/IdempotencyKey: key(in.IdempotencyKey)/IdempotencyKey: nil/' "$f" >"$tmp/x" && cp "$tmp/x" "$f"
+		if [ "$(grep -c 'IdempotencyKey: nil' "$f")" -eq 0 ]; then
+			problem "$label" "mutation changed nothing (IdempotencyKey: nil absent)"
+		else
+			log="$tmp/b11a.log"
+			(cd "$wt" && AGENTBUS2_BUS_TRANSPORT=inproc go test -count=1 -p 1 -v -run "^${t}\$" ./internal/conformance/bus/ >"$log" 2>&1) || true
+			grep -qF -- "--- FAIL: $t/sqlite" "$log" || problem "$label" "inproc log lacks '--- FAIL: $t/sqlite': $(tail -n 3 "$log" | tr '\n' ' ')"
+			grep -qF -- "--- FAIL: $t/postgres" "$log" || problem "$label" "inproc log lacks '--- FAIL: $t/postgres'"
+			log="$tmp/b11b.log"
+			(cd "$wt" && AGENTBUS2_BUS_TRANSPORT=local go test -count=1 -p 1 -v -run "^${t}\$" ./internal/conformance/bus/ >"$log" 2>&1) || true
+			grep -qF -- "--- PASS: $t/sqlite" "$log" || problem "$label" "local log lacks '--- PASS: $t/sqlite': $(tail -n 3 "$log" | tr '\n' ' ')"
+			grep -qF -- "--- PASS: $t/postgres" "$log" || problem "$label" "local log lacks '--- PASS: $t/postgres'"
+			if grep -qF -- '--- FAIL' "$log"; then problem "$label" "local run has a FAIL: the mutation must be invisible to the local path"; fi
+		fi
+	fi
+	finish "$label"
+	revert
+}
+
+# --- 12. deps-rule-fires -----------------------------------------------------------------
+# Docker-free. Each probe file adds one forbidden production import; the exit
+# script must exit 1 and name the package and the forbidden import. A
+# third-party subpackage is caught only by the prefix match.
+deps_probe() {
+	local label="$1" file="$2" import="$3" want="$4" log="$tmp/b12.log" rc=0 pkgname
+	pkgname="$(basename "$(dirname "$file")")"
+	printf 'package %s\n\nimport _ "%s"\n' "$pkgname" "$import" >"$wt/$file"
+	bash "$wt/scripts/m4-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
+	if [ "$rc" -ne 1 ]; then
+		problem "$label" "$file importing $import: exit $rc, expected 1"
+	fi
+	grep -qF -- "$want" "$log" || problem "$label" "$file importing $import: log lacks '$want': $(tail -n 3 "$log" | tr '\n' ' ')"
+	rm -f "$wt/$file"
+}
+
+block_deps_rule_fires() {
+	local label=deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b12z.log"
+	begin
+	deps_probe "$label" internal/core/probe_m4.go "$m/internal/gen" "deps_violation=$m/internal/core imports $m/internal/gen"
+	deps_probe "$label" internal/bus/remote/probe_m4.go "$m/internal/server" "deps_violation=$m/internal/bus/remote imports $m/internal/server"
+	deps_probe "$label" internal/bus/remote/probe_m4.go github.com/getkin/kin-openapi/openapi3 "deps_violation=$m/internal/bus/remote imports github.com/getkin/kin-openapi"
+	if bash "$wt/scripts/m4-exit-checks.sh" --deps-only >"$log" 2>&1; then
+		grep -qF 'deps_ok=1' "$log" || problem "$label" "clean tree: exit 0 without deps_ok=1"
+	else
+		problem "$label" "clean tree: expected exit 0: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	finish "$label"
+	revert
+}
+
+# --- 13. transport-check-fires -----------------------------------------------------------
+# Without the os.Exit(2) of the transport selection an unknown
+# AGENTBUS2_BUS_TRANSPORT falls through to the suite; check 6 must FAIL.
+block_transport_check_fires() {
+	local label=transport-check-fires log="$tmp/b13.log" f="$wt/internal/conformance/bus/main_test.go"
+	begin
+	sed '/os.Exit(2)/d' "$f" >"$tmp/x" && cp "$tmp/x" "$f"
+	if [ "$(grep -c 'os.Exit(2)' "$f")" -ne 0 ]; then
+		problem "$label" "mutation changed nothing (os.Exit(2) still present)"
+	else
+		run_gates "$log"
+		expect_checks "$label" "$log" transport-env-rejects-unknown
+	fi
+	finish "$label"
+	revert
+}
+
 block_skip_in_wiring
 block_unit_leak
 block_gen_edited
@@ -268,6 +345,9 @@ block_search_postgres_phrase
 block_search_sqlite_prefix
 block_acl_check_removed
 block_pending_batch_wakes
+block_inproc_crosses_the_wire
+block_deps_rule_fires
+block_transport_check_fires
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"

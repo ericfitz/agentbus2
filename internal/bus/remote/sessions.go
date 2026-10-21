@@ -45,7 +45,14 @@ func (b *Bus) Open(ctx context.Context, in ab2bus.OpenSessionInput) (ab2bus.Sess
 	return out, nil
 }
 
+// Close judges the empty session id itself: core Close answers validation for
+// it, while the wire's empty path segment is the router's 404 not_found, so the
+// request is not sent (the plan's empty-name contingency, a Decision 80
+// departure limited to the empty id; same as Send's empty channel).
 func (b *Bus) Close(ctx context.Context, in ab2bus.CloseSessionInput) error {
+	if in.Session == "" {
+		return ab2bus.Errorf(ab2bus.CodeValidation, false, "session is required")
+	}
 	r, err := b.c.CloseSessionWithResponse(ctx, in.Session, &gen.CloseSessionParams{IdempotencyKey: key(in.IdempotencyKey)})
 	if err != nil {
 		return errorOf(ctx, 0, nil, nil, err)

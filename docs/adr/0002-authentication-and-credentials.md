@@ -158,3 +158,23 @@ All five resolved on 2026-10-20:
    the store; the API requires the admin flag (Decision 73).
 5. Settings file: `~/.config/agentbus2/config.json` with a `profiles` map
    (Decision 74).
+
+## Milestone 4 addendum (2026-10-21)
+
+- **Choice 5, the authentication seam.** `server.Authenticator` is
+  `Authenticate(r *http.Request) (identity string, err error)`. The
+  authentication middleware always stores the result under the `identity`
+  context key (even `""`) and never refuses; the validator's
+  `AuthenticationFunc` succeeds exactly when `IdentityFrom(ctx)` is
+  non-empty, so which operations need an identity is stated once, in the
+  document. `server.RefuseAll` (the only authenticator `agentbus2 server`
+  constructs until Milestone 5) returns `""`: every protected operation is
+  401 `unauthenticated`. `server.InProcess` returns the value of a second,
+  unexported context key that only `server.InProcessTransport(h, identity)`
+  sets; a context value cannot cross a socket, and the middleware overwrites
+  the `identity` key, so a `RefuseAll` server behind the transport still sees
+  `""`. `InProcess` is the local mode of Decision 36 (identity is the
+  registered name, the client is in the same process).
+- **Pending item 3** (interim flags `-listen`, `-sqlite`, `-postgres` until
+  Decision 85's configuration file and `AGENTBUS2_SERVER_*` variables in
+  Milestone 5) proceeds on recommendation A; test `TestRunFlags`.

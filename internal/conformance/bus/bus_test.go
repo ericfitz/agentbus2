@@ -35,9 +35,6 @@ func TestLocalBusImplementsEveryInterface(t *testing.T) {
 		h := newHarness(t, e, harnessOptions{})
 		ctx := context.Background()
 		b := h.admin("root")
-		if _, ok := h.as("pat").(*local.Bus); !ok {
-			t.Fatalf("newBus returned %T, want *local.Bus", h.as("pat"))
-		}
 		must := func(name string, err error) {
 			if err != nil {
 				t.Errorf("%s: %v, want nil", name, err)

@@ -3,7 +3,6 @@ package remote
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -23,10 +22,6 @@ type Bus struct{ c *gen.ClientWithResponses }
 func New(c *gen.ClientWithResponses) *Bus { return &Bus{c: c} }
 
 var _ ab2bus.Bus = (*Bus)(nil)
-
-// ErrNotImplemented marks a method whose remote implementation lands in a
-// later task of Milestone 4; removed by Task 11.
-var ErrNotImplemented = errors.New("remote: not implemented in this milestone")
 
 // maxBodyExcerpt bounds the body text quoted in an unparsable-response error.
 const maxBodyExcerpt = 200
