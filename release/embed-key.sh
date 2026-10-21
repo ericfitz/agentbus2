@@ -30,10 +30,13 @@ for script in "$@"; do
         *.ps1) block="\$PubKeyPem = @'"$'\n'"$PEM"$'\n'"'@" ;;
         *)     block="PUBKEY_PEM='$PEM'" ;;
     esac
-    tmp="$(mktemp)"
+    # The temp file goes next to the script, so the final mv is a rename on
+    # one filesystem, and it gets the script's exact mode back before the mv
+    # (a read-only script stays read-only).
+    mode="$(stat -c %a "$script" 2>/dev/null || stat -f %Lp "$script")"
+    [[ "$mode" =~ ^[0-7]{3,4}$ ]] || { echo "error: could not read the mode of $script (got '$mode')" >&2; exit 1; }
+    tmp="$(mktemp "$(dirname -- "$script")/.embed-key.XXXXXX")"
     trap 'rm -f "$tmp"' EXIT
-    cp -p "$script" "$tmp"   # carry the mode over; the redirect below keeps it
-    chmod u+w "$tmp"         # a read-only input must still be rewritable
     # The block goes through the environment, not -v: awk -v would interpret
     # backslashes, and ENVIRON keeps the embedded newlines verbatim.
     # A BEGIN with no later END (END before BEGIN) would swallow the rest of
@@ -47,6 +50,7 @@ for script in "$@"; do
         echo "error: $script: rewrite failed (is '$END' after '$BEGIN'?)" >&2; exit 1
     fi
     if cmp -s "$tmp" "$script"; then rm -f "$tmp"; echo "$script: unchanged"; else
+        chmod "$mode" "$tmp"
         mv "$tmp" "$script"; echo "$script: key embedded"
     fi
 done
