@@ -184,10 +184,11 @@ All six resolved on 2026-10-20:
 
 Milestone 3 built the core and the local Bus. These are Claude's choices
 under the spec's delegation, then the items the plan put to Eric. Eric did
-not answer before execution: each item proceeds on the plan's
-recommendation (option A) and is a `Claude proposal, pending Eric`; the test
-markers `// pending Eric: Milestone 3 item N` encode it, so a reversal is a
-small, findable change.
+not answer before execution: each item proceeded on the plan's
+recommendation (option A) with a `// pending Eric: Milestone 3 item N`
+marker. Eric decided every item on 2026-10-21
+(`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`); the answers are
+recorded per item below and the markers are removed as the decisions land.
 
 ### Choices delegated by the spec
 
@@ -203,12 +204,12 @@ small, findable change.
 5. **Display names (Decision 39).** The first free of `<identity>`,
    `<identity>-2`, ...; with a hint, `<identity>/<hint>`,
    `<identity>/<hint>-2`, ... The hint passes `NameRule` and never affects
-   authorization. See pending item 11 for which rows count as taken.
+   authorization. See Gate 0 item 11 for which rows count as taken.
 6. **Defaults the spec names without a value.** `SessionLeaseSeconds` 90,
    `LeaseSkewSeconds` 5, `SessionRetentionHours` 72, `WatchMaxSeconds` 50,
    `WatchMergeSeconds` 2. Consequence: an owner's tasks become reclaimable
    about 95 s (lease plus skew) after the owner's last `Open`, `Receive` or
-   `Watch` (pending item 13).
+   `Watch` (Gate 0 item 13).
 7. **Rate limiting across retries (Decision 26).** `Limits.Check` is a
    read-only refill-and-compare that may run inside the transaction;
    `Limits.Charge` pays after commit, so a retried transaction is charged
@@ -218,41 +219,59 @@ small, findable change.
     and runs the operation otherwise. Keys are per identity and expire after
     `ReceiptRetentionMinutes`.
 
-### Pending Eric
+### Gate 0 answers (Decision (Eric, 2026-10-21))
+
+Each item below was a `Claude proposal, pending Eric`; Eric decided all of
+them on 2026-10-21 (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`).
 
 1. **Own-message exclusion is per session**, not per identity (a parent and
-   its subagents share a credential, Decision 15). Option B: per identity.
-   Marker: `TestReceiveExcludesOwnSessionOnly`.
+   its subagents share a credential, Decision 15). Decision (Eric,
+   2026-10-21): as built. Test: `TestReceiveExcludesOwnSessionOnly`.
 2. **Lease renewal.** `Open`, `Receive` and `Watch` renew the lease; a
    session-scoped call on a lapsed row is `session_lapsed` (`Close`
    excepted); `Open` with the resume token revives the same row within the
-   retention window. Option B: a lapsed session's call silently renews it.
-   Marker: `TestSessionLapsedRefusesAndResumes`.
+   retention window. Decision (Eric, 2026-10-21): as built. Test:
+   `TestSessionLapsedRefusesAndResumes`. Milestone 6's read-only `peek`
+   follows the same rule and renews nothing.
 4. **Idle subscription expiry is not ported** (v1 `cursor_idle_hours`):
-   subscriptions persist (Decision 37). Option B: port it. No marker: the
-   absence of the job.
+   subscriptions persist (Decision 37). Decision (Eric, 2026-10-21): as
+   built.
+5. **The inspection hook is not ported** (v1 `inspect.go`,
+   `inspection_command`). Decision (Eric, 2026-10-21): not ported in
+   2.0.0; tracked as a future feature with a response mechanism in issue
+   #5.
 9. **The polling guard is not ported** (v1 `pollingGuardEmptyWaits`):
-   `receive` is non-blocking (Decision 83). Option B: port it. No marker.
+   `receive` is non-blocking (Decision 83). Decision (Eric, 2026-10-21):
+   as built.
 10. **Wake grace and swept-row restore are not ported** (v1 ADR 0022 and
     0023): they ride on `meta`, which Milestone 2 did not port. Liveness is
-    the lease. Option B: port the clock-sample detection onto a lease
-    extension. No marker.
+    the lease. Decision (Eric, 2026-10-21): as built.
 11. **Lapsed sessions hold their display name**: the taken set is every row
     with `ClosedAt == 0`, so a resumed session keeps its name and two live
     sessions never share one; the cost is `pat-2` after a crash, for at most
-    `SessionRetentionHours`. Option B: live rows only. Marker:
+    `SessionRetentionHours`. Decision (Eric, 2026-10-21): as built. Test:
     `TestSessionDisplayNameUniqueAcrossResumable`.
 12. **`Open`, `Receive` and `Watch` take no idempotency key**, a departure
     from the literal "every mutating call" of spec 3.4. `Open` returns the
     resume token and the row stores only its hash, so a receipt would keep
     the plaintext; `Receive` is idempotent by construction (Decisions 16
     and 40); `Watch` writes only a lease and a watch id the next call
-    replaces (Decision 68). Option B: give all three a key. Marker:
+    replaces (Decision 68). Decision (Eric, 2026-10-21): ratified; spec
+    3.4 now lists the exemptions, which are `Open`, `Receive`, `Watch`,
+    `register` (Milestone 5 item 6) and `peek` (Milestone 6 item 2). Test:
     `TestSessionOpenRetryLeavesLapsedRow`.
 13. **Owner liveness for abandoned tasks** is session liveness alone
     (`ClosedAt == 0` and the lease plus skew not before now), so a task is
     reclaimable about 95 s after the owner's last `Open`, `Receive` or
     `Watch`; an explicit `LeasedUntil` is reclaimed by the earlier of the
-    two. Option B: a separate `TaskOwnerGraceSeconds` (default 300).
-    Option C: lease expiry only. Markers: `TestTaskAbandonedByDeadOwner`,
-    `TestMaintenanceAbandonedTasks`.
+    two. Decision (Eric, 2026-10-21): ratified. Tests:
+    `TestTaskAbandonedByDeadOwner`, `TestMaintenanceAbandonedTasks`.
+
+Items 3 (ADR 0004), 6, 7 and 8 (ADR 0008) are recorded in those ADRs.
+Milestone 5 item 7 (Decision (Eric, 2026-10-21), option B) bears on this
+ADR's identity rules: a keyless identity row whose admin flag is set is
+never claimed by trust-on-first-use; `Register` answers `forbidden`
+"identity %q requires an enrollment token", while a keyless row without the
+flag can still be claimed in `open` mode. Milestone 5 item 5: an external
+issuer's subject gets its row from `server admin create-identity` or, in
+`open` mode only, from its first valid external token (never admin).

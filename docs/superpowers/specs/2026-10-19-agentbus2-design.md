@@ -234,7 +234,7 @@ section 4.6 maps each operation to a permission).
 | --- | --- | --- |
 | Discovery | `GET /.well-known/agentbus2`, `GET /v1/discover` | Unauthenticated. Decision 43. Advertised auth methods agree with the document's security schemes (Decision 65). |
 | Auth | `POST /v1/auth/token` (`private_key_jwt` exchange); `register` (trust-on-first-use or enrollment token) | Decisions 19, 20. Path and token lifetime (a server setting, default one hour): Decision 84 (Eric). |
-| Sessions | Open (hint, optional resume token, optional offered cursors); close; `watch`; `receive` (with optional `ack`) | Delivery state is per session. Decisions 15, 16, 40, 42. Decision 83 (Eric): `receive` is non-blocking on the API; `watch` is the only server-side wait. The MCP `receive` tool may keep `wait_seconds` by calling `watch` then `receive` in the client. |
+| Sessions | Open (hint, optional resume token, optional offered cursors); close; `watch`; `receive` (with optional `ack`); `peek` (read-only pending counts computed with the watch floor; Decision (Eric, 2026-10-21), Milestone 6 item 2) | Delivery state is per session. Decisions 15, 16, 40, 42. Decision 83 (Eric): `receive` is non-blocking on the API; `watch` is the only server-side wait. The MCP `receive` tool may keep `wait_seconds` by calling `watch` then `receive` in the client. |
 | Channels | List (names and kinds visible to any authenticated identity, Decision 94); create (optional `kind`, one of `ordinary`, `memory`, `tasks`, default `ordinary`, Decisions 82, 90, 93; optional ACL, Decision 88); get and set the ACL; delete and rename (channel `admin`, Decision 89); subscribe and unsubscribe (on the identity); tag subscriptions | Membership is server-held. Decisions 17, 37, 38. No name prefixes and no reserved name shapes (Decisions 76, 82); names pass v1 `NameRule` exactly, so `/` is banned (Decision 93). Open creation is a server switch, on by default (Decision 93). |
 | Messages | Send (idempotent); history by seq range with tag filters; search (text, semantic, both) | Decision 46; search language in section 5.4. |
 | Memories | Get; edit (idempotent, new revision); delete; revisions | `edit_memory` gains an idempotency key. Decision 46. |
@@ -278,6 +278,18 @@ Decision 67 (Eric, 2026-10-20): keys are scoped per identity. Receipts
 are retained for a server setting ported from v1
 `receipt_retention_minutes` (section 6.5). Elaboration: a resumed or
 restarted session of the same identity can therefore retry safely.
+
+Decision (Eric, 2026-10-21; `docs/superpowers/specs/2026-10-21-gate-0-decisions.md`,
+Milestone 3 item 12, Milestone 5 item 6, Milestone 6 item 2): the rule
+above has exactly these exemptions, operations that take no
+`Idempotency-Key` because they are idempotent by construction or precede
+an identity: `Open` (it returns the resume token, whose plaintext a receipt
+would have to keep), `Receive` (idempotent by Decisions 16 and 40),
+`Watch` (it writes only a lease and a watch id the next call replaces,
+Decision 68), `register` (the same-key retry answers success before any
+token lookup, and receipts are per identity while the caller has none
+yet, Decision 67) and `peek` (read-only). Every other mutating operation
+takes the key.
 
 ### 3.5 Long-poll watch
 
@@ -741,7 +753,15 @@ Decision 49 (Eric):
 
 Jobs ported from v1 `maintenance.go`: message retention, tombstone and
 memory expiry, task expiry and abandoned-task reclaim, stale-channel
-expiry, budget eviction, capacity notices, embedding batches. Decision 68
+expiry, budget eviction, capacity notices, embedding batches. Decision
+(Eric, 2026-10-21; `docs/superpowers/specs/2026-10-21-gate-0-decisions.md`):
+budget eviction and capacity notices are Milestone 7 and act on SQLite
+only (Postgres eviction is issue #7; Milestone 3 item 3, Milestone 7 item
+2); empty-channel reaping (v1 `reapEmptyChannels`) is ported as a job
+that deletes an ordinary channel, never `general` or a task list, with no
+messages and no subscriptions at all, created more than N hours ago, N a
+new setting with default 24 (Milestone 3 item 8); and the expiry of the
+shared assertion replay rows is a job (Milestone 7 item 4). Decision 68
 (Eric, 2026-10-20): in local multi-process mode the maintenance lease is
 a row in the shared SQLite database (v1 `takeLease`, ported), so whichever
 process takes the lease runs the jobs and the others skip them; the

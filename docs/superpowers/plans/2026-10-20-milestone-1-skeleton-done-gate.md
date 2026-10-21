@@ -59,10 +59,10 @@ Spec section 10 names the deliverables but leaves the layout and the test wiring
 9. **SQLite in tests** opens a plain file path under `t.TempDir()`. v1's `SQLiteDSN` and `sqliteURIPath` (`internal/bus/bus.go`, tests in `internal/bus/dsn_test.go`) carry Store settings (`_txlock=immediate`, busy timeout) and are ported with the Store in Milestone 2, not here.
 10. **CI** is a new workflow (v1 has no `ci.yml`); it borrows only v1 `release-build.yml`'s convention of pinning actions by commit SHA.
 
-## Claude proposal, pending Eric
+## Claude proposal, pending Eric (decided 2026-10-21)
 
-- Whether `make verify` should also run `tidy-check` (`go mod tidy -diff`). It is not in the CLAUDE.md done-gate list, so this plan adds the target and runs it as a separate CI step but leaves it out of `verify` until Eric says otherwise.
-- `make verify` now needs Docker even when `AGENTBUS2_TEST_POSTGRES_DSN` names an external server, because check 5 of `check-gates` runs the suite binaries inside a `busybox` container to prove the no-Docker path (Choice 1). The plan treats this as accepted; if Eric wants the variable-only path to stay Docker-free, check 5 moves out of `verify` into its own CI job and the local proof becomes opt-in (`make check-gates` alone).
+- Whether `make verify` should also run `tidy-check` (`go mod tidy -diff`). It was not in the CLAUDE.md done-gate list, so this plan added the target and ran it as a separate CI step, leaving it out of `verify`. Decision (Eric, 2026-10-21; `docs/superpowers/specs/2026-10-21-gate-0-decisions.md`, "Milestone 1"): **changed**, `make verify` runs `tidy-check`. Work: add it to the `verify` target and the CLAUDE.md done-gate line; the Milestone 6 plan's tasks that import a module directly now drop its `// indirect` marker in their own commit.
+- `make verify` now needs Docker even when `AGENTBUS2_TEST_POSTGRES_DSN` names an external server, because check 5 of `check-gates` runs the suite binaries inside a `busybox` container to prove the no-Docker path (Choice 1). Decision (Eric, 2026-10-21): accepted as built.
 - The push to origin that first exercises `ci.yml` (Task 9 ends with the `Approve:` line).
 
 ## Review Focus

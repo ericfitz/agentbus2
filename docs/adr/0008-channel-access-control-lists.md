@@ -210,18 +210,27 @@ None. Questions 25 to 32 were decided on 2026-10-20 as above.
   with `Creator` and `CreatedAt` and is returned only to the creator on
   `CreateChannel` and to an administrator on `Status`.
 
-### Pending Eric
+### Gate 0 answers (Decision (Eric, 2026-10-21))
 
-Each proceeds on the plan's recommendation (option A) with a
-`// pending Eric: Milestone 3 item N` marker.
+Each item proceeded on the plan's recommendation (option A) with a
+`// pending Eric: Milestone 3 item N` marker; Eric decided all three on
+2026-10-21 (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`), and
+the markers are removed as the decisions land.
 
 6. **`general` cannot be deleted or renamed**, by anyone including
    administrators: the server recreates it at start and every identity is
-   subscribed to it (Decision 92). Option B: allow holders of `admin`.
-   Marker: `TestChannelGeneralIsProtected`.
+   subscribed to it (Decision 92). Decision (Eric, 2026-10-21): as built.
+   Test: `TestChannelGeneralIsProtected`.
 7. **No live-subscriber refusal on delete** (v1 `deleteChannel`): `admin` on
    the channel decides (Decision 89) and subscriptions and cursors cascade.
-   Option B: port it with `except` for the caller. No marker.
-8. **No empty-channel reaping** (v1 `reapEmptyChannels`): a channel with an
-   ACL and a creator is configuration; only task lists expire. Option B:
-   port it. No marker.
+   Decision (Eric, 2026-10-21): as built.
+8. **Empty-channel reaping is ported** (v1 `reapEmptyChannels`). Decision
+   (Eric, 2026-10-21): **changed** (option B, rule A of the follow-up). A
+   maintenance job deletes an ordinary channel (never `general`, never a
+   task list) that has no messages and no subscriptions at all and was
+   created more than N hours ago; N is a new setting, default 24. Work: the
+   job, its setting and Store support, conformance tests on both engines;
+   implemented before Milestone 5, so the Milestone 5 configuration surface
+   and the Milestone 7 job list carry it. A channel with an ACL and a
+   creator but no subscriber and no message is reaped like any other; a
+   subscription keeps it.

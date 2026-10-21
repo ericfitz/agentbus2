@@ -173,9 +173,12 @@ Both resolved on 2026-10-20:
 
 Choices the plan made where the spec delegated them (Milestone 4 plan,
 "Choices this milestone makes"). Each is a choice of the plan, not a new
-design decision; the items marked pending Eric proceeded on the
-recommendation (A) and carry a `pending Eric: Milestone 4 item N` marker in
-the source (`rg -n 'pending Eric: Milestone 4' internal/`).
+design decision. The items that were pending Eric proceeded on the
+recommendation (A) with a `pending Eric: Milestone 4 item N` marker in the
+source; Eric decided every one on 2026-10-21
+(`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`), and the markers
+are removed as each decision lands (`rg -n 'pending Eric: Milestone 4'
+internal/` then prints nothing).
 
 - **Choice 1, the operation table.** `api/openapi.yaml` declares 33
   operations, one `operationId` per `Bus` method (delete and rename channel
@@ -183,7 +186,13 @@ the source (`rg -n 'pending Eric: Milestone 4' internal/`).
   `Admin`). Three (`wellKnown`, `openidConfiguration`, `discover`) declare
   `security: []`; the rest take the global requirement. Admin reset and
   reset-credential arrive with the Milestone 5 admin section; usage is
-  Milestone 3 pending item 3 (Milestone 7). These are deliberate deferrals.
+  Milestone 3 item 3 (Milestone 7, SQLite only: Decision (Eric,
+  2026-10-21)); `peek` (read-only pending counts with the watch floor) is
+  Milestone 6 item 2 (Decision (Eric, 2026-10-21), option B). These are
+  deliberate deferrals. Since 2026-10-21 `unsubscribeTags` is
+  `DELETE /v1/tag-subscriptions?pattern=<p>&pattern=<p>` (a required
+  `query` parameter, `style: form`, `explode: true`, `minItems: 1`); the
+  former path `/v1/tag-subscriptions/{patterns}` is gone (item 6 below).
 - **Choice 2.** `Idempotency-Key` is an optional header on every mutating
   operation; absent or empty means no receipt, as `core.WithReceipt` treats
   an empty key. The remote `Bus` sends the header only for a non-empty key.
@@ -193,7 +202,7 @@ the source (`rg -n 'pending Eric: Milestone 4' internal/`).
 - **Choice 4.** Handlers return `nil, err` for every failure and one hook
   (`server.ProblemFor`) writes the problem.
 - **Choice 9.** The watch `timeout` is a JSON number of seconds, fractional
-  allowed (pending item 4, test `TestWatchTimeoutWire`); `after` defaults to
+  allowed (item 4, Decision (Eric, 2026-10-21): as built; test `TestWatchTimeoutWire`); `after` defaults to
   0 and `include_own` to false.
 - **Choice 10.** `receive` is a `POST` with a body and no `Idempotency-Key`.
 - **Choice 11.** `limitBody` is the outermost middleware (order: `limitBody`,
@@ -213,17 +222,24 @@ the source (`rg -n 'pending Eric: Milestone 4' internal/`).
   (router 404 `not_found`, the code the core gives an empty name). The suite
   runs odd names (`TestChannelNameRoundTripsOnTheWire`, now including `Send`
   and `History`) under both transports.
-- **Pending item 1** (`Idempotency-Key` optional; test
-  `TestSendIdempotencyWire`), **item 2** (auth paths declared in Milestone 5;
-  test `TestOpenIDConfigurationNamesMilestone5Paths`), **item 3** (interim
-  server flags; test `TestRunFlags`) and **item 4** (fractional watch
-  timeout) proceed on recommendation A. Their ADR 0002 and 0007 parts are
-  in those addenda.
+- **Item 1** (`Idempotency-Key` optional on the wire; absent means no
+  receipt; test `TestSendIdempotencyWire`), **item 2** (auth paths declared
+  in Milestone 5; test `TestOpenIDConfigurationNamesMilestone5Paths`),
+  **item 3** (interim server flags until Milestone 5's configuration; test
+  `TestRunFlags`) and **item 4** (the watch `timeout` is fractional seconds;
+  test `TestWatchTimeoutWire`): Decision (Eric, 2026-10-21), each as built
+  or as planned (option A), recorded in
+  `docs/superpowers/specs/2026-10-21-gate-0-decisions.md`. Their ADR 0002
+  and 0007 parts are in those addenda.
+- **Idempotency-Key exemptions** (Decision (Eric, 2026-10-21); spec 3.4):
+  `Open`, `Receive` and `Watch` (Milestone 3 item 12), `register`
+  (Milestone 5 item 6) and `peek` (Milestone 6 item 2) take no
+  `Idempotency-Key`; every other mutating operation does.
 - **Former item 5 (withdrawn in the plan; client-side path-parameter rule).**
   The probe showed no client-side rule is needed for names containing `/`
   (Decision 80 stands for them): they travel as one escaped segment and the
   core judges them. The number 5 stays withdrawn.
-- **Pending item 6 (the empty-name guards; Claude proposal, pending Eric).**
+- **Item 6 (the empty-name guards and the comma inside a pattern).**
   The plan's empty-name contingency (Task dependencies) fired: for three
   inputs the core answers `validation` while the wire's empty path segment is
   the router's 404 `not_found`, so the remote `Bus` judges exactly those
@@ -234,18 +250,23 @@ the source (`rg -n 'pending Eric: Milestone 4' internal/`).
   that encodes to the empty segment. Tests:
   `TestSendEmptyChannelIsValidationWithoutARequest`,
   `TestUnsubscribeTagsEmptyPathSegment`, `TestSessionOddIdsOnRemote`,
-  `TestEmptySessionIDAgreesAcrossTransports`. A related divergence is not
-  guarded: a comma inside one `UnsubscribeTags` pattern is the separator of
-  the simple-style `{patterns}` array, so the remote `Bus`'s `["a,b"]`
-  reaches the core as `["a", "b"]` (and removes that set) where the local
-  `Bus` answers `validation` (test `TestUnsubscribeTagsCommaSplitsOnTheWire`).
-  Options: A (recommended, in effect): keep the three narrow guards and
-  accept the comma divergence until the wire changes; B: the core answers
-  `not_found` for the empty name on these three paths and the guards go;
-  C (in addition to A or B, for the comma): `unsubscribeTags` takes the
-  patterns in a body or query instead of the path segment (a change to
-  choice 1's operation table). Marker: `pending Eric: Milestone 4 item 6`
-  on each guard and each test.
+  `TestEmptySessionIDAgreesAcrossTransports`. A related divergence existed
+  while the patterns travelled as the simple-style `{patterns}` path
+  segment: a comma inside one pattern was the array separator, so the remote
+  `Bus`'s `["a,b"]` reached the core as `["a", "b"]` where the local `Bus`
+  answered `validation`. Decision (Eric, 2026-10-21), options A plus C
+  (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`): the three
+  guards stay, and `unsubscribeTags` takes its patterns as a repeated
+  `pattern` query parameter, `DELETE /v1/tag-subscriptions?pattern=<p>&pattern=<p>`
+  (`style: form`, `explode: true`, required, `minItems: 1`), so a comma is
+  an ordinary character again and the old path is gone. With no `pattern`
+  at all the validator answers 400 `validation` (the guard still spares the
+  request for the remote's empty-pattern inputs). Tests:
+  `TestUnsubscribeTagsCommaAgrees` (the two transports agree:
+  `validation` for `["a,b"]` on both) replaced
+  `TestUnsubscribeTagsCommaSplitsOnTheWire`, and
+  `TestUnsubscribeTagsCommaIsOnePattern` is new. The `pending Eric:
+  Milestone 4 item 6` markers are removed.
 - **Choice 14 limitation.** `agentbus2 server` uses `notify.NewMemory()`
   (Decision 52); two server processes over one SQLite file are unsupported
   (each misses the other's hints; a watch still ends at its timeout). The

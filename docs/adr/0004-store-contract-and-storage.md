@@ -209,37 +209,37 @@ These are Claude's choices under the spec's delegation (Decisions 51 and
    enforces the non-empty rule as well as Go. One row per
    `(channel, identity, permission)` cannot represent "an entry".
 
-### Gate 0 answers
+### Gate 0 answers (Decision (Eric, 2026-10-21))
 
-Eric did not answer before execution. Each item proceeds on the plan's
-recommendation (option A) and is a `Claude proposal, pending Eric`; the test
-markers `// pending Eric: Gate 0 item N` encode it, so a reversal is a
-one-line change.
+Eric did not answer before execution; each item proceeded on the plan's
+recommendation (option A) with a `// pending Eric: Gate 0 item N` marker.
+Eric decided every item on 2026-10-21
+(`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`, "Milestone 2");
+the markers are removed as the decisions land.
 
 1. Reserved identity names: `CreateIdentity` refuses `everyone` and `admins`
-   with `ErrInvalid`. Claude proposal, pending Eric (option B: allow them and
-   let the ACL treat the stored entry as the special identity). Markers:
-   `internal/conformance/store/identities_test.go`,
-   `internal/store/sqlstore/identities.go`, `internal/store/identities.go`.
-2. `40P01` is retryable alongside `40001`. Claude proposal, pending Eric
-   (option B: `40001` only). Markers: `internal/store/postgres/postgres.go`,
-   `internal/store/postgres/dialect_test.go`.
+   with `ErrInvalid`. Decision (Eric, 2026-10-21): as built. Tests:
+   `internal/conformance/store/identities_test.go`.
+2. `40P01` is retryable alongside `40001`. Decision (Eric, 2026-10-21): as
+   built. Tests: `internal/store/postgres/dialect_test.go`.
 3. Retry constants: `TxAttempts = 5`, backoff before attempt n a uniform
-   random duration in `[0, 10ms * 2^(n-1))` capped at 200 ms. Claude
-   proposal, pending Eric (option B: other values). Markers:
-   `internal/store/postgres/postgres.go`,
+   random duration in `[0, 10ms * 2^(n-1))` capped at 200 ms. Decision
+   (Eric, 2026-10-21): as built. Tests:
    `internal/store/postgres/dialect_test.go`,
    `internal/conformance/store/tx_test.go`.
 4. v1 `meta` is not ported (the admin reset is designed with the admin
-   section); `notices` is ported as is. Claude proposal, pending Eric
-   (option B: port `meta` now). No marker: encoded in the version 1 DDL.
-5. Rate-limit buckets stay in memory per server process, as in v1. Claude
-   proposal, pending Eric (option B: a shared bucket row). No marker: the
-   absence of a table; reversible in a version 2 migration.
-6. The Postgres database must use a UTF-8 ctype; `Open` does not check it.
-   Claude proposal, pending Eric (option B: `Open` reads
-   `pg_database.datctype` and refuses with `ErrSchemaInvalid`). Marker:
-   `internal/store/postgres/postgres.go`.
+   section); `notices` is ported as is. Decision (Eric, 2026-10-21): as
+   built.
+5. Rate-limit buckets stay in memory per server process, as in v1.
+   Decision (Eric, 2026-10-21): as built; the Milestone 7 operations doc
+   states the per-replica bound (N replicas each grant the full
+   per-identity rate).
+6. The Postgres database must use a UTF-8 ctype. Decision (Eric,
+   2026-10-21): **changed** (option B). `Open` reads `pg_database.datctype`
+   and refuses a non-UTF-8 database with `ErrSchemaInvalid`, an extension
+   of the Decision 34 open rules; a Store change plus a conformance test on
+   the open path. The deployment docs (Milestone 7) state the requirement
+   and that the `postgres` image's default locale satisfies it.
 
 ### Shapes later milestones lean on
 
@@ -287,11 +287,25 @@ one-line change.
   (`IsRowRejected`), the batch records the failure and goes on instead of
   failing whole.
 
-### Pending Eric
+### Milestone 3 Gate 0 answers (Decision (Eric, 2026-10-21))
 
 3. **Two spec 5.7 jobs are deferred to Milestone 7**: budget eviction and
-   capacity notices (and the usage figure in `Admin.Status`) need an
+   capacity notices (and the usage figure, its own admin operation) need an
    engine-specific size query the Store does not have. The Milestone 3 job
-   list ships without them. Option B: add `Usage` to the Store now. Marker:
+   list ships without them. Decision (Eric, 2026-10-21): ratified
+   (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`, Milestone 3
+   item 3 and Milestone 7 item 2): Milestone 7 adds `Store.Usage` and the
+   two jobs, which act on SQLite only (where `Usage.Evictable` is true);
+   Postgres eviction is issue #7. Test until then:
    `TestMaintenanceRunJobRejectsUnknown`, which asserts both names are
-   `validation` in this milestone.
+   `validation` and loses its `pending Eric: Milestone 3 item 3` marker in
+   Milestone 7.
+
+Milestone 7 item 4 (Decision (Eric, 2026-10-21), option B) adds a Store
+table this ADR will carry: `assertion_jti`, a version 3 migration on both
+engines, consulted and written in the token transaction so a client
+assertion is single-use across replicas, with its rows expired by a
+maintenance job. Milestone 5 item 2 (Decision (Eric, 2026-10-21)) adds the
+`signing_keys` row (version 2, beside the enrollment tokens): the server's
+private signing key as plaintext PEM, so database read access is
+equivalent to admin.

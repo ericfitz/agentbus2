@@ -175,6 +175,48 @@ All five resolved on 2026-10-20:
   the `identity` key, so a `RefuseAll` server behind the transport still sees
   `""`. `InProcess` is the local mode of Decision 36 (identity is the
   registered name, the client is in the same process).
-- **Pending item 3** (interim flags `-listen`, `-sqlite`, `-postgres` until
+- **Item 3** (interim flags `-listen`, `-sqlite`, `-postgres` until
   Decision 85's configuration file and `AGENTBUS2_SERVER_*` variables in
-  Milestone 5) proceeds on recommendation A; test `TestRunFlags`.
+  Milestone 5): Decision (Eric, 2026-10-21), as planned
+  (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`, Milestone 4
+  item 3); test `TestRunFlags`, whose marker Milestone 5 removes.
+
+## Gate 0 decisions for Milestones 5 to 7 (Eric, 2026-10-21)
+
+Recorded here ahead of those milestones' addenda, from
+`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`; each milestone's
+addendum restates the item with its test when it lands.
+
+- **Milestone 5 item 1.** Admin reset takes a scope: `data` (default) keeps
+  identities, keys, admin flags and enrollment tokens and wipes the rest;
+  `everything` also wipes identities, keys and enrollment tokens except the
+  calling administrator's row and keys.
+- **Milestone 5 item 2.** The server's token signing key is a Store row,
+  created at startup when absent, so replicas share it without a volume;
+  stored as plaintext PEM, so database read access is equivalent to admin
+  and the deployment docs say so. Rotation (including rotate now) is issue
+  #6; a KMS or vault key provider is issue #8. There is no
+  `signing_key_file` setting.
+- **Milestone 5 items 3, 4 and 6.** As planned: a configured `issuer` URL
+  whose default is the bound address; `reset-credential` leaves minted
+  tokens valid until `exp`; `register` takes no `Idempotency-Key` (spec 3.4
+  lists the exemptions).
+- **Milestone 5 item 5.** Both mechanisms for an external issuer's
+  subject: `agentbus2 server admin create-identity NAME` creates the row
+  and its `general` subscription, and the first valid external token for an
+  unmapped name auto-creates the row, but only when the registration mode is
+  `open`; an auto-created row is never admin.
+- **Milestone 5 item 7.** `Register` refuses trust-on-first-use (no
+  enrollment token) on a keyless identity row whose admin flag is set:
+  `forbidden` "identity %q requires an enrollment token". A non-admin
+  keyless row can still be claimed in `open` mode.
+- **Milestone 6 items 1, 3, 5, 6 and 7.** As planned: the state file holds
+  the full planned shape, the resume token included, mode 0600; `receive`
+  keeps `wait_seconds`, documented as replacing an armed watch; `init` in a
+  repository creates and selects profile `<repo>`; `register -server URL`
+  creates the profile; the bearer is cached on disk, 0600, until 60 s
+  before `exp`.
+- **Milestone 7 item 4.** The assertion `jti` replay set is a shared Store
+  table (`assertion_jti`) consulted and written in the token transaction,
+  so an assertion is single-use across replicas; Milestone 5's per-process
+  `token.Replay` is the interim form until Milestone 7 lands.

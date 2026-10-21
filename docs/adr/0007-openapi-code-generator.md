@@ -211,11 +211,13 @@ Resolved on 2026-10-20:
   `components.securitySchemes`; `capabilities` from what the core has
   (`long_poll` always, `semantic_search` with an embedder); the document's
   `openIdConnectUrl` is server-relative.
-- **Choice 8 and pending item 2.** The auth operations (`/v1/auth/token`,
+- **Choice 8 and item 2.** The auth operations (`/v1/auth/token`,
   `/v1/auth/jwks`) are not declared until Milestone 5; the
   `/.well-known/openid-configuration` response names them now and they answer
-  404 `not_found` meanwhile (proceeded on recommendation A; test
-  `TestOpenIDConfigurationNamesMilestone5Paths`).
+  404 `not_found` meanwhile (Decision (Eric, 2026-10-21): as planned,
+  Milestone 4 item 2 in `docs/superpowers/specs/2026-10-21-gate-0-decisions.md`;
+  test `TestOpenIDConfigurationNamesMilestone5Paths`, whose marker and 404
+  assertion Milestone 5 removes).
 - **Path-parameter facts.** The runtime's path styling uses `url.PathEscape`;
   the v2.8.0 std-http template binds `r.PathValue` with `ValueIsUnescaped:
   true`; the validator's router is built with gorillamux `UseEncodedPath()`, so

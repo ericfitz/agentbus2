@@ -56,7 +56,9 @@ updated to cite this file.
 8. **Changed** (B, rule A of the follow-up): empty-channel reaping is
    ported. A maintenance job deletes an ordinary channel (not `general`,
    not a task list) that has no messages and no subscriptions at all and
-   was created more than N hours ago; N is a new setting, default 24.
+   was created more than N hours ago; N is the setting
+   `empty_channel_reap_hours`, default 24 (job `"empty channels"`, landed
+   in 689943c).
    Work: a maintenance job, its setting and Store support, conformance
    tests on both engines.
 9. Polling guard not ported: as built (A).
@@ -74,7 +76,9 @@ updated to cite this file.
    a body or query so a comma inside a pattern no longer splits it. Work: an
    `api/openapi.yaml` change, `make generate`, server handler, remote `Bus`,
    and `TestUnsubscribeTagsCommaSplitsOnTheWire` inverted to assert
-   agreement across transports.
+   agreement across transports. Landed in 85eea7a as
+   `DELETE /v1/tag-subscriptions?pattern=...` (repeated query value); the
+   test is now `TestUnsubscribeTagsCommaAgrees`.
 
 ## Milestone 5
 
