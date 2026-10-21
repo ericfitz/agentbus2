@@ -207,9 +207,7 @@ func TestRemoteConvertRoundTrips(t *testing.T) {
 	}
 }
 
-// TestRemoteStubsNameTheirMethod calls every Bus method once with zero-value
-// inputs (Close is the exception: it gets a non-empty session id, because Close
-// refuses an empty one itself and sends nothing). Each outcome is
+// TestRemoteStubsNameTheirMethod calls every Bus method once. Each outcome is
 // one of two: a stub (errors.Is ErrNotImplemented, text starting
 // "remote.<Method>: ", no request sent) or an implemented method (exactly one
 // request, and a *bus.Error or nil back). Stubs are replaced task by task, so
@@ -218,7 +216,7 @@ func TestRemoteStubsNameTheirMethod(t *testing.T) {
 	ctx := context.Background()
 	calls := map[string]func(b *Bus) error{
 		"Open":             func(b *Bus) error { _, err := b.Open(ctx, ab2bus.OpenSessionInput{}); return err },
-		"Close":            func(b *Bus) error { return b.Close(ctx, ab2bus.CloseSessionInput{Session: "s"}) },
+		"Close":            func(b *Bus) error { return b.Close(ctx, ab2bus.CloseSessionInput{}) },
 		"Receive":          func(b *Bus) error { _, err := b.Receive(ctx, ab2bus.ReceiveInput{}); return err },
 		"Watch":            func(b *Bus) error { _, err := b.Watch(ctx, ab2bus.WatchInput{}); return err },
 		"Identities":       func(b *Bus) error { _, err := b.Identities(ctx); return err },

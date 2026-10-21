@@ -354,25 +354,25 @@ func TestSessionOddIdsOnRemote(t *testing.T) {
 	b := remote.New(cl)
 	ctx := context.Background()
 
-	// pending Eric: Milestone 4 item 6. The core answers validation for an
-	// empty session on Close, the wire would answer not_found (the router's
-	// 404), so the remote Bus's one empty-name guard answers it with no request.
+	// An empty session id is the validator router's 404 not_found on the wire
+	// (the empty segment of DELETE /v1/sessions/), and the remote Bus sends it
+	// as given: no client-side rule (choice 17).
 	err = b.Close(ctx, ab2bus.CloseSessionInput{Session: ""})
-	if ab2bus.CodeOf(err) != ab2bus.CodeValidation || ct.n.Load() != 0 {
+	if ab2bus.CodeOf(err) != ab2bus.CodeNotFound || ct.n.Load() != 1 {
 		t.Fatalf("Close empty: %v (requests %d)", err, ct.n.Load())
 	}
-	// Receive and Watch with an empty session reach the validator router's
-	// 404 not_found, the code the core gives them too (Require finds no row).
+	// Receive and Watch with an empty session reach the same router 404, the
+	// code the core gives them too (Require finds no row).
 	_, err = b.Receive(ctx, ab2bus.ReceiveInput{})
-	if ab2bus.CodeOf(err) != ab2bus.CodeNotFound || ct.n.Load() != 1 {
+	if ab2bus.CodeOf(err) != ab2bus.CodeNotFound || ct.n.Load() != 2 {
 		t.Fatalf("Receive empty: %v (requests %d)", err, ct.n.Load())
 	}
 	_, err = b.Watch(ctx, ab2bus.WatchInput{Timeout: time.Second})
-	if ab2bus.CodeOf(err) != ab2bus.CodeNotFound || ct.n.Load() != 2 {
+	if ab2bus.CodeOf(err) != ab2bus.CodeNotFound || ct.n.Load() != 3 {
 		t.Fatalf("Watch empty: %v (requests %d)", err, ct.n.Load())
 	}
 	_, err = b.Receive(ctx, ab2bus.ReceiveInput{Session: "a/b"})
-	if ab2bus.CodeOf(err) != ab2bus.CodeNotFound || ct.n.Load() != 3 {
+	if ab2bus.CodeOf(err) != ab2bus.CodeNotFound || ct.n.Load() != 4 {
 		t.Fatalf("Receive a/b: %v (requests %d)", err, ct.n.Load())
 	}
 
