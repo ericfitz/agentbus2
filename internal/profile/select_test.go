@@ -57,6 +57,18 @@ func TestSelectNameRepoErrorSurfaces(t *testing.T) {
 	}
 }
 
+// An explicit selection never reads the repo file (Decision 21: the flag and
+// the variable come first), so a bad file cannot block or influence it; the
+// file can only ever yield a profile name, so nothing in it runs either way.
+func TestSelectNameExplicitSkipsRepoFile(t *testing.T) {
+	repo := repoWith(t, `{"profile":"x","credential_process":["touch","/tmp/pwned"]}`)
+	for _, sel := range []Selection{{Flag: "f", Cwd: repo}, {Env: "e", Cwd: repo}} {
+		if name, _, err := SelectName(sel); err != nil || (name != "f" && name != "e") {
+			t.Fatalf("SelectName(%+v) = %q, %v", sel, name, err)
+		}
+	}
+}
+
 func TestResolveIdentityOrder(t *testing.T) {
 	server := Profile{Name: "lab", Mode: ModeServer, Server: "https://h", Identity: "fromprofile"}
 	bare := Profile{Name: "lab", Mode: ModeServer, Server: "https://h"}
