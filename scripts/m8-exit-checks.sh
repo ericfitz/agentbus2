@@ -12,8 +12,9 @@
 # The word check: no non-test Go file under internal/tui may use the words
 # of v1's direct-message and merged-view design (comments included), and
 # neither may internal/cli/tui.go. Test files may spell them when they assert
-# their absence. words_ok=1 when
-# nothing matches; otherwise the matches are printed and the exit is 1.
+# their absence. words_ok=1 when nothing matches; otherwise the matches are
+# printed and the exit is 1. A word check that cannot run (a path missing,
+# grep failing) exits 2.
 #
 # The import rule (spec 2.3, tui --> busif): the direct imports of
 # ./internal/tui are an allowlist: of the module's own packages only
@@ -76,13 +77,37 @@ if [ "$fail" -ne 0 ] || [ "$modes" -ne 2 ] || [ "$noinbox" -ne 1 ] || [ "$cli" -
 	rc=1
 fi
 
-words="$(rg -n -e '\bdm/' -e 'DMPrefix' -e 'DMChannel' -e '(?i)inbox' -e 'IsTaskChannel' -e 'tui_name' --glob '*.go' --glob '!*_test.go' "$ROOT/internal/tui" "$ROOT/internal/cli/tui.go" || true)"
-if [ -n "$words" ]; then
+# Portable ERE through grep alone (no rg, no \b): a tool that is missing or
+# fails, or a path that is gone, is exit 2, never words_ok=1.
+word_re='(^|[^A-Za-z0-9_])dm/|DMPrefix|DMChannel|[Ii][Nn][Bb][Oo][Xx]|IsTaskChannel|tui_name'
+word_files=()
+for p in "$ROOT/internal/tui" "$ROOT/internal/cli/tui.go"; do
+	if [ ! -e "$p" ]; then
+		echo "m8-exit-checks: word check path $p is missing" >&2
+		exit 2
+	fi
+done
+while IFS= read -r f; do
+	word_files+=("$f")
+done < <(find "$ROOT/internal/tui" -type f -name '*.go' ! -name '*_test.go' | sort)
+if [ "${#word_files[@]}" -eq 0 ]; then
+	echo "m8-exit-checks: no non-test Go file under $ROOT/internal/tui" >&2
+	exit 2
+fi
+word_files+=("$ROOT/internal/cli/tui.go")
+words_rc=0
+words="$(grep -n -H -E -- "$word_re" "${word_files[@]}")" || words_rc=$?
+case "$words_rc" in
+0)
 	echo "$words"
 	rc=1
-else
-	echo "words_ok=1"
-fi
+	;;
+1) echo "words_ok=1" ;;
+*)
+	echo "m8-exit-checks: the word check failed (grep exit $words_rc)" >&2
+	exit 2
+	;;
+esac
 
 imp_rc=0
 import_check || imp_rc=$?

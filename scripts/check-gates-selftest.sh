@@ -676,7 +676,28 @@ block_m8_exit_script_fires() {
 	[ "$rc" -eq 1 ] || problem "$label" "word in doc.go: exit $rc, expected 1"
 	if grep -qF 'words_ok=1' "$log"; then problem "$label" "word in doc.go: words_ok=1 printed"; fi
 	grep -qF 'doc.go' "$log" || problem "$label" "word in doc.go: match not printed"
+	# The word check needs no tool beyond grep: with an rg on PATH that
+	# fails, the planted word must still fail the check, never pass it.
+	mkdir -p "$tmp/norg"
+	printf '#!/bin/sh\necho "rg: not installed" >&2\nexit 127\n' >"$tmp/norg/rg"
+	chmod +x "$tmp/norg/rg"
+	PATH="$tmp/norg:$PATH" bash "$wt/scripts/m8-exit-checks.sh" "$real" >"$log" 2>&1 && rc=0 || rc=$?
+	[ "$rc" -eq 1 ] || problem "$label" "word in doc.go, rg failing: exit $rc, expected 1"
+	if grep -qF 'words_ok=1' "$log"; then problem "$label" "word in doc.go, rg failing: words_ok=1 printed"; fi
+	grep -qF 'doc.go' "$log" || problem "$label" "word in doc.go, rg failing: match not printed"
 	revert
+	# internal/cli/tui.go is the word check's second path.
+	printf '// tui_name\n' >>"$wt/internal/cli/tui.go"
+	bash "$wt/scripts/m8-exit-checks.sh" "$real" >"$log" 2>&1 && rc=0 || rc=$?
+	[ "$rc" -eq 1 ] || problem "$label" "word in cli/tui.go: exit $rc, expected 1"
+	grep -qF 'cli/tui.go' "$log" || problem "$label" "word in cli/tui.go: match not printed"
+	revert
+	# A word check that cannot run is exit 2, never a pass.
+	mv "$wt/internal/tui" "$tmp/tui-moved"
+	bash "$wt/scripts/m8-exit-checks.sh" "$real" >"$log" 2>&1 && rc=0 || rc=$?
+	mv "$tmp/tui-moved" "$wt/internal/tui"
+	[ "$rc" -eq 2 ] || problem "$label" "word check without internal/tui: exit $rc, expected 2"
+	if grep -qF 'words_ok=1' "$log"; then problem "$label" "word check without internal/tui: words_ok=1 printed"; fi
 	# Test files are out of scope.
 	printf '// inbox\n' >>"$wt/internal/tui/run_test.go"
 	m8_expect "$label" 0 "$real" words_ok=1
