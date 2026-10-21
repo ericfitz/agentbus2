@@ -687,14 +687,16 @@ type WatchParams struct {
 	IncludeOwn *bool    `form:"include_own,omitempty" json:"include_own,omitempty"`
 }
 
-// SubscribeTagsParams defines parameters for SubscribeTags.
-type SubscribeTagsParams struct {
+// UnsubscribeTagsParams defines parameters for UnsubscribeTags.
+type UnsubscribeTagsParams struct {
+	Pattern []string `form:"pattern" json:"pattern"`
+
 	// IdempotencyKey Absent or empty means no receipt (Decision 66).
 	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
 }
 
-// UnsubscribeTagsParams defines parameters for UnsubscribeTags.
-type UnsubscribeTagsParams struct {
+// SubscribeTagsParams defines parameters for SubscribeTags.
+type SubscribeTagsParams struct {
 	// IdempotencyKey Absent or empty means no receipt (Decision 66).
 	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
 }
@@ -950,6 +952,9 @@ type ClientInterface interface {
 	// Watch performs a GET /v1/sessions/{session}/watch (the `Watch` operationId) request.
 	Watch(ctx context.Context, session SessionParam, params *WatchParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// UnsubscribeTags performs a DELETE /v1/tag-subscriptions (the `UnsubscribeTags` operationId) request.
+	UnsubscribeTags(ctx context.Context, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListTagSubscriptions performs a GET /v1/tag-subscriptions (the `ListTagSubscriptions` operationId) request.
 	ListTagSubscriptions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -960,9 +965,6 @@ type ClientInterface interface {
 	// SubscribeTags performs a POST /v1/tag-subscriptions (the `SubscribeTags` operationId) request.
 	// Takes a body of the `application/json` content type.
 	SubscribeTags(ctx context.Context, params *SubscribeTagsParams, body SubscribeTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
-
-	// UnsubscribeTags performs a DELETE /v1/tag-subscriptions/{patterns} (the `UnsubscribeTags` operationId) request.
-	UnsubscribeTags(ctx context.Context, patterns []string, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetTask performs a GET /v1/tasks/{id} (the `GetTask` operationId) request.
 	GetTask(ctx context.Context, id IdParam, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1460,6 +1462,19 @@ func (c *Client) Watch(ctx context.Context, session SessionParam, params *WatchP
 	return c.Client.Do(req)
 }
 
+// UnsubscribeTags performs a DELETE /v1/tag-subscriptions (the `UnsubscribeTags` operationId) request.
+func (c *Client) UnsubscribeTags(ctx context.Context, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewUnsubscribeTagsRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // ListTagSubscriptions performs a GET /v1/tag-subscriptions (the `ListTagSubscriptions` operationId) request.
 func (c *Client) ListTagSubscriptions(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListTagSubscriptionsRequest(c.Server)
@@ -1491,19 +1506,6 @@ func (c *Client) SubscribeTagsWithBody(ctx context.Context, params *SubscribeTag
 // Takes a body of the `application/json` content type.
 func (c *Client) SubscribeTags(ctx context.Context, params *SubscribeTagsParams, body SubscribeTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSubscribeTagsRequest(c.Server, params, body)
-	if err != nil {
-		return nil, err
-	}
-	req = req.WithContext(ctx)
-	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
-		return nil, err
-	}
-	return c.Client.Do(req)
-}
-
-// UnsubscribeTags performs a DELETE /v1/tag-subscriptions/{patterns} (the `UnsubscribeTags` operationId) request.
-func (c *Client) UnsubscribeTags(ctx context.Context, patterns []string, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewUnsubscribeTagsRequest(c.Server, patterns, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2987,6 +2989,75 @@ func NewWatchRequest(server string, session SessionParam, params *WatchParams) (
 	return req, nil
 }
 
+// NewUnsubscribeTagsRequest constructs an http.Request for the UnsubscribeTags method
+func NewUnsubscribeTagsRequest(server string, params *UnsubscribeTagsParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/tag-subscriptions")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Pattern != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "pattern", params.Pattern, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
 // NewListTagSubscriptionsRequest constructs an http.Request for the ListTagSubscriptions method
 func NewListTagSubscriptionsRequest(server string) (*http.Request, error) {
 	var err error
@@ -3050,55 +3121,6 @@ func NewSubscribeTagsRequestWithBody(server string, params *SubscribeTagsParams,
 	}
 
 	req.Header.Add("Content-Type", contentType)
-
-	if params != nil {
-
-		if params.IdempotencyKey != nil {
-			var headerParam0 string
-
-			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
-			if err != nil {
-				return nil, err
-			}
-
-			req.Header.Set("Idempotency-Key", headerParam0)
-		}
-
-	}
-
-	return req, nil
-}
-
-// NewUnsubscribeTagsRequest constructs an http.Request for the UnsubscribeTags method
-func NewUnsubscribeTagsRequest(server string, patterns []string, params *UnsubscribeTagsParams) (*http.Request, error) {
-	var err error
-
-	var pathParam0 string
-
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "patterns", patterns, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "array", Format: ""})
-	if err != nil {
-		return nil, err
-	}
-
-	serverURL, err := url.Parse(server)
-	if err != nil {
-		return nil, err
-	}
-
-	operationPath := fmt.Sprintf("/v1/tag-subscriptions/%s", pathParam0)
-	if operationPath[0] == '/' {
-		operationPath = "." + operationPath
-	}
-
-	queryURL, err := serverURL.Parse(operationPath)
-	if err != nil {
-		return nil, err
-	}
-
-	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
-	if err != nil {
-		return nil, err
-	}
 
 	if params != nil {
 
@@ -3544,6 +3566,11 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	WatchWithResponse(ctx context.Context, session SessionParam, params *WatchParams, reqEditors ...RequestEditorFn) (*WatchResponse, error)
 
+	// UnsubscribeTagsWithResponse performs a DELETE /v1/tag-subscriptions (the `UnsubscribeTags` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	UnsubscribeTagsWithResponse(ctx context.Context, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*UnsubscribeTagsResponse, error)
+
 	// ListTagSubscriptionsWithResponse performs a GET /v1/tag-subscriptions (the `ListTagSubscriptions` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -3558,11 +3585,6 @@ type ClientWithResponsesInterface interface {
 	// SubscribeTagsWithResponse performs a POST /v1/tag-subscriptions (the `SubscribeTags` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	SubscribeTagsWithResponse(ctx context.Context, params *SubscribeTagsParams, body SubscribeTagsJSONRequestBody, reqEditors ...RequestEditorFn) (*SubscribeTagsResponse, error)
-
-	// UnsubscribeTagsWithResponse performs a DELETE /v1/tag-subscriptions/{patterns} (the `UnsubscribeTags` operationId) request.
-	//
-	// Returns a wrapper object for the known response body format(s).
-	UnsubscribeTagsWithResponse(ctx context.Context, patterns []string, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*UnsubscribeTagsResponse, error)
 
 	// GetTaskWithResponse performs a GET /v1/tasks/{id} (the `GetTask` operationId) request.
 	//
@@ -4801,6 +4823,47 @@ func (r WatchResponse) ContentType() string {
 	return ""
 }
 
+type UnsubscribeTagsResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r UnsubscribeTagsResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r UnsubscribeTagsResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r UnsubscribeTagsResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r UnsubscribeTagsResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r UnsubscribeTagsResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListTagSubscriptionsResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4884,47 +4947,6 @@ func (r SubscribeTagsResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r SubscribeTagsResponse) ContentType() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Header.Get("Content-Type")
-	}
-	return ""
-}
-
-type UnsubscribeTagsResponse struct {
-	Body         []byte
-	HTTPResponse *http.Response
-	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
-	ApplicationproblemJSONDefault *Problem
-}
-
-// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
-func (r UnsubscribeTagsResponse) GetApplicationproblemJSONDefault() *Problem {
-	return r.ApplicationproblemJSONDefault
-}
-
-// GetBody returns the raw response body bytes
-func (r UnsubscribeTagsResponse) GetBody() []byte {
-	return r.Body
-}
-
-// Status returns HTTPResponse.Status
-func (r UnsubscribeTagsResponse) Status() string {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.Status
-	}
-	return http.StatusText(0)
-}
-
-// StatusCode returns HTTPResponse.StatusCode
-func (r UnsubscribeTagsResponse) StatusCode() int {
-	if r.HTTPResponse != nil {
-		return r.HTTPResponse.StatusCode
-	}
-	return 0
-}
-
-// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
-func (r UnsubscribeTagsResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -5508,6 +5530,17 @@ func (c *ClientWithResponses) WatchWithResponse(ctx context.Context, session Ses
 	return ParseWatchResponse(rsp)
 }
 
+// UnsubscribeTagsWithResponse performs a DELETE /v1/tag-subscriptions (the `UnsubscribeTags` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) UnsubscribeTagsWithResponse(ctx context.Context, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*UnsubscribeTagsResponse, error) {
+	rsp, err := c.UnsubscribeTags(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseUnsubscribeTagsResponse(rsp)
+}
+
 // ListTagSubscriptionsWithResponse performs a GET /v1/tag-subscriptions (the `ListTagSubscriptions` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -5539,17 +5572,6 @@ func (c *ClientWithResponses) SubscribeTagsWithResponse(ctx context.Context, par
 		return nil, err
 	}
 	return ParseSubscribeTagsResponse(rsp)
-}
-
-// UnsubscribeTagsWithResponse performs a DELETE /v1/tag-subscriptions/{patterns} (the `UnsubscribeTags` operationId) request.
-//
-// Returns a wrapper object for the known response body format(s).
-func (c *ClientWithResponses) UnsubscribeTagsWithResponse(ctx context.Context, patterns []string, params *UnsubscribeTagsParams, reqEditors ...RequestEditorFn) (*UnsubscribeTagsResponse, error) {
-	rsp, err := c.UnsubscribeTags(ctx, patterns, params, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return ParseUnsubscribeTagsResponse(rsp)
 }
 
 // GetTaskWithResponse performs a GET /v1/tasks/{id} (the `GetTask` operationId) request.
@@ -6458,6 +6480,35 @@ func ParseWatchResponse(rsp *http.Response) (*WatchResponse, error) {
 	return response, nil
 }
 
+// ParseUnsubscribeTagsResponse parses an HTTP response from a UnsubscribeTagsWithResponse call
+func ParseUnsubscribeTagsResponse(rsp *http.Response) (*UnsubscribeTagsResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &UnsubscribeTagsResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListTagSubscriptionsResponse parses an HTTP response from a ListTagSubscriptionsWithResponse call
 func ParseListTagSubscriptionsResponse(rsp *http.Response) (*ListTagSubscriptionsResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -6500,35 +6551,6 @@ func ParseSubscribeTagsResponse(rsp *http.Response) (*SubscribeTagsResponse, err
 	}
 
 	response := &SubscribeTagsResponse{
-		Body:         bodyBytes,
-		HTTPResponse: rsp,
-	}
-
-	switch {
-	case rsp.StatusCode == 204:
-		break // No content-type
-
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Problem
-		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
-			return nil, err
-		}
-		response.ApplicationproblemJSONDefault = &dest
-
-	}
-
-	return response, nil
-}
-
-// ParseUnsubscribeTagsResponse parses an HTTP response from a UnsubscribeTagsWithResponse call
-func ParseUnsubscribeTagsResponse(rsp *http.Response) (*UnsubscribeTagsResponse, error) {
-	bodyBytes, err := io.ReadAll(rsp.Body)
-	defer func() { _ = rsp.Body.Close() }()
-	if err != nil {
-		return nil, err
-	}
-
-	response := &UnsubscribeTagsResponse{
 		Body:         bodyBytes,
 		HTTPResponse: rsp,
 	}
@@ -6762,14 +6784,14 @@ type ServerInterface interface {
 	// (GET /v1/sessions/{session}/watch)
 	Watch(w http.ResponseWriter, r *http.Request, session SessionParam, params WatchParams)
 
+	// (DELETE /v1/tag-subscriptions)
+	UnsubscribeTags(w http.ResponseWriter, r *http.Request, params UnsubscribeTagsParams)
+
 	// (GET /v1/tag-subscriptions)
 	ListTagSubscriptions(w http.ResponseWriter, r *http.Request)
 
 	// (POST /v1/tag-subscriptions)
 	SubscribeTags(w http.ResponseWriter, r *http.Request, params SubscribeTagsParams)
-
-	// (DELETE /v1/tag-subscriptions/{patterns})
-	UnsubscribeTags(w http.ResponseWriter, r *http.Request, patterns []string, params UnsubscribeTagsParams)
 
 	// (GET /v1/tasks/{id})
 	GetTask(w http.ResponseWriter, r *http.Request, id IdParam)
@@ -7890,6 +7912,60 @@ func (siw *ServerInterfaceWrapper) Watch(w http.ResponseWriter, r *http.Request)
 	handler.ServeHTTP(w, r)
 }
 
+// UnsubscribeTags operation middleware
+func (siw *ServerInterfaceWrapper) UnsubscribeTags(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params UnsubscribeTagsParams
+
+	// ------------- Required query parameter "pattern" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, true, "pattern", r.URL.Query(), &params.Pattern, runtime.BindQueryParameterOptions{Type: "array", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "pattern"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "pattern", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.UnsubscribeTags(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListTagSubscriptions operation middleware
 func (siw *ServerInterfaceWrapper) ListTagSubscriptions(w http.ResponseWriter, r *http.Request) {
 
@@ -7936,56 +8012,6 @@ func (siw *ServerInterfaceWrapper) SubscribeTags(w http.ResponseWriter, r *http.
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.SubscribeTags(w, r, params)
-	}))
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		handler = middleware(handler)
-	}
-
-	handler.ServeHTTP(w, r)
-}
-
-// UnsubscribeTags operation middleware
-func (siw *ServerInterfaceWrapper) UnsubscribeTags(w http.ResponseWriter, r *http.Request) {
-
-	var err error
-	_ = err
-
-	// ------------- Path parameter "patterns" -------------
-	var patterns []string
-
-	err = runtime.BindStyledParameterWithOptions("simple", "patterns", r.PathValue("patterns"), &patterns, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "array", Format: "", ValueIsUnescaped: true})
-	if err != nil {
-		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "patterns", Err: err})
-		return
-	}
-
-	// Parameter object where we will unmarshal all parameters from the context
-	var params UnsubscribeTagsParams
-
-	headers := r.Header
-
-	// ------------- Optional header parameter "Idempotency-Key" -------------
-	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
-		var IdempotencyKey IdempotencyKeyParam
-		n := len(valueList)
-		if n != 1 {
-			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
-			return
-		}
-
-		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
-		if err != nil {
-			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
-			return
-		}
-
-		params.IdempotencyKey = &IdempotencyKey
-
-	}
-
-	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		siw.Handler.UnsubscribeTags(w, r, patterns, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8307,9 +8333,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/channels/{channel}/acl", wrapper.SetACL)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/channels/{channel}/subscription", wrapper.Unsubscribe)
 	m.HandleFunc(http.MethodPut+" "+options.BaseURL+"/v1/channels/{channel}/subscription", wrapper.Subscribe)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/tag-subscriptions", wrapper.UnsubscribeTags)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/tag-subscriptions", wrapper.ListTagSubscriptions)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tag-subscriptions", wrapper.SubscribeTags)
-	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/tag-subscriptions/{patterns}", wrapper.UnsubscribeTags)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/channels/{channel}/messages", wrapper.History)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/channels/{channel}/messages", wrapper.SendMessage)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/search", wrapper.Search)
@@ -9339,6 +9365,39 @@ func (response WatchdefaultApplicationProblemPlusJSONResponse) VisitWatchRespons
 	return err
 }
 
+type UnsubscribeTagsRequestObject struct {
+	Params UnsubscribeTagsParams
+}
+
+type UnsubscribeTagsResponseObject interface {
+	VisitUnsubscribeTagsResponse(w http.ResponseWriter) error
+}
+
+type UnsubscribeTags204Response struct {
+}
+
+func (response UnsubscribeTags204Response) VisitUnsubscribeTagsResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type UnsubscribeTagsdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response UnsubscribeTagsdefaultApplicationProblemPlusJSONResponse) VisitUnsubscribeTagsResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListTagSubscriptionsRequestObject struct {
 }
 
@@ -9400,40 +9459,6 @@ type SubscribeTagsdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response SubscribeTagsdefaultApplicationProblemPlusJSONResponse) VisitSubscribeTagsResponse(w http.ResponseWriter) error {
-
-	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
-		return err
-	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(response.StatusCode)
-	_, err := buf.WriteTo(w)
-	return err
-}
-
-type UnsubscribeTagsRequestObject struct {
-	Patterns []string `json:"patterns"`
-	Params   UnsubscribeTagsParams
-}
-
-type UnsubscribeTagsResponseObject interface {
-	VisitUnsubscribeTagsResponse(w http.ResponseWriter) error
-}
-
-type UnsubscribeTags204Response struct {
-}
-
-func (response UnsubscribeTags204Response) VisitUnsubscribeTagsResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
-	return nil
-}
-
-type UnsubscribeTagsdefaultApplicationProblemPlusJSONResponse struct {
-	Body       Problem
-	StatusCode int
-}
-
-func (response UnsubscribeTagsdefaultApplicationProblemPlusJSONResponse) VisitUnsubscribeTagsResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9687,14 +9712,14 @@ type StrictServerInterface interface {
 	// (GET /v1/sessions/{session}/watch)
 	Watch(ctx context.Context, request WatchRequestObject) (WatchResponseObject, error)
 
+	// (DELETE /v1/tag-subscriptions)
+	UnsubscribeTags(ctx context.Context, request UnsubscribeTagsRequestObject) (UnsubscribeTagsResponseObject, error)
+
 	// (GET /v1/tag-subscriptions)
 	ListTagSubscriptions(ctx context.Context, request ListTagSubscriptionsRequestObject) (ListTagSubscriptionsResponseObject, error)
 
 	// (POST /v1/tag-subscriptions)
 	SubscribeTags(ctx context.Context, request SubscribeTagsRequestObject) (SubscribeTagsResponseObject, error)
-
-	// (DELETE /v1/tag-subscriptions/{patterns})
-	UnsubscribeTags(ctx context.Context, request UnsubscribeTagsRequestObject) (UnsubscribeTagsResponseObject, error)
 
 	// (GET /v1/tasks/{id})
 	GetTask(ctx context.Context, request GetTaskRequestObject) (GetTaskResponseObject, error)
@@ -10486,6 +10511,32 @@ func (sh *strictHandler) Watch(w http.ResponseWriter, r *http.Request, session S
 	}
 }
 
+// UnsubscribeTags operation middleware
+func (sh *strictHandler) UnsubscribeTags(w http.ResponseWriter, r *http.Request, params UnsubscribeTagsParams) {
+	var request UnsubscribeTagsRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.UnsubscribeTags(ctx, request.(UnsubscribeTagsRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "UnsubscribeTags")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(UnsubscribeTagsResponseObject); ok {
+		if err := validResponse.VisitUnsubscribeTagsResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // ListTagSubscriptions operation middleware
 func (sh *strictHandler) ListTagSubscriptions(w http.ResponseWriter, r *http.Request) {
 	var request ListTagSubscriptionsRequestObject
@@ -10536,33 +10587,6 @@ func (sh *strictHandler) SubscribeTags(w http.ResponseWriter, r *http.Request, p
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(SubscribeTagsResponseObject); ok {
 		if err := validResponse.VisitSubscribeTagsResponse(w); err != nil {
-			sh.options.ResponseErrorHandlerFunc(w, r, err)
-		}
-	} else if response != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// UnsubscribeTags operation middleware
-func (sh *strictHandler) UnsubscribeTags(w http.ResponseWriter, r *http.Request, patterns []string, params UnsubscribeTagsParams) {
-	var request UnsubscribeTagsRequestObject
-
-	request.Patterns = patterns
-	request.Params = params
-
-	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
-		return sh.ssi.UnsubscribeTags(ctx, request.(UnsubscribeTagsRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "UnsubscribeTags")
-	}
-
-	response, err := handler(r.Context(), w, r, request)
-
-	if err != nil {
-		sh.options.ResponseErrorHandlerFunc(w, r, err)
-	} else if validResponse, ok := response.(UnsubscribeTagsResponseObject); ok {
-		if err := validResponse.VisitUnsubscribeTagsResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

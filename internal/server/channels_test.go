@@ -185,7 +185,7 @@ func TestDeleteAndRenameCarryAdminTag(t *testing.T) {
 	}
 }
 
-// pathRecorder records the escaped path of every request.
+// pathRecorder records the method, escaped path and raw query of every request.
 type pathRecorder struct {
 	next  http.RoundTripper
 	mu    sync.Mutex
@@ -194,7 +194,7 @@ type pathRecorder struct {
 
 func (p *pathRecorder) RoundTrip(req *http.Request) (*http.Response, error) {
 	p.mu.Lock()
-	p.paths = append(p.paths, req.URL.EscapedPath())
+	p.paths = append(p.paths, req.Method+" "+req.URL.EscapedPath()+"?"+req.URL.RawQuery)
 	p.mu.Unlock()
 	return p.next.RoundTrip(req)
 }
@@ -229,7 +229,7 @@ func TestTagSubscriptionsWire(t *testing.T) {
 	if got, want := list(), [][]string{{"deploy", "env:*"}}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("list = %v, want %v", got, want)
 	}
-	r, err := c.UnsubscribeTagsWithResponse(ctx, []string{"env:*", "deploy"}, &gen.UnsubscribeTagsParams{})
+	r, err := c.UnsubscribeTagsWithResponse(ctx, &gen.UnsubscribeTagsParams{Pattern: []string{"env:*", "deploy"}})
 	if err != nil || r.StatusCode() != 204 {
 		t.Fatalf("unsubscribe: %v %d %s", err, r.StatusCode(), r.Body)
 	}
@@ -239,17 +239,17 @@ func TestTagSubscriptionsWire(t *testing.T) {
 	rec.mu.Lock()
 	var unsubPath string
 	for _, p := range rec.paths {
-		if strings.HasPrefix(p, "/v1/tag-subscriptions/") {
+		if strings.HasPrefix(p, "DELETE /v1/tag-subscriptions?") {
 			unsubPath = p
 		}
 	}
 	rec.mu.Unlock()
-	if want := "/v1/tag-subscriptions/env:%2A,deploy"; unsubPath != want {
-		t.Fatalf("generated client path = %q, want %q", unsubPath, want)
+	if want := "DELETE /v1/tag-subscriptions?pattern=env%3A%2A&pattern=deploy"; unsubPath != want {
+		t.Fatalf("generated client request = %q, want %q", unsubPath, want)
 	}
 
 	sub("env:*", "deploy")
-	resp := e.raw("pat", newReq(t, "DELETE", "/v1/tag-subscriptions/deploy,env:*", nil))
+	resp := e.raw("pat", newReq(t, "DELETE", "/v1/tag-subscriptions?pattern=deploy&pattern=env:*", nil))
 	if resp.StatusCode != 204 {
 		b, _ := io.ReadAll(resp.Body)
 		t.Fatalf("literal form: %d %s", resp.StatusCode, b)
@@ -264,14 +264,12 @@ func TestTagSubscriptionsWire(t *testing.T) {
 	}
 }
 
-// TestUnsubscribeTagsCommaSplitsOnTheWire pins the one divergence of the
-// {patterns} path array that no guard closes (pending Eric: Milestone 4 item
-// 6, option C): a comma inside one pattern is the array separator of the
-// simple-style segment, so the remote Bus's ["a,b"] reaches the core as
-// ["a", "b"] and removes that set, where the local Bus hands the core the one
-// pattern "a,b" and gets validation (the tag rule refuses the comma).
-// pending Eric: Milestone 4 item 6
-func TestUnsubscribeTagsCommaSplitsOnTheWire(t *testing.T) {
+// TestUnsubscribeTagsCommaAgrees pins that a comma inside one pattern does not
+// split on the wire (Milestone 4 item 6, resolved by the repeated query
+// parameter): the remote Bus's ["a,b"] reaches the core as the one pattern
+// "a,b", so both transports answer validation (the tag rule refuses the
+// comma) and neither removes the [a b] set.
+func TestUnsubscribeTagsCommaAgrees(t *testing.T) {
 	e := newEnv(t, envOptions{})
 	e.identity("pat", false)
 	ctx := context.Background()
@@ -297,10 +295,44 @@ func TestUnsubscribeTagsCommaSplitsOnTheWire(t *testing.T) {
 	}
 
 	rb := remote.New(e.client("pat"))
-	if err := rb.UnsubscribeTags(ctx, in); err != nil {
-		t.Fatalf("remote UnsubscribeTags %v = %v, want nil (split into [a b])", in.Patterns, err)
+	if err := rb.UnsubscribeTags(ctx, in); ab2bus.CodeOf(err) != ab2bus.CodeValidation {
+		t.Fatalf("remote UnsubscribeTags %v = %v, want validation", in.Patterns, err)
 	}
-	if got := sets(rb); len(got) != 0 {
-		t.Fatalf("after remote: %v, want the [a b] set removed", got)
+	if got, want := sets(rb), [][]string{{"a", "b"}}; !reflect.DeepEqual(got, want) {
+		t.Fatalf("after remote: %v, want %v", got, want)
+	}
+}
+
+// TestUnsubscribeTagsCommaIsOnePattern pins the wire: each pattern is its own
+// pattern query value, so a comma stays inside one pattern, and an absent
+// pattern is refused by the request validator.
+func TestUnsubscribeTagsCommaIsOnePattern(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	e.identity("pat", false)
+	ctx := context.Background()
+	rec := &pathRecorder{next: InProcessTransport(e.handler(), "pat")}
+	c, err := gen.NewClientWithResponses("http://inproc", gen.WithHTTPClient(&http.Client{Transport: rec}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r, err := c.UnsubscribeTagsWithResponse(ctx, &gen.UnsubscribeTagsParams{Pattern: []string{"a,b"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.StatusCode() != 400 || r.ApplicationproblemJSONDefault == nil || r.ApplicationproblemJSONDefault.Code != gen.ProblemCode("validation") {
+		t.Fatalf("comma pattern: %d %s, want 400 validation about the one pattern", r.StatusCode(), r.Body)
+	}
+	if !strings.Contains(string(r.Body), "a,b") {
+		t.Fatalf("the core did not see the one pattern a,b: %s", r.Body)
+	}
+	rec.mu.Lock()
+	got := rec.paths[len(rec.paths)-1]
+	rec.mu.Unlock()
+	if want := "DELETE /v1/tag-subscriptions?pattern=a%2Cb"; got != want {
+		t.Fatalf("request = %q, want %q", got, want)
+	}
+	resp := e.raw("pat", newReq(t, "DELETE", "/v1/tag-subscriptions", nil))
+	if p := readProblem(t, resp); resp.StatusCode != 400 || p.Code != gen.ProblemCode("validation") {
+		t.Fatalf("no pattern: %d %+v", resp.StatusCode, p)
 	}
 }

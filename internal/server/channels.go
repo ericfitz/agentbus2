@@ -156,7 +156,7 @@ func (a *api) SubscribeTags(ctx context.Context, req gen.SubscribeTagsRequestObj
 }
 
 func (a *api) UnsubscribeTags(ctx context.Context, req gen.UnsubscribeTagsRequestObject) (gen.UnsubscribeTagsResponseObject, error) {
-	err := a.channels.UnsubscribeTags(ctx, IdentityFrom(ctx), bus.TagSubscribeInput{Patterns: req.Patterns, IdempotencyKey: idemKey(req.Params.IdempotencyKey)})
+	err := a.channels.UnsubscribeTags(ctx, IdentityFrom(ctx), bus.TagSubscribeInput{Patterns: req.Params.Pattern, IdempotencyKey: idemKey(req.Params.IdempotencyKey)})
 	if err != nil {
 		return nil, err
 	}

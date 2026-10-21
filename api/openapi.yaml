@@ -336,18 +336,18 @@ paths:
           description: Subscribed.
         default:
           $ref: "#/components/responses/Problem"
-  /v1/tag-subscriptions/{patterns}:
     delete:
       operationId: unsubscribeTags
       tags: [channels]
       parameters:
-        - name: patterns
-          in: path
+        - name: pattern
+          in: query
           required: true
-          style: simple
-          explode: false
+          style: form
+          explode: true
           schema:
             type: array
+            minItems: 1
             items:
               type: string
         - $ref: "#/components/parameters/IdempotencyKeyParam"

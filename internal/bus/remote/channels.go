@@ -153,7 +153,7 @@ func (b *Bus) UnsubscribeTags(ctx context.Context, in ab2bus.TagSubscribeInput) 
 	if len(in.Patterns) == 0 || (len(in.Patterns) == 1 && in.Patterns[0] == "") {
 		return &ab2bus.Error{Code: ab2bus.CodeValidation, Message: "a tag subscription needs at least one pattern"}
 	}
-	r, err := b.c.UnsubscribeTagsWithResponse(ctx, in.Patterns, &gen.UnsubscribeTagsParams{IdempotencyKey: key(in.IdempotencyKey)})
+	r, err := b.c.UnsubscribeTagsWithResponse(ctx, &gen.UnsubscribeTagsParams{Pattern: in.Patterns, IdempotencyKey: key(in.IdempotencyKey)})
 	if err != nil {
 		return errorOf(ctx, 0, nil, nil, err)
 	}

@@ -105,7 +105,7 @@ func TestOperationTable(t *testing.T) {
 		"unsubscribe":          "DELETE /v1/channels/{channel}/subscription",
 		"listTagSubscriptions": "GET /v1/tag-subscriptions",
 		"subscribeTags":        "POST /v1/tag-subscriptions",
-		"unsubscribeTags":      "DELETE /v1/tag-subscriptions/{patterns}",
+		"unsubscribeTags":      "DELETE /v1/tag-subscriptions",
 		"sendMessage":          "POST /v1/channels/{channel}/messages",
 		"history":              "GET /v1/channels/{channel}/messages",
 		"search":               "GET /v1/search",
@@ -207,7 +207,7 @@ func (s *stub) Subscribe(_ context.Context, r gen.SubscribeRequestObject) (gen.S
 func (s *stub) UnsubscribeTags(_ context.Context, r gen.UnsubscribeTagsRequestObject) (gen.UnsubscribeTagsResponseObject, error) {
 	s.mu.Lock()
 	s.called++
-	s.patterns = r.Patterns
+	s.patterns = r.Params.Pattern
 	s.mu.Unlock()
 	return gen.UnsubscribeTags204Response{}, nil
 }
@@ -341,15 +341,18 @@ func TestPathParametersDecodeOnce(t *testing.T) {
 		t.Errorf("empty segment: status %d: %s", rec.Code, rec.Body)
 	}
 
-	rec = do(t, h, "DELETE", "/v1/tag-subscriptions/env:%2A,deploy", "", tok)
-	if rec.Code != 204 || len(s.patterns) != 2 || s.patterns[0] != "env:*" || s.patterns[1] != "deploy" {
+	rec = do(t, h, "DELETE", "/v1/tag-subscriptions?pattern=env%3A%2A%2Cx&pattern=deploy", "", tok)
+	if rec.Code != 204 || len(s.patterns) != 2 || s.patterns[0] != "env:*,x" || s.patterns[1] != "deploy" {
 		t.Errorf("tag patterns: status %d bound %q: %s", rec.Code, s.patterns, rec.Body)
 	}
-	if _, err := c.UnsubscribeTagsWithResponse(context.Background(), []string{"env:*", "deploy"}, &gen.UnsubscribeTagsParams{}); err != nil {
+	if _, err := c.UnsubscribeTagsWithResponse(context.Background(), &gen.UnsubscribeTagsParams{Pattern: []string{"env:*", "deploy"}}); err != nil {
 		t.Fatal(err)
 	}
-	if got, want := rt.paths[len(rt.paths)-1], "/v1/tag-subscriptions/env:%2A,deploy"; got != want {
+	if got, want := rt.paths[len(rt.paths)-1], "/v1/tag-subscriptions"; got != want {
 		t.Errorf("client tag path = %q, want %q", got, want)
+	}
+	if rec = do(t, h, "DELETE", "/v1/tag-subscriptions", "", tok); rec.Code != 400 {
+		t.Errorf("no pattern: status %d, want 400: %s", rec.Code, rec.Body)
 	}
 }
 
