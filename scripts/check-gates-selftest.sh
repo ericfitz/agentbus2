@@ -164,12 +164,50 @@ block_ci_sim() {
 	revert
 }
 
+# search_mutation_block LABEL FILE SED_EXPR PROOF_PATTERN BROKEN_ENGINE OTHER_ENGINE:
+# mutate one engine's search translation in the worktree and require the
+# corpus test to FAIL on that engine and PASS on the other (the suite is
+# load-bearing per engine). Uses the ambient AGENTBUS2_TEST_POSTGRES_DSN
+# (testcontainers when unset), like make test-conformance.
+search_mutation_block() {
+	local label="$1" file="$2" expr="$3" proof="$4" broken="$5" other="$6"
+	local log="$tmp/$1.log" f="$wt/$2" t=TestSearchTextMatchesAgreeAcrossEngines
+	begin
+	sed "$expr" "$f" >"$tmp/x" && cp "$tmp/x" "$f"
+	if ! grep -q "$proof" "$f"; then
+		problem "$label" "mutation changed nothing ($proof absent from $file)"
+	else
+		(cd "$wt" && go test -count=1 -p 1 -v -run "^${t}\$" ./internal/conformance/store/ >"$log" 2>&1) || true
+		grep -qF -- "--- FAIL: $t/$broken" "$log" || problem "$label" "log lacks '--- FAIL: $t/$broken': $(tail -n 3 "$log" | tr '\n' ' ')"
+		grep -qF -- "--- PASS: $t/$other" "$log" || problem "$label" "log lacks '--- PASS: $t/$other'"
+	fi
+	finish "$label"
+	revert
+}
+
+# --- 7. search-postgres-phrase ---------------------------------------------------------
+# plainto_tsquery ANDs word terms anywhere within a column, so "rate limit" and
+# commit:e159e8c match rows the phrase query rejects.
+block_search_postgres_phrase() {
+	search_mutation_block search-postgres-phrase internal/store/postgres/postgres.go \
+		's/phraseto_tsquery/plainto_tsquery/g' plainto_tsquery postgres sqlite
+}
+
+# --- 8. search-sqlite-prefix ------------------------------------------------------------
+# Without the FTS5 "*" suffix, e159* and commit:e159* return nothing.
+block_search_sqlite_prefix() {
+	search_mutation_block search-sqlite-prefix internal/store/sqlite/sqlite.go \
+		's/ftsPrefix = "\*"/ftsPrefix = ""/' 'ftsPrefix = ""' sqlite postgres
+}
+
 block_skip_in_wiring
 block_unit_leak
 block_gen_edited
 block_gen_stray
 block_ci_gate_negative
 block_ci_sim
+block_search_postgres_phrase
+block_search_sqlite_prefix
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"

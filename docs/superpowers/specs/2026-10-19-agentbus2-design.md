@@ -673,7 +673,7 @@ cross-compiles; v1 already builds with `modernc.org/sqlite` and no cgo.
 
 Decision 51 (Eric): the core defines the query language (words, `word*`
 prefix, phrases). Each store translates it (SQLite FTS5 as in v1
-`internal/bus/search.go`; the Postgres equivalent, chosen in Milestone 2), and conformance
+`internal/bus/search.go`; the Postgres equivalent, chosen in Milestone 2: one simple-configuration tsvector per column over alphanumeric tokens, queried with phraseto_tsquery and a last-token prefix rewrite (ADR 0004, Milestone 2 addendum)), and conformance
 tests check which messages match, not ranking. Vectors are scored in Go
 (v1's `dot()` over normalized blobs, `internal/bus/embed.go`); pgvector is
 an optional capability advertised by discovery. Because the server
@@ -754,8 +754,7 @@ aggregate: one row per stored entry `(channel, identity, [permissions])`,
 where `identity` is a registered name or one of the special identities
 `everyone` and `admins`, and each listed permission is constrained to
 `read`, `write` or `admin` (a `CHECK` constraint on both engines, as v1
-constrains `kind`; the list is stored as three boolean columns or a
-constrained set, chosen in Milestone 2). Several rows may name the same
+constrains `kind`; the list is stored as three boolean columns per entry with CHECK (can_read OR can_write OR can_admin), chosen in Milestone 2 (ADR 0004, Milestone 2 addendum)). Several rows may name the same
 identity; the core takes the union. An entry whose list is empty is
 rejected before it reaches the store. The channel row records its creator
 identity durably, because the implicit `{<creator>, [admin]}` entry is

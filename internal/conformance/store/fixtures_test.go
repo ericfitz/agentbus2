@@ -6,9 +6,8 @@ package store
 //
 //	ab2store "github.com/ericfitz/agentbus2/internal/store"
 //
-// The aggregate fixtures compile against the Task 1 interfaces; until an
-// aggregate lands, its methods return sqlstore.ErrNotImplemented and the
-// fixture fails the calling test with that error.
+// The aggregate fixtures compile against the Store interfaces; a failing Store
+// call fails the calling test with that error.
 
 import (
 	"context"

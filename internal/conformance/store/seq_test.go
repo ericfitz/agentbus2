@@ -14,19 +14,25 @@ import (
 )
 
 // TestSeqConcurrentWriters is the Decision 54 concurrent-writer test: 8
-// writers over their own stores, 50 appends each. The messages aggregate
-// lands in Task 6, so each append marks its commit with SetNotice("seq-<v>")
-// in the same Append transaction as NextSeq (Task 12 switches this to
-// AppendMessage). A reader polls back to back inside one Read per poll: a
-// snapshot that shows counter value m shows every lower seq's marker, because
-// each lower value's transaction held the counter row earlier and committed
-// earlier (a Postgres sequence would not give this, Decision 27).
+// writers over their own stores, 50 AppendMessage calls each, spread over
+// three channels. A reader polls back to back, one Read per poll: m :=
+// MaxSeq, then MessagesAfter(channel, 0, 1000) for each channel. The union of
+// the seqs returned must be exactly 1..m (contiguous, nothing above m) and
+// each channel's list ascending: a snapshot that shows counter value m shows
+// every lower seq's row, because each lower value's transaction held the
+// counter row earlier and committed earlier (a Postgres sequence would not
+// give this, Decision 27).
 func TestSeqConcurrentWriters(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		const writers, perWriter = 8, 50
 		const total = writers * perWriter
 
 		first, reopen, _ := openStore(t, e, sqlstore.Options{})
+		mustIdentity(t, first, "w")
+		channels := make([]int64, 3)
+		for i := range channels {
+			channels[i] = mustChannel(t, first, fmt.Sprintf("c%d", i), ab2store.KindOrdinary, "w", nil).ID
+		}
 		stores := []ab2store.Store{first}
 		for range writers - 1 {
 			s, err := reopen(sqlstore.Options{})
@@ -52,16 +58,25 @@ func TestSeqConcurrentWriters(t *testing.T) {
 			var last int64
 			for last < total && ctx.Err() == nil {
 				var m int64
+				seen := map[int64]bool{}
 				err := reader.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+					clear(seen)
 					var err error
 					if m, err = tx.MaxSeq(ctx); err != nil {
 						return err
 					}
-					for k := int64(1); k <= m; k++ {
-						if _, ok, err := tx.Notice(ctx, fmt.Sprintf("seq-%d", k)); err != nil {
+					for _, ch := range channels {
+						msgs, err := tx.MessagesAfter(ctx, ch, 0, 1000)
+						if err != nil {
 							return err
-						} else if !ok {
-							return fmt.Errorf("snapshot shows MaxSeq %d but marker seq-%d is missing", m, k)
+						}
+						var prev int64
+						for _, msg := range msgs {
+							if msg.Seq <= prev {
+								return fmt.Errorf("channel %d not ascending: %d after %d", ch, msg.Seq, prev)
+							}
+							prev = msg.Seq
+							seen[msg.Seq] = true
 						}
 					}
 					return nil
@@ -71,6 +86,16 @@ func TestSeqConcurrentWriters(t *testing.T) {
 						readerErr = err
 					}
 					return
+				}
+				if int64(len(seen)) != m {
+					readerErr = fmt.Errorf("MaxSeq %d but %d messages visible", m, len(seen))
+					return
+				}
+				for k := int64(1); k <= m; k++ {
+					if !seen[k] {
+						readerErr = fmt.Errorf("snapshot shows MaxSeq %d but seq %d is missing", m, k)
+						return
+					}
 				}
 				if m < last {
 					readerErr = fmt.Errorf("MaxSeq went backwards: %d after %d", m, last)
@@ -89,13 +114,13 @@ func TestSeqConcurrentWriters(t *testing.T) {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
-				for range perWriter {
+				for i := range perWriter {
 					err := s.Append(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
-						v, err := tx.NextSeq(ctx)
-						if err != nil {
-							return err
-						}
-						return tx.SetNotice(ctx, ab2store.Notice{Kind: fmt.Sprintf("seq-%d", v), Message: "m", SetAt: v})
+						_, err := tx.AppendMessage(ctx, ab2store.NewMessage{
+							ChannelID: channels[(w+i)%len(channels)], Sender: "w", SessionID: "s",
+							CreatedAt: fixedNow, Type: "text", Content: "m",
+						})
+						return err
 					})
 					if err != nil {
 						errs[w] = err

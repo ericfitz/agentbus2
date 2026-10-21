@@ -173,3 +173,87 @@ All three resolved on 2026-10-20:
    `schema_version` (Decision 68).
 3. `Tx` retries: bounded on Postgres, none beyond the busy timeout on
    SQLite (Decision 69).
+
+## Milestone 2 addendum (2026-10-21)
+
+### Choices delegated by the spec
+
+These are Claude's choices under the spec's delegation (Decisions 51 and
+80), not Eric's decisions.
+
+1. **Postgres full-text equivalent of FTS5 (Decision 51).** Two stored
+   generated columns, `fts_subject` and `fts_content`, each
+   `to_tsvector('simple', regexp_replace(<col>, '[^[:alnum:]]+', ' ', 'g'))`
+   with a GIN index. The `simple` configuration lowercases and does not
+   stem; the `regexp_replace` stops Postgres' parser from keeping
+   `owner/repo`, `foo-bar`, emails or URLs as one token (probed:
+   `to_tsvector('simple', 'foo-bar')` is `'bar':3 'foo':2 'foo-bar':1` raw
+   and `'bar':2 'foo':1` normalized), which matches what `unicode61` does on
+   the SQLite side. Word and phrase terms both use `phraseto_tsquery`; a
+   prefix term applies `:*` to the last token only (a rewrite of the
+   `phraseto_tsquery` text form, accepted back by `to_tsquery`). A term must
+   match within one column, as an FTS5 phrase must. Probed on
+   `postgres:17.11` and modernc.org/sqlite v1.60.1 on 2026-10-21: every
+   query of the conformance corpus returns the same set on both engines.
+   Rejected: `plainto_tsquery` (AND anywhere, so `commit:e159e8c` matches
+   `commit abc e159e8c` on Postgres only; proven by gate self-test block
+   `search-postgres-phrase`), prefix on every token, one concatenated column
+   (`"rate limit"` would match subject `rate` plus content `limit hit`),
+   `pg_trgm`/`ILIKE` (no token semantics) and a stemming configuration.
+2. **ACL permission storage (Decision 80).** Three boolean columns per
+   stored entry, `channel_acl(id, channel_id, identity, can_read, can_write,
+   can_admin)` with `CHECK (can_read OR can_write OR can_admin)`. One row is
+   one entry, so a stored ACL round-trips as given (several rows may name
+   one identity; `EffectivePermissions` takes the union), "removing the
+   entries for `admins`" is a `DELETE` by identity, and the database
+   enforces the non-empty rule as well as Go. One row per
+   `(channel, identity, permission)` cannot represent "an entry".
+
+### Gate 0 answers
+
+Eric did not answer before execution. Each item proceeds on the plan's
+recommendation (option A) and is a `Claude proposal, pending Eric`; the test
+markers `// pending Eric: Gate 0 item N` encode it, so a reversal is a
+one-line change.
+
+1. Reserved identity names: `CreateIdentity` refuses `everyone` and `admins`
+   with `ErrInvalid`. Claude proposal, pending Eric (option B: allow them and
+   let the ACL treat the stored entry as the special identity). Markers:
+   `internal/conformance/store/identities_test.go`,
+   `internal/store/sqlstore/identities.go`, `internal/store/identities.go`.
+2. `40P01` is retryable alongside `40001`. Claude proposal, pending Eric
+   (option B: `40001` only). Markers: `internal/store/postgres/postgres.go`,
+   `internal/store/postgres/dialect_test.go`.
+3. Retry constants: `TxAttempts = 5`, backoff before attempt n a uniform
+   random duration in `[0, 10ms * 2^(n-1))` capped at 200 ms. Claude
+   proposal, pending Eric (option B: other values). Markers:
+   `internal/store/postgres/postgres.go`,
+   `internal/store/postgres/dialect_test.go`,
+   `internal/conformance/store/tx_test.go`.
+4. v1 `meta` is not ported (the admin reset is designed with the admin
+   section); `notices` is ported as is. Claude proposal, pending Eric
+   (option B: port `meta` now). No marker: encoded in the version 1 DDL.
+5. Rate-limit buckets stay in memory per server process, as in v1. Claude
+   proposal, pending Eric (option B: a shared bucket row). No marker: the
+   absence of a table; reversible in a version 2 migration.
+6. The Postgres database must use a UTF-8 ctype; `Open` does not check it.
+   Claude proposal, pending Eric (option B: `Open` reads
+   `pg_database.datctype` and refuses with `ErrSchemaInvalid`). Marker:
+   `internal/store/postgres/postgres.go`.
+
+### Shapes later milestones lean on
+
+- The resume token is stored hashed (`sessions.resume_token_hash`). The Store
+  stores and compares the hash it is given and computes nothing; Milestone 6
+  fixes the token format and the hash (SHA-256 hex expected).
+- `ChannelCreate.ACL == nil` means "without an ACL" and the Store
+  substitutes `DefaultACL(Creator)`; an empty non-nil slice means "with an
+  empty ACL" and stores no rows. This satisfies the section 5.8 conformance
+  wording directly.
+- `channels.creator` is stored as `''`, never NULL.
+- The Postgres database needs a UTF-8 ctype: `[[:alnum:]]` is evaluated
+  under it, and under `C` non-ASCII letters would split tokens.
+- Residual difference, accepted: `unicode61` treats Unicode categories L*,
+  N* and Co as token characters while `[[:alnum:]]` follows the C library's
+  `iswalnum`, so private-use and some symbol-class code points may tokenize
+  differently. No corpus row exercises them.
