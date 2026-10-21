@@ -52,14 +52,55 @@ func newSessionEnv(t *testing.T, cfg func(*core.Config)) *sessionEnv {
 
 func ptrTo[T any](v T) *T { return &v }
 
-func (s *sessionEnv) send(from, session string) int64 {
-	s.t.Helper()
+// sendErr sends "hi" to dev through the core and returns the failure instead
+// of ending the test, so it is safe from any goroutine (t.Fatalf is only
+// defined on the test's own).
+func (s *sessionEnv) sendErr(from, session string) (int64, error) {
 	r, err := (messaging.Service{Core: s.core}).Send(context.Background(), from,
 		ab2bus.SendInput{Channel: "dev", Content: "hi", Session: session})
+	return r.Seq, err
+}
+
+// send is sendErr for the test goroutine: a failure ends the test.
+func (s *sessionEnv) send(from, session string) int64 {
+	s.t.Helper()
+	seq, err := s.sendErr(from, session)
 	if err != nil {
 		s.t.Fatalf("send: %v", err)
 	}
-	return r.Seq
+	return seq
+}
+
+// sendLater sends from a new goroutine after d and reports a failure with
+// t.Errorf, which any goroutine may call; the returned channel closes when the
+// goroutine is done, so a test can wait for it before it ends.
+func (s *sessionEnv) sendLater(d time.Duration, from, session string) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		time.Sleep(d)
+		if _, err := s.sendErr(from, session); err != nil {
+			s.t.Errorf("background send: %v", err)
+		}
+	}()
+	return done
+}
+
+// TestSendErrReturnsFailureFromAGoroutine: the helper behind the background
+// sends reports a failed send as a value, never through t.Fatalf.
+func TestSendErrReturnsFailureFromAGoroutine(t *testing.T) {
+	s := newSessionEnv(t, nil)
+	errc := make(chan error, 1)
+	go func() {
+		_, err := s.sendErr("ghost", "")
+		errc <- err
+	}()
+	if err := <-errc; ab2bus.CodeOf(err) != ab2bus.CodeNotRegistered {
+		t.Fatalf("send from an unregistered identity: %v, want not_registered", err)
+	}
+	if seq, err := s.sendErr("sam", ""); err != nil || seq < 1 {
+		t.Fatalf("send from sam: %d %v", seq, err)
+	}
 }
 
 // pending Eric: Milestone 4 item 4 (watch timeout as fractional seconds).
@@ -186,10 +227,8 @@ func TestWatchWire200And409(t *testing.T) {
 	ctx := context.Background()
 	cl := s.client("pat")
 
-	go func() {
-		time.Sleep(100 * time.Millisecond)
-		s.send("sam", "")
-	}()
+	sent := s.sendLater(100*time.Millisecond, "sam", "")
+	defer func() { <-sent }()
 	r, err := cl.WatchWithResponse(ctx, s.session.Id, &gen.WatchParams{Timeout: ptrTo(5.0)})
 	if err != nil || r.JSON200 == nil {
 		t.Fatalf("watch: %v %v", err, r)
@@ -234,11 +273,9 @@ func TestWatchIncludeOwnWire(t *testing.T) {
 			params.IncludeOwn = ptrTo(true)
 		}
 		params.After = ptrTo(s.send("sam", "")) // a floor: earlier messages do not wake
-		go func() {
-			time.Sleep(100 * time.Millisecond)
-			s.send("pat", s.session.Id)
-		}()
+		sent := s.sendLater(100*time.Millisecond, "pat", s.session.Id)
 		r, err := cl.WatchWithResponse(ctx, s.session.Id, &params)
+		<-sent
 		if err != nil {
 			t.Fatal(err)
 		}
