@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"strings"
 	"testing"
 
@@ -47,14 +48,29 @@ func TestUsageGrowsWithData(t *testing.T) {
 
 func TestReclaimRunsOutsideTransactions(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		s, _, _ := openStore(t, e, sqlstore.Options{})
+		s, _, rawDSN := openStore(t, e, sqlstore.Options{})
 		seqs := appendKiB(t, s, 200)
 		peak := mustUsage(t, s)
 		mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error { return tx.DeleteMessages(ctx, seqs) })
+		var db *sql.DB
+		var pagesBefore, freeBefore int
+		if e.Name == "sqlite" {
+			db = rawDB(t, e, rawDSN)
+			pagesBefore = scalar[int](t, db, "PRAGMA page_count")
+			freeBefore = scalar[int](t, db, "PRAGMA freelist_count")
+			if freeBefore == 0 {
+				t.Fatal("precondition: no free pages after the delete")
+			}
+		}
 		if err := s.Reclaim(context.Background()); err != nil {
 			t.Fatalf("Reclaim: %v", err)
 		}
 		if e.Name == "sqlite" {
+			// Reclaim truncates up to 256 free pages from the file.
+			want := min(freeBefore, 256)
+			if got := pagesBefore - scalar[int](t, db, "PRAGMA page_count"); got != want {
+				t.Fatalf("Reclaim removed %d pages, want %d (freelist was %d)", got, want, freeBefore)
+			}
 			// The freelist subtraction lowers Bytes even before pages are truncated.
 			if got := mustUsage(t, s); got.Bytes >= peak.Bytes {
 				t.Fatalf("Usage.Bytes after delete+Reclaim = %d, peak %d", got.Bytes, peak.Bytes)

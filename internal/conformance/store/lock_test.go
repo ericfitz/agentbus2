@@ -146,3 +146,37 @@ func TestLockHolderSurvivesLostHold(t *testing.T) {
 		mustTryLock(t, s2, "maintenance", "b", 210, 1000, false)
 	})
 }
+
+func TestLockFailedCallsNeverLeakTheSession(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		canceled, cancel := context.WithCancel(context.Background())
+		cancel()
+		for _, c := range []struct {
+			name string
+			call func(s ab2store.Store) error
+		}{
+			{"unlock", func(s ab2store.Store) error { return s.Unlock(canceled, "maintenance", "a") }},
+			{"re-assert", func(s ab2store.Store) error {
+				_, err := s.TryLock(canceled, "maintenance", "a", 150, 1000)
+				return err
+			}},
+		} {
+			t.Run(c.name, func(t *testing.T) {
+				s1, s2, _ := twoHandles(t, e)
+				mustTryLock(t, s1, "maintenance", "a", 100, 1000, true)
+				if err := c.call(s1); err == nil {
+					t.Fatal("call with a canceled context returned nil")
+				}
+				if e.Name == "postgres" {
+					// A failed call drops the pinned session; it must end the
+					// session, not hand it (and its advisory lock) back to the pool.
+					mustTryLock(t, s2, "maintenance", "b", 160, 1000, true)
+					return
+				}
+				// SQLite: the row is untouched; a still holds until it expires.
+				mustTryLock(t, s2, "maintenance", "b", 160, 1000, false)
+				mustTryLock(t, s1, "maintenance", "a", 170, 1000, true)
+			})
+		}
+	})
+}

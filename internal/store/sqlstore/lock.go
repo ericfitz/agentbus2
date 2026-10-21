@@ -2,6 +2,8 @@ package sqlstore
 
 import (
 	"context"
+	"database/sql"
+	"database/sql/driver"
 	"fmt"
 
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -55,9 +57,10 @@ func (s *Store) tryLockSession(ctx context.Context, l Locker, name, owner string
 		if err == nil && held {
 			return true, nil
 		}
-		// The pinned session is gone (or lost the lock): drop it and acquire
-		// afresh below.
-		_ = conn.Close()
+		// The pinned session is gone, lost the lock or failed (a canceled
+		// ctx, say): end it, so a live session never goes back to the pool
+		// still holding the lock, and acquire afresh below.
+		discard(conn)
 		delete(s.conns, name)
 		delete(s.held, name)
 		if err != nil && ctx.Err() != nil {
@@ -69,9 +72,13 @@ func (s *Store) tryLockSession(ctx context.Context, l Locker, name, owner string
 		return false, err
 	}
 	held, err := l.TryLock(ctx, conn, name)
-	if err != nil || !held {
-		_ = conn.Close()
+	if err != nil {
+		discard(conn) // the lock may have been granted before the error
 		return false, err
+	}
+	if !held {
+		_ = conn.Close() // holds nothing: back to the pool
+		return false, nil
 	}
 	s.conns[name] = conn
 	s.held[name] = owner
@@ -98,7 +105,11 @@ func (s *Store) unlockLocked(ctx context.Context, name, owner string) error {
 			return nil
 		}
 		err := l.Unlock(ctx, conn)
-		_ = conn.Close() // ends the session, which releases the lock even if Unlock failed
+		if err != nil {
+			discard(conn) // ending the session releases the lock Unlock could not
+		} else {
+			_ = conn.Close() // unlocked: back to the pool
+		}
 		delete(s.conns, name)
 		delete(s.held, name)
 		return err
@@ -113,6 +124,15 @@ func (s *Store) unlockLocked(ctx context.Context, name, owner string) error {
 	return err
 }
 
+// discard ends conn's session instead of returning it to the pool:
+// sql.Conn.Close alone would hand a session that may still hold an advisory
+// lock to the next caller. A Raw callback returning driver.ErrBadConn makes
+// database/sql close the driver connection.
+func discard(conn *sql.Conn) {
+	_ = conn.Raw(func(any) error { return driver.ErrBadConn })
+	_ = conn.Close()
+}
+
 // releaseAll unlocks everything this Store holds (Close).
 func (s *Store) releaseAll() {
 	s.mu.Lock()
@@ -121,7 +141,7 @@ func (s *Store) releaseAll() {
 		_ = s.unlockLocked(context.Background(), name, owner)
 	}
 	for name, c := range s.conns {
-		_ = c.Close()
+		discard(c)
 		delete(s.conns, name)
 	}
 }
