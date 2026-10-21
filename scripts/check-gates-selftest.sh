@@ -290,11 +290,12 @@ block_inproc_crosses_the_wire() {
 # Docker-free. Each probe file adds one forbidden production import; the exit
 # script must exit 1 and name the package and the forbidden import. A
 # third-party subpackage is caught only by the prefix match.
+# deps_probe LABEL FILE IMPORT WANT [SCRIPT]: SCRIPT defaults to m4-exit-checks.sh.
 deps_probe() {
-	local label="$1" file="$2" import="$3" want="$4" log="$tmp/b12.log" rc=0 pkgname
+	local label="$1" file="$2" import="$3" want="$4" script="${5:-m4-exit-checks.sh}" log="$tmp/b12.log" rc=0 pkgname
 	pkgname="$(basename "$(dirname "$file")")"
 	printf 'package %s\n\nimport _ "%s"\n' "$pkgname" "$import" >"$wt/$file"
-	bash "$wt/scripts/m4-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
+	bash "$wt/scripts/$script" --deps-only >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 1 ]; then
 		problem "$label" "$file importing $import: exit $rc, expected 1"
 	fi
@@ -309,6 +310,25 @@ block_deps_rule_fires() {
 	deps_probe "$label" internal/bus/remote/probe_m4.go "$m/internal/server" "deps_violation=$m/internal/bus/remote imports $m/internal/server"
 	deps_probe "$label" internal/bus/remote/probe_m4.go github.com/getkin/kin-openapi/openapi3 "deps_violation=$m/internal/bus/remote imports github.com/getkin/kin-openapi"
 	if bash "$wt/scripts/m4-exit-checks.sh" --deps-only >"$log" 2>&1; then
+		grep -qF 'deps_ok=1' "$log" || problem "$label" "clean tree: exit 0 without deps_ok=1"
+	else
+		problem "$label" "clean tree: expected exit 0: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	finish "$label"
+	revert
+}
+
+# --- 16. m5-deps-rule-fires ------------------------------------------------------------
+# Docker-free. The Milestone 5 import rule: a forbidden in-module subpackage is
+# caught only by the prefix match, a third-party import under internal/auth
+# only by the allowlist.
+block_m5_deps_rule_fires() {
+	local label=m5-deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b16z.log"
+	begin
+	deps_probe "$label" internal/core/maintenance/probe_m5.go "$m/internal/server/config" "deps_violation=$m/internal/core/maintenance imports $m/internal/server" m5-exit-checks.sh
+	deps_probe "$label" internal/bus/probe_m5.go "$m/internal/gen" "deps_violation=$m/internal/bus imports $m/internal/gen" m5-exit-checks.sh
+	deps_probe "$label" internal/auth/keys/probe_m5.go github.com/jmoiron/sqlx "deps_violation=$m/internal/auth/keys imports github.com/jmoiron/sqlx" m5-exit-checks.sh
+	if bash "$wt/scripts/m5-exit-checks.sh" --deps-only >"$log" 2>&1; then
 		grep -qF 'deps_ok=1' "$log" || problem "$label" "clean tree: exit 0 without deps_ok=1"
 	else
 		problem "$label" "clean tree: expected exit 0: $(tail -n 3 "$log" | tr '\n' ' ')"
@@ -390,6 +410,7 @@ block_deps_rule_fires
 block_transport_check_fires
 block_bearer_signature_ignored
 block_admin_flag_ignored
+block_m5_deps_rule_fires
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"
