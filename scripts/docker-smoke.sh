@@ -6,7 +6,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 NAME="${DOCKER_SMOKE_NAME:-agentbus2-smoke}"
 IMAGE="agentbus2:smoke"
-cleanup() { docker rm -f "$NAME" "$NAME-nocfg" "$NAME-nolisten" >/dev/null 2>&1 || true; }
+cleanup() { docker rm -f -v "$NAME" "$NAME-nocfg" "$NAME-nolisten" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 cleanup
 
@@ -25,13 +25,13 @@ expect_exit() {
     if [ "$status" = exited ]; then break; fi
   done
   if [ "$status" != exited ]; then
-    docker rm -f "$name" >/dev/null 2>&1 || true
+    docker rm -f -v "$name" >/dev/null 2>&1 || true
     fail "$name did not exit within 10 s"
   fi
   local got logs
   got="$(docker inspect --format '{{.State.ExitCode}}' "$name")"
   logs="$(docker logs "$name" 2>&1)"
-  docker rm -f "$name" >/dev/null
+  docker rm -f -v "$name" >/dev/null
   [ "$got" = "$code" ] || fail "$name exited $got, want $code; log: $logs"
   case "$logs" in
     *"$text"*) ;;
