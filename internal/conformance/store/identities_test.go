@@ -59,7 +59,7 @@ func TestIdentityRejects(t *testing.T) {
 			})
 		}
 		// "p\xff" is not UTF-8: SQLite stored it, Postgres failed raw (22021).
-		for _, name := range []string{"a/b", "", strings.Repeat("x", 129), "tab\there", "p\xff"} {
+		for _, name := range []string{"a/b", "", strings.Repeat("x", 129), "tab\there", "p\xff", "p\x00"} {
 			if err := create(name); !errors.Is(err, ab2store.ErrInvalid) {
 				t.Errorf("CreateIdentity(%q) err = %v, want ErrInvalid", name, err)
 			}
@@ -208,6 +208,8 @@ func TestIdentityPublicKeys(t *testing.T) {
 			"empty kid": {Identity: "pat", KID: "", Algorithm: "EdDSA", Key: []byte{1}, CreatedAt: fixedNow},
 			// The kid is TEXT: SQLite stored invalid UTF-8, Postgres failed raw (22021).
 			"non-UTF-8 kid": {Identity: "pat", KID: "c\xff", Algorithm: "EdDSA", Key: []byte{1}, CreatedAt: fixedNow},
+			// NUL is valid UTF-8, but Postgres refuses it in TEXT (22021).
+			"NUL kid": {Identity: "pat", KID: "a\x00b", Algorithm: "EdDSA", Key: []byte{1}, CreatedAt: fixedNow},
 		} {
 			if err := put(k); !errors.Is(err, ab2store.ErrInvalid) {
 				t.Errorf("%s: err = %v, want ErrInvalid", name, err)
@@ -363,51 +365,53 @@ func TestIdentityRejectsWritesInRead(t *testing.T) {
 	})
 }
 
-// A name that is not valid UTF-8 cannot be stored (CreateIdentity refuses it),
-// so lookups by such a name answer as for any unknown identity on both
-// engines; Postgres used to fail each with a raw SQLSTATE 22021 while SQLite
-// answered not found. Each call runs in its own transaction because an error
-// ends the transaction.
+// A name that is not valid UTF-8 or holds a NUL cannot be stored
+// (CreateIdentity refuses it), so lookups by such a name answer as for any
+// unknown identity on both engines; Postgres used to fail each with a raw
+// SQLSTATE 22021 while SQLite answered not found. Each call runs in its own
+// transaction because an error ends the transaction.
 func TestIdentityLookupsOfNonUTF8Name(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		ctx := context.Background()
 		s, _, _ := openStore(t, e, sqlstore.Options{})
-		const bad = "p\xff"
-		if err := s.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
-			_, err := tx.Identity(ctx, bad)
-			return err
-		}); !errors.Is(err, ab2store.ErrNotFound) {
-			t.Errorf("Identity(%q) err = %v, want ErrNotFound", bad, err)
-		}
-		if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error { return tx.SetAdmin(ctx, bad, true) }); !errors.Is(err, ab2store.ErrNotFound) {
-			t.Errorf("SetAdmin(%q) err = %v, want ErrNotFound", bad, err)
-		}
-		if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error { return tx.AdvanceTagAckedMark(ctx, bad, 5) }); !errors.Is(err, ab2store.ErrNotFound) {
-			t.Errorf("AdvanceTagAckedMark(%q) err = %v, want ErrNotFound", bad, err)
-		}
-		var keys []ab2store.PublicKey
-		if err := s.Read(ctx, func(ctx context.Context, tx ab2store.Tx) (err error) {
-			keys, err = tx.PublicKeys(ctx, bad)
-			return err
-		}); err != nil || len(keys) != 0 {
-			t.Errorf("PublicKeys(%q) = %v, %v; want none, nil", bad, keys, err)
-		}
-		var n int
-		if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) (err error) {
-			n, err = tx.DeletePublicKeys(ctx, bad)
-			return err
-		}); err != nil || n != 0 {
-			t.Errorf("DeletePublicKeys(%q) = %d, %v; want 0, nil", bad, n, err)
-		}
-		// PutPublicKey for such an identity: the identity cannot exist.
-		k := ab2store.PublicKey{Identity: bad, KID: "a", Algorithm: "EdDSA", Key: []byte{1}, CreatedAt: fixedNow}
-		if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error { return tx.PutPublicKey(ctx, k) }); !errors.Is(err, ab2store.ErrNotFound) {
-			t.Errorf("PutPublicKey(identity %q) err = %v, want ErrNotFound", bad, err)
-		}
-		// Validation of the key still comes before the identity's existence.
-		k.Algorithm = "RS256"
-		if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error { return tx.PutPublicKey(ctx, k) }); !errors.Is(err, ab2store.ErrInvalid) {
-			t.Errorf("PutPublicKey(identity %q, RS256) err = %v, want ErrInvalid", bad, err)
+		// "p\x00" is valid UTF-8, but Postgres refuses NUL in TEXT the same way.
+		for _, bad := range []string{"p\xff", "p\x00"} {
+			if err := s.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+				_, err := tx.Identity(ctx, bad)
+				return err
+			}); !errors.Is(err, ab2store.ErrNotFound) {
+				t.Errorf("Identity(%q) err = %v, want ErrNotFound", bad, err)
+			}
+			if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error { return tx.SetAdmin(ctx, bad, true) }); !errors.Is(err, ab2store.ErrNotFound) {
+				t.Errorf("SetAdmin(%q) err = %v, want ErrNotFound", bad, err)
+			}
+			if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error { return tx.AdvanceTagAckedMark(ctx, bad, 5) }); !errors.Is(err, ab2store.ErrNotFound) {
+				t.Errorf("AdvanceTagAckedMark(%q) err = %v, want ErrNotFound", bad, err)
+			}
+			var keys []ab2store.PublicKey
+			if err := s.Read(ctx, func(ctx context.Context, tx ab2store.Tx) (err error) {
+				keys, err = tx.PublicKeys(ctx, bad)
+				return err
+			}); err != nil || len(keys) != 0 {
+				t.Errorf("PublicKeys(%q) = %v, %v; want none, nil", bad, keys, err)
+			}
+			var n int
+			if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) (err error) {
+				n, err = tx.DeletePublicKeys(ctx, bad)
+				return err
+			}); err != nil || n != 0 {
+				t.Errorf("DeletePublicKeys(%q) = %d, %v; want 0, nil", bad, n, err)
+			}
+			// PutPublicKey for such an identity: the identity cannot exist.
+			k := ab2store.PublicKey{Identity: bad, KID: "a", Algorithm: "EdDSA", Key: []byte{1}, CreatedAt: fixedNow}
+			if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error { return tx.PutPublicKey(ctx, k) }); !errors.Is(err, ab2store.ErrNotFound) {
+				t.Errorf("PutPublicKey(identity %q) err = %v, want ErrNotFound", bad, err)
+			}
+			// Validation of the key still comes before the identity's existence.
+			k.Algorithm = "RS256"
+			if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error { return tx.PutPublicKey(ctx, k) }); !errors.Is(err, ab2store.ErrInvalid) {
+				t.Errorf("PutPublicKey(identity %q, RS256) err = %v, want ErrInvalid", bad, err)
+			}
 		}
 	})
 }

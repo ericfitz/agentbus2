@@ -42,8 +42,8 @@ func (t *tx) Receipt(ctx context.Context, identity, key string, now int64) (stor
 }
 
 // PutReceipt replaces any receipt for (identity, key). Identity and Key must
-// be non-empty, and Identity, Key, Fingerprint and Result valid UTF-8
-// (TextRule: all four are TEXT columns).
+// be non-empty, and Identity, Key, Fingerprint and Result pass TextRule
+// (valid UTF-8, no NUL: all four are TEXT columns).
 func (t *tx) PutReceipt(ctx context.Context, r store.Receipt) error {
 	if r.Identity == "" || r.Key == "" {
 		return fmt.Errorf("%w: a receipt needs an identity and a key", store.ErrInvalid)

@@ -103,6 +103,12 @@ func TestReceiptRejectsInvalid(t *testing.T) {
 			"non-UTF-8 identity":    func(r *ab2store.Receipt) { r.Identity = "pat\xff" },
 			"non-UTF-8 key":         func(r *ab2store.Receipt) { r.Key = "k\xff" },
 			"non-UTF-8 fingerprint": func(r *ab2store.Receipt) { r.Fingerprint = "f\xff" },
+			// NUL is valid UTF-8, but Postgres refuses it in TEXT (22021) while
+			// SQLite stored it.
+			"NUL identity":    func(r *ab2store.Receipt) { r.Identity = "pat\x00" },
+			"NUL key":         func(r *ab2store.Receipt) { r.Key = "k\x00" },
+			"NUL fingerprint": func(r *ab2store.Receipt) { r.Fingerprint = "f\x00" },
+			"NUL result":      func(r *ab2store.Receipt) { r.Result = []byte("{}\x00") },
 		} {
 			r := ok
 			mutate(&r)
@@ -239,14 +245,15 @@ func TestReceiptDeleteExpiredRejectsBadLimit(t *testing.T) {
 	})
 }
 
-// Receipt with an identity or key that is not valid UTF-8 finds nothing on
-// both engines (PutReceipt refuses such strings, so none is stored); Postgres
-// used to fail with a raw SQLSTATE 22021 while SQLite answered not found.
+// Receipt with an identity or key that is not valid UTF-8 or holds a NUL
+// finds nothing on both engines (PutReceipt refuses such strings, so none is
+// stored); Postgres used to fail with a raw SQLSTATE 22021 while SQLite
+// answered not found.
 func TestReceiptLookupOfNonUTF8(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		s, _, _ := openStore(t, e, sqlstore.Options{})
 		receiptPut(t, s, ab2store.Receipt{Identity: "pat", Key: "k", Fingerprint: "f", Result: []byte(`{}`), ExpiresAt: fixedNow + 10})
-		for _, ik := range [][2]string{{"pat\xff", "k"}, {"pat", "k\xff"}} {
+		for _, ik := range [][2]string{{"pat\xff", "k"}, {"pat", "k\xff"}, {"pat\x00", "k"}, {"pat", "k\x00"}} {
 			err := s.Read(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
 				_, found, err := tx.Receipt(ctx, ik[0], ik[1], fixedNow)
 				if err == nil && found {

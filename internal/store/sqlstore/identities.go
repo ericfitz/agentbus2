@@ -18,10 +18,10 @@ type identityRow struct {
 	CreatedAt    int64  `db:"created_at"`
 }
 
-// unknownName runs the read-only guard, then maps a name failing TextRule to
-// ErrNotFound for the writes that need the identity to exist: no such name
-// can be stored, and Postgres would refuse it raw (SQLSTATE 22021).
-func (t *tx) unknownName(name string) error {
+// guardIdentityName runs the read-only guard, then maps a name failing
+// TextRule to ErrNotFound for the writes that need the identity to exist: no
+// such name can be stored, and Postgres would refuse it raw (SQLSTATE 22021).
+func (t *tx) guardIdentityName(name string) error {
 	if err := t.writable(); err != nil {
 		return err
 	}
@@ -102,7 +102,7 @@ func (t *tx) ListIdentities(ctx context.Context) ([]store.Identity, error) {
 // SetAdmin, like every write by identity name, answers ErrNotFound for a name
 // failing TextRule (after the read-only guard).
 func (t *tx) SetAdmin(ctx context.Context, name string, admin bool) error {
-	if err := t.unknownName(name); err != nil {
+	if err := t.guardIdentityName(name); err != nil {
 		return err
 	}
 	res, err := t.execW(ctx, "UPDATE identities SET is_admin = ? WHERE name = ?", admin, name)
@@ -112,7 +112,7 @@ func (t *tx) SetAdmin(ctx context.Context, name string, admin bool) error {
 // AdvanceTagAckedMark sets the mark to max(current, seq) with a CASE (no
 // scalar max, portability rule).
 func (t *tx) AdvanceTagAckedMark(ctx context.Context, name string, seq int64) error {
-	if err := t.unknownName(name); err != nil {
+	if err := t.guardIdentityName(name); err != nil {
 		return err
 	}
 	res, err := t.execW(ctx, "UPDATE identities SET tags_acked_seq = CASE WHEN tags_acked_seq < ? THEN ? ELSE tags_acked_seq END WHERE name = ?", seq, seq, name)
@@ -120,7 +120,7 @@ func (t *tx) AdvanceTagAckedMark(ctx context.Context, name string, seq int64) er
 }
 
 // PutPublicKey validates the key before the upsert: Algorithm (Decision 55:
-// EdDSA or ES256), a non-empty, valid UTF-8 KID and a non-empty Key (PKIX
+// EdDSA or ES256), a non-empty KID passing TextRule and a non-empty Key (PKIX
 // DER); the foreign key maps an unknown identity to ErrNotFound, as does an
 // identity failing TextRule (no such identity can exist).
 func (t *tx) PutPublicKey(ctx context.Context, k store.PublicKey) error {
@@ -136,7 +136,7 @@ func (t *tx) PutPublicKey(ctx context.Context, k store.PublicKey) error {
 	if len(k.Key) == 0 {
 		return fmt.Errorf("%w: public key %q has no key bytes (want PKIX DER)", store.ErrInvalid, k.KID)
 	}
-	if err := t.unknownName(k.Identity); err != nil {
+	if err := t.guardIdentityName(k.Identity); err != nil {
 		return err
 	}
 	_, err := t.execW(ctx, `INSERT INTO identity_keys (identity, kid, algorithm, public_key, created_at) VALUES (?, ?, ?, ?, ?)
