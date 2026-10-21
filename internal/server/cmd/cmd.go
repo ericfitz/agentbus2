@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 
 	"github.com/ericfitz/agentbus2/internal/server"
@@ -20,6 +21,12 @@ import (
 // shutdown or -h, 1 runtime error, 2 flag error. Ported from v1 main.go
 // (run's subcommand dispatch, flag.ContinueOnError, parseExit).
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+	return run(ctx, args, stdout, stderr, Serve)
+}
+
+// run is Run with the serving function injected, so a test can look at the
+// Config the flags produce without binding a port.
+func run(ctx context.Context, args []string, stdout, stderr io.Writer, serve func(context.Context, Config) error) int {
 	fs := flag.NewFlagSet("agentbus2 server", flag.ContinueOnError)
 	var usage bytes.Buffer
 	fs.SetOutput(&usage)
@@ -69,10 +76,11 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	}
 	defer func() { _ = s.Close() }()
 
-	err = Serve(ctx, Config{
+	err = serve(ctx, Config{
 		Listen: *listen,
 		Store:  s,
 		Auth:   server.RefuseAll{},
+		Logger: slog.New(slog.NewTextHandler(stderr, nil)),
 		Ready: func(a net.Addr) {
 			_, _ = fmt.Fprintf(stdout, "agentbus2 server listening on %s (%s)\n", a, engine)
 		},

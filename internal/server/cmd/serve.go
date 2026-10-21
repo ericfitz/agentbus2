@@ -27,8 +27,8 @@ type Config struct {
 	Cfg         *core.Config         // nil: core.Defaults()
 	Now         func() time.Time     // nil: time.Now (Decision 49)
 	ReadTimeout time.Duration        // 0: 30 s (choice 15)
-	Logger      *slog.Logger
-	Ready       func(addr net.Addr) // called once, when listening
+	Logger      *slog.Logger         // nil: discard
+	Ready       func(addr net.Addr)  // called once, when listening
 }
 
 const (
@@ -37,14 +37,20 @@ const (
 )
 
 // httpServer builds the http.Server with choice 15's values. WriteTimeout is
-// 0: the watch handler's own deadline bounds a long-poll.
+// 0: the watch handler's own deadline bounds a long-poll. net/http's own
+// errors go to the Logger at error level (or nowhere, like the core's).
 func httpServer(c Config, h http.Handler) *http.Server {
 	rt := c.ReadTimeout
 	if rt == 0 {
 		rt = defaultReadTimeout
 	}
+	log := c.Logger
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
 	return &http.Server{
 		Handler:           h,
+		ErrorLog:          slog.NewLogLogger(log.Handler(), slog.LevelError),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       rt,
 		WriteTimeout:      0,

@@ -41,11 +41,23 @@ var listeningRE = regexp.MustCompile(`agentbus2 server listening on (\S+) \((sql
 func runServer(t *testing.T, args ...string) (addr string, cancel context.CancelFunc, done <-chan int, stdout *syncBuf) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
 	stdout = &syncBuf{}
 	stderr := &syncBuf{}
 	ch := make(chan int, 1)
-	go func() { ch <- Run(ctx, args, stdout, stderr) }()
+	finished := make(chan struct{})
+	go func() {
+		ch <- Run(ctx, args, stdout, stderr)
+		close(finished)
+	}()
+	// Run must be gone before the test's TempDir removes the open database.
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(10 * time.Second):
+			t.Error("Run did not return after the test ended")
+		}
+	})
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
 		if m := listeningRE.FindStringSubmatch(stdout.String()); m != nil {
@@ -74,7 +86,7 @@ func TestRunFlags(t *testing.T) {
 		{"both stores", []string{"-listen", "127.0.0.1:0", "-sqlite", tmp, "-postgres", "postgres://x"}, 2, []string{"exactly one of -sqlite or -postgres is required"}},
 		{"no store", []string{"-listen", "127.0.0.1:0"}, 2, []string{"exactly one of -sqlite or -postgres is required"}},
 		{"no listen", []string{"-sqlite", tmp}, 2, []string{"-listen is required"}},
-		{"unknown flag", []string{"-frob"}, 2, nil},
+		{"unknown flag", []string{"-frob"}, 2, []string{"flag provided but not defined: -frob"}},
 		{"stray argument", []string{"-listen", "127.0.0.1:0", "-sqlite", tmp, "extra"}, 2, []string{`unexpected argument "extra"`}},
 	}
 	for _, tc := range cases {
@@ -109,6 +121,28 @@ func TestRunFlags(t *testing.T) {
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("Run did not return after cancel")
+	}
+}
+
+// The server logs through a slog logger on stderr (lease failures, job errors),
+// and net/http's own errors go through it too.
+func TestRunConfiguresLogging(t *testing.T) {
+	var got Config
+	var out, errb bytes.Buffer
+	serve := func(_ context.Context, c Config) error { got = c; return nil }
+	args := []string{"-listen", "127.0.0.1:0", "-sqlite", filepath.Join(t.TempDir(), "ab2.db")}
+	if code := run(context.Background(), args, &out, &errb, serve); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, errb.String())
+	}
+	if got.Logger == nil {
+		t.Fatal("Run passed no Logger: the server would log nothing")
+	}
+	got.Logger.Warn("lease trouble")
+	if !strings.Contains(errb.String(), "lease trouble") {
+		t.Fatalf("stderr %q lacks the logged line", errb.String())
+	}
+	if out.Len() != 0 {
+		t.Fatalf("stdout %q: logs belong on stderr", out.String())
 	}
 }
 

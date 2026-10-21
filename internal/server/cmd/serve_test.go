@@ -1,10 +1,14 @@
 package cmd
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"log/slog"
 	"net"
 	"path/filepath"
+	"reflect"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -29,12 +33,25 @@ func openSQLite(t *testing.T, path string) store.Store {
 func startServe(t *testing.T, c Config) (addr string, stop func() error) {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
 	ready := make(chan net.Addr, 1)
 	c.Listen = "127.0.0.1:0"
 	c.Ready = func(a net.Addr) { ready <- a }
 	errc := make(chan error, 1)
-	go func() { errc <- Serve(ctx, c) }()
+	finished := make(chan struct{})
+	go func() {
+		errc <- Serve(ctx, c)
+		close(finished)
+	}()
+	// A test that fails before stop must not leave Serve running over a store
+	// the cleanups are about to close.
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-finished:
+		case <-time.After(10 * time.Second):
+			t.Error("Serve did not return after the test ended")
+		}
+	})
 	select {
 	case a := <-ready:
 		addr = a.String()
@@ -98,6 +115,18 @@ func TestServeStartsGeneralAndMaintenance(t *testing.T) {
 	}
 	if general.Creator != "" {
 		t.Fatalf("general creator %q, want none (Decision 92)", general.Creator)
+	}
+	var acl []store.ACLEntry
+	err = s.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
+		var err error
+		acl, err = tx.ACL(ctx, general.ID)
+		return err
+	})
+	if err != nil {
+		t.Fatalf("general ACL: %v", err)
+	}
+	if want := store.DefaultACL(""); !reflect.DeepEqual(acl, want) {
+		t.Fatalf("general ACL %+v, want the default rows without a creator entry %+v (Decision 92)", acl, want)
 	}
 
 	deadline := time.Now().Add(3 * time.Second)
@@ -164,14 +193,12 @@ func (f *fakeClock) Advance(d time.Duration) {
 	f.t = f.t.Add(d)
 }
 
-// Definition of Done D: a second run and a start after a crash. Two clocks:
-// the maintenance goroutine ticks on wall time while the lease row is judged
-// on the injected Now.
-func TestServeSecondRunAndCrashLeftovers(t *testing.T) {
+// Definition of Done D: a second run over the same database writes nothing
+// new (one general, the same schema version).
+func TestServeSecondRun(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ab2.db")
 	clock := &fakeClock{t: time.UnixMilli(1_700_000_000_000)}
-
-	// Second run: both start, one general.
+	var version int64
 	for i := 0; i < 2; i++ {
 		s := openSQLite(t, path)
 		_, stop := startServe(t, Config{Store: s, Cfg: oneSecond(), Now: clock.Now})
@@ -181,18 +208,39 @@ func TestServeSecondRunAndCrashLeftovers(t *testing.T) {
 		if got := channelNames(t, s); len(got) != 1 || got[0] != "general" {
 			t.Fatalf("run %d: channels %v, want [general]", i+1, got)
 		}
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		v := schemaVersion(t, db)
+		_ = db.Close()
+		if i == 0 {
+			version = v
+		} else if v != version {
+			t.Fatalf("schema version %d on the second run, was %d", v, version)
+		}
 	}
+}
 
+// Definition of Done D: a start after a crash. Two clocks: the maintenance
+// goroutine ticks on wall time while the lease row is judged on the injected
+// Now. The database is fresh so that the lease is the migration's seed row, not
+// a previous short run's: nothing but A may have taken it.
+func TestServeCrashLeftovers(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ab2.db")
+	clock := &fakeClock{t: time.UnixMilli(1_700_000_000_000)}
+
+	// A takes the lease, then is canceled (a crash leaves the same row).
+	sA := openSQLite(t, path)
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = db.Close() })
+	if seed := readLease(t, db); seed.owner != "" {
+		t.Fatalf("the lease is owned by %q before any server started; the premise of this test is gone", seed.owner)
+	}
 	version := schemaVersion(t, db)
-
-	// Crash case: A takes the lease, is canceled, B starts after the fake
-	// clock passes twice the interval.
-	sA := openSQLite(t, path)
 	_, stopA := startServe(t, Config{Store: sA, Cfg: oneSecond(), Now: clock.Now})
 	var a lease
 	deadline := time.Now().Add(2500 * time.Millisecond)
@@ -206,6 +254,7 @@ func TestServeSecondRunAndCrashLeftovers(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// B starts after the fake clock passes twice the interval.
 	sB := openSQLite(t, path)
 	_, stopB := startServe(t, Config{Store: sB, Cfg: oneSecond(), Now: clock.Now})
 	clock.Advance(3 * time.Second) // past 2 * interval
@@ -236,6 +285,20 @@ func TestServeTimeoutsAllowLongPoll(t *testing.T) {
 	}
 	if got := httpServer(Config{ReadTimeout: 2 * time.Second}, nil).ReadTimeout; got != 2*time.Second {
 		t.Fatalf("ReadTimeout %v, want the configured 2s", got)
+	}
+}
+
+// net/http's own errors (accept failures, handler panics) go to the Logger,
+// not to the standard logger.
+func TestHTTPServerErrorLogUsesLogger(t *testing.T) {
+	var buf bytes.Buffer
+	srv := httpServer(Config{Logger: slog.New(slog.NewTextHandler(&buf, nil))}, nil)
+	if srv.ErrorLog == nil {
+		t.Fatal("ErrorLog is nil: net/http would write to the standard logger")
+	}
+	srv.ErrorLog.Print("http: accept error")
+	if got := buf.String(); !strings.Contains(got, "http: accept error") || !strings.Contains(got, "level=ERROR") {
+		t.Fatalf("logger saw %q", got)
 	}
 }
 
