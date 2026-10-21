@@ -16,6 +16,7 @@ import (
 
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/messaging"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/gen"
@@ -53,12 +54,13 @@ func TestHelperProcess(t *testing.T) {
 		cancel()
 	}()
 	err = Serve(ctx, Config{
-		Listen:   "127.0.0.1:0",
-		Store:    s,
-		Auth:     headerAuth{},
-		Notifier: notify.NewPolling(100 * time.Millisecond),
-		Cfg:      &cfg,
-		Ready:    func(a net.Addr) { fmt.Printf("listening %s\n", a) },
+		Listen:       "127.0.0.1:0",
+		Registration: identities.ModeOpen,
+		Store:        s,
+		Auth:         headerAuth{},
+		Notifier:     notify.NewPolling(100 * time.Millisecond),
+		Cfg:          &cfg,
+		Ready:        func(a net.Addr) { fmt.Printf("listening %s\n", a) },
 	})
 	_ = s.Close()
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -38,7 +39,7 @@ func startLongPoll(t *testing.T, cfg *core.Config, readTimeout time.Duration, n 
 	db := filepath.Join(t.TempDir(), "bus.sqlite")
 	seedIdentities(t, db, "pat")
 	s = openSQLite(t, db)
-	addr, _ = startServe(t, Config{Store: s, Auth: headerAuth{}, Cfg: cfg, ReadTimeout: readTimeout, Notifier: n})
+	addr, _ = startServe(t, Config{Registration: identities.ModeOpen, Store: s, Auth: headerAuth{}, Cfg: cfg, ReadTimeout: readTimeout, Notifier: n})
 	return addr, s
 }
 

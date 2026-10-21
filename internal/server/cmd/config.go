@@ -77,18 +77,37 @@ func (e *configError) Unwrap() error { return e.error }
 // openFromConfig loads the configuration and opens the store it names. It
 // never reads cfg.Listen. Flag and configuration errors are *configError.
 func openFromConfig(ctx context.Context, f *flags, fs *flag.FlagSet, environ []string) (cfg config.Config, st store.Store, cc core.Config, err error) {
+	cfg, cc, err = loadConfig(f, fs, environ)
+	if err != nil {
+		return cfg, nil, cc, err
+	}
+	st, err = openStore(ctx, cfg)
+	if err != nil {
+		return cfg, nil, cc, err
+	}
+	return cfg, st, cc, nil
+}
+
+// loadConfig merges the file, the environment and the flags and maps the
+// result onto the core. It opens nothing. Errors are *configError.
+func loadConfig(f *flags, fs *flag.FlagSet, environ []string) (cfg config.Config, cc core.Config, err error) {
 	o, err := f.overrides(fs)
 	if err != nil {
-		return cfg, nil, cc, &configError{err}
+		return cfg, cc, &configError{err}
 	}
 	cfg, err = config.Load(f.Config, environ, o)
 	if err != nil {
-		return cfg, nil, cc, &configError{err}
+		return cfg, cc, &configError{err}
 	}
 	cc, err = cfg.Core()
 	if err != nil {
-		return cfg, nil, cc, &configError{err}
+		return cfg, cc, &configError{err}
 	}
+	return cfg, cc, nil
+}
+
+// openStore opens the store cfg names (Validate guarantees exactly one).
+func openStore(ctx context.Context, cfg config.Config) (st store.Store, err error) {
 	if cfg.SQLite != "" {
 		st, err = sqlite.Open(ctx, cfg.SQLite, sqlite.Options{})
 		if err != nil {
@@ -101,7 +120,7 @@ func openFromConfig(ctx context.Context, f *flags, fs *flag.FlagSet, environ []s
 		}
 	}
 	if err != nil {
-		return cfg, nil, cc, err
+		return nil, err
 	}
-	return cfg, st, cc, nil
+	return st, nil
 }

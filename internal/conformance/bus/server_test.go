@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/dbtest"
 	"github.com/ericfitz/agentbus2/internal/server/cmd"
 )
@@ -24,7 +25,7 @@ func TestServerServesBothEngines(t *testing.T) {
 		ready := make(chan net.Addr, 1)
 		errc := make(chan error, 1)
 		go func() {
-			errc <- cmd.Serve(ctx, cmd.Config{Listen: "127.0.0.1:0", Store: s, Ready: func(a net.Addr) { ready <- a }})
+			errc <- cmd.Serve(ctx, cmd.Config{Listen: "127.0.0.1:0", Registration: identities.ModeOpen, Store: s, Ready: func(a net.Addr) { ready <- a }})
 		}()
 		var addr string
 		select {

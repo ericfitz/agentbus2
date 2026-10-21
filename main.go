@@ -16,12 +16,13 @@ import (
 const usage = `usage: agentbus2 <command>
 
 commands:
-  server    serve the API over SQLite or Postgres (-listen, -sqlite or -postgres)
-  version   print the version
+  server        serve the API over SQLite or Postgres (-config, -listen, -sqlite or -postgres, -registration, -set)
+  server admin  host commands against the store: make-admin, reset-credential, create-identity, enrollment
+  version  print the version
   help      print this help`
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Environ(), os.Stdout, os.Stderr))
 }
 
 // signalContext is canceled by SIGINT or SIGTERM. Once it is canceled the
@@ -36,7 +37,7 @@ func signalContext() context.Context {
 	return ctx
 }
 
-func run(args []string, stdout, stderr io.Writer) int {
+func run(args []string, environ []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(stderr, usage)
 		return 2
@@ -46,7 +47,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintln(stdout, usage)
 		return 0
 	case "server":
-		return cmd.Run(signalContext(), args[1:], stdout, stderr)
+		return cmd.Run(signalContext(), args[1:], environ, stdout, stderr)
 	case "version", "-v", "--version":
 		_, _ = fmt.Fprintln(stdout, version.Version)
 		return 0

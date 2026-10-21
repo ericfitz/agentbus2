@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/store/sqlite"
 )
@@ -35,6 +36,9 @@ func startServe(t *testing.T, c Config) (addr string, stop func() error) {
 	ctx, cancel := context.WithCancel(context.Background())
 	ready := make(chan net.Addr, 1)
 	c.Listen = "127.0.0.1:0"
+	if c.Registration == "" {
+		c.Registration = identities.ModeOpen
+	}
 	c.Ready = func(a net.Addr) { ready <- a }
 	errc := make(chan error, 1)
 	finished := make(chan struct{})
@@ -305,5 +309,49 @@ func TestHTTPServerErrorLogUsesLogger(t *testing.T) {
 func TestServeRequiresStore(t *testing.T) {
 	if err := Serve(context.Background(), Config{Listen: "127.0.0.1:0"}); err == nil {
 		t.Fatal("Serve with no Store succeeded")
+	}
+}
+
+// Serve never defaults the registration mode: "" and an unknown value are
+// refused before anything is opened.
+func TestServeRefusesMissingOrUnknownRegistration(t *testing.T) {
+	s := openSQLite(t, filepath.Join(t.TempDir(), "ab2.db"))
+	for _, mode := range []identities.Mode{"", "tofu", "OPEN"} {
+		err := Serve(context.Background(), Config{Listen: "127.0.0.1:0", Store: s, Registration: mode})
+		if err == nil || !strings.Contains(err.Error(), "registration") {
+			t.Errorf("mode %q: err %v, want a registration error", mode, err)
+		}
+	}
+	if got := channelNames(t, s); len(got) != 0 {
+		t.Errorf("a refused start created channels %v", got)
+	}
+}
+
+// Config.Listener is served as given, and Listen is not consulted.
+func TestServeUsesGivenListener(t *testing.T) {
+	s := openSQLite(t, filepath.Join(t.TempDir(), "ab2.db"))
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	ready := make(chan net.Addr, 1)
+	errc := make(chan error, 1)
+	go func() {
+		errc <- Serve(ctx, Config{Listen: "not an address", Listener: ln, Store: s, Registration: identities.ModeOpen, Ready: func(a net.Addr) { ready <- a }})
+	}()
+	select {
+	case a := <-ready:
+		if a.String() != ln.Addr().String() {
+			t.Fatalf("Ready got %v, want %v", a, ln.Addr())
+		}
+	case err := <-errc:
+		t.Fatalf("Serve: %v", err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("not ready")
+	}
+	cancel()
+	if err := <-errc; err != nil {
+		t.Fatalf("Serve: %v", err)
 	}
 }

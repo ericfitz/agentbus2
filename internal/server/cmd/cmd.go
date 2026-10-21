@@ -3,91 +3,252 @@ package cmd
 import (
 	"bytes"
 	"context"
-	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"log/slog"
 	"net"
+	"os"
+	"strings"
+	"time"
 
+	"github.com/go-jose/go-jose/v4"
+
+	"github.com/ericfitz/agentbus2/internal/auth/token"
+	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/embed"
+	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/server"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/postgres"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentbus2/internal/server/config"
 )
 
-// Run is `agentbus2 server`. Interim flags until Decision 85's configuration
-// file (Milestone 5; Decision (Eric, 2026-10-21): Milestone 4 item 3). Exit codes: 0 clean
-// shutdown or -h, 1 runtime error, 2 flag error. Ported from v1 main.go
-// (run's subcommand dispatch, flag.ContinueOnError, parseExit).
-func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
-	return run(ctx, args, stdout, stderr, Serve)
+// Run is `agentbus2 server` (Decision 85): the configuration comes from the
+// -config file, the AGENTBUS2_SERVER_* variables in environ and the flags,
+// and `server admin ...` dispatches to RunAdmin. Exit codes: 0 clean shutdown
+// or -h, 1 runtime error, 2 flag or configuration error. Ported from v1
+// main.go (run's subcommand dispatch, flag.ContinueOnError, parseExit).
+func Run(ctx context.Context, args []string, environ []string, stdout, stderr io.Writer) int {
+	return run(ctx, args, environ, stdout, stderr, Serve)
 }
 
 // run is Run with the serving function injected, so a test can look at the
-// Config the flags produce without binding a port.
-func run(ctx context.Context, args []string, stdout, stderr io.Writer, serve func(context.Context, Config) error) int {
-	fs := flag.NewFlagSet("agentbus2 server", flag.ContinueOnError)
+// Config the flags produce without serving.
+//
+// State (Definition of Done D): the signing key is loaded from, or created in,
+// the Store (identities.Service.LoadOrCreateSigningKey). A second start loads
+// the row and prints nothing; two starts at once end with one row and one of
+// them prints "generated signing key"; a start that fails afterwards leaves
+// the committed row for the next start; a corrupt row stops the start (exit
+// 1) and is never overwritten.
+func run(ctx context.Context, args []string, environ []string, stdout, stderr io.Writer, serve func(context.Context, Config) error) int {
+	if len(args) > 0 && args[0] == "admin" {
+		return RunAdmin(ctx, args[1:], environ, stdout, stderr)
+	}
+	var f flags
+	fs := flagSet("agentbus2 server", &f, true)
 	var usage bytes.Buffer
 	fs.SetOutput(&usage)
-	listen := fs.String("listen", "", "address to listen on, host:port (required; port 0 picks a free port)")
-	sqlitePath := fs.String("sqlite", "", "SQLite database file (exactly one of -sqlite or -postgres)")
-	pgDSN := fs.String("postgres", "", "Postgres DSN (exactly one of -sqlite or -postgres)")
-	if err := fs.Parse(args); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			_, _ = io.Copy(stdout, &usage)
-			return 0
-		}
-		_, _ = io.Copy(stderr, &usage)
-		return 2
+	if code, done := parseFlags(fs, args, &usage, stdout, stderr); done {
+		return code
 	}
-	bad := false
+	fail := func(code int, format string, a ...any) int {
+		_, _ = fmt.Fprintf(stderr, "agentbus2 server: "+format+"\n", a...)
+		return code
+	}
 	if fs.NArg() > 0 {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 server: unexpected argument %q\n", fs.Arg(0))
-		bad = true
+		return fail(2, "unexpected argument %q", fs.Arg(0))
 	}
-	if *listen == "" {
-		_, _ = fmt.Fprintln(stderr, "agentbus2 server: -listen is required, for example 127.0.0.1:0")
-		bad = true
-	}
-	if (*sqlitePath == "") == (*pgDSN == "") {
-		_, _ = fmt.Fprintln(stderr, "agentbus2 server: exactly one of -sqlite or -postgres is required")
-		bad = true
-	}
-	if bad {
-		return 2
-	}
-
-	var (
-		s      store.Store
-		err    error
-		engine string
-	)
-	if *sqlitePath != "" {
-		engine = "sqlite"
-		s, err = sqlite.Open(ctx, *sqlitePath, sqlite.Options{})
-	} else {
-		engine = "postgres"
-		s, err = postgres.Open(ctx, *pgDSN, postgres.Options{})
-	}
+	cfg, cc, err := loadConfig(&f, fs, environ)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 server: opening the %s store: %v\n", engine, err)
-		return 1
+		return fail(2, "%v", err)
 	}
-	defer func() { _ = s.Close() }()
+	if cfg.Listen == "" {
+		return fail(2, "listen is required, for example 127.0.0.1:0 (set listen)")
+	}
+	local, err := ClassifyListen(cfg.Listen)
+	if err != nil {
+		return fail(2, "%v", err)
+	}
+	// An unknown registration value never reaches Serve: ParseMode rejects it
+	// here as well as in config.Validate (server.New's closed fallback is
+	// only a backstop).
+	var mode identities.Mode
+	switch {
+	case cfg.Registration != "":
+		if mode, err = identities.ParseMode(cfg.Registration); err != nil {
+			return fail(2, "registration: %v", err)
+		}
+	case local:
+		mode = identities.ModeOpen
+	default:
+		mode = identities.ModeEnrollment
+	}
+	// The socket path is not a host, so a unix listener has no default issuer.
+	if cfg.Issuer == "" && strings.HasPrefix(cfg.Listen, "unix:") {
+		return fail(2, "issuer is required when listen is a unix socket (set issuer)")
+	}
 
+	st, err := openStore(ctx, cfg)
+	if err != nil {
+		return fail(1, "%v", err)
+	}
+	defer func() { _ = st.Close() }()
+
+	// Bind before building the issuer: the default issuer URL is the bound address.
+	ln, err := Listen(cfg.Listen)
+	if err != nil {
+		return fail(1, "listen: %v", err)
+	}
+	defer func() { _ = ln.Close() }() // Serve closes it too; a second Close is harmless
+
+	issuerURL := cfg.Issuer
+	if issuerURL == "" {
+		issuerURL = "http://" + boundAuthority(cfg.Listen, ln.Addr())
+		if !local {
+			_, _ = fmt.Fprintf(stdout, "issuer is unset: clients will see %s in openid-configuration (set issuer)\n", issuerURL)
+		}
+	}
+
+	logger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: logLevel(cfg.LogLevel)}))
+
+	// The signing key is a Store row (Milestone 5 choice 6). This Core exists
+	// only for it and for AutoCreate; Serve builds its own over the same Store.
+	c, err := core.New(st, cc, core.Options{Now: time.Now, Logger: logger})
+	if err != nil {
+		return fail(1, "%v", err)
+	}
+	svc := identities.Service{Core: c}
+	key, _, created, err := svc.LoadOrCreateSigningKey(ctx)
+	if err != nil {
+		return fail(1, "signing key: %v", err)
+	}
+	issuer, err := token.NewIssuer(issuerURL, key, time.Duration(cfg.TokenLifetimeSeconds)*time.Second, c.Now)
+	if err != nil {
+		return fail(2, "issuer: %v", err)
+	}
+	if created {
+		_, _ = fmt.Fprintf(stdout, "generated signing key %s\n", issuer.KID())
+	}
+
+	ext := externalIssuers(cfg)
+
+	var embedder core.Embedder
+	if cfg.EmbeddingEndpoint != "" {
+		apiKey, err := embeddingKey(cfg, environ)
+		if err != nil {
+			return fail(2, "%v", err)
+		}
+		embedder = embed.NewHTTP(cfg.EmbeddingEndpoint, cfg.EmbeddingModel, apiKey, nil)
+	}
+
+	// External subjects are created on first use in open mode only (Decision
+	// (Eric, 2026-10-21), item 5); in every other mode a mapped but unknown
+	// name is 403 not_registered until `admin create-identity`.
+	var autoCreate func(context.Context, string) error
+	if mode == identities.ModeOpen {
+		autoCreate = func(ctx context.Context, name string) error {
+			_, err := svc.CreateIdentity(ctx, name)
+			return err
+		}
+	}
+
+	engine := "postgres"
+	if cfg.SQLite != "" {
+		engine = "sqlite"
+	}
 	err = serve(ctx, Config{
-		Listen: *listen,
-		Store:  s,
-		Auth:   server.RefuseAll{},
-		Logger: slog.New(slog.NewTextHandler(stderr, nil)),
+		Listen:       cfg.Listen,
+		Listener:     ln,
+		Store:        st,
+		Auth:         server.Bearer{Verifier: token.Verifier{Own: issuer, External: ext}, AutoCreate: autoCreate, Logger: logger},
+		Cfg:          &cc,
+		Logger:       logger,
+		Registration: mode,
+		Issuer:       issuer,
+		External:     ext,
+		Embedder:     embedder,
 		Ready: func(a net.Addr) {
-			_, _ = fmt.Fprintf(stdout, "agentbus2 server listening on %s (%s)\n", a, engine)
+			_, _ = fmt.Fprintf(stdout, "agentbus2 server listening on %s (%s, registration %s, issuer %s, kid %s)\n",
+				a, engine, mode, issuer.URL(), issuer.KID())
 		},
 	})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 server: %v\n", err)
-		return 1
+		return fail(1, "%v", err)
 	}
 	return 0
+}
+
+// boundAuthority is the bound address as a URL authority. A wildcard listen
+// address binds dual-stack, and the kernel then reports "[::]:port" even for
+// "0.0.0.0:port"; the configured literal host is kept in that case, so the
+// URL (and the warning about it) names what the operator typed.
+func boundAuthority(listen string, bound net.Addr) string {
+	host, port, err := net.SplitHostPort(bound.String())
+	if err != nil {
+		return bound.String()
+	}
+	if cfgHost, _, err := net.SplitHostPort(listen); err == nil && cfgHost != "" {
+		if ip := net.ParseIP(host); ip != nil && ip.IsUnspecified() {
+			host = cfgHost
+		}
+	}
+	return net.JoinHostPort(host, port)
+}
+
+// logLevel maps the validated log_level setting.
+func logLevel(s string) slog.Level {
+	switch s {
+	case "debug":
+		return slog.LevelDebug
+	case "warn":
+		return slog.LevelWarn
+	case "error":
+		return slog.LevelError
+	}
+	return slog.LevelInfo
+}
+
+// externalIssuers maps cfg.Issuers onto token.External. Validate has already
+// limited algorithms to EdDSA, ES256 and RS256; an empty list keeps the
+// verifier's default of all three.
+func externalIssuers(cfg config.Config) []*token.External {
+	var out []*token.External
+	for _, i := range cfg.Issuers {
+		var algs []jose.SignatureAlgorithm
+		for _, a := range i.Algorithms {
+			algs = append(algs, jose.SignatureAlgorithm(a))
+		}
+		out = append(out, &token.External{
+			Issuer: i.Issuer, JWKSURI: i.JWKSURI, Audience: i.Audience,
+			Algorithms: algs, Subjects: i.Subjects,
+			TTL: time.Duration(cfg.JWKSRefreshSeconds) * time.Second,
+		})
+	}
+	return out
+}
+
+// embeddingKey reads the embeddings API key from embedding_api_key_file or
+// from the variable embedding_api_key_env names in environ; neither set means
+// no key. Validate allows at most one of the two.
+func embeddingKey(cfg config.Config, environ []string) (string, error) {
+	switch {
+	case cfg.EmbeddingAPIKeyFile != "":
+		b, err := os.ReadFile(cfg.EmbeddingAPIKeyFile)
+		if err != nil {
+			return "", fmt.Errorf("embedding_api_key_file: %w", err)
+		}
+		return strings.TrimSpace(string(b)), nil
+	case cfg.EmbeddingAPIKeyEnv != "":
+		prefix := cfg.EmbeddingAPIKeyEnv + "="
+		val := ""
+		for _, kv := range environ {
+			if v, ok := strings.CutPrefix(kv, prefix); ok {
+				val = v
+			}
+		}
+		if val == "" {
+			return "", fmt.Errorf("embedding_api_key_env names %s, which is not set", cfg.EmbeddingAPIKeyEnv)
+		}
+		return strings.TrimSpace(val), nil
+	}
+	return "", nil
 }

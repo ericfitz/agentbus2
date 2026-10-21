@@ -20,7 +20,7 @@ import (
 func TestRunVersion(t *testing.T) {
 	for _, arg := range []string{"version", "-v", "--version"} {
 		var out, errb bytes.Buffer
-		if code := run([]string{arg}, &out, &errb); code != 0 {
+		if code := run([]string{arg}, nil, &out, &errb); code != 0 {
 			t.Fatalf("%s: exit %d, stderr %q", arg, code, errb.String())
 		}
 		if got := strings.TrimSpace(out.String()); got != version.Version {
@@ -32,7 +32,7 @@ func TestRunVersion(t *testing.T) {
 func TestRunHelp(t *testing.T) {
 	for _, arg := range []string{"help", "-h", "--help"} {
 		var out, errb bytes.Buffer
-		if code := run([]string{arg}, &out, &errb); code != 0 {
+		if code := run([]string{arg}, nil, &out, &errb); code != 0 {
 			t.Fatalf("%s: exit %d", arg, code)
 		}
 		if !strings.HasPrefix(out.String(), "usage: agentbus2 <command>") || errb.Len() != 0 {
@@ -44,7 +44,7 @@ func TestRunHelp(t *testing.T) {
 func TestRunRejectsUnknownAndEmpty(t *testing.T) {
 	for _, args := range [][]string{nil, {"frobnicate"}} {
 		var out, errb bytes.Buffer
-		if code := run(args, &out, &errb); code != 2 {
+		if code := run(args, nil, &out, &errb); code != 2 {
 			t.Fatalf("%v: exit %d, want 2", args, code)
 		}
 		if out.Len() != 0 || !strings.Contains(errb.String(), "usage: agentbus2") {
@@ -52,7 +52,7 @@ func TestRunRejectsUnknownAndEmpty(t *testing.T) {
 		}
 	}
 	var errb bytes.Buffer
-	run([]string{"frobnicate"}, io.Discard, &errb)
+	run([]string{"frobnicate"}, nil, io.Discard, &errb)
 	if !strings.Contains(errb.String(), `unknown command "frobnicate"`) {
 		t.Fatalf("stderr %q lacks the unknown-command line", errb.String())
 	}
@@ -60,7 +60,7 @@ func TestRunRejectsUnknownAndEmpty(t *testing.T) {
 
 func TestUsageListsServer(t *testing.T) {
 	var out bytes.Buffer
-	if code := run([]string{"help"}, &out, io.Discard); code != 0 {
+	if code := run([]string{"help"}, nil, &out, io.Discard); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
 	if !strings.Contains(out.String(), "  server ") {
@@ -70,10 +70,10 @@ func TestUsageListsServer(t *testing.T) {
 
 func TestRunServerRejectsMissingFlags(t *testing.T) {
 	var errb bytes.Buffer
-	if code := run([]string{"server"}, io.Discard, &errb); code != 2 {
+	if code := run([]string{"server"}, nil, io.Discard, &errb); code != 2 {
 		t.Fatalf("exit %d, want 2", code)
 	}
-	if !strings.Contains(errb.String(), "-listen is required") {
+	if !strings.Contains(errb.String(), "exactly one of sqlite or postgres is required") {
 		t.Fatalf("stderr %q", errb.String())
 	}
 }
@@ -164,5 +164,20 @@ func TestSecondSignalExits(t *testing.T) {
 		case <-deadline:
 			t.Fatal("a second SIGINT was swallowed: the signal stop is never called")
 		}
+	}
+}
+
+func TestUsageListsServerAdmin(t *testing.T) {
+	var out bytes.Buffer
+	if code := run([]string{"help"}, nil, &out, io.Discard); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if !strings.Contains(out.String(), "server admin") {
+		t.Fatalf("usage %q lacks the server admin command", out.String())
+	}
+	// A bare `server admin` prints its usage and exits 2.
+	var errb bytes.Buffer
+	if code := run([]string{"server", "admin"}, nil, io.Discard, &errb); code != 2 || !strings.Contains(errb.String(), "subcommand is required") {
+		t.Fatalf("server admin: exit %d, stderr %q", code, errb.String())
 	}
 }
