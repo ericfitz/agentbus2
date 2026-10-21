@@ -129,7 +129,9 @@ func (m *Model) toggleSubscribe() tea.Cmd {
 	c := m.c
 	name := ch.Name
 	if c.isSubscribed(name) {
-		if err := c.b.Unsubscribe(c.ctx, bus.UnsubscribeInput{Channel: name}); err != nil {
+		ctx, cancel := c.callCtx()
+		defer cancel()
+		if err := c.b.Unsubscribe(ctx, bus.UnsubscribeInput{Channel: name}); err != nil {
 			return m.showToast("unsubscribe: " + errText(err))
 		}
 		c.forget(name)
@@ -156,7 +158,9 @@ func (m *Model) updateConfirmChannel(msg tea.Msg) tea.Cmd {
 	}
 	c := m.c
 	name := ch.Name
-	if err := c.b.DeleteChannel(c.ctx, bus.DeleteChannelInput{Name: name}); err != nil {
+	ctx, cancel := c.callCtx()
+	defer cancel()
+	if err := c.b.DeleteChannel(ctx, bus.DeleteChannelInput{Name: name}); err != nil {
 		return m.showToast("delete: " + errText(err))
 	}
 	c.forget(name)

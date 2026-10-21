@@ -111,7 +111,9 @@ func (m *Model) unfollowTagPane() tea.Cmd {
 		return nil
 	}
 	name := ch.Name // ch points into m.channels, which is edited below
-	if err := m.c.b.UnsubscribeTags(m.c.ctx, bus.TagSubscribeInput{Patterns: tagPaneSet(name)}); err != nil {
+	ctx, cancel := m.c.callCtx()
+	defer cancel()
+	if err := m.c.b.UnsubscribeTags(ctx, bus.TagSubscribeInput{Patterns: tagPaneSet(name)}); err != nil {
 		return m.showToast("unsubscribe: " + errText(err))
 	}
 	m.channels = slices.Delete(m.channels, m.sel, m.sel+1)

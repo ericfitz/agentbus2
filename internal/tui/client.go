@@ -34,6 +34,13 @@ var errSessionLost = errors.New("session lost")
 // retryBackoff is the wait after a failed call (Milestone 8 choice 3).
 var retryBackoff = time.Second
 
+// callTimeout bounds a bus call the model makes synchronously inside Update
+// (task edits, unsubscribe, delete, unfollow: synchronous so no receive batch
+// can race them). Server mode's HTTP client has no Timeout (the long poll
+// outlasts any), so without it one stalled request would freeze the whole
+// program, quit included. Tests pin it lower.
+var callTimeout = 10 * time.Second
+
 // client is the TUI's bus session: one session opened with sessionHint, a
 // subscription to every channel, and the Decision 83 receive loop. It sees
 // the bus only as bus.Bus (ported from v1 internal/tui/client.go).
@@ -100,6 +107,12 @@ func (c *client) state(name string) subState {
 	return c.subscribed[name]
 }
 
+// callCtx is the context for one synchronous bus call: c.ctx bounded by
+// callTimeout. The caller defers cancel.
+func (c *client) callCtx() (context.Context, context.CancelFunc) {
+	return context.WithTimeout(c.ctx, callTimeout)
+}
+
 // subscribe subscribes to ch from "now", "oldest" or "". It is idempotent per
 // name: a channel already on, or marked no-access, makes no call. A forbidden
 // answer marks the channel subNoAccess and returns nil (the rail marks it
@@ -110,7 +123,9 @@ func (c *client) subscribe(ch bus.Channel, from string) error {
 	case subOn, subNoAccess:
 		return nil
 	}
-	err := c.b.Subscribe(c.ctx, bus.SubscribeInput{Channel: ch.Name, From: from})
+	ctx, cancel := c.callCtx()
+	defer cancel()
+	err := c.b.Subscribe(ctx, bus.SubscribeInput{Channel: ch.Name, From: from})
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	switch {

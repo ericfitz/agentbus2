@@ -113,7 +113,9 @@ func (m *Model) cycleTaskState() tea.Cmd {
 		return nil
 	}
 	if !drafted {
-		got, err := m.c.b.GetTask(m.c.ctx, t.ID)
+		ctx, cancel := m.c.callCtx()
+		defer cancel()
+		got, err := m.c.b.GetTask(ctx, t.ID)
 		if err != nil {
 			return m.showToast("task: " + errText(err))
 		}
@@ -140,10 +142,14 @@ func (m *Model) saveDraft() tea.Cmd {
 	}
 	var err error
 	if d.status == "in_progress" {
-		_, err = m.c.b.Claim(m.c.ctx, bus.TaskClaimInput{ID: d.id})
+		ctx, cancel := m.c.callCtx()
+		defer cancel()
+		_, err = m.c.b.Claim(ctx, bus.TaskClaimInput{ID: d.id})
 	} else {
 		status, owner := d.status, d.owner
-		_, err = m.c.b.Update(m.c.ctx, bus.TaskPatch{ID: d.id, Status: &status, Owner: &owner})
+		ctx, cancel := m.c.callCtx()
+		defer cancel()
+		_, err = m.c.b.Update(ctx, bus.TaskPatch{ID: d.id, Status: &status, Owner: &owner})
 	}
 	if err != nil {
 		return m.showToast("task: " + errText(err))
@@ -189,7 +195,9 @@ func (m *Model) takeTask() tea.Cmd {
 	if t.Owner != "" {
 		return nil // already yours
 	}
-	if _, err := m.c.b.Claim(m.c.ctx, bus.TaskClaimInput{ID: t.ID}); err != nil {
+	ctx, cancel := m.c.callCtx()
+	defer cancel()
+	if _, err := m.c.b.Claim(ctx, bus.TaskClaimInput{ID: t.ID}); err != nil {
 		return m.showToast("task: " + errText(err))
 	}
 	return m.loadTasks(m.selName())
@@ -214,7 +222,9 @@ func (m *Model) unassignTask() tea.Cmd {
 	if t.Status != "pending" {
 		return m.showToast(unassignRefusedToast)
 	}
-	if _, err := m.c.b.Release(m.c.ctx, bus.TaskReleaseInput{ID: t.ID}); err != nil {
+	ctx, cancel := m.c.callCtx()
+	defer cancel()
+	if _, err := m.c.b.Release(ctx, bus.TaskReleaseInput{ID: t.ID}); err != nil {
 		return m.showToast("task: " + errText(err))
 	}
 	return m.loadTasks(m.selName())
@@ -272,7 +282,9 @@ func (m *Model) updateAssign(msg tea.Msg) tea.Cmd {
 		if owner == p.owner {
 			return nil
 		}
-		if _, err := m.c.b.Update(m.c.ctx, bus.TaskPatch{ID: p.id, Owner: &owner}); err != nil {
+		ctx, cancel := m.c.callCtx()
+		defer cancel()
+		if _, err := m.c.b.Update(ctx, bus.TaskPatch{ID: p.id, Owner: &owner}); err != nil {
 			return m.showToast("task: " + errText(err))
 		}
 		return m.loadTasks(p.ch)
