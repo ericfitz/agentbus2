@@ -151,6 +151,15 @@ git -C "$WORK/repo" remote add origin "$WORK/origin.git"
 git -C "$WORK/repo" tag v0.0.5
 check tag-pushed-ok 0 "" -- bash -c "source '$HERE/release.sh'; REPO_ROOT='$WORK/repo'; TAG=v0.0.91; check_tag_pushed"
 check tag-pushed-missing 1 "tag v0.0.5 is not on origin; push it first (git push origin v0.0.5)" -- bash -c "source '$HERE/release.sh'; REPO_ROOT='$WORK/repo'; TAG=v0.0.5; check_tag_pushed"
+# A tag moved locally (git tag -f) but not force-pushed: the macOS build would
+# use the local tag and the workflow origin's, so the release would mix commits.
+git -C "$WORK/repo" tag v0.0.95 v0.0.91
+git -C "$WORK/repo" push -q origin v0.0.95
+git -C "$WORK/repo" tag -f v0.0.95 v0.0.90 >/dev/null
+check tag-pushed-moved 1 "tag v0.0.95 differs from origin's; push the moved tag (git push -f origin v0.0.95) or reset it" -- bash -c "source '$HERE/release.sh'; REPO_ROOT='$WORK/repo'; TAG=v0.0.95; check_tag_pushed"
+git -C "$WORK/repo" -c user.email=t@t -c user.name=t -c tag.gpgsign=false tag -a -m annotated v0.0.96 v0.0.91
+git -C "$WORK/repo" push -q origin v0.0.96
+check tag-pushed-annotated-ok 0 "" -- bash -c "source '$HERE/release.sh'; REPO_ROOT='$WORK/repo'; TAG=v0.0.96; check_tag_pushed"
 
 # check-linux-brew.sh validates every argument before starting any container
 check brew-check-bad-arch 2 "unknown architecture 'bogus' (amd64 or arm64)" -- "$HERE/check-linux-brew.sh" bogus

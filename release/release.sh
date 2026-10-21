@@ -139,9 +139,16 @@ check_tag_exists() {
     git -C "$REPO_ROOT" rev-parse -q --verify "refs/tags/$TAG" >/dev/null || fail "tag $TAG not found in $REPO_ROOT"
 }
 
+# check_tag_pushed: the tag is on origin and names the same object there as
+# here. The macOS build uses the local tag and the workflow origin's, so a tag
+# moved with `git tag -f` but not force-pushed would mix two commits.
 check_tag_pushed() {
-    git -C "$REPO_ROOT" ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1 \
+    local remote local_sha
+    remote="$(git -C "$REPO_ROOT" ls-remote --exit-code --tags origin "refs/tags/$TAG" 2>/dev/null)" \
         || fail "tag $TAG is not on origin; push it first (git push origin $TAG)"
+    local_sha="$(git -C "$REPO_ROOT" rev-parse -q --verify "refs/tags/$TAG")" || fail "tag $TAG not found in $REPO_ROOT"
+    [[ "$(awk -v r="refs/tags/$TAG" '$2 == r { print $1 }' <<<"$remote")" == "$local_sha" ]] \
+        || fail "tag $TAG differs from origin's; push the moved tag (git push -f origin $TAG) or reset it (git fetch -f origin tag $TAG)"
 }
 
 check_gh() {
