@@ -580,6 +580,20 @@ function Invoke-Cases {
         $raw = Get-RawUserPath
         $raw.Value.Contains('%USERPROFILE%\agentbus2-itest-marker') -and ($raw.Kind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString) -and $raw.Value.Contains($dirX)
     }
+    # The directory already on the user PATH with a trailing backslash is the
+    # same entry: it is not added a second time. The user PATH is put back by
+    # After (and again by Cleanup).
+    $dirT = Join-Path $Work 'bin-trailing'
+    $script:TrailSavedPath = $null
+    Invoke-Case -Name 'path-trailing-backslash-not-duplicated' -WantExit 0 -WantOut 'installed agentbus2 9.0.1' -Env @{} -InstallDir $dirT -Before {
+        $script:TrailSavedPath = Get-RawUserPath
+        $joined = (@($script:TrailSavedPath.Value, ($dirT + '\')) | Where-Object { $_ }) -join ';'
+        Set-RawUserPath @{ Value = $joined; Kind = [Microsoft.Win32.RegistryValueKind]::ExpandString }
+    } -After {
+        $n = @(Get-UserPathEntries | Where-Object { $_.TrimEnd('\') -eq $dirT }).Count
+        Set-RawUserPath $script:TrailSavedPath
+        $n -eq 1
+    } -WantNotOut 'to your user PATH'
     # v1 sibling (Review Focus 2): an agentbus.exe in Programs\agentbus next to
     # the v2 directory, listed on the user PATH, is never read, replaced or
     # removed. The user PATH is put back by After (and again by Cleanup).

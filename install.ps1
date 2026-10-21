@@ -239,8 +239,10 @@ function Add-UserPath([string]$Dir) {
     try {
         $user = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)
         $parts = @($user -split ';' | Where-Object { $_ })
+        # C:\x and C:\x\ name one directory (comparison is case-insensitive).
+        $want = $Dir.TrimEnd('\')
         foreach ($part in $parts) {
-            if ($part -eq $Dir -or [Environment]::ExpandEnvironmentVariables($part) -eq $Dir) { return }
+            if ($part.TrimEnd('\') -eq $want -or [Environment]::ExpandEnvironmentVariables($part).TrimEnd('\') -eq $want) { return }
         }
         $key.SetValue('Path', (($parts + $Dir) -join ';'), [Microsoft.Win32.RegistryValueKind]::ExpandString)
     } finally { $key.Close() }
