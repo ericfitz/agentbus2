@@ -347,7 +347,8 @@ func TestReplicasWake(t *testing.T) {
 type replicaTick struct {
 	replica int
 	ran     bool
-	jobs    []string
+	jobs    []string // every job the tick reported, run or skipped
+	done    []string // the jobs that ran to completion without an error
 }
 
 // serveInstance is one cmd.Serve of TestReplicasMaintenanceExclusive.
@@ -386,6 +387,9 @@ func TestReplicasMaintenanceExclusive(t *testing.T) {
 				tk := replicaTick{replica: n, ran: ran}
 				for _, r := range rep {
 					tk.jobs = append(tk.jobs, r.Name)
+					if !r.Skipped && r.Err == nil {
+						tk.done = append(tk.done, r.Name)
+					}
 				}
 				mu.Lock()
 				log = append(log, tk)
@@ -410,18 +414,26 @@ func TestReplicasMaintenanceExclusive(t *testing.T) {
 		defer r2.cancel()
 		close(start)
 
-		snapshot := func() (ranBy, idle map[int]int, names map[int]map[string]bool) {
+		// names[r] is every job a tick of replica r reported, whatever its
+		// ran flag says (a non-holder must report none); done[r] the jobs
+		// that ran without an error.
+		snapshot := func() (ranBy, idle map[int]int, names, done map[int]map[string]bool) {
 			mu.Lock()
 			defer mu.Unlock()
-			ranBy, idle, names = map[int]int{}, map[int]int{}, map[int]map[string]bool{1: {}, 2: {}}
+			ranBy, idle = map[int]int{}, map[int]int{}
+			names = map[int]map[string]bool{1: {}, 2: {}}
+			done = map[int]map[string]bool{1: {}, 2: {}}
 			for _, tk := range log {
 				if tk.ran {
 					ranBy[tk.replica]++
-					for _, j := range tk.jobs {
-						names[tk.replica][j] = true
-					}
 				} else {
 					idle[tk.replica]++
+				}
+				for _, j := range tk.jobs {
+					names[tk.replica][j] = true
+				}
+				for _, j := range tk.done {
+					done[tk.replica][j] = true
 				}
 			}
 			return
@@ -431,7 +443,7 @@ func TestReplicasMaintenanceExclusive(t *testing.T) {
 		var holderRun, otherRun serveInstance
 		t.Run("one-holder", func(t *testing.T) {
 			time.Sleep(4 * time.Second)
-			ranBy, idle, names := snapshot()
+			ranBy, idle, names, done := snapshot()
 			switch {
 			case ranBy[1] > 0 && ranBy[2] > 0:
 				t.Fatalf("both replicas ran the jobs: ran %v idle %v", ranBy, idle)
@@ -446,8 +458,8 @@ func TestReplicasMaintenanceExclusive(t *testing.T) {
 				t.Errorf("holder %d ran %d ticks, want at least 2", holder, ranBy[holder])
 			}
 			for _, name := range jobNames {
-				if !names[holder][name] {
-					t.Errorf("job %q appears in no report of replica %d", name, holder)
+				if !done[holder][name] {
+					t.Errorf("job %q ran to completion in no tick of replica %d", name, holder)
 				}
 			}
 			if len(names[other]) != 0 || idle[other] == 0 {
@@ -470,6 +482,15 @@ func TestReplicasMaintenanceExclusive(t *testing.T) {
 			if general != 1 {
 				t.Errorf("%d general channels after the simultaneous start, want 1", general)
 			}
+			// Losing the start race (EnsureGeneral, the listener) would end
+			// a Serve early; both must still be serving.
+			for n, in := range map[int]serveInstance{1: r1, 2: r2} {
+				select {
+				case err := <-in.errc:
+					t.Fatalf("replica %d's Serve returned during the start: %v", n, err)
+				default:
+				}
+			}
 		})
 		if holder == 0 {
 			t.Fatal("no holder; failover cannot run")
@@ -485,7 +506,7 @@ func TestReplicasMaintenanceExclusive(t *testing.T) {
 			case <-time.After(10 * time.Second):
 				t.Fatal("holder's Serve did not return")
 			}
-			ranByOther := func() int { r, _, _ := snapshot(); return r[other] }
+			ranByOther := func() int { r, _, _, _ := snapshot(); return r[other] }
 			before := ranByOther()
 			waitFor(t, 3*time.Second, fmt.Sprintf("replica %d to take over", other), func() bool { return ranByOther() > before })
 			otherRun.cancel()
