@@ -1,4 +1,4 @@
-.PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check
+.PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates verify
 export CGO_ENABLED=0
 PKGS_UNIT = $$(go list ./... | grep -v '/internal/conformance')
 
@@ -24,3 +24,16 @@ generate-check: generate  ## Fail when internal/gen is not exactly what api/ gen
 	@dirty=$$(git status --porcelain --untracked-files=all -- internal/gen); if [ -n "$$dirty" ]; then echo "internal/gen is stale or polluted (run make generate, then commit or remove):"; echo "$$dirty"; git --no-pager diff --stat -- internal/gen; exit 1; fi
 test-conformance:  ## Store and Bus conformance suites on SQLite and Postgres; -count=1 so an unreachable Postgres can never be masked by the test cache
 	go test -count=1 -p 1 ./internal/conformance/...
+check-gates:  ## Prove the negative halves: an unreachable Postgres fails the suites, unit tests exclude the suites, nothing skips, the generator reacts to the schema, the suites fail with no Docker and no variable (needs Docker for the busybox run)
+	bash scripts/check-gates.sh
+verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, generated-code freshness, unit tests, conformance suites on both engines, gate checks
+	$(MAKE) build
+	$(MAKE) build-all
+	$(MAKE) vet
+	$(MAKE) fmt-check
+	$(MAKE) lint
+	$(MAKE) generate-check
+	$(MAKE) test
+	$(MAKE) test-conformance
+	$(MAKE) check-gates
+	@echo "verify: OK"
