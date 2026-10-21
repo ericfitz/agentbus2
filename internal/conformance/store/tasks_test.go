@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -17,7 +18,7 @@ func TestTaskLiveMemoriesOnChannel(t *testing.T) {
 		other := mustChannel(t, s, "other", ab2store.KindTasks, "", nil)
 		mem := func(ch ab2store.Channel) int64 {
 			seq := mustAppend(t, s, ab2store.NewMessage{ChannelID: ch.ID, Sender: "pat", Content: "t", Tags: []string{"x"}})
-			mustSetMemory(t, s, seq, seq, 1)
+			memorySet(t, s, seq, seq, 1)
 			return seq
 		}
 		a := mem(tl)
@@ -73,6 +74,12 @@ func TestTaskChannelLastActivity(t *testing.T) {
 		if got := last(); got != fixedNow+30 {
 			t.Errorf("after tombstone = %d, want %d", got, fixedNow+30)
 		}
+		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			if _, err := tx.ChannelLastActivity(ctx, 99999); !errors.Is(err, ab2store.ErrNotFound) {
+				t.Errorf("ChannelLastActivity(99999) err = %v, want ErrNotFound", err)
+			}
+			return nil
+		})
 	})
 }
 
@@ -82,9 +89,9 @@ func TestTaskKindIsStored(t *testing.T) {
 		tl := mustChannel(t, s, "tl", ab2store.KindTasks, "", nil)
 		mc := mustChannel(t, s, "mc", ab2store.KindMemory, "", nil)
 		tmem := mustAppend(t, s, ab2store.NewMessage{ChannelID: tl.ID, Sender: "pat", Content: "m"})
-		mustSetMemory(t, s, tmem, tmem, 1)
+		memorySet(t, s, tmem, tmem, 1)
 		mmem := mustAppend(t, s, ab2store.NewMessage{ChannelID: mc.ID, Sender: "pat", Content: "m"})
-		mustSetMemory(t, s, mmem, mmem, 1)
+		memorySet(t, s, mmem, mmem, 1)
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 			chs, err := tx.ListChannelsByKind(ctx, ab2store.KindTasks)
 			if err != nil || len(chs) != 1 || chs[0].ID != tl.ID {
