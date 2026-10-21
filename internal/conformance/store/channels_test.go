@@ -101,7 +101,7 @@ func TestChannelCreateRejects(t *testing.T) {
 				return err
 			})
 		}
-		for _, name := range []string{"a/b", "", strings.Repeat("x", 129)} {
+		for _, name := range []string{"a/b", "", strings.Repeat("x", 129), "c\xff"} {
 			if err := create(ab2store.ChannelCreate{Name: name, Kind: ab2store.KindOrdinary}); !errors.Is(err, ab2store.ErrInvalid) {
 				t.Errorf("name %q err = %v, want ErrInvalid", name, err)
 			}
@@ -152,8 +152,10 @@ func TestChannelRename(t *testing.T) {
 		if err := rename(ch.ID, "other"); !errors.Is(err, ab2store.ErrConflict) {
 			t.Errorf("taken err = %v, want ErrConflict", err)
 		}
-		if err := rename(ch.ID, "a/b"); !errors.Is(err, ab2store.ErrInvalid) {
-			t.Errorf("invalid err = %v, want ErrInvalid", err)
+		for _, name := range []string{"a/b", "n\xff"} {
+			if err := rename(ch.ID, name); !errors.Is(err, ab2store.ErrInvalid) {
+				t.Errorf("rename to %q err = %v, want ErrInvalid", name, err)
+			}
 		}
 		if err := rename(9999, "fresh"); !errors.Is(err, ab2store.ErrNotFound) {
 			t.Errorf("unknown id err = %v, want ErrNotFound", err)

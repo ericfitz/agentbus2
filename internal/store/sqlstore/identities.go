@@ -18,6 +18,19 @@ type identityRow struct {
 	CreatedAt    int64  `db:"created_at"`
 }
 
+// unknownName runs the read-only guard, then maps a name failing TextRule to
+// ErrNotFound for the writes that need the identity to exist: no such name
+// can be stored, and Postgres would refuse it raw (SQLSTATE 22021).
+func (t *tx) unknownName(name string) error {
+	if err := t.writable(); err != nil {
+		return err
+	}
+	if store.TextRule(name) != nil {
+		return fmt.Errorf("%w: identity %q", store.ErrNotFound, name)
+	}
+	return nil
+}
+
 func (r identityRow) identity() store.Identity {
 	return store.Identity{Name: r.Name, Admin: r.Admin, TagsAckedSeq: r.TagsAckedSeq, CreatedAt: r.CreatedAt}
 }
@@ -56,7 +69,12 @@ func (t *tx) CreateIdentity(ctx context.Context, name string, now int64) error {
 	return err
 }
 
+// Identity answers ErrNotFound for a name failing TextRule without a query:
+// no such name can be stored, and Postgres would refuse it raw.
 func (t *tx) Identity(ctx context.Context, name string) (store.Identity, error) {
+	if store.TextRule(name) != nil {
+		return store.Identity{}, fmt.Errorf("%w: identity %q", store.ErrNotFound, name)
+	}
 	var r identityRow
 	err := t.get(ctx, &r, "SELECT "+identityCols+" FROM identities WHERE name = ?", name)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -81,7 +99,12 @@ func (t *tx) ListIdentities(ctx context.Context) ([]store.Identity, error) {
 	return out, nil
 }
 
+// SetAdmin, like every write by identity name, answers ErrNotFound for a name
+// failing TextRule (after the read-only guard).
 func (t *tx) SetAdmin(ctx context.Context, name string, admin bool) error {
+	if err := t.unknownName(name); err != nil {
+		return err
+	}
 	res, err := t.execW(ctx, "UPDATE identities SET is_admin = ? WHERE name = ?", admin, name)
 	return identityUpdated(res, err, name)
 }
@@ -89,19 +112,29 @@ func (t *tx) SetAdmin(ctx context.Context, name string, admin bool) error {
 // AdvanceTagAckedMark sets the mark to max(current, seq) with a CASE (no
 // scalar max, portability rule).
 func (t *tx) AdvanceTagAckedMark(ctx context.Context, name string, seq int64) error {
+	if err := t.unknownName(name); err != nil {
+		return err
+	}
 	res, err := t.execW(ctx, "UPDATE identities SET tags_acked_seq = CASE WHEN tags_acked_seq < ? THEN ? ELSE tags_acked_seq END WHERE name = ?", seq, seq, name)
 	return identityUpdated(res, err, name)
 }
 
 // PutPublicKey validates the key before the upsert: Algorithm (Decision 55:
-// EdDSA or ES256), a non-empty KID and a non-empty Key (PKIX DER); the
-// foreign key maps an unknown identity to ErrNotFound.
+// EdDSA or ES256), a non-empty, valid UTF-8 KID and a non-empty Key (PKIX
+// DER); the foreign key maps an unknown identity to ErrNotFound, as does an
+// identity failing TextRule (no such identity can exist).
 func (t *tx) PutPublicKey(ctx context.Context, k store.PublicKey) error {
+	if err := t.unknownName(k.Identity); err != nil {
+		return err
+	}
 	if k.Algorithm != "EdDSA" && k.Algorithm != "ES256" {
 		return fmt.Errorf("%w: unknown public key algorithm %q (want EdDSA or ES256)", store.ErrInvalid, k.Algorithm)
 	}
 	if k.KID == "" {
 		return fmt.Errorf("%w: public key kid must not be empty", store.ErrInvalid)
+	}
+	if err := store.TextRule(k.KID); err != nil {
+		return fmt.Errorf("%w: public key kid %q %s", store.ErrInvalid, k.KID, err)
 	}
 	if len(k.Key) == 0 {
 		return fmt.Errorf("%w: public key %q has no key bytes (want PKIX DER)", store.ErrInvalid, k.KID)
@@ -123,7 +156,11 @@ type identityKeyRow struct {
 	CreatedAt int64  `db:"created_at"`
 }
 
+// PublicKeys lists none, without a query, for a name failing TextRule.
 func (t *tx) PublicKeys(ctx context.Context, name string) ([]store.PublicKey, error) {
+	if store.TextRule(name) != nil {
+		return []store.PublicKey{}, nil
+	}
 	var rows []identityKeyRow
 	if err := t.sel(ctx, &rows, "SELECT identity, kid, algorithm, public_key, created_at FROM identity_keys WHERE identity = ?", name); err != nil {
 		return nil, err
@@ -136,7 +173,15 @@ func (t *tx) PublicKeys(ctx context.Context, name string) ([]store.PublicKey, er
 	return out, nil
 }
 
+// DeletePublicKeys removes none for a name failing TextRule (after the
+// read-only guard).
 func (t *tx) DeletePublicKeys(ctx context.Context, name string) (int, error) {
+	if err := t.writable(); err != nil {
+		return 0, err
+	}
+	if store.TextRule(name) != nil {
+		return 0, nil
+	}
 	res, err := t.execW(ctx, "DELETE FROM identity_keys WHERE identity = ?", name)
 	if err != nil {
 		return 0, err

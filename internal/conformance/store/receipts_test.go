@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"math"
 	"strconv"
 	"testing"
 
@@ -88,17 +89,20 @@ func TestReceiptDeleteExpired(t *testing.T) {
 	})
 }
 
-// PutReceipt refuses an empty identity or key and a Result that is not UTF-8
-// (the column is TEXT: SQLite stored such bytes while Postgres failed with a
-// raw SQLSTATE 22021).
+// PutReceipt refuses an empty identity or key and an Identity, Key,
+// Fingerprint or Result that is not UTF-8 (the columns are TEXT: SQLite stored
+// such bytes while Postgres failed with a raw SQLSTATE 22021).
 func TestReceiptRejectsInvalid(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		s, _, _ := openStore(t, e, sqlstore.Options{})
 		ok := ab2store.Receipt{Identity: "pat", Key: "k", Fingerprint: "f", Result: []byte(`{"seq":1}`), ExpiresAt: fixedNow + 10}
 		for name, mutate := range map[string]func(*ab2store.Receipt){
-			"empty identity": func(r *ab2store.Receipt) { r.Identity = "" },
-			"empty key":      func(r *ab2store.Receipt) { r.Key = "" },
-			"non-UTF-8":      func(r *ab2store.Receipt) { r.Result = []byte{0xff, 0xfe} },
+			"empty identity":        func(r *ab2store.Receipt) { r.Identity = "" },
+			"empty key":             func(r *ab2store.Receipt) { r.Key = "" },
+			"non-UTF-8":             func(r *ab2store.Receipt) { r.Result = []byte{0xff, 0xfe} },
+			"non-UTF-8 identity":    func(r *ab2store.Receipt) { r.Identity = "pat\xff" },
+			"non-UTF-8 key":         func(r *ab2store.Receipt) { r.Key = "k\xff" },
+			"non-UTF-8 fingerprint": func(r *ab2store.Receipt) { r.Fingerprint = "f\xff" },
 		} {
 			r := ok
 			mutate(&r)
@@ -113,6 +117,17 @@ func TestReceiptRejectsInvalid(t *testing.T) {
 		}
 		if _, found := receiptGet(t, s, "", "", fixedNow); found {
 			t.Error("a rejected PutReceipt stored a receipt with an empty identity and key")
+		}
+		// Count every row without binding the rejected strings (Postgres refuses
+		// them even in a SELECT): deleting all receipts expired by the end of
+		// time deletes every receipt.
+		var all int
+		mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) (err error) {
+			all, err = tx.DeleteExpiredReceipts(ctx, math.MaxInt64, 100)
+			return err
+		})
+		if all != 0 {
+			t.Errorf("rejected PutReceipts stored %d receipts, want 0", all)
 		}
 		receiptPut(t, s, ok) // the same receipt with valid fields is stored
 		if _, found := receiptGet(t, s, "pat", "k", fixedNow); !found {
@@ -220,6 +235,28 @@ func TestReceiptDeleteExpiredRejectsBadLimit(t *testing.T) {
 		})
 		if n != 1 {
 			t.Errorf("DeleteExpiredReceipts after the rejected limits = %d, want 1", n)
+		}
+	})
+}
+
+// Receipt with an identity or key that is not valid UTF-8 finds nothing on
+// both engines (PutReceipt refuses such strings, so none is stored); Postgres
+// used to fail with a raw SQLSTATE 22021 while SQLite answered not found.
+func TestReceiptLookupOfNonUTF8(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		receiptPut(t, s, ab2store.Receipt{Identity: "pat", Key: "k", Fingerprint: "f", Result: []byte(`{}`), ExpiresAt: fixedNow + 10})
+		for _, ik := range [][2]string{{"pat\xff", "k"}, {"pat", "k\xff"}} {
+			err := s.Read(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
+				_, found, err := tx.Receipt(ctx, ik[0], ik[1], fixedNow)
+				if err == nil && found {
+					t.Errorf("Receipt(%q, %q) found a receipt", ik[0], ik[1])
+				}
+				return err
+			})
+			if err != nil {
+				t.Errorf("Receipt(%q, %q) err = %v, want nil (not found)", ik[0], ik[1], err)
+			}
 		}
 	})
 }

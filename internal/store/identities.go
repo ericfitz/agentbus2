@@ -36,8 +36,8 @@ type Identities interface {
 	// AdvanceTagAckedMark sets the mark to max(current, seq).
 	AdvanceTagAckedMark(ctx context.Context, name string, seq int64) error
 	// PutPublicKey upserts by (identity, kid); ErrInvalid on an unknown
-	// Algorithm, an empty KID or an empty Key; ErrNotFound on an unknown
-	// identity.
+	// Algorithm, an empty or non-UTF-8 KID (TextRule) or an empty Key;
+	// ErrNotFound on an unknown identity.
 	PutPublicKey(ctx context.Context, k PublicKey) error
 	// PublicKeys lists by kid in byte order; an unknown identity has none (an
 	// empty list, no error).

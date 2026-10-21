@@ -15,7 +15,8 @@ type Receipts interface {
 	// Receipt returns an unexpired receipt only (expires_at > now).
 	Receipt(ctx context.Context, identity, key string, now int64) (Receipt, bool, error)
 	// PutReceipt replaces any receipt for (identity, key); ErrInvalid on an
-	// empty Identity or Key and on a Result that is not valid UTF-8.
+	// empty Identity or Key and on an Identity, Key, Fingerprint or Result
+	// that is not valid UTF-8 (TextRule).
 	PutReceipt(ctx context.Context, r Receipt) error
 	// DeleteExpiredReceipts deletes up to limit receipts with expires_at <= now
 	// and returns how many; ErrInvalid on a limit below 1. Any limit is safe:

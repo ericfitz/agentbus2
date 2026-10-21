@@ -19,6 +19,9 @@ func TestNameRule(t *testing.T) {
 		{"slash", "a/b", "must not contain '/'"},
 		{"control", "a\x01b", "must not contain control characters"},
 		{"tab", "tab\there", "must not contain control characters"},
+		{"invalid UTF-8", "a\xffb", "must be valid UTF-8"},
+		{"truncated rune", "\xc3", "must be valid UTF-8"},
+		{"non-ASCII", "\u00c9mile", ""},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
