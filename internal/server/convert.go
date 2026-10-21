@@ -37,3 +37,11 @@ func toGenMessage(m bus.Message) gen.Message {
 	}
 	return out
 }
+
+// optStr is nil for "": an optional member is absent, never null.
+func optStr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}

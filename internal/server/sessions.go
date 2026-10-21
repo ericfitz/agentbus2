@@ -18,9 +18,9 @@ import (
 func (a *api) OpenSession(ctx context.Context, req gen.OpenSessionRequestObject) (gen.OpenSessionResponseObject, error) {
 	var in ab2bus.OpenSessionInput
 	if b := req.Body; b != nil {
-		in.Hint = unptr(b.Hint)
-		in.ResumeToken = unptr(b.ResumeToken)
-		for _, c := range unptr(b.Cursors) {
+		in.Hint = derefOr(b.Hint)
+		in.ResumeToken = derefOr(b.ResumeToken)
+		for _, c := range derefOr(b.Cursors) {
 			in.Cursors = append(in.Cursors, ab2bus.OfferedCursor{Channel: c.Channel, Seq: c.Seq})
 		}
 	}
@@ -44,7 +44,7 @@ func (a *api) OpenSession(ctx context.Context, req gen.OpenSessionRequestObject)
 }
 
 func (a *api) CloseSession(ctx context.Context, req gen.CloseSessionRequestObject) (gen.CloseSessionResponseObject, error) {
-	in := ab2bus.CloseSessionInput{Session: req.Session, IdempotencyKey: unptr(req.Params.IdempotencyKey)}
+	in := ab2bus.CloseSessionInput{Session: req.Session, IdempotencyKey: derefOr(req.Params.IdempotencyKey)}
 	if err := a.sessions.Close(ctx, IdentityFrom(ctx), in); err != nil {
 		return nil, err
 	}
@@ -54,10 +54,10 @@ func (a *api) CloseSession(ctx context.Context, req gen.CloseSessionRequestObjec
 func (a *api) Receive(ctx context.Context, req gen.ReceiveRequestObject) (gen.ReceiveResponseObject, error) {
 	in := ab2bus.ReceiveInput{Session: req.Session}
 	if b := req.Body; b != nil {
-		in.Ack = unptr(b.Ack)
-		in.Count = unptr(b.Count) // absent is 0; the core defaults it
-		in.Channels = unptr(b.Channels)
-		in.IncludeOwn = unptr(b.IncludeOwn)
+		in.Ack = derefOr(b.Ack)
+		in.Count = derefOr(b.Count) // absent is 0; the core defaults it
+		in.Channels = derefOr(b.Channels)
+		in.IncludeOwn = derefOr(b.IncludeOwn)
 	}
 	r, err := a.delivery.Receive(ctx, IdentityFrom(ctx), in)
 	if err != nil {
@@ -73,7 +73,7 @@ func (a *api) Receive(ctx context.Context, req gen.ReceiveRequestObject) (gen.Re
 		out.Gaps = append(out.Gaps, gen.Gap{Channel: g.Channel, From: g.From, To: g.To})
 	}
 	for _, m := range r.Messages {
-		out.Messages = append(out.Messages, receiveMessage(m))
+		out.Messages = append(out.Messages, toGenMessage(m))
 	}
 	return gen.Receive200JSONResponse(out), nil
 }
@@ -81,8 +81,8 @@ func (a *api) Receive(ctx context.Context, req gen.ReceiveRequestObject) (gen.Re
 func (a *api) Watch(ctx context.Context, req gen.WatchRequestObject) (gen.WatchResponseObject, error) {
 	in := ab2bus.WatchInput{
 		Session:    req.Session,
-		After:      unptr(req.Params.After),
-		IncludeOwn: unptr(req.Params.IncludeOwn),
+		After:      derefOr(req.Params.After),
+		IncludeOwn: derefOr(req.Params.IncludeOwn),
 	}
 	if t := req.Params.Timeout; t != nil {
 		d, err := watchTimeout(float64(*t))
@@ -141,41 +141,4 @@ func watchTimeout(seconds float64) (time.Duration, error) {
 		return time.Duration(math.MinInt64), nil
 	}
 	return time.Duration(ns), nil
-}
-
-// unptr is the pointed-to value, the zero value for nil.
-func unptr[T any](p *T) T {
-	var z T
-	if p == nil {
-		return z
-	}
-	return *p
-}
-
-// optStr is nil for "": an optional member is absent, never null.
-func optStr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
-// receiveMessage converts a delivered message to the wire shape.
-func receiveMessage(m ab2bus.Message) gen.Message {
-	out := gen.Message{
-		Seq: m.Seq, Channel: m.Channel, Sender: m.Sender, Display: m.Display,
-		CreatedAt: m.CreatedAt, Type: m.Type, Subject: m.Subject, Content: m.Content,
-		ReplyTo: m.ReplyTo, MemoryId: m.MemoryID, Revision: m.Revision,
-		Session: optStr(m.Session),
-	}
-	if m.Metadata != nil {
-		out.Metadata = &m.Metadata
-	}
-	if m.Tags != nil {
-		out.Tags = &m.Tags
-	}
-	if m.MatchedTags != nil {
-		out.MatchedTags = &m.MatchedTags
-	}
-	return out
 }
