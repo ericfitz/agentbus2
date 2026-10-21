@@ -16,7 +16,7 @@ test:        ## Unit tests: every package except internal/conformance (no Docker
 	go test $(PKGS_UNIT)
 test-race:   ## Every package under the race detector, suites included (needs Postgres like verify)
 	go test -race -count=1 ./...
-tidy-check:  ## go.mod and go.sum are tidy (CI step; not in verify, pending Eric)
+tidy-check:  ## go.mod and go.sum are tidy (part of verify; CI also runs it as its own step)
 	go mod tidy -diff
 generate:    ## Regenerate internal/gen from api/openapi.yaml with the pinned oapi-codegen
 	go tool oapi-codegen -config api/oapi-codegen.yaml api/openapi.yaml
@@ -31,12 +31,13 @@ check-gates:  ## Prove the negative halves: an unreachable Postgres fails the su
 	bash scripts/check-gates.sh
 check-gates-selftest:  ## Prove the gate scripts fire: one mutation per check in a throwaway worktree of HEAD (minutes; its own CI job, not part of verify)
 	bash scripts/check-gates-selftest.sh
-verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, generated-code freshness, unit tests, conformance suites on both engines, gate checks
+verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, tidy go.mod, generated-code freshness, unit tests, conformance suites on both engines, gate checks
 	$(MAKE) build
 	$(MAKE) build-all
 	$(MAKE) vet
 	$(MAKE) fmt-check
 	$(MAKE) lint
+	$(MAKE) tidy-check
 	$(MAKE) generate-check
 	$(MAKE) test
 	$(MAKE) test-conformance
