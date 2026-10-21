@@ -30,6 +30,8 @@ type Store interface {
 	// ErrReadOnly; it is never retried.
 	Read(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error
 	Close() error
+	Locks
+	Space
 }
 
 // Tx is the set of repositories available inside a transaction.

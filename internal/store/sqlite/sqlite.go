@@ -96,6 +96,10 @@ func Open(ctx context.Context, path string, opts Options) (store.Store, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureIncrementalVacuum(ctx, db); err != nil {
+		_ = s.Close()
+		return nil, fmt.Errorf("sqlite: auto_vacuum: %w", err)
+	}
 	return s, nil
 }
 

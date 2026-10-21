@@ -2,6 +2,7 @@ package sqlstore
 
 import (
 	"context"
+	"database/sql"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -33,6 +34,16 @@ type Dialect interface {
 	TextSearch(q search.Query) (cond string, args []any, err error)
 	// NotifyAppend is the Milestone 7 hook; a no-op now.
 	NotifyAppend(ctx context.Context, tx *sqlx.Tx, channelID int64, seq int64) error
+	// Usage and Reclaim back store.Space.
+	Usage(ctx context.Context, db *sqlx.DB) (store.Usage, error)
+	Reclaim(ctx context.Context, db *sqlx.DB) error
+}
+
+// Locker is the optional Postgres form of Locks. A dialect that implements
+// it holds the lock on conn; one that does not gets the leases row.
+type Locker interface {
+	TryLock(ctx context.Context, conn *sql.Conn, name string) (bool, error)
+	Unlock(ctx context.Context, conn *sql.Conn) error
 }
 
 // Backoffer is an optional Dialect extension: the wait before retry

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -16,6 +17,10 @@ type Store struct {
 	db       *sqlx.DB
 	d        Dialect
 	attempts int
+
+	mu    sync.Mutex
+	held  map[string]string    // lock name -> owner this Store holds
+	conns map[string]*sql.Conn // Locker dialects: the pinned connection per name
 }
 
 var _ store.Store = (*Store)(nil)
@@ -26,8 +31,11 @@ func (s *Store) Engine() store.Engine { return s.d.Name() }
 // Attempts is the effective TxAttempts (tests).
 func (s *Store) Attempts() int { return s.attempts }
 
-// Close closes the database.
-func (s *Store) Close() error { return s.db.Close() }
+// Close releases every lock this Store holds, then closes the database.
+func (s *Store) Close() error {
+	s.releaseAll()
+	return s.db.Close()
+}
 
 type kind int
 
