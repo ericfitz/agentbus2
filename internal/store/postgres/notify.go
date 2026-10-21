@@ -19,7 +19,8 @@ const channelExpr = "'agentbus2_' || left(encode(sha256(convert_to(current_schem
 const ChannelQuery = "SELECT " + channelExpr
 
 // EncodePayload is the NOTIFY payload "<channelID>:<seq>"; (0, 0) is the
-// control payload (a watch registration or an ACL change).
+// control payload (a watch registration; an ACL change sends none, so another
+// replica's watcher sees it at the next hint or its own timeout).
 func EncodePayload(channelID, seq int64) string {
 	return strconv.FormatInt(channelID, 10) + ":" + strconv.FormatInt(seq, 10)
 }

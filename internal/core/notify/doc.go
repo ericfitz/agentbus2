@@ -2,7 +2,8 @@
 // from writers to watchers. It is a leaf package (core imports it, never the
 // reverse) with no store import. Memory fans out in process; Polling is the
 // local multi-process form, ticking at an interval and ignoring Publish
-// (v1 internal/bus/wait.go WaitPollInterval). Postgres NOTIFY is Milestone 7.
+// (v1 internal/bus/wait.go WaitPollInterval). The Postgres NOTIFY listener is
+// the subpackage pgnotify.
 package notify
 
 // Hint says something may have changed. Seq 0 marks a non-message hint (a
