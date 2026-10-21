@@ -14,6 +14,7 @@ type Locks interface {
 	// TryLock takes or renews the named lock for owner. ErrInvalid on a name
 	// or owner failing TextRule; (false, nil) when another owner holds it.
 	TryLock(ctx context.Context, name, owner string, now, until int64) (held bool, err error)
-	// Unlock releases the lock; a no-op (nil) when owner does not hold it.
+	// Unlock releases the lock; a no-op (nil) unless this Store holds it for
+	// owner (another handle's lock under the same owner is left alone).
 	Unlock(ctx context.Context, name, owner string) error
 }
