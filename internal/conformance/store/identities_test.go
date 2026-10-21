@@ -404,5 +404,10 @@ func TestIdentityLookupsOfNonUTF8Name(t *testing.T) {
 		if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error { return tx.PutPublicKey(ctx, k) }); !errors.Is(err, ab2store.ErrNotFound) {
 			t.Errorf("PutPublicKey(identity %q) err = %v, want ErrNotFound", bad, err)
 		}
+		// Validation of the key still comes before the identity's existence.
+		k.Algorithm = "RS256"
+		if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error { return tx.PutPublicKey(ctx, k) }); !errors.Is(err, ab2store.ErrInvalid) {
+			t.Errorf("PutPublicKey(identity %q, RS256) err = %v, want ErrInvalid", bad, err)
+		}
 	})
 }

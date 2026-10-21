@@ -25,6 +25,7 @@ func TestValidateEntry(t *testing.T) {
 		"unknown among valid": {"pat", []Permission{PermRead, "owner"}},
 		"slash identity":      {"a/b", []Permission{PermRead}},
 		"empty identity":      {"", []Permission{PermRead}},
+		"non-UTF-8 identity":  {"p\xff", []Permission{PermRead}},
 	}
 	for name, e := range bad {
 		t.Run(name, func(t *testing.T) {

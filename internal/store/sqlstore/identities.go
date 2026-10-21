@@ -124,9 +124,6 @@ func (t *tx) AdvanceTagAckedMark(ctx context.Context, name string, seq int64) er
 // DER); the foreign key maps an unknown identity to ErrNotFound, as does an
 // identity failing TextRule (no such identity can exist).
 func (t *tx) PutPublicKey(ctx context.Context, k store.PublicKey) error {
-	if err := t.unknownName(k.Identity); err != nil {
-		return err
-	}
 	if k.Algorithm != "EdDSA" && k.Algorithm != "ES256" {
 		return fmt.Errorf("%w: unknown public key algorithm %q (want EdDSA or ES256)", store.ErrInvalid, k.Algorithm)
 	}
@@ -138,6 +135,9 @@ func (t *tx) PutPublicKey(ctx context.Context, k store.PublicKey) error {
 	}
 	if len(k.Key) == 0 {
 		return fmt.Errorf("%w: public key %q has no key bytes (want PKIX DER)", store.ErrInvalid, k.KID)
+	}
+	if err := t.unknownName(k.Identity); err != nil {
+		return err
 	}
 	_, err := t.execW(ctx, `INSERT INTO identity_keys (identity, kid, algorithm, public_key, created_at) VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (identity, kid) DO UPDATE SET algorithm = excluded.algorithm, public_key = excluded.public_key, created_at = excluded.created_at`,
