@@ -9,3 +9,6 @@ HANDOFF.md
 /docs/superpowers/specs/2026-10-19-codegen-spike/*/probes/
 /docs/superpowers/specs/2026-10-19-codegen-spike/logs/
 /docs/superpowers/specs/2026-10-19-codegen-spike/last-run-summary.log
+
+# Agent worktrees created by Claude Code workflows
+/.claude/worktrees/
