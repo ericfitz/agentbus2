@@ -9,7 +9,8 @@ import (
 )
 
 // Sessions, receive, watch and identities. Session ids go to the generated
-// client as given (choice 17, Decision 80).
+// client as given (choice 17, Decision 80), with one exception: Close refuses
+// an empty session id itself (see Close).
 
 func (b *Bus) Open(ctx context.Context, in ab2bus.OpenSessionInput) (ab2bus.Session, error) {
 	body := gen.OpenSessionJSONRequestBody{Hint: strPtr(in.Hint), ResumeToken: strPtr(in.ResumeToken)}
@@ -44,7 +45,20 @@ func (b *Bus) Open(ctx context.Context, in ab2bus.OpenSessionInput) (ab2bus.Sess
 	return out, nil
 }
 
+// Close ends the caller's session. An empty session id is answered locally
+// with validation and no request is sent: core sessions.Close says
+// "session is required" (validation) for it, while on the wire the empty
+// segment of DELETE /v1/sessions/ is the validator router's 404 not_found, so
+// without this guard the two transports would answer differently. This is the
+// plan's empty-name contingency, the only client-side rule in this package and
+// a departure from Decision 80 (the rules stay in the core).
+// pending Eric: Milestone 4 item 6 (A: keep the guard; B: core answers
+// not_found for an empty session id, as Receive and Watch do through Require,
+// and the guard goes).
 func (b *Bus) Close(ctx context.Context, in ab2bus.CloseSessionInput) error {
+	if in.Session == "" {
+		return ab2bus.Errorf(ab2bus.CodeValidation, false, "session is required")
+	}
 	r, err := b.c.CloseSessionWithResponse(ctx, in.Session, &gen.CloseSessionParams{IdempotencyKey: key(in.IdempotencyKey)})
 	if err != nil {
 		return errorOf(ctx, 0, nil, nil, err)
