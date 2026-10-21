@@ -117,6 +117,10 @@ func malformedCause(what string, cause error) error {
 	return fmt.Errorf("%w: %s: %w", ErrMalformed, what, cause)
 }
 
+// MaxJTIBytes bounds the jti claim; store.MaxJTIBytes is the same bound on
+// the replay row.
+const MaxJTIBytes = 256
+
 // Parse checks the algorithm allowlist and the claim shape; it does not verify
 // the signature. Use Verify with the key stored under KID.
 func Parse(raw string) (Parsed, error) {
@@ -151,6 +155,8 @@ func Parse(raw string) (Parsed, error) {
 		return Parsed{}, malformed("kid header is required")
 	case c.ID == "":
 		return Parsed{}, malformed("jti is required")
+	case len(c.ID) > MaxJTIBytes:
+		return Parsed{}, malformed("jti is %d bytes, at most %d", len(c.ID), MaxJTIBytes)
 	case c.Expiry == nil:
 		return Parsed{}, malformed("exp is required")
 	}

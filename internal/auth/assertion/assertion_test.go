@@ -215,6 +215,7 @@ func TestParseRefusesClaimShapes(t *testing.T) {
 		"no kid":   custom(t, k, "", goodClaims(), nil),
 		"no jti":   custom(t, k, kid, mut(func(c *jwt.Claims) { c.ID = "" }), nil),
 		"no exp":   custom(t, k, kid, mut(func(c *jwt.Claims) { c.Expiry = nil }), nil),
+		"long jti": custom(t, k, kid, mut(func(c *jwt.Claims) { c.ID = strings.Repeat("j", MaxJTIBytes+1) }), nil),
 	}
 	for name, raw := range cases {
 		if _, err := Parse(raw); !errors.Is(err, ErrMalformed) {

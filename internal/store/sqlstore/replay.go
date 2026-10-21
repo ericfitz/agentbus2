@@ -17,6 +17,9 @@ func (t *tx) PutAssertionJTI(ctx context.Context, jti string, expiresAt int64) e
 	if jti == "" {
 		return fmt.Errorf("%w: assertion jti must not be empty", store.ErrInvalid)
 	}
+	if len(jti) > store.MaxJTIBytes {
+		return fmt.Errorf("%w: assertion jti is %d bytes, at most %d", store.ErrInvalid, len(jti), store.MaxJTIBytes)
+	}
 	if err := checkText("assertion", "jti", jti); err != nil {
 		return err
 	}

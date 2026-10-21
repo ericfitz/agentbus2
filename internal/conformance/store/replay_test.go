@@ -2,7 +2,10 @@ package store
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/base64"
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -10,6 +13,17 @@ import (
 	ab2store "github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
 )
+
+// randomJTI is n bytes of random base64: incompressible, so Postgres stores
+// it as is.
+func randomJTI(t *testing.T, n int) string {
+	t.Helper()
+	b := make([]byte, n*3/4)
+	if _, err := rand.Read(b); err != nil {
+		t.Fatal(err)
+	}
+	return base64.RawURLEncoding.EncodeToString(b)
+}
 
 func putJTI(s ab2store.Store, jti string, exp int64) error {
 	return s.Tx(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
@@ -45,6 +59,9 @@ func TestReplayPutAndConflict(t *testing.T) {
 		if err := putJTI(s, "b", 1000); err != nil {
 			t.Errorf("other jti: %v", err)
 		}
+		if err := putJTI(s, strings.Repeat("k", ab2store.MaxJTIBytes), 1000); err != nil {
+			t.Errorf("jti of MaxJTIBytes: %v", err)
+		}
 		for name, c := range map[string]struct {
 			jti string
 			exp int64
@@ -54,6 +71,8 @@ func TestReplayPutAndConflict(t *testing.T) {
 			"negative":      {"c", -5},
 			"NUL in jti":    {"a\x00b", 1000},
 			"invalid UTF-8": {"\xff", 1000},
+			"long jti":      {strings.Repeat("j", ab2store.MaxJTIBytes+1), 1000},
+			"random 4 KiB":  {randomJTI(t, 4096), 1000}, // past the Postgres btree entry limit
 		} {
 			if err := putJTI(s, c.jti, c.exp); !errors.Is(err, ab2store.ErrInvalid) {
 				t.Errorf("%s: %v, want ErrInvalid", name, err)
