@@ -363,3 +363,65 @@ func TestCacheNameRule(t *testing.T) {
 		t.Errorf("Remove of an absent entry: %v", err)
 	}
 }
+
+func TestSourceCacheBoundToServer(t *testing.T) {
+	a, b := newFakeServer(t), newFakeServer(t)
+	b.key = a.key // the same credential registered on both servers
+	cache := Cache{Dir: t.TempDir()}
+	if tok, err := a.source(t, cache, t0).Token(t.Context()); err != nil || tok != "t1" {
+		t.Fatalf("%q %v", tok, err)
+	}
+	// The profile now points at b: a's bearer and discovery are not used.
+	if _, err := b.source(t, cache, t0).Token(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if n := b.exchanges.Load(); n != 1 {
+		t.Errorf("%d exchanges at the new server, want 1 (the old server's bearer was reused)", n)
+	}
+	if n := b.discoveries.Load(); n != 1 {
+		t.Errorf("%d discoveries at the new server, want 1", n)
+	}
+	e, ok, err := cache.Load("pat")
+	if err != nil || !ok || e.Server != b.srv.URL {
+		t.Errorf("entry %+v %v %v", e, ok, err)
+	}
+}
+
+func TestSourceProcessInput(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("bash fake process")
+	}
+	f := newFakeServer(t)
+	f.mu.Lock()
+	f.advertised = "http://0.0.0.0:1/v1/auth/token"
+	f.mu.Unlock()
+	capDir := t.TempDir()
+	t.Setenv("CREDPROC_MODE", "token")
+	t.Setenv("CREDPROC_TOKEN", "from-vault")
+	t.Setenv("CREDPROC_EXPIRES", t0.Add(time.Hour).Format(time.RFC3339))
+	jtis := map[string]bool{}
+	for i := 0; i < 2; i++ {
+		capFile := filepath.Join(capDir, fmt.Sprint(i))
+		t.Setenv("CREDPROC_CAPTURE", capFile)
+		s := f.source(t, Cache{}, t0)
+		s.Signer, s.Process = nil, []string{"bash", filepath.Join("testdata", "credproc.sh")}
+		if _, err := s.Token(t.Context()); err != nil {
+			t.Fatal(err)
+		}
+		b, _ := os.ReadFile(capFile)
+		var in ProcessInput
+		if err := json.Unmarshal(b, &in); err != nil {
+			t.Fatalf("stdin %q: %v", b, err)
+		}
+		if in.Version != 1 || in.Identity != "pat" || in.TokenEndpoint != "http://0.0.0.0:1/v1/auth/token" || in.Audience != in.TokenEndpoint {
+			t.Errorf("stdin %s", b)
+		}
+		if len(in.JTI) != 22 {
+			t.Errorf("jti %q, want 22 characters", in.JTI)
+		}
+		jtis[in.JTI] = true
+	}
+	if len(jtis) != 2 {
+		t.Errorf("the jti was reused across runs: %v", jtis)
+	}
+}

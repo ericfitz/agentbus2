@@ -28,8 +28,11 @@ const Skew = 60 * time.Second
 // atomically. A zero Dir disables the cache.
 type Cache struct{ Dir string }
 
-// Entry is one cached bearer.
+// Entry is one cached bearer. Server is the server it was minted for: an
+// entry for another server is a miss, so a profile pointed elsewhere never
+// sends the old server's bearer to the new one.
 type Entry struct {
+	Server      string    `json:"server"`
 	AccessToken string    `json:"access_token"`
 	ExpiresAt   time.Time `json:"expires_at"`
 	Discovery   Discovery `json:"discovery"`
@@ -125,7 +128,7 @@ func (s *Source) Token(ctx context.Context) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	// A cache that cannot be read is a miss: the refresh rewrites it.
-	if e, ok, err := s.Cache.Load(s.Identity); err == nil && ok {
+	if e, ok, err := s.Cache.Load(s.Identity); err == nil && ok && e.Server == s.Server {
 		if s.disc == nil && e.Discovery.TokenEndpoint != "" {
 			d := e.Discovery
 			s.disc = &d
@@ -148,7 +151,7 @@ func (s *Source) discovery(ctx context.Context) (Discovery, error) {
 	if s.disc != nil {
 		return *s.disc, nil
 	}
-	if e, ok, err := s.Cache.Load(s.Identity); err == nil && ok && e.Discovery.TokenEndpoint != "" {
+	if e, ok, err := s.Cache.Load(s.Identity); err == nil && ok && e.Server == s.Server && e.Discovery.TokenEndpoint != "" {
 		d := e.Discovery
 		s.disc = &d
 		return d, nil
@@ -194,7 +197,7 @@ func (s *Source) refresh(ctx context.Context) (string, error) {
 		switch {
 		case out.AccessToken != "":
 			exp, _ := time.Parse(time.RFC3339, out.ExpiresAt) // RunProcess checked it
-			if err := s.Cache.Save(s.Identity, Entry{AccessToken: out.AccessToken, ExpiresAt: exp, Discovery: d}); err != nil {
+			if err := s.Cache.Save(s.Identity, Entry{Server: s.Server, AccessToken: out.AccessToken, ExpiresAt: exp, Discovery: d}); err != nil {
 				return "", err
 			}
 			return out.AccessToken, nil
@@ -225,7 +228,7 @@ func (s *Source) refresh(ctx context.Context) (string, error) {
 	if at.Token == "" || at.ExpiresIn <= 0 {
 		return "", errors.New("credential: the token endpoint returned no usable access token")
 	}
-	if err := s.Cache.Save(s.Identity, Entry{AccessToken: at.Token, ExpiresAt: s.now().Add(at.ExpiresIn), Discovery: d}); err != nil {
+	if err := s.Cache.Save(s.Identity, Entry{Server: s.Server, AccessToken: at.Token, ExpiresAt: s.now().Add(at.ExpiresIn), Discovery: d}); err != nil {
 		return "", err
 	}
 	return at.Token, nil

@@ -104,3 +104,41 @@ func TestTransportPassesOtherStatuses(t *testing.T) {
 		}
 	}
 }
+
+// onceReader is a body that cannot be rewound: no GetBody, and a second read
+// returns nothing.
+type onceReader struct{ r io.Reader }
+
+func (o *onceReader) Read(p []byte) (int, error) { return o.r.Read(p) }
+func (o *onceReader) Close() error               { return nil }
+
+func TestTransportReplaysNonRewindableBody(t *testing.T) {
+	f := newFakeServer(t)
+	body := bytes.Repeat([]byte("fedcba9876543210"), 64)
+	f.accept = func(tok string, got []byte) bool { return tok == "t2" && bytes.Equal(got, body) }
+	s := f.source(t, Cache{Dir: t.TempDir()}, t0)
+	tok, err := s.Token(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, f.srv.URL+"/v1/echo", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Body = &onceReader{r: bytes.NewReader(body)}
+	req.ContentLength = int64(len(body))
+	req.GetBody = nil
+	req.Header.Set("Authorization", "Bearer "+tok)
+	resp, err := Transport(nil, s).RoundTrip(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+	got, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != http.StatusOK || !bytes.Equal(got, body) {
+		t.Fatalf("status %d, body %d bytes", resp.StatusCode, len(got))
+	}
+	if n := f.echoes.Load(); n != 2 {
+		t.Errorf("%d requests, want 2", n)
+	}
+}

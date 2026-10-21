@@ -77,7 +77,7 @@ func TestProcessEachResult(t *testing.T) {
 func TestProcessRejects(t *testing.T) {
 	t.Setenv("CREDPROC_TOKEN", "tok")
 	t.Setenv("CREDPROC_EXPIRES", "tomorrow")
-	for _, mode := range []string{"two", "none", "garbage", "exit1", "version2", "unknown", "trailing", "big", "token-no-expiry", "token", "nosuchmode"} {
+	for _, mode := range []string{"two", "none", "garbage", "exit1", "version2", "unknown", "casefold", "dup", "trailing", "big", "token-no-expiry", "token", "nosuchmode"} {
 		t.Run(mode, func(t *testing.T) {
 			argv := procArgv(t, mode)
 			_, err := RunProcess(context.Background(), argv, in())
@@ -89,6 +89,9 @@ func TestProcessRejects(t *testing.T) {
 			}
 			if mode == "exit1" && !strings.Contains(err.Error(), "vault unreachable") {
 				t.Errorf("stderr not quoted: %v", err)
+			}
+			if mode == "big" && !strings.Contains(err.Error(), "larger than 65536 bytes") {
+				t.Errorf("output limit: %v", err)
 			}
 			if mode == "two" && !strings.Contains(err.Error(), "exactly one of private_key_pem, client_assertion or access_token") {
 				t.Errorf("message: %v", err)

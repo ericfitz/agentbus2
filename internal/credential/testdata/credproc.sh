@@ -25,6 +25,8 @@ none) printf '{"version":1}\n' ;;
 garbage) echo 'not json' ;;
 version2) printf '{"version":2,"client_assertion":"a"}\n' ;;
 unknown) printf '{"version":1,"client_assertion":"a","extra":1}\n' ;;
+casefold) printf '{"version":1,"Client_Assertion":"a"}\n' ;;
+dup) printf '{"version":1,"client_assertion":"a","client_assertion":"b"}\n' ;;
 trailing) printf '{"version":1,"client_assertion":"a"}{}\n' ;;
 big) head -c 70000 /dev/zero | tr '\0' 'a'; echo ;;
 exit1)

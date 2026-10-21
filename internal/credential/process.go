@@ -58,6 +58,39 @@ func (w *capWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
+// outputMembers are the member names of ProcessOutput, matched exactly.
+var outputMembers = map[string]bool{"version": true, "private_key_pem": true, "client_assertion": true, "access_token": true, "expires_at": true}
+
+// checkMembers refuses what encoding/json would accept silently: a member
+// name that matches ProcessOutput only case-insensitively and a repeated
+// member (the last one would win).
+func checkMembers(b []byte) error {
+	dec := json.NewDecoder(bytes.NewReader(b))
+	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
+		return errors.New("not a JSON object")
+	}
+	seen := map[string]bool{}
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return err
+		}
+		k, _ := t.(string)
+		if !outputMembers[k] {
+			return fmt.Errorf("unknown member %q", k)
+		}
+		if seen[k] {
+			return fmt.Errorf("member %q repeated", k)
+		}
+		seen[k] = true
+		var v json.RawMessage
+		if err := dec.Decode(&v); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // RunProcess runs argv without a shell, writes in as JSON to its stdin and
 // decodes its stdout strictly. Every error names argv[0]; none quotes stdout
 // (it may hold a secret). Stderr is quoted, truncated.
@@ -97,6 +130,9 @@ func RunProcess(ctx context.Context, argv []string, in ProcessInput) (ProcessOut
 	}
 	if out.buf.Len() == 0 {
 		return fail("no output")
+	}
+	if err := checkMembers(out.buf.Bytes()); err != nil {
+		return fail("output is not the expected JSON object: %v", err)
 	}
 	dec := json.NewDecoder(&out.buf)
 	dec.DisallowUnknownFields()
