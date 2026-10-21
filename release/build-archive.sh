@@ -111,22 +111,47 @@ self_test() {
         echo "FAIL native-build: exit $rc: $out"
         SELF_FAIL=$((SELF_FAIL + 1))
       fi
-      if [[ "$hostos" == linux ]]; then
-        listing="$(tar -tzf "$tmp/native/agentbus2-v0.0.7-linux-${hostarch}.tar.gz" 2>&1)" || true
-        if [[ "$listing" == "agentbus2" ]]; then
-          echo "PASS linux-tar-lists-binary"
-          SELF_PASS=$((SELF_PASS + 1))
-        else
-          echo "FAIL linux-tar-lists-binary: $listing"
-          SELF_FAIL=$((SELF_FAIL + 1))
-        fi
-      fi
       ;;
     *)
       echo "FAIL native-build: unsupported host $hostos/$hostarch"
       SELF_FAIL=$((SELF_FAIL + 1))
       ;;
   esac
+
+  # The linux tarball on any host: the native one on Linux, else a cross
+  # build (not run here, so only the packaging is judged).
+  local tarball tardir="$tmp/native" tararch="$hostarch"
+  if [[ "$hostos" != linux ]]; then
+    tardir="$tmp/linux"
+    tararch=amd64
+    rc=0
+    out="$(bash "$SELF" v0.0.7 linux amd64 "$tardir" 2>&1)" || rc=$?
+    if [[ "$rc" == 0 && "$out" == *"note: not run (host is $hostos/$hostarch)"* ]]; then
+      echo "PASS linux-cross-build"
+      SELF_PASS=$((SELF_PASS + 1))
+    else
+      echo "FAIL linux-cross-build: exit $rc: $out"
+      SELF_FAIL=$((SELF_FAIL + 1))
+    fi
+  fi
+  tarball="$tardir/agentbus2-v0.0.7-linux-${tararch}.tar.gz"
+  listing="$(tar -tzf "$tarball" 2>&1)" || true
+  if [[ "$listing" == "agentbus2" ]]; then
+    echo "PASS linux-tar-lists-binary"
+    SELF_PASS=$((SELF_PASS + 1))
+  else
+    echo "FAIL linux-tar-lists-binary: $listing"
+    SELF_FAIL=$((SELF_FAIL + 1))
+  fi
+  # The packed binary is the one built, and executable.
+  if [[ -f "$tarball" ]] && tar -xzOf "$tarball" agentbus2 | cmp -s - "$tardir/agentbus2" \
+    && [[ "$(tar -tvzf "$tarball" | cut -c1-10)" == -rwx* ]]; then
+    echo "PASS linux-tar-holds-the-binary"
+    SELF_PASS=$((SELF_PASS + 1))
+  else
+    echo "FAIL linux-tar-holds-the-binary: $tarball"
+    SELF_FAIL=$((SELF_FAIL + 1))
+  fi
 
   if ((SELF_FAIL > 0)); then
     echo "build-archive self-test: $SELF_FAIL failed, $SELF_PASS passed" >&2
