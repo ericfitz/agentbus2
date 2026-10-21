@@ -289,7 +289,7 @@ func TestTaskAbandonedByLease(t *testing.T) {
 }
 
 func TestTaskAbandonedByDeadOwner(t *testing.T) {
-	// pending Eric: Milestone 3 item 13: owner liveness is a live session row.
+	// Decision (Eric, 2026-10-21): Milestone 3 item 13: owner liveness is a live session row.
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
 		ctx := context.Background()

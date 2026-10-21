@@ -17,11 +17,11 @@ func leaseExpired(t task, now int64) bool {
 
 // abandonedSet reports which of ts are abandoned at now: in_progress with an
 // expired lease, or with an owner that has no live session (a row with
-// ClosedAt == 0 and LeaseExpiresAt plus the skew not before now; pending Eric:
-// Milestone 3 item 13). An in_progress task with an empty owner (possible only
-// from a corrupt write) is abandoned: an empty identity never has a session,
-// and ListSessions("") would list every identity's. Sessions are read once per
-// distinct owner.
+// ClosedAt == 0 and LeaseExpiresAt plus the skew not before now;
+// Decision (Eric, 2026-10-21): Milestone 3 item 13). An in_progress task
+// with an empty owner (possible only from a corrupt write) is abandoned: an
+// empty identity never has a session, and ListSessions("") would list every
+// identity's. Sessions are read once per distinct owner.
 func (s Service) abandonedSet(ctx context.Context, tx store.Tx, ts []task, now int64) (map[int64]bool, error) {
 	out := map[int64]bool{}
 	alive := map[string]bool{}

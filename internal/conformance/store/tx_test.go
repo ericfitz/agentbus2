@@ -307,7 +307,7 @@ func TestTxSerializationFailureAtCommitIsRetried(t *testing.T) {
 func TestTxGivesUpAfterAttempts(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		s, _, _ := openStore(t, e, sqlstore.Options{})
-		// pending Eric: Gate 0 item 3
+		// Decision (Eric, 2026-10-21): Gate 0 item 3
 		wantDefault := 1
 		if e.Name == "postgres" {
 			wantDefault = 5

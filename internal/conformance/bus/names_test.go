@@ -93,7 +93,7 @@ func TestChannelNameRoundTripsOnTheWire(t *testing.T) {
 				// Send names the channel in the path too, but an empty name is
 				// the core's required-field validation; on the wire the empty
 				// segment would be the router's 404, so the remote Bus answers
-				// validation itself (pending Eric: Milestone 4 item 6).
+				// validation itself (Decision (Eric, 2026-10-21): Milestone 4 item 6).
 				wantSend := ab2bus.CodeNotFound
 				if name == "" {
 					wantSend = ab2bus.CodeValidation

@@ -23,7 +23,7 @@ import (
 )
 
 // TxAttempts is the Decision 69 retry count for serialization failures
-// (choice 5). pending Eric: Gate 0 item 3.
+// (choice 5). Decision (Eric, 2026-10-21): Gate 0 item 3.
 const TxAttempts = 5
 
 const (
@@ -169,7 +169,7 @@ func pgCode(err error) string {
 }
 
 // IsRetryable: SQLSTATE 40001 (serialization_failure, Decision 69) and 40P01
-// (deadlock_detected; pending Eric: Gate 0 item 2).
+// (deadlock_detected; Decision (Eric, 2026-10-21): Gate 0 item 2).
 func (dialect) IsRetryable(err error) bool {
 	switch pgCode(err) {
 	case "40001", "40P01":

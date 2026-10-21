@@ -45,7 +45,7 @@ func (a *api) WellKnown(context.Context, gen.WellKnownRequestObject) (gen.WellKn
 
 // OpenidConfiguration answers GET /.well-known/openid-configuration
 // (Decisions 55, 70, 84, 91). The token and jwks paths arrive in Milestone 5
-// (pending Eric: Milestone 4 item 2) and answer 404 until then.
+// (Decision (Eric, 2026-10-21): Milestone 4 item 2) and answer 404 until then.
 func (a *api) OpenidConfiguration(ctx context.Context, _ gen.OpenidConfigurationRequestObject) (gen.OpenidConfigurationResponseObject, error) {
 	issuer := baseURLFrom(ctx)
 	return gen.OpenidConfiguration200JSONResponse{

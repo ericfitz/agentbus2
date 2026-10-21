@@ -64,7 +64,7 @@ func validToken(token string) bool {
 
 // Require returns the identity's session for a session-scoped call: not_found
 // unless the row belongs to identity, session_closed for a closed row,
-// session_lapsed past the lease plus the skew (pending Eric: Milestone 3 item
+// session_lapsed past the lease plus the skew (Decision (Eric, 2026-10-21): Milestone 3 item
 // 2; Open with the resume token revives it), and otherwise renews the lease.
 func (s Service) Require(ctx context.Context, tx store.Tx, identity, sessionID string) (store.Session, error) {
 	row, err := tx.Session(ctx, sessionID)

@@ -331,7 +331,7 @@ func TestSessionResumeOtherIdentity(t *testing.T) {
 }
 
 func TestSessionLapsedRefusesAndResumes(t *testing.T) {
-	// pending Eric: Milestone 3 item 2
+	// Decision (Eric, 2026-10-21): Milestone 3 item 2
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
 		ctx := context.Background()
@@ -376,7 +376,7 @@ func TestSessionLapsedRefusesAndResumes(t *testing.T) {
 }
 
 func TestSessionDisplayNameUniqueAcrossResumable(t *testing.T) {
-	// pending Eric: Milestone 3 item 11
+	// Decision (Eric, 2026-10-21): Milestone 3 item 11
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
 		ctx := context.Background()
@@ -422,7 +422,7 @@ func TestSessionDisplayNameUniqueAcrossResumable(t *testing.T) {
 }
 
 func TestSessionOpenRetryLeavesLapsedRow(t *testing.T) {
-	// pending Eric: Milestone 3 item 12
+	// Decision (Eric, 2026-10-21): Milestone 3 item 12
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
 		ctx := context.Background()
@@ -537,7 +537,7 @@ func TestSessionIdentitiesListsLive(t *testing.T) {
 // and Watch look the session up and find none (not_found). On the wire the id
 // is an empty path segment, the router's 404, so the remote Bus judges Close
 // itself (as for Send's empty channel); the other two agree without a guard.
-// pending Eric: Milestone 4 item 6
+// Decision (Eric, 2026-10-21): Milestone 4 item 6
 func TestEmptySessionIDAgreesAcrossTransports(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})

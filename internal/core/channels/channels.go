@@ -96,7 +96,7 @@ func protected(ch store.Channel, what string) error {
 
 // Delete removes a channel; its ACL, subscriptions, cursors and messages go
 // with it (Decision 89; no live-subscriber refusal, pending item 7).
-// general is refused for everyone (pending Eric: Milestone 3 item 6).
+// general is refused for everyone (Decision (Eric, 2026-10-21): Milestone 3 item 6).
 func (s Service) Delete(ctx context.Context, identity string, in bus.DeleteChannelInput) error {
 	payload := struct{ Op, Name string }{"delete_channel", in.Name}
 	var res struct{}

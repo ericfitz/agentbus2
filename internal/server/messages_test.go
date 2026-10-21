@@ -42,7 +42,7 @@ func hist(t *testing.T, c *gen.ClientWithResponses, p *gen.HistoryParams) *gen.H
 	return resp
 }
 
-func TestSendIdempotencyWire(t *testing.T) { // pending Eric: Milestone 4 item 1
+func TestSendIdempotencyWire(t *testing.T) { // Decision (Eric, 2026-10-21): Milestone 4 item 1
 	e := msgEnv(t, envOptions{})
 	c := e.client("pat")
 	k := "key-1"

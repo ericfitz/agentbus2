@@ -62,7 +62,7 @@ func TestCapabilitiesComputed(t *testing.T) {
 	}
 }
 
-// pending Eric: Milestone 4 item 2
+// Decision (Eric, 2026-10-21): Milestone 4 item 2
 func TestOpenIDConfigurationNamesMilestone5Paths(t *testing.T) {
 	e := newEnv(t, envOptions{})
 	r, err := e.client("").OpenidConfigurationWithResponse(context.Background())

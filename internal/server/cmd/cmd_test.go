@@ -73,7 +73,7 @@ func runServer(t *testing.T, args ...string) (addr string, cancel context.Cancel
 	return
 }
 
-// pending Eric: Milestone 4 item 3 (interim flags until Decision 85).
+// Decision (Eric, 2026-10-21): Milestone 4 item 3 (interim flags until Decision 85).
 func TestRunFlags(t *testing.T) {
 	tmp := filepath.Join(t.TempDir(), "ab2.db")
 	cases := []struct {

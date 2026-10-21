@@ -27,8 +27,8 @@ const (
 )
 
 type Identities interface {
-	// CreateIdentity: ErrInvalid (NameRule, reserved name; pending Eric:
-	// Gate 0 item 1), ErrConflict.
+	// CreateIdentity: ErrInvalid (NameRule, reserved name;
+	// Decision (Eric, 2026-10-21): Gate 0 item 1), ErrConflict.
 	CreateIdentity(ctx context.Context, name string, now int64) error
 	Identity(ctx context.Context, name string) (Identity, error) // ErrNotFound
 	ListIdentities(ctx context.Context) ([]Identity, error)      // by name, in byte order

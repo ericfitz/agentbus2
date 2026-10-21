@@ -181,7 +181,7 @@ func TestReceiveAckSurvivesRename(t *testing.T) {
 }
 
 func TestReceiveExcludesOwnSessionOnly(t *testing.T) {
-	// pending Eric: Milestone 3 item 1
+	// Decision (Eric, 2026-10-21): Milestone 3 item 1
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
 		h.channel("dev", ab2store.KindOrdinary, "pat", nil)

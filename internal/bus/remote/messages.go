@@ -13,8 +13,7 @@ import (
 // validation for it, while the wire's empty path segment is the router's 404
 // not_found, so the request is not sent (the plan's empty-name contingency, a
 // Decision 80 departure limited to the empty name).
-// pending Eric: Milestone 4 item 6 (A: keep the guard; B: core answers
-// not_found for an empty channel and the guard goes).
+// Decision (Eric, 2026-10-21): Milestone 4 item 6 (option A: keep the guard).
 func (b *Bus) Send(ctx context.Context, in ab2bus.SendInput) (ab2bus.SendResult, error) {
 	if in.Channel == "" {
 		return ab2bus.SendResult{}, ab2bus.Errorf(ab2bus.CodeValidation, false, "channel is required")

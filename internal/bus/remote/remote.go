@@ -18,8 +18,8 @@ import (
 // segment (the router's 404 not_found where the core answers validation):
 // Send with an empty channel (messages.go), Close with an empty session id
 // (sessions.go) and UnsubscribeTags with an empty pattern set (channels.go).
-// pending Eric: Milestone 4 item 6 (A: keep the three guards; B: the core
-// answers not_found for the empty name on these paths and the guards go).
+// Decision (Eric, 2026-10-21): Milestone 4 item 6, options A and C (keep the
+// three guards; UnsubscribeTags sends its patterns as query values).
 type Bus struct{ c *gen.ClientWithResponses }
 
 // New wraps a generated client.

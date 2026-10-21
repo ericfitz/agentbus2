@@ -322,7 +322,7 @@ func TestChannelIdempotencyKey(t *testing.T) {
 }
 
 func TestChannelGeneralIsProtected(t *testing.T) {
-	// pending Eric: Milestone 3 item 6
+	// Decision (Eric, 2026-10-21): Milestone 3 item 6
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
 		ctx := context.Background()

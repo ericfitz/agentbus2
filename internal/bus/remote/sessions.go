@@ -49,8 +49,7 @@ func (b *Bus) Open(ctx context.Context, in ab2bus.OpenSessionInput) (ab2bus.Sess
 // it, while the wire's empty path segment is the router's 404 not_found, so the
 // request is not sent (the plan's empty-name contingency, a Decision 80
 // departure limited to the empty id; same as Send's empty channel).
-// pending Eric: Milestone 4 item 6 (A: keep the guard; B: core answers
-// not_found for an empty session id and the guard goes).
+// Decision (Eric, 2026-10-21): Milestone 4 item 6 (option A: keep the guard).
 func (b *Bus) Close(ctx context.Context, in ab2bus.CloseSessionInput) error {
 	if in.Session == "" {
 		return ab2bus.Errorf(ab2bus.CodeValidation, false, "session is required")

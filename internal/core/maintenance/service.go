@@ -65,7 +65,7 @@ func (s Service) pastDeadline(ctx context.Context) bool {
 }
 
 // Jobs lists the jobs in tick order. Budget eviction and capacity notices are
-// not among them (pending Eric: Milestone 3 item 3, Milestone 7).
+// not among them (Decision (Eric, 2026-10-21): Milestone 3 item 3, Milestone 7).
 func (s Service) Jobs() []Job {
 	if s.jobs != nil {
 		return s.jobs

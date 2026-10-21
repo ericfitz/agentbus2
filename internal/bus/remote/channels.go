@@ -139,17 +139,12 @@ func (b *Bus) SubscribeTags(ctx context.Context, in ab2bus.TagSubscribeInput) er
 }
 
 func (b *Bus) UnsubscribeTags(ctx context.Context, in ab2bus.TagSubscribeInput) error {
-	// pending Eric: Milestone 4 item 6 (the empty set is validation in the
-	// core, a router 404 on the wire). The set is one path segment, so no
-	// pattern and one empty pattern both encode to the empty segment, which
-	// no route matches. This is the narrowest guard that makes the transports
-	// agree (a departure from Decision 80): it fires for exactly those two
-	// inputs, sends nothing, and answers what the core answers; every other
-	// input goes to the wire as given (choice 17). Not guarded, also item 6:
-	// a comma inside one pattern splits the segment into two patterns on the
-	// wire where the core rejects the pattern (TestUnsubscribeTagsCommaSplitsOnTheWire
-	// pins it); only a client-side pattern rule (Decision 80 forbids it) or a
-	// different wire encoding (option C) could close it.
+	// Decision (Eric, 2026-10-21): Milestone 4 item 6, options A and C. The
+	// patterns travel as a repeated `pattern` query value, one per pattern, so
+	// a comma stays inside its pattern (TestUnsubscribeTagsCommaAgrees). The
+	// guard stays: no pattern, or one empty pattern alone, is answered here
+	// with the core's validation and nothing is sent; every other input goes
+	// to the wire as given (choice 17) and the core judges it.
 	if len(in.Patterns) == 0 || (len(in.Patterns) == 1 && in.Patterns[0] == "") {
 		return &ab2bus.Error{Code: ab2bus.CodeValidation, Message: "a tag subscription needs at least one pattern"}
 	}

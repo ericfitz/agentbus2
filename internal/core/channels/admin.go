@@ -19,7 +19,7 @@ const (
 // internal/bus/admin.go StatusReport: live sessions of every identity, every
 // channel with its creator, the server notices and, when an embedder is
 // configured, the embedding backlog and rejections. There is no usage figure
-// (pending Eric: Milestone 3 item 3).
+// (Decision (Eric, 2026-10-21): Milestone 3 item 3).
 func (s Service) Status(ctx context.Context, identity string) (bus.Status, error) {
 	var st bus.Status
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {

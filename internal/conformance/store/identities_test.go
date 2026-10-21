@@ -78,7 +78,7 @@ func TestIdentityRejects(t *testing.T) {
 	})
 }
 
-// pending Eric: Gate 0 item 1
+// Decision (Eric, 2026-10-21): Gate 0 item 1
 func TestIdentityRejectsReservedNames(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		s, _, _ := openStore(t, e, sqlstore.Options{})

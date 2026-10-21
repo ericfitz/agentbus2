@@ -103,7 +103,7 @@ func TestSendErrReturnsFailureFromAGoroutine(t *testing.T) {
 	}
 }
 
-// pending Eric: Milestone 4 item 4 (watch timeout as fractional seconds).
+// Decision (Eric, 2026-10-21): Milestone 4 item 4 (watch timeout as fractional seconds).
 func TestWatchTimeoutWire(t *testing.T) {
 	s := newSessionEnv(t, func(c *core.Config) { c.WatchMaxSeconds = 1 })
 	ctx := context.Background()
@@ -155,7 +155,7 @@ func TestWatchTimeoutWire(t *testing.T) {
 // range is implementation-defined (arm64 saturates, amd64 gives MinInt64), so
 // NaN and the infinities are validation, anything above the cap is clamped to
 // it (Decision 42) and anything below zero is validation, whatever the CPU.
-// pending Eric: Milestone 4 item 4 (watch timeout as fractional seconds).
+// Decision (Eric, 2026-10-21): Milestone 4 item 4 (watch timeout as fractional seconds).
 func TestWatchTimeoutRangeWire(t *testing.T) {
 	s := newSessionEnv(t, func(c *core.Config) { c.WatchMaxSeconds = 1 })
 	id := s.session.Id
@@ -455,7 +455,7 @@ func (c *countingTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 }
 
 // TestSessionOddIdsOnRemote: odd session ids through the remote Bus.
-// pending Eric: Milestone 4 item 6 (Close's empty-id guard).
+// Decision (Eric, 2026-10-21): Milestone 4 item 6 (Close's empty-id guard).
 func TestSessionOddIdsOnRemote(t *testing.T) {
 	s := newSessionEnv(t, nil)
 	ct := &countingTransport{next: InProcessTransport(s.handler(), "pat")}

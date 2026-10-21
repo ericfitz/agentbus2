@@ -19,7 +19,7 @@ func TestIsRetryable(t *testing.T) {
 		want bool
 	}{
 		{"serialization_failure", &pgconn.PgError{Code: "40001"}, true},
-		// pending Eric: Gate 0 item 2
+		// Decision (Eric, 2026-10-21): Gate 0 item 2
 		{"deadlock_detected", &pgconn.PgError{Code: "40P01"}, true},
 		{"wrapped", errors.Join(errors.New("ctx"), &pgconn.PgError{Code: "40001"}), true},
 		{"unique_violation", &pgconn.PgError{Code: "23505"}, false},
@@ -73,7 +73,7 @@ func TestWithSearchPath(t *testing.T) {
 }
 
 // TestBackoff: before retry n+1 the wait is uniform in [0, 10ms * 2^(n-1)),
-// capped at 200 ms (choice 5; pending Eric: Gate 0 item 3).
+// capped at 200 ms (choice 5; Decision (Eric, 2026-10-21): Gate 0 item 3).
 func TestBackoff(t *testing.T) {
 	d := dialect{}
 	for attempt := 1; attempt <= 12; attempt++ {

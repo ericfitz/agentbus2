@@ -17,7 +17,7 @@ import (
 )
 
 // Run is `agentbus2 server`. Interim flags until Decision 85's configuration
-// file (Milestone 5; pending Eric: Milestone 4 item 3). Exit codes: 0 clean
+// file (Milestone 5; Decision (Eric, 2026-10-21): Milestone 4 item 3). Exit codes: 0 clean
 // shutdown or -h, 1 runtime error, 2 flag error. Ported from v1 main.go
 // (run's subcommand dispatch, flag.ContinueOnError, parseExit).
 func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {

@@ -19,8 +19,7 @@ const notFoundProblem = `{"type":"about:blank","title":"Not Found","status":404,
 // core Send answers validation for Channel "", while the wire's empty path
 // segment is the router's 404 not_found, so the remote Bus answers validation
 // itself and sends nothing.
-// pending Eric: Milestone 4 item 6 (A: keep the guard; B: core answers
-// not_found for an empty channel and the guard goes).
+// Decision (Eric, 2026-10-21): Milestone 4 item 6 (option A: keep the guard).
 func TestSendEmptyChannelIsValidationWithoutARequest(t *testing.T) {
 	c := &canned{status: 404, ctype: "application/problem+json", body: notFoundProblem}
 	b := newBus(t, c)

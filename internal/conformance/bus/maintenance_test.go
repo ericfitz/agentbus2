@@ -270,7 +270,7 @@ func TestMaintenanceMemoryExpiry(t *testing.T) {
 }
 
 func TestMaintenanceAbandonedTasks(t *testing.T) {
-	// pending Eric: Milestone 3 item 13: owner liveness is a live session row.
+	// Decision (Eric, 2026-10-21): Milestone 3 item 13: owner liveness is a live session row.
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
 		ctx := context.Background()
@@ -404,7 +404,7 @@ func TestMaintenanceEmptyChannels(t *testing.T) {
 }
 
 func TestMaintenanceRunJobRejectsUnknown(t *testing.T) {
-	// pending Eric: Milestone 3 item 3: budget eviction and capacity notices wait for Milestone 7.
+	// Decision (Eric, 2026-10-21): Milestone 3 item 3: budget eviction and capacity notices wait for Milestone 7.
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
 		for _, name := range []string{"vacuum", "budget eviction", "capacity notices", ""} {

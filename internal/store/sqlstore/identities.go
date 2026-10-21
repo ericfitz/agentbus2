@@ -54,7 +54,7 @@ func identityUpdated(res sql.Result, err error, name string) error {
 }
 
 // CreateIdentity validates the name (NameRule, then the reserved names;
-// pending Eric: Gate 0 item 1) before the INSERT.
+// Decision (Eric, 2026-10-21): Gate 0 item 1) before the INSERT.
 func (t *tx) CreateIdentity(ctx context.Context, name string, now int64) error {
 	if err := store.NameRule(name); err != nil {
 		return fmt.Errorf("%w: identity name %q %s", store.ErrInvalid, name, err)
