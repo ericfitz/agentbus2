@@ -152,7 +152,9 @@ func (c *client) ok() {
 
 // resumeLapsed resumes the lapsed session once with its token (Decision 79),
 // replacing c.session under mu. A second lapse before any successful call
-// does not resume again.
+// does not resume again. The hint goes with the token: a row the retention
+// job swept makes Open start a fresh session (Decision 18), which must still
+// be <identity>/tui; a real resume ignores it and keeps the name.
 func (c *client) resumeLapsed() error {
 	c.mu.Lock()
 	if c.lapsedOnce {
@@ -162,7 +164,7 @@ func (c *client) resumeLapsed() error {
 	c.lapsedOnce = true
 	token := c.session.ResumeToken
 	c.mu.Unlock()
-	s, err := c.b.Open(c.ctx, bus.OpenSessionInput{ResumeToken: token})
+	s, err := c.b.Open(c.ctx, bus.OpenSessionInput{Hint: sessionHint, ResumeToken: token})
 	if err != nil {
 		if bus.CodeOf(err) == "" {
 			// A transport failure says nothing about the lapse: a later

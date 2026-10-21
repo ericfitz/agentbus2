@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"slices"
 	"sync"
 	"sync/atomic"
@@ -10,6 +11,11 @@ import (
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/channels"
+	"github.com/ericfitz/agentbus2/internal/core/notify"
+	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentbus2/internal/store/sqlite"
 )
 
 // setBackoff pins retryBackoff for a test and restores it (no test in the
@@ -22,20 +28,41 @@ func setBackoff(t *testing.T, d time.Duration) {
 }
 
 // loopRun runs c.receiveLoop in a goroutine; every message it sends lands on
-// the returned channel, and done closes when the loop returns.
-func loopRun(c *client, gate func(any)) (msgs chan any, done chan struct{}) {
+// the returned channel, and done closes when the loop returns. A send never
+// blocks past the client's cancel (a runaway loop that fills msgs must not
+// hang the test), and t.Cleanup cancels the client and waits for the loop
+// with a bound, so a failing assertion ends the test instead of hanging the
+// package.
+func loopRun(t *testing.T, c *client, gate func(any)) (msgs chan any, done chan struct{}) {
+	t.Helper()
 	msgs = make(chan any, 64)
 	done = make(chan struct{})
 	go func() {
 		defer close(done)
 		c.receiveLoop(func(m any) {
-			msgs <- m
+			select {
+			case msgs <- m:
+			case <-c.ctx.Done():
+				return
+			}
 			if gate != nil {
 				gate(m)
 			}
 		})
 	}()
+	t.Cleanup(func() { stopLoop(t, c, done) })
 	return msgs, done
+}
+
+// stopLoop cancels the client and waits up to 5 s for the loop to return.
+func stopLoop(t *testing.T, c *client, done chan struct{}) {
+	t.Helper()
+	c.cancel()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Error("the receive loop did not return within 5s of cancel")
+	}
 }
 
 // nextMsg waits up to d for the next message of the loop.
@@ -200,11 +227,14 @@ func TestReceiveLoopWatchesThenReceivesAndAcks(t *testing.T) {
 	first := true
 	gate := make(chan struct{})
 	probed := make(chan struct{})
-	msgs, done := loopRun(f.c, func(any) {
+	msgs, done := loopRun(t, f.c, func(any) {
 		if first {
 			first = false
 			close(probed)
-			<-gate
+			select {
+			case <-gate:
+			case <-f.c.ctx.Done():
+			}
 		}
 	})
 	f.samSend("dev", "one")
@@ -224,14 +254,12 @@ func TestReceiveLoopWatchesThenReceivesAndAcks(t *testing.T) {
 	if !ok || !slices.Equal(contents(b2.res), []string{"two"}) || b2.res.Redelivered {
 		t.Fatalf("second batch = %#v", b2)
 	}
-	f.c.cancel()
-	<-done
+	stopLoop(t, f.c, done)
 }
 
 func TestReceiveLoopIncludesOwnSends(t *testing.T) {
 	f := newBusFixture(t)
-	msgs, done := loopRun(f.c, nil)
-	t.Cleanup(func() { f.c.cancel(); <-done })
+	msgs, _ := loopRun(t, f.c, nil)
 	if _, err := f.bus.Send(context.Background(), bus.SendInput{Channel: "dev", Content: "mine", Session: f.c.sessionID()}); err != nil {
 		t.Fatal(err)
 	}
@@ -300,7 +328,7 @@ func TestReceiveLoopResumesLapsedSessionOnce(t *testing.T) {
 	}
 	sb.receive = oneMessage()
 	c := newStubClient(t, sb, bus.Session{ID: "s1", Identity: "eric", DisplayName: "eric/tui", ResumeToken: "t1"})
-	msgs, done := loopRun(c, nil)
+	msgs, done := loopRun(t, c, nil)
 	<-entered
 	if got := c.sessionID(); got != "s1" {
 		t.Fatalf("session id during the resume = %q, want s1", got)
@@ -318,8 +346,7 @@ func TestReceiveLoopResumesLapsedSessionOnce(t *testing.T) {
 	if !slices.Equal(got, []string{"t1", "t2"}) {
 		t.Fatalf("resume tokens = %v, want [t1 t2]: a later lapse must present the new token", got)
 	}
-	c.cancel()
-	<-done
+	stopLoop(t, c, done)
 }
 
 func TestReceiveLoopLapsedTwiceInARowIsAnError(t *testing.T) {
@@ -334,7 +361,7 @@ func TestReceiveLoopLapsedTwiceInARowIsAnError(t *testing.T) {
 		return bus.WatchResult{}, bus.Errorf(bus.CodeSessionLapsed, false, "lapsed")
 	}
 	c := newStubClient(t, sb, bus.Session{ID: "s1", Identity: "eric", ResumeToken: "t1"})
-	msgs, done := loopRun(c, nil)
+	msgs, done := loopRun(t, c, nil)
 	for range 2 {
 		if _, ok := nextMsg(t, msgs, 5*time.Second).(receiveErrMsg); !ok {
 			t.Fatal("want receiveErrMsg for the second lapse")
@@ -343,8 +370,7 @@ func TestReceiveLoopLapsedTwiceInARowIsAnError(t *testing.T) {
 	if got := opens.Load(); got != 1 {
 		t.Fatalf("Open called %d times without a success between, want 1", got)
 	}
-	c.cancel()
-	<-done
+	stopLoop(t, c, done)
 }
 
 func TestReceiveLoopStopsOnReplacedAndClosed(t *testing.T) {
@@ -355,7 +381,7 @@ func TestReceiveLoopStopsOnReplacedAndClosed(t *testing.T) {
 				return bus.WatchResult{}, bus.Errorf(code, false, "gone")
 			}
 			c := newStubClient(t, sb, bus.Session{ID: "s1", Identity: "eric"})
-			msgs, done := loopRun(c, nil)
+			msgs, done := loopRun(t, c, nil)
 			lost, ok := nextMsg(t, msgs, 5*time.Second).(sessionLostMsg)
 			if !ok || !errors.Is(lost.err, errSessionLost) || bus.CodeOf(lost.err) != code {
 				t.Fatalf("message = %#v", lost)
@@ -388,7 +414,7 @@ func TestReceiveLoopBacksOffAndRecovers(t *testing.T) {
 	sb.receive = oneMessage()
 	c := newStubClient(t, sb, bus.Session{ID: "s1", Identity: "eric"})
 	var stamps []time.Time
-	msgs, done := loopRun(c, nil)
+	msgs, done := loopRun(t, c, nil)
 	for range 3 {
 		if _, ok := nextMsg(t, msgs, 5*time.Second).(receiveErrMsg); !ok {
 			t.Fatal("want one receiveErrMsg per failure")
@@ -403,8 +429,7 @@ func TestReceiveLoopBacksOffAndRecovers(t *testing.T) {
 	if b, ok := nextMsg(t, msgs, 5*time.Second).(batchMsg); !ok || len(b.res.Messages) != 1 {
 		t.Fatal("no batch after recovery")
 	}
-	c.cancel()
-	<-done
+	stopLoop(t, c, done)
 	if len(msgs) != 0 {
 		t.Fatalf("%d unexpected extra messages (one toast per failure, none per success)", len(msgs))
 	}
@@ -440,10 +465,9 @@ func TestWatchTimeoutKeepsFloor(t *testing.T) {
 	}
 	c := newStubClient(t, sb, bus.Session{ID: "s1", Identity: "eric"})
 	c.floor = 3
-	_, done := loopRun(c, nil)
+	_, done := loopRun(t, c, nil)
 	waitFor(t, 5*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return len(afters) == 3 })
-	c.cancel()
-	<-done
+	stopLoop(t, c, done)
 	mu.Lock()
 	defer mu.Unlock()
 	if !slices.Equal(afters, []int64{3, 3, 7}) {
@@ -475,7 +499,7 @@ func TestReceiveLoopReportsGapsOnlyAndKeepsDraining(t *testing.T) {
 		return bus.ReceiveResult{}, nil
 	}
 	c := newStubClient(t, sb, bus.Session{ID: "s1", Identity: "eric"})
-	msgs, done := loopRun(c, nil)
+	msgs, done := loopRun(t, c, nil)
 	g, ok := nextMsg(t, msgs, 5*time.Second).(batchMsg)
 	if !ok || len(g.res.Gaps) != 1 {
 		t.Fatalf("gaps-only batch = %#v", g)
@@ -484,8 +508,7 @@ func TestReceiveLoopReportsGapsOnlyAndKeepsDraining(t *testing.T) {
 		t.Fatal("the drain stopped at a gaps-only result")
 	}
 	waitFor(t, 5*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return len(acks) == 3 })
-	c.cancel()
-	<-done
+	stopLoop(t, c, done)
 	mu.Lock()
 	defer mu.Unlock()
 	if !slices.Equal(acks, []string{"", "g1", "b2"}) {
@@ -513,7 +536,7 @@ func TestCloseFreesTheName(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = c.close() })
-	_, done := loopRun(c, nil)
+	_, done := loopRun(t, c, nil)
 	<-spy.started
 	if got := sessionNames(t, f.sam, "bob"); !slices.Equal(got, []string{"bob/tui"}) {
 		t.Fatalf("before close: %v", got)
@@ -542,18 +565,24 @@ func TestDrainAcksLastBatch(t *testing.T) {
 	f := newBusFixture(t)
 	f.samSend("dev", "one")
 	f.samSend("dev", "two")
-	msgs, done := loopRun(f.c, nil)
-	t.Cleanup(func() { f.c.cancel(); <-done })
+	msgs, _ := loopRun(t, f.c, nil)
 	var got []string
 	for len(got) < 2 {
 		b, ok := nextMsg(t, msgs, 5*time.Second).(batchMsg)
-		if !ok {
-			t.Fatal("unexpected message")
+		if !ok || b.res.Redelivered {
+			t.Fatalf("unexpected message %#v", b)
 		}
 		got = append(got, contents(b.res)...)
 	}
 	if !slices.Equal(got, []string{"one", "two"}) {
 		t.Fatalf("delivered %v", got)
+	}
+	// A drain that does not ack redelivers the batch at once: fail on the
+	// first extra message rather than wait out the pending probe.
+	select {
+	case m := <-msgs:
+		t.Fatalf("extra message after the drain (an unacked batch redelivered?): %#v", m)
+	case <-time.After(200 * time.Millisecond):
 	}
 	waitFor(t, 5*time.Second, func() bool { return pendingFor(t, f.bus, "dev") == 0 })
 }
@@ -620,5 +649,132 @@ func TestFixtureHelpers(t *testing.T) {
 	}
 	if !admin {
 		t.Fatal("setAdmin did not flag eric")
+	}
+}
+
+// TestResumeOfSweptSessionKeepsTheHint: a session swept by the retention job
+// while the laptop slept makes Open{ResumeToken} open a fresh session
+// (Decision 18, sessions/open.go). That fresh session must still be
+// <identity>/tui, so the resume carries the hint too.
+func TestResumeOfSweptSessionKeepsTheHint(t *testing.T) {
+	f := newBusFixture(t)
+	old := f.c.sessionID()
+	err := f.core.Store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
+		_, err := tx.DeleteSessions(ctx, f.core.NowMs()+24*time.Hour.Milliseconds(), 100)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.c.resumeLapsed(); err != nil {
+		t.Fatalf("resumeLapsed: %v", err)
+	}
+	if got := f.c.sessionID(); got == old {
+		t.Fatalf("session id %q unchanged: the row was not swept", got)
+	}
+	if got := f.c.displayName(); got != "eric/tui" {
+		t.Fatalf("display name after resuming a swept session = %q, want eric/tui", got)
+	}
+}
+
+// TestResumeResetsAck: a lapse in the middle of a drain resets the ack, so
+// the first Receive after the resume carries none (the pending batch comes
+// back Redelivered and the model dedupes it by seq).
+func TestResumeResetsAck(t *testing.T) {
+	var (
+		mu   sync.Mutex
+		acks []string
+		n    atomic.Int32
+	)
+	sb := &stubBus{}
+	sb.open = func(context.Context, bus.OpenSessionInput) (bus.Session, error) {
+		return bus.Session{ID: "s1", Identity: "eric", DisplayName: "eric/tui", ResumeToken: "t1"}, nil
+	}
+	sb.watch = func(ctx context.Context, _ bus.WatchInput) (bus.WatchResult, error) {
+		if n.Add(1) == 1 {
+			return bus.WatchResult{Woke: true, Seq: 1}, nil
+		}
+		return blockUntilDone(ctx)
+	}
+	sb.receive = func(_ context.Context, in bus.ReceiveInput) (bus.ReceiveResult, error) {
+		mu.Lock()
+		defer mu.Unlock()
+		acks = append(acks, in.Ack)
+		switch len(acks) {
+		case 1:
+			return bus.ReceiveResult{Messages: []bus.Message{{Seq: 1}}, Batch: "b1"}, nil
+		case 2:
+			return bus.ReceiveResult{}, bus.Errorf(bus.CodeSessionLapsed, false, "lapsed")
+		}
+		return bus.ReceiveResult{}, nil
+	}
+	c := newStubClient(t, sb, bus.Session{ID: "s1", Identity: "eric", DisplayName: "eric/tui", ResumeToken: "t1"})
+	_, done := loopRun(t, c, nil)
+	waitFor(t, 5*time.Second, func() bool { mu.Lock(); defer mu.Unlock(); return len(acks) == 3 })
+	stopLoop(t, c, done)
+	mu.Lock()
+	defer mu.Unlock()
+	if !slices.Equal(acks, []string{"", "b1", ""}) {
+		t.Fatalf("ack sequence = %q, want [\"\" b1 \"\"]", acks)
+	}
+}
+
+// TestReceiveLoopResumesLapsedSessionOnRealCore checks the stub's assumptions
+// against sessions/open.go: past the lease the real Watch answers
+// session_lapsed, the resume keeps the session id and the display name, and
+// the loop goes on to deliver.
+func TestReceiveLoopResumesLapsedSessionOnRealCore(t *testing.T) {
+	ctx := context.Background()
+	var offset atomic.Int64
+	st, err := sqlite.Open(ctx, filepath.Join(t.TempDir(), "bus.sqlite"), sqlite.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	cfg := core.Defaults()
+	cfg.WatchMergeSeconds = 0
+	co, err := core.New(st, cfg, core.Options{
+		Notifier: notify.NewMemory(),
+		Now:      func() time.Time { return time.Now().Add(time.Duration(offset.Load())) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := (channels.Service{Core: co}).EnsureGeneral(ctx); err != nil {
+		t.Fatal(err)
+	}
+	sam := identityBus(t, co, "sam")
+	c, err := newClient(ctx, identityBus(t, co, "eric"), "eric")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.close() })
+	id := c.sessionID()
+	offset.Store(int64(time.Hour)) // far past the lease plus the skew
+	msgs, _ := loopRun(t, c, nil)
+	waitFor(t, 5*time.Second, func() bool {
+		ids, err := sam.Identities(ctx)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, in := range ids {
+			if in.Name == "eric" && len(in.Sessions) == 1 {
+				return true
+			}
+		}
+		return false
+	})
+	if _, err := sam.Send(ctx, bus.SendInput{Channel: "general", Content: "after the nap"}); err != nil {
+		t.Fatal(err)
+	}
+	b, ok := nextMsg(t, msgs, 5*time.Second).(batchMsg)
+	if !ok || !slices.Equal(contents(b.res), []string{"after the nap"}) {
+		t.Fatalf("first message after the lapse = %#v", b)
+	}
+	if got := c.sessionID(); got != id {
+		t.Fatalf("session id after the resume = %q, want %q (a real resume keeps it)", got, id)
+	}
+	if got := c.displayName(); got != "eric/tui" {
+		t.Fatalf("display name after the resume = %q", got)
 	}
 }
