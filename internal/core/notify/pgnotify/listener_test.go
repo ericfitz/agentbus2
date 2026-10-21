@@ -367,3 +367,34 @@ func TestListenerBadDSNIsRetriedNotReturned(t *testing.T) {
 	}
 	l.Close()
 }
+
+// A session that reached LISTEN resets the backoff: the sleep after its Wait
+// error is drawn from MinBackoff again, not from the grown backoff.
+func TestListenerBackoffResetsAfterListen(t *testing.T) {
+	var mu sync.Mutex
+	var sleeps []time.Duration
+	sleeper := func(_ context.Context, d time.Duration) {
+		mu.Lock()
+		sleeps = append(sleeps, d)
+		mu.Unlock()
+	}
+	c := newFakeConn()
+	c.events <- event{err: errors.New("dropped")}
+	down := errors.New("down")
+	fc := &fakeConnector{steps: []step{{err: down}, {err: down}, {err: down}, {c: c}}}
+	minB, maxB := 10*time.Millisecond, time.Second
+	l := newListener(context.Background(), "dsn", Options{Connector: fc, MinBackoff: minB, MaxBackoff: maxB}, sleeper)
+	defer l.Close()
+	eventually(t, "fifth Connect call", func() bool { return fc.Calls() == 5 })
+	mu.Lock()
+	defer mu.Unlock()
+	if len(sleeps) != 4 {
+		t.Fatalf("sleeps = %v", sleeps)
+	}
+	bases := []time.Duration{minB, 2 * minB, 4 * minB, minB}
+	for i, d := range sleeps {
+		if d < bases[i]/2 || d > bases[i] {
+			t.Errorf("sleep %d = %v, want within [%v, %v]", i, d, bases[i]/2, bases[i])
+		}
+	}
+}
