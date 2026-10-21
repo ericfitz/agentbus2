@@ -4,12 +4,13 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 
 ## Commands
 
-The Makefile does not exist yet; the first milestone creates these targets.
-
 - Build: `make build` (`CGO_ENABLED=0`; SQLite is `modernc.org/sqlite`, Postgres is `pgx`).
 - Tests: `make test`; `make test-race` for the race detector.
 - Lint: `make lint` (golangci-lint v2), `make vet`, `make fmt-check`.
-- Done gate: `make verify` (build, vet, gofmt, lint, unit tests, and the Store and Bus conformance suites against both SQLite and Postgres). Postgres comes from testcontainers (needs Docker) unless a DSN env var points at an existing server. A run that skips the Postgres suites is not a pass.
+- Done gate: `make verify` (build, vet, gofmt, lint, `generate-check`, unit tests, the Store and Bus conformance suites against both SQLite and Postgres, and `check-gates`). Postgres for the suites comes from testcontainers unless `AGENTBUS2_TEST_POSTGRES_DSN` names a reachable server (an empty value counts as unset). `make verify` needs Docker either way, because `check-gates` runs the suite binaries in a `busybox` container to prove the no-Docker path. A run that skips the Postgres suites is not a pass.
+- `make test` is Docker-free (every package except `internal/conformance`); `make test-conformance` runs the suites only.
+- `make generate` regenerates `internal/gen` from `api/openapi.yaml`.
+- `make check-gates-selftest` tests the gate scripts themselves (minutes; CI runs it as its own job).
 
 ## Design
 
