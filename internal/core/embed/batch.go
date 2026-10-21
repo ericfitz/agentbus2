@@ -27,8 +27,9 @@ const (
 
 // EmbedBatch embeds up to BatchSize live memory revisions that lack an
 // embedding (and a recorded failure) for the embedder's model, and returns
-// how many rows it embedded or recorded as failed. Without an embedder it
-// does nothing.
+// how many rows it attempted: embedded or recorded as failed. The Store gives
+// no affected count and skips a row that stopped being a live memory, so the
+// number stored can be smaller. Without an embedder it does nothing.
 //
 // The HTTP calls run outside any transaction (Decision 26), each under its
 // own RequestTimeout; the rows are written in one Tx afterwards, where the
@@ -44,8 +45,11 @@ const (
 // Overlapping runs (two processes) may embed the same rows twice; the puts
 // replace, so the result is identical. A run killed before the write leaves
 // the rows for the next one. Rows of other models are deleted in the write
-// Tx, which every pass with work to do ends with; stale rows only ever
-// belong to live memories, which are candidates under the new model.
+// Tx, so they go with the first pass that gets that far; a pass with no
+// candidates or whose endpoint fails never writes, and a memory with a failure
+// recorded under the new model is no candidate, so such rows can outlive
+// passes. Every reader filters by model, so they cost space only, and an idle
+// tick must not take a write lock (v1 9dfc490) just to look for them.
 func EmbedBatch(ctx context.Context, c *core.Core) (n int, err error) {
 	emb := c.Embedder()
 	if emb == nil {
