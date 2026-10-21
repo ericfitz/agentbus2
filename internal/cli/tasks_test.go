@@ -114,6 +114,45 @@ func TestTasksClearOwnerAndSubject(t *testing.T) {
 	}
 }
 
+func TestTasksReparent(t *testing.T) {
+	e := newTestEnv(t)
+	ctx := context.Background()
+	pat := e.conn(t, "pat")
+	if _, err := pat.Bus.CreateChannel(ctx, bus.CreateChannelInput{Name: "todo", Kind: bus.KindTasks}); err != nil {
+		t.Fatal(err)
+	}
+	run := func(args ...string) (int, string) {
+		var out, errb bytes.Buffer
+		code := RunTasks(ctx, append(args, "-identity", "pat"), e.Environ, strings.NewReader(""), &out, &errb)
+		return code, errb.String()
+	}
+	for _, s := range []string{"one", "two"} {
+		if code, errs := run("create", "todo", s); code != 0 {
+			t.Fatalf("create %s: %d %q", s, code, errs)
+		}
+	}
+	// -parent moves the task under another; an update without it keeps the
+	// parent; -parent 0 detaches it to the root.
+	if code, errs := run("update", "-parent", "1", "2"); code != 0 {
+		t.Fatalf("reparent: %d %q", code, errs)
+	}
+	if tk, _ := pat.Bus.GetTask(ctx, 2); tk.Parent != 1 {
+		t.Fatalf("parent after -parent 1: %d", tk.Parent)
+	}
+	if code, errs := run("update", "-description", "d", "2"); code != 0 {
+		t.Fatalf("describe: %d %q", code, errs)
+	}
+	if tk, _ := pat.Bus.GetTask(ctx, 2); tk.Parent != 1 || tk.Description != "d" {
+		t.Fatalf("after an update without -parent: %+v", tk)
+	}
+	if code, errs := run("update", "-parent", "0", "2"); code != 0 {
+		t.Fatalf("detach: %d %q", code, errs)
+	}
+	if tk, _ := pat.Bus.GetTask(ctx, 2); tk.Parent != 0 {
+		t.Fatalf("parent after -parent 0: %d", tk.Parent)
+	}
+}
+
 func TestTasksRejectsBadInput(t *testing.T) {
 	e := newTestEnv(t)
 	ctx := context.Background()

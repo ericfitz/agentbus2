@@ -45,9 +45,19 @@ func TestMemoriesLifecycle(t *testing.T) {
 	if code, out2, _ := run("edit", id, "v2", "-tag", "kind:gotcha", "-key", "k"); code != 0 || out2 != out1 {
 		t.Fatalf("second identical edit: %d %q, want %q", code, out2, out1)
 	}
+	// An edit that names no subject keeps it; -subject replaces it.
+	if m, err := pat.Bus.GetMemory(ctx, *sent.MemoryID); err != nil || m.Subject != "first" {
+		t.Fatalf("subject after an edit without -subject: %+v, %v", m, err)
+	}
+	if code, _, errs = run("edit", "-subject", "renamed", id); code != 0 {
+		t.Fatalf("edit -subject: %d %q", code, errs)
+	}
+	if m, err := pat.Bus.GetMemory(ctx, *sent.MemoryID); err != nil || m.Subject != "renamed" || m.Content != "v2" {
+		t.Fatalf("after edit -subject: %+v, %v", m, err)
+	}
 	code, out, _ = run("revisions", id)
 	var revs []bus.Message
-	if err := json.Unmarshal([]byte(out), &revs); code != 0 || err != nil || len(revs) != 2 {
+	if err := json.Unmarshal([]byte(out), &revs); code != 0 || err != nil || len(revs) != 3 {
 		t.Fatalf("revisions: %d %q %v", code, out, err)
 	}
 
