@@ -257,3 +257,16 @@ one-line change.
   N* and Co as token characters while `[[:alnum:]]` follows the C library's
   `iswalnum`, so private-use and some symbol-class code points may tokenize
   differently. No corpus row exercises them.
+- Postgres `message_tags.tag` is `TEXT COLLATE "C"`, the one deviation from
+  the plan's DDL substitutions: a tag pattern `p*` is the range
+  `BETWEEN p AND p~`, which SQLite compares byte by byte (`BINARY`); the
+  `C` collation gives Postgres the same byte order instead of the database
+  collation (such as `en_US.utf8`). The stored `tag_subscription_tags.lo`
+  and `hi` are therefore bound as query parameters, not joined as columns,
+  so Postgres compares them under the tag column's `C` collation instead
+  of failing on a collation conflict.
+- Every caller-supplied string bound to a TEXT column passes `TextRule`
+  (valid UTF-8, no NUL) before the query on both engines: the caller's own
+  data on a write is `ErrInvalid`, a string naming another row answers as
+  for an unknown row. The query helpers refuse any remaining failing string
+  argument with `ErrInvalid`, so no such string reaches either engine.

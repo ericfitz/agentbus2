@@ -14,7 +14,7 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 
 ## Design
 
-- The design decisions (made by Eric) go in the spec under `docs/superpowers/specs/` and the ADRs in `docs/adr/` (both still to be written; until then HANDOFF.md holds them). Read them before changing an interface, the Store contract, auth or the wire protocol.
+- The design decisions (made by Eric) go in the spec under `docs/superpowers/specs/` and the ADRs in `docs/adr/`. Read them before changing an interface, the Store contract, auth or the wire protocol.
 - The Store contract is `internal/store`; the engines are `internal/store/sqlite` and `internal/store/postgres` over `internal/store/sqlstore`; the Store suite is `internal/conformance/store` and isolates Postgres tests in a schema per test.
 - v1 code is ported deliberately: the commit message names the v1 source file. Do not port artifacts of decisions v2 changed (DMs, identity derived from the harness, `-filter`).
 
