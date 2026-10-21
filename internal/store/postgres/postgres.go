@@ -57,6 +57,10 @@ func Open(ctx context.Context, dsn string, opts Options) (store.Store, error) {
 		_ = db.Close()
 		return nil, fmt.Errorf("postgres: unreachable: %w", err)
 	}
+	if err := checkLocale(ctx, db); err != nil {
+		_ = db.Close()
+		return nil, err
+	}
 	so := opts.Store
 	if so.Migrations == nil {
 		so.Migrations = Migrations()
@@ -69,6 +73,53 @@ func Open(ctx context.Context, dsn string, opts Options) (store.Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+// checkLocale refuses a database whose text-search normalization would not
+// match SQLite's (Decision (Eric, 2026-10-21), Milestone 2 Gate 0 item 6).
+// tsNormalize relies on [[:alnum:]] covering non-ASCII letters, which needs a
+// UTF-8 character classification.
+//
+// Provider choice: with the libc provider (the only one before PostgreSQL 15,
+// and the default since) the regex classes follow pg_database.datctype, so
+// datctype must name a UTF-8 locale. With an ICU or builtin provider
+// (datlocprovider i or b) datctype is only the libc fallback and the regex
+// classes follow the ICU or builtin locale, so datctype says nothing about
+// them; there the database encoding must be UTF8 instead (a UTF8 database
+// classifies by Unicode code point). datlocprovider is absent before
+// PostgreSQL 15 and is read through to_jsonb so the query works on every
+// version.
+func checkLocale(ctx context.Context, db *sqlx.DB) error {
+	var ctype, encoding, provider string
+	err := db.QueryRowContext(ctx, `SELECT datctype, pg_encoding_to_char(encoding), coalesce(to_jsonb(d)->>'datlocprovider', 'c')
+FROM pg_database d WHERE datname = current_database()`).Scan(&ctype, &encoding, &provider)
+	if err != nil {
+		return fmt.Errorf("postgres: read database locale: %w", err)
+	}
+	return classifyLocale(ctype, encoding, provider)
+}
+
+// classifyLocale is checkLocale's decision over the values it read.
+func classifyLocale(ctype, encoding, provider string) error {
+	if provider == "i" || provider == "b" {
+		if strings.EqualFold(encoding, "UTF8") {
+			return nil
+		}
+		return fmt.Errorf("%w: database encoding is %q with locale provider %q; a UTF8 encoding is required for text-search normalization",
+			store.ErrSchemaInvalid, encoding, provider)
+	}
+	if utf8Ctype(ctype) {
+		return nil
+	}
+	return fmt.Errorf("%w: database ctype is %q; a UTF-8 ctype is required for text-search normalization (create the database with LC_CTYPE 'en_US.UTF-8' or 'C.UTF-8')",
+		store.ErrSchemaInvalid, ctype)
+}
+
+// utf8Ctype reports whether a libc ctype names a UTF-8 locale: en_US.utf8,
+// en_US.UTF-8 and C.UTF-8 do; C, POSIX, en_US.ISO8859-1 and "" do not.
+func utf8Ctype(ctype string) bool {
+	c := strings.ToLower(ctype)
+	return strings.Contains(c, "utf-8") || strings.Contains(c, "utf8")
 }
 
 var schemaName = regexp.MustCompile(`^[a-z][a-z0-9_]{0,62}$`)
@@ -183,8 +234,8 @@ func (dialect) LockAppend(ctx context.Context, tx *sqlx.Tx) error {
 // SQL fragments of the text-search translation (Decision 51). tsNormalize
 // turns every run of non-alphanumeric characters into one space so the
 // tokens match FTS5's unicode61 tokens; it relies on [[:alnum:]] covering
-// non-ASCII letters, which holds for a UTF-8 database ctype (pending Eric:
-// Gate 0 item 6, documented in Task 12).
+// non-ASCII letters, which holds for a UTF-8 database ctype (checkLocale
+// refuses any other ctype at Open).
 const (
 	tsNormalize = `regexp_replace(?, '[^[:alnum:]]+', ' ', 'g')`
 	tsWord      = `phraseto_tsquery('simple', ` + tsNormalize + `)`
