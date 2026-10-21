@@ -158,10 +158,13 @@ func ToJWK(pub crypto.PublicKey, kid string) (jose.JSONWebKey, error) {
 	return jose.JSONWebKey{Key: pub, KeyID: kid, Algorithm: string(alg), Use: "sig"}, nil
 }
 
-// FromJWK extracts a public key from a JWK. Private material, an unsupported
+// FromJWK extracts a public key from a JWK. A JWK with no key, private material, an unsupported
 // key type, a kid that is not the key's thumbprint and an alg naming the other
 // algorithm are errors.
 func FromJWK(j jose.JSONWebKey) (crypto.PublicKey, Algorithm, string, error) {
+	if j.Key == nil {
+		return nil, "", "", errors.New("keys: JWK has no key")
+	}
 	if !j.IsPublic() {
 		return nil, "", "", errors.New("keys: JWK carries private key material")
 	}

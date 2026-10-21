@@ -17,13 +17,13 @@ func IssuerOf(raw string) (string, error) {
 	}
 	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
 	if err != nil {
-		return "", invalid("payload: %v", err)
+		return "", invalidCause("payload", err)
 	}
 	var c struct {
 		Iss any `json:"iss"`
 	}
 	if err := json.Unmarshal(payload, &c); err != nil {
-		return "", invalid("payload: %v", err)
+		return "", invalidCause("payload", err)
 	}
 	iss, _ := c.Iss.(string)
 	return iss, nil
@@ -33,7 +33,10 @@ func IssuerOf(raw string) (string, error) {
 type Verifier struct {
 	Own      *Issuer // nil: no own issuer
 	External []*External
-	Now      func() time.Time
+	// Now is the clock for own bearers only (nil: time.Now). It does not reach
+	// External: each External judges its claims and its JWKS cache by its own
+	// Now, so a caller that injects a clock sets External.Now as well.
+	Now func() time.Time
 }
 
 // Verify returns the identity of a valid bearer and whether an external issuer

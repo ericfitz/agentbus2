@@ -106,6 +106,17 @@ func malformed(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrMalformed, fmt.Sprintf(format, args...))
 }
 
+// malformedCause is malformed for a failure with an underlying error. It wraps
+// the cause as well as ErrMalformed, so errors.Is and errors.As still reach go-jose's
+// own errors (for example *jose.ErrUnexpectedSignatureAlgorithm) and a caller
+// need not match message text. An empty what leaves the description out.
+func malformedCause(what string, cause error) error {
+	if what == "" {
+		return fmt.Errorf("%w: %w", ErrMalformed, cause)
+	}
+	return fmt.Errorf("%w: %s: %w", ErrMalformed, what, cause)
+}
+
 // Parse checks the algorithm allowlist and the claim shape; it does not verify
 // the signature. Use Verify with the key stored under KID.
 func Parse(raw string) (Parsed, error) {
@@ -114,7 +125,7 @@ func Parse(raw string) (Parsed, error) {
 	}
 	tok, err := jwt.ParseSigned(raw, allowedAlgorithms)
 	if err != nil {
-		return Parsed{}, malformed("%v", err)
+		return Parsed{}, malformedCause("", err)
 	}
 	if len(tok.Headers) != 1 {
 		return Parsed{}, malformed("expected one signature")
@@ -131,7 +142,7 @@ func Parse(raw string) (Parsed, error) {
 	}
 	var c jwt.Claims
 	if err := tok.UnsafeClaimsWithoutVerification(&c); err != nil {
-		return Parsed{}, malformed("claims: %v", err)
+		return Parsed{}, malformedCause("claims", err)
 	}
 	switch {
 	case c.Issuer == "" || c.Subject == "" || c.Issuer != c.Subject:
@@ -150,6 +161,16 @@ func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
 }
 
+// invalidCause is invalid for a failure with an underlying error; see
+// malformedCause. errors.Is(err, jwt.ErrExpired), jwt.ErrInvalidAudience and
+// jose.ErrCryptoFailure hold alongside ErrInvalid.
+func invalidCause(what string, cause error) error {
+	if what == "" {
+		return fmt.Errorf("%w: %w", ErrInvalid, cause)
+	}
+	return fmt.Errorf("%w: %s: %w", ErrInvalid, what, cause)
+}
+
 // Verify checks the signature against pub and the claims against the token
 // endpoint and the clock, with the given leeway.
 func (p Parsed) Verify(pub crypto.PublicKey, tokenEndpoint string, now time.Time, leeway time.Duration) error {
@@ -161,18 +182,18 @@ func (p Parsed) Verify(pub crypto.PublicKey, tokenEndpoint string, now time.Time
 	}
 	alg, err := keys.AlgorithmOf(pub)
 	if err != nil {
-		return invalid("%v", err)
+		return invalidCause("", err)
 	}
 	if alg != p.Alg {
 		return invalid("key algorithm %s does not match the assertion's %s", alg, p.Alg)
 	}
 	var c jwt.Claims
 	if err := p.tok.Claims(pub, &c); err != nil {
-		return invalid("signature: %v", err)
+		return invalidCause("signature", err)
 	}
 	exp := jwt.Expected{Issuer: p.Identity, Subject: p.Identity, AnyAudience: jwt.Audience{tokenEndpoint}, Time: now}
 	if err := c.ValidateWithLeeway(exp, leeway); err != nil {
-		return invalid("%v", err)
+		return invalidCause("", err)
 	}
 	if c.Expiry == nil {
 		return invalid("exp is required")

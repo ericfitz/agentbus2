@@ -40,6 +40,18 @@ func invalid(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ErrInvalid, fmt.Sprintf(format, args...))
 }
 
+// invalidCause is invalid for a failure with an underlying error. It wraps the
+// cause as well as ErrInvalid, so a caller classifies the failure with
+// errors.Is (jwt.ErrExpired, jwt.ErrInvalidAudience, jose.ErrCryptoFailure, ...)
+// and not by matching go-jose's message text. An empty what leaves the
+// description out.
+func invalidCause(what string, cause error) error {
+	if what == "" {
+		return fmt.Errorf("%w: %w", ErrInvalid, cause)
+	}
+	return fmt.Errorf("%w: %s: %w", ErrInvalid, what, cause)
+}
+
 // Issuer mints and verifies the server's own bearers with one signing key.
 type Issuer struct {
 	url      string
@@ -147,7 +159,7 @@ func (i *Issuer) Verify(raw string, now time.Time) (string, error) {
 	}
 	tok, err := jwt.ParseSigned(raw, serverAlgorithms)
 	if err != nil {
-		return "", invalid("%v", err)
+		return "", invalidCause("", err)
 	}
 	if len(tok.Headers) != 1 {
 		return "", invalid("expected one signature")
@@ -157,10 +169,10 @@ func (i *Issuer) Verify(raw string, now time.Time) (string, error) {
 	}
 	var c jwt.Claims
 	if err := tok.Claims(i.key.Public(), &c); err != nil {
-		return "", invalid("signature: %v", err)
+		return "", invalidCause("signature", err)
 	}
 	if err := c.ValidateWithLeeway(jwt.Expected{Issuer: i.url, AnyAudience: jwt.Audience{i.url}, Time: now}, Leeway); err != nil {
-		return "", invalid("%v", err)
+		return "", invalidCause("", err)
 	}
 	if c.Expiry == nil {
 		return "", invalid("exp is required")

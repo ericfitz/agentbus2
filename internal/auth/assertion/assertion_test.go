@@ -2,6 +2,9 @@ package assertion
 
 import (
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"strings"
@@ -160,6 +163,47 @@ func TestParseRefusesOtherAlgorithms(t *testing.T) {
 			t.Errorf("%s: err = %v", name, err)
 		}
 	}
+	// The go-jose cause stays in the chain next to ErrMalformed.
+	for name, raw := range map[string]string{"hs256": hs, "none": none} {
+		_, err := Parse(raw)
+		var ua *jose.ErrUnexpectedSignatureAlgorithm
+		if !errors.As(err, &ua) {
+			t.Errorf("%s: err = %v, want a *jose.ErrUnexpectedSignatureAlgorithm in the chain", name, err)
+		}
+	}
+}
+
+func TestParseKeepsClaimsCause(t *testing.T) {
+	k, kid := gen(t, keys.EdDSA)
+	s, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.EdDSA, Key: k},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := jwt.Signed(s).Claims(map[string]any{"iss": "alice", "sub": "alice", "jti": "j", "exp": "soon"}).Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = Parse(raw)
+	if !errors.Is(err, ErrMalformed) || !errors.Is(err, jwt.ErrUnmarshalNumericDate) {
+		t.Errorf("err = %v, want ErrMalformed and jwt.ErrUnmarshalNumericDate", err)
+	}
+}
+
+// leaves returns the leaf errors of err's whole wrap tree.
+func leaves(err error) []error {
+	switch u := err.(type) {
+	case interface{ Unwrap() []error }:
+		var out []error
+		for _, e := range u.Unwrap() {
+			out = append(out, leaves(e)...)
+		}
+		return out
+	case interface{ Unwrap() error }:
+		return leaves(u.Unwrap())
+	default:
+		return []error{err}
+	}
 }
 
 func TestParseRefusesClaimShapes(t *testing.T) {
@@ -192,26 +236,52 @@ func TestVerifyRefuses(t *testing.T) {
 		return custom(t, k, kid, c, nil)
 	}
 	cases := []struct {
-		name string
-		raw  string
-		pub  crypto.PublicKey
+		name  string
+		raw   string
+		pub   crypto.PublicKey
+		cause error  // a go-jose sentinel that must be in the chain, if any
+		text  string // a substring the message must contain, if any
 	}{
-		{"wrong key", mut(func(*jwt.Claims) {}), other.Public()},
-		{"other algorithm", mut(func(*jwt.Claims) {}), ec.Public()},
-		{"other aud", mut(func(c *jwt.Claims) { c.Audience = jwt.Audience{"https://evil/v1/auth/token"} }), k.Public()},
-		{"expired", mut(func(c *jwt.Claims) { c.Expiry = jwt.NewNumericDate(now.Add(-2 * time.Minute)) }), k.Public()},
-		{"20 min ahead", mut(func(c *jwt.Claims) { c.Expiry = jwt.NewNumericDate(now.Add(20 * time.Minute)) }), k.Public()},
-		{"nbf future", mut(func(c *jwt.Claims) { c.NotBefore = jwt.NewNumericDate(now.Add(10 * time.Minute)) }), k.Public()},
-		{"iat future", mut(func(c *jwt.Claims) { c.IssuedAt = jwt.NewNumericDate(now.Add(10 * time.Minute)) }), k.Public()},
+		{"wrong key", mut(func(*jwt.Claims) {}), other.Public(), jose.ErrCryptoFailure, ""},
+		{"other algorithm", mut(func(*jwt.Claims) {}), ec.Public(), nil, "does not match"},
+		{"other aud", mut(func(c *jwt.Claims) { c.Audience = jwt.Audience{"https://evil/v1/auth/token"} }), k.Public(), jwt.ErrInvalidAudience, ""},
+		{"expired", mut(func(c *jwt.Claims) { c.Expiry = jwt.NewNumericDate(now.Add(-2 * time.Minute)) }), k.Public(), jwt.ErrExpired, ""},
+		{"20 min ahead", mut(func(c *jwt.Claims) { c.Expiry = jwt.NewNumericDate(now.Add(20 * time.Minute)) }), k.Public(), nil, "too far ahead"},
+		{"nbf future", mut(func(c *jwt.Claims) { c.NotBefore = jwt.NewNumericDate(now.Add(10 * time.Minute)) }), k.Public(), jwt.ErrNotValidYet, ""},
+		{"iat future", mut(func(c *jwt.Claims) { c.IssuedAt = jwt.NewNumericDate(now.Add(10 * time.Minute)) }), k.Public(), jwt.ErrIssuedInTheFuture, ""},
 	}
 	for _, c := range cases {
 		p, err := Parse(c.raw)
 		if err != nil {
 			t.Fatalf("%s: parse: %v", c.name, err)
 		}
-		if err := p.Verify(c.pub, endpoint, now, time.Minute); !errors.Is(err, ErrInvalid) {
+		err = p.Verify(c.pub, endpoint, now, time.Minute)
+		if !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: err = %v", c.name, err)
 		}
+		if c.cause != nil && !errors.Is(err, c.cause) {
+			t.Errorf("%s: err = %v, want %v in the chain", c.name, err, c.cause)
+		}
+		if c.text != "" && (err == nil || !strings.Contains(err.Error(), c.text)) {
+			t.Errorf("%s: err = %v, want text %q", c.name, err, c.text)
+		}
+	}
+	// A key of an unsupported type is refused, and the keys error stays in the chain.
+	p384, err := ecdsa.GenerateKey(elliptic.P384(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pp, err := Parse(mut(func(*jwt.Claims) {}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = pp.Verify(p384.Public(), endpoint, now, time.Minute)
+	found := false
+	for _, l := range leaves(err) {
+		found = found || strings.HasPrefix(l.Error(), "keys: unsupported key type")
+	}
+	if !errors.Is(err, ErrInvalid) || !found {
+		t.Errorf("P-384 key: err = %v, want ErrInvalid and the keys error in the chain", err)
 	}
 	// A token whose signature was tampered with.
 	raw := mut(func(*jwt.Claims) {})
@@ -221,7 +291,7 @@ func TestVerifyRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.Verify(k.Public(), endpoint, now, time.Minute); !errors.Is(err, ErrInvalid) {
+	if err := p.Verify(k.Public(), endpoint, now, time.Minute); !errors.Is(err, ErrInvalid) || !errors.Is(err, jose.ErrCryptoFailure) {
 		t.Errorf("tampered: %v", err)
 	}
 	// Control: the same claims verify.

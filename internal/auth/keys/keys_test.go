@@ -124,6 +124,21 @@ func TestPrivatePEMRoundTrip(t *testing.T) {
 	if _, _, err := ParsePrivatePEM([]byte("not pem")); err == nil {
 		t.Error("non-PEM accepted")
 	}
+	// Valid PKCS#8 DER under another label is refused on the label alone.
+	for _, alg := range both {
+		k := mustGen(t, alg)
+		pk8, err := x509.MarshalPKCS8PrivateKey(k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := ParsePrivatePEM(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: pk8})); err != nil {
+			t.Fatalf("%s: control: %v", alg, err)
+		}
+		_, _, err = ParsePrivatePEM(pem.EncodeToMemory(&pem.Block{Type: "FOO", Bytes: pk8}))
+		if err == nil || !strings.Contains(err.Error(), "PEM block type") {
+			t.Errorf("%s: PKCS#8 under label FOO: err = %v, want the block type refused", alg, err)
+		}
+	}
 	rk, _ := rsa.GenerateKey(rand.Reader, 2048)
 	rder, _ := x509.MarshalPKCS8PrivateKey(rk)
 	if _, _, err := ParsePrivatePEM(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: rder})); err == nil {
@@ -202,7 +217,7 @@ func TestFromJWKRejects(t *testing.T) {
 		{"p384", jose.JSONWebKey{Key: &p384.PublicKey}, "unsupported key type"},
 		{"kid", jose.JSONWebKey{Key: ec.Public(), KeyID: "other"}, "kid does not match"},
 		{"alg", jose.JSONWebKey{Key: ec.Public(), Algorithm: "EdDSA"}, "alg"},
-		{"nokey", jose.JSONWebKey{}, "JWK"},
+		{"nokey", jose.JSONWebKey{}, "JWK has no key"},
 	}
 	for _, c := range cases {
 		_, _, _, err := FromJWK(c.j)

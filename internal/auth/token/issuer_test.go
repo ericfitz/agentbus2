@@ -3,6 +3,7 @@ package token
 import (
 	"crypto"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,25 +109,48 @@ func TestIssuerVerifyRefusesWrongClaims(t *testing.T) {
 	if _, err := i.Verify(raw, t0); !errors.Is(err, ErrUnknownKey) {
 		t.Errorf("other issuer: %v", err)
 	}
-	// Right kid header, signature by another key.
-	if _, err := i.Verify(signRaw(t, genKey(t, keys.EdDSA), i.KID(), good), t0); !errors.Is(err, ErrInvalid) {
+	// Right kid header, signature by another key; go-jose's cause stays in the chain.
+	if _, err := i.Verify(signRaw(t, genKey(t, keys.EdDSA), i.KID(), good), t0); !errors.Is(err, ErrInvalid) || !errors.Is(err, jose.ErrCryptoFailure) {
 		t.Errorf("forged signature: %v", err)
 	}
 	mut := func(f func(*jwt.Claims)) string { c := good; f(&c); return signRaw(t, k, i.KID(), c) }
-	for name, raw := range map[string]string{
-		"iss":      mut(func(c *jwt.Claims) { c.Issuer = "https://evil.example" }),
-		"aud":      mut(func(c *jwt.Claims) { c.Audience = jwt.Audience{i.TokenEndpoint()} }),
-		"expired":  mut(func(c *jwt.Claims) { c.Expiry = jwt.NewNumericDate(t0.Add(-2 * time.Minute)) }),
-		"no exp":   mut(func(c *jwt.Claims) { c.Expiry = nil }),
-		"no sub":   mut(func(c *jwt.Claims) { c.Subject = "" }),
-		"nbf":      mut(func(c *jwt.Claims) { c.NotBefore = jwt.NewNumericDate(t0.Add(time.Hour)) }),
-		"garbage":  "not.a.jwt",
-		"empty":    "",
-		"one part": "abc",
+	// cause is the go-jose sentinel that must be in the chain next to ErrInvalid.
+	for name, c := range map[string]struct {
+		raw   string
+		cause error
+	}{
+		"iss":      {mut(func(c *jwt.Claims) { c.Issuer = "https://evil.example" }), jwt.ErrInvalidIssuer},
+		"aud":      {mut(func(c *jwt.Claims) { c.Audience = jwt.Audience{i.TokenEndpoint()} }), jwt.ErrInvalidAudience},
+		"expired":  {mut(func(c *jwt.Claims) { c.Expiry = jwt.NewNumericDate(t0.Add(-2 * time.Minute)) }), jwt.ErrExpired},
+		"no exp":   {mut(func(c *jwt.Claims) { c.Expiry = nil }), nil},
+		"no sub":   {mut(func(c *jwt.Claims) { c.Subject = "" }), nil},
+		"nbf":      {mut(func(c *jwt.Claims) { c.NotBefore = jwt.NewNumericDate(t0.Add(time.Hour)) }), jwt.ErrNotValidYet},
+		"iat":      {mut(func(c *jwt.Claims) { c.IssuedAt = jwt.NewNumericDate(t0.Add(time.Hour)) }), jwt.ErrIssuedInTheFuture},
+		"garbage":  {"not.a.jwt", nil},
+		"empty":    {"", nil},
+		"one part": {"abc", nil},
 	} {
-		if _, err := i.Verify(raw, t0); !errors.Is(err, ErrInvalid) {
+		_, err := i.Verify(c.raw, t0)
+		if !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: err = %v", name, err)
 		}
+		if c.cause != nil && !errors.Is(err, c.cause) {
+			t.Errorf("%s: err = %v, want %v in the chain", name, err, c.cause)
+		}
+	}
+	// An algorithm outside the allowlist is refused with go-jose's error in the chain.
+	hs, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: []byte("0123456789abcdef0123456789abcdef")},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", i.KID()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	hsRaw, err := jwt.Signed(hs).Claims(good).Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ua *jose.ErrUnexpectedSignatureAlgorithm
+	if _, err := i.Verify(hsRaw, t0); !errors.Is(err, ErrInvalid) || !errors.As(err, &ua) {
+		t.Errorf("hs256: err = %v, want ErrInvalid and *jose.ErrUnexpectedSignatureAlgorithm", err)
 	}
 	// Within leeway an expired token is still accepted; past it, refused.
 	exp := mut(func(c *jwt.Claims) { c.Expiry = jwt.NewNumericDate(t0.Add(-30 * time.Second)) })
@@ -172,29 +196,15 @@ func TestJWKSShape(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !containsAll(string(raw), `"kty":"`+kty+`"`, `"use":"sig"`, `"alg":"`+string(alg)+`"`, `"kid":"`+i.KID()+`"`) {
-			t.Errorf("%s: json %s", alg, raw)
+		for _, want := range []string{`"kty":"` + kty + `"`, `"use":"sig"`, `"alg":"` + string(alg) + `"`, `"kid":"` + i.KID() + `"`} {
+			if !strings.Contains(string(raw), want) {
+				t.Errorf("%s: json %s lacks %s", alg, raw, want)
+			}
 		}
-		if containsAll(string(raw), `"d":`) {
+		if strings.Contains(string(raw), `"d":`) {
 			t.Errorf("%s: private material in JWKS", alg)
 		}
 	}
-}
-
-func containsAll(s string, subs ...string) bool {
-	for _, sub := range subs {
-		found := false
-		for i := 0; i+len(sub) <= len(s); i++ {
-			if s[i:i+len(sub)] == sub {
-				found = true
-				break
-			}
-		}
-		if !found {
-			return false
-		}
-	}
-	return true
 }
 
 func TestNewIssuerRejectsURL(t *testing.T) {
