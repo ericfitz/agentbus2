@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"github.com/ericfitz/agentbus2/internal/strictjson"
 )
 
 const envPrefix = "AGENTBUS2_SERVER_"
@@ -100,6 +102,11 @@ func loadFile(c *Config, path string) error {
 			return fmt.Errorf("%s: %q must not be null", path, key)
 		}
 	}
+	// The decoder matches member names case-insensitively and lets a
+	// repeated member win; both are refused.
+	if err := strictjson.Check(body, reflect.TypeFor[Config]()); err != nil {
+		return fmt.Errorf("%s: %w", path, err)
+	}
 	return nil
 }
 
@@ -149,6 +156,9 @@ func set(c *Config, name, text, source string) error {
 		}
 		if v.Elem().IsNil() {
 			return bad(errors.New("null is not a list"))
+		}
+		if err := strictjson.Check([]byte(text), f.Type()); err != nil {
+			return bad(err)
 		}
 		f.Set(v.Elem())
 	default:

@@ -91,6 +91,8 @@ func TestReadStrict(t *testing.T) {
 		"garbage":  `not json`,
 		"mismatch": `{"session":"other"}`,
 		"noname":   `{}`,
+		"casing":   `{"session":"casing","Identity":"pat"}`,
+		"repeated": `{"session":"repeated","identity":"pat","identity":"kim"}`,
 	} {
 		if err := os.WriteFile(filepath.Join(Dir(dir), name+".json"), []byte(body), 0o600); err != nil {
 			t.Fatal(err)

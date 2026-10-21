@@ -9,10 +9,12 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/repoconfig"
 	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentbus2/internal/strictjson"
 )
 
 // Mode says where a profile's bus lives.
@@ -156,6 +158,11 @@ func Load(path string) (Config, error) {
 	}
 	if v, ok := raw["profiles"]; ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
 		return Config{}, fmt.Errorf(`%s: "profiles" must not be null`, path)
+	}
+	// The decoder matches member names case-insensitively and lets a
+	// repeated member or profile win; both are refused.
+	if err := strictjson.Check(body, reflect.TypeFor[configFile]()); err != nil {
+		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
 	for name, p := range f.Profiles {
 		if err := repoconfig.ValidProfileName(name); err != nil {

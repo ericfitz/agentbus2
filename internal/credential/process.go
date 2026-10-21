@@ -8,8 +8,11 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"reflect"
 	"strings"
 	"time"
+
+	"github.com/ericfitz/agentbus2/internal/strictjson"
 )
 
 // ProcessInput is the one JSON object written to a credential_process's stdin (Decision 56).
@@ -58,37 +61,11 @@ func (w *capWriter) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-// outputMembers are the member names of ProcessOutput, matched exactly.
-var outputMembers = map[string]bool{"version": true, "private_key_pem": true, "client_assertion": true, "access_token": true, "expires_at": true}
-
 // checkMembers refuses what encoding/json would accept silently: a member
 // name that matches ProcessOutput only case-insensitively and a repeated
 // member (the last one would win).
 func checkMembers(b []byte) error {
-	dec := json.NewDecoder(bytes.NewReader(b))
-	if t, err := dec.Token(); err != nil || t != json.Delim('{') {
-		return errors.New("not a JSON object")
-	}
-	seen := map[string]bool{}
-	for dec.More() {
-		t, err := dec.Token()
-		if err != nil {
-			return err
-		}
-		k, _ := t.(string)
-		if !outputMembers[k] {
-			return fmt.Errorf("unknown member %q", k)
-		}
-		if seen[k] {
-			return fmt.Errorf("member %q repeated", k)
-		}
-		seen[k] = true
-		var v json.RawMessage
-		if err := dec.Decode(&v); err != nil {
-			return err
-		}
-	}
-	return nil
+	return strictjson.Check(b, reflect.TypeFor[ProcessOutput]())
 }
 
 // RunProcess runs argv without a shell, writes in as JSON to its stdin and

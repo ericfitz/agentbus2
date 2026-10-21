@@ -47,6 +47,12 @@ func TestLoadStrict(t *testing.T) {
 		{"profile name with slash", `{"profiles":{"a/b":{"mode":"local"}}}`, "a/b"},
 		{"profile name dotdot", `{"profiles":{"..":{"mode":"local"}}}`, ".."},
 		{"not an object", `[]`, "config.json"},
+		{"top-level member case", `{"Profiles":{}}`, `unknown member "Profiles"`},
+		{"profiles repeated", `{"profiles":{},"profiles":{"a":{"mode":"local"}}}`, `member "profiles" repeated`},
+		{"profile repeated", `{"profiles":{"a":{"mode":"local"},"a":{"mode":"server","server":"https://h"}}}`, `profiles: key "a" repeated`},
+		{"profile member case", `{"profiles":{"a":{"Mode":"local"}}}`, `profiles["a"]: unknown member "Mode"`},
+		{"profile member repeated", `{"profiles":{"a":{"mode":"local","mode":"server"}}}`, `profiles["a"]: member "mode" repeated`},
+		{"name field not a member", `{"profiles":{"a":{"mode":"local","Name":"b"}}}`, `"Name"`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

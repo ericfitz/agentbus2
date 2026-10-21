@@ -4,7 +4,8 @@
 // MCP server or a CLI invocation under the same harness finds its session
 // (Decision 41). The files are mode 0600 and replaced atomically.
 //
-// It imports internal/procs and the standard library only.
+// It imports internal/procs, the standard-library-only internal/strictjson
+// and the standard library only.
 package sessionstate
 
 import (
@@ -16,10 +17,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"reflect"
 	"sort"
 	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/procs"
+	"github.com/ericfitz/agentbus2/internal/strictjson"
 )
 
 // File is the state of one session.
@@ -111,6 +114,9 @@ func decode(b []byte) (File, error) {
 	}
 	if _, err := dec.Token(); err != io.EOF {
 		return File{}, errors.New("trailing data after the JSON document")
+	}
+	if err := strictjson.Check(b, reflect.TypeFor[File]()); err != nil {
+		return File{}, err
 	}
 	if err := checkSession(f.Session); err != nil {
 		return File{}, err

@@ -111,6 +111,11 @@ func TestLoadFileRules(t *testing.T) {
 		{"array", `[1]`, "array"},
 		{"null file", `null`, "must be a JSON object, not null"},
 		{"bound", `{"sqlite":"x","max_message_kib":0}`, "max_message_kib must be between 1 and 1024, got 0"},
+		{"member case", `{"sqlite":"x","Listen":"a:1"}`, `unknown member "Listen"`},
+		{"member repeated", `{"sqlite":"x","listen":"a:1","listen":"b:2"}`, `member "listen" repeated`},
+		{"nested member case", `{"sqlite":"x","issuers":[{"issuer":"https://i","JWKS_URI":"https://i/j","audience":"a","subjects":{"s":"pat"}}]}`, `issuers[0]: unknown member "JWKS_URI"`},
+		{"nested member repeated", `{"sqlite":"x","default_acl":[{"identity":"everyone","identity":"pat","permissions":["read"]}]}`, `default_acl[0]: member "identity" repeated`},
+		{"subject repeated", `{"sqlite":"x","issuers":[{"issuer":"https://i","jwks_uri":"https://i/j","audience":"a","subjects":{"s":"pat","s":"kim"}}]}`, `issuers[0].subjects: key "s" repeated`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -156,6 +161,18 @@ func TestRejectsUnknownAndMalformed(t *testing.T) {
 	_, err = Load("", []string{"AGENTBUS2_SERVER_ISSUERS=" + `[{"colour":1}]`}, base)
 	if err == nil {
 		t.Error("unknown key inside issuers accepted")
+	}
+	_, err = Load("", []string{"AGENTBUS2_SERVER_ISSUERS=" + `[{"Issuer":"https://i","jwks_uri":"https://i/j","audience":"a","subjects":{"s":"pat"}}]`}, base)
+	if err == nil || !strings.Contains(err.Error(), `[0]: unknown member "Issuer"`) {
+		t.Errorf("case-insensitive member inside issuers: %v", err)
+	}
+	_, err = Load("", nil, Overrides{"sqlite": "x", "default_acl": `[{"identity":"everyone","permissions":["read"],"permissions":["write"]}]`})
+	if err == nil || !strings.Contains(err.Error(), `[0]: member "permissions" repeated`) || !strings.Contains(err.Error(), "flag") {
+		t.Errorf("repeated member inside default_acl: %v", err)
+	}
+	_, err = Load("", nil, Overrides{"sqlite": "x", "issuers": `[{"issuer":"https://i","jwks_uri":"https://i/j","audience":"a","subjects":{"s":"pat"}},{"issuer":"https://k","jwks_uri":"https://i/j","audience":"a","subjects":{"s":"pat"}}]`})
+	if err != nil {
+		t.Errorf("two well-formed issuers rejected: %v", err)
 	}
 	_, err = Load("", []string{"AGENTBUS2_SERVER_=x"}, base)
 	if err == nil {
