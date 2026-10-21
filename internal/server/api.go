@@ -21,12 +21,12 @@ type api struct {
 	version string
 
 	channels  channels.Service
-	sessions  sessions.Service  //nolint:unused // Task 5
-	delivery  delivery.Service  //nolint:unused // Task 5
+	sessions  sessions.Service //nolint:unused // Task 5
+	delivery  delivery.Service //nolint:unused // Task 5
 	messaging messaging.Service
 	search    search.Service
-	memories  memories.Service  //nolint:unused // Task 8
-	tasks     tasks.Service     //nolint:unused // Task 8
+	memories  memories.Service //nolint:unused // Task 8
+	tasks     tasks.Service    //nolint:unused // Task 8
 }
 
 var _ gen.StrictServerInterface = (*api)(nil)
