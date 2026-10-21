@@ -150,6 +150,7 @@ func TestACLRejectsUnknownPermissionAndEmptyList(t *testing.T) {
 			"empty list":         {{Identity: "kim", Permissions: []ab2store.Permission{}}},
 			"nil list":           {{Identity: "kim", Permissions: nil}},
 			"valid then bad":     {{Identity: "everyone", Permissions: rwPerms}, {Identity: "kim", Permissions: nil}},
+			"slash in identity":  {{Identity: "a/b", Permissions: []ab2store.Permission{"read"}}},
 		} {
 			if err := setACL(s, ch.ID, acl); !errors.Is(err, ab2store.ErrInvalid) {
 				t.Errorf("%s: err = %v, want ErrInvalid", name, err)
@@ -169,6 +170,31 @@ func TestACLRejectsUnregisteredIdentity(t *testing.T) {
 		bad := []ab2store.ACLEntry{{Identity: "ghost", Permissions: []ab2store.Permission{"read"}}}
 		if err := setACL(s, ch.ID, bad); !errors.Is(err, ab2store.ErrInvalid) {
 			t.Errorf("SetACL err = %v, want ErrInvalid", err)
+		}
+		wantACL(t, aclOf(t, s, ch.ID), ab2store.DefaultACL(""))
+		// The same rejections inside one transaction that goes on to read: a
+		// registry check that ran after the DELETE or between the inserts
+		// would leave a changed ACL visible here, where a rollback cannot
+		// hide it.
+		for name, acl := range map[string][]ab2store.ACLEntry{
+			"ghost alone":      bad,
+			"valid then ghost": {{Identity: "everyone", Permissions: rwPerms}, bad[0]},
+			"ghost then valid": {bad[0], {Identity: "everyone", Permissions: rwPerms}},
+		} {
+			err := s.Tx(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
+				if err := tx.SetACL(ctx, ch.ID, acl); !errors.Is(err, ab2store.ErrInvalid) {
+					t.Errorf("%s: SetACL err = %v, want ErrInvalid", name, err)
+				}
+				got, err := tx.ACL(ctx, ch.ID)
+				if err != nil {
+					return err
+				}
+				wantACL(t, got, ab2store.DefaultACL(""))
+				return nil
+			})
+			if err != nil {
+				t.Fatalf("%s: %v", name, err)
+			}
 		}
 		special := []ab2store.ACLEntry{
 			{Identity: "everyone", Permissions: []ab2store.Permission{"read"}},
@@ -232,6 +258,9 @@ func TestACLGeneralHasDefaultAndNoCreator(t *testing.T) {
 			t.Errorf("Creator = %q, want empty", ch.Creator)
 		}
 		wantPerms(t, s, ch.ID, "pat", perm{Read: true, Write: true})
+		// A creatorless channel stores creator '' (Decision 92): the empty
+		// identity must not match it and gain admin.
+		wantPerms(t, s, ch.ID, "", perm{Read: true, Write: true})
 	})
 }
 
@@ -273,6 +302,9 @@ func TestACLReadableChannels(t *testing.T) {
 		c1 := mustChannel(t, s, "c1", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: "kim", Permissions: read}})
 		c2 := mustChannel(t, s, "c2", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: "everyone", Permissions: read}})
 		mustChannel(t, s, "c3", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: "admins", Permissions: []ab2store.Permission{"admin"}}})
+		// c4 stores a read row for admins: only an identity with is_admin
+		// reads it (Decision 96), and EffectivePermissions must agree.
+		c4 := mustChannel(t, s, "c4", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: "admins", Permissions: read}})
 		readable := func(who string) []int64 {
 			var ids []int64
 			mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) (err error) {
@@ -284,11 +316,14 @@ func TestACLReadableChannels(t *testing.T) {
 		if got := readable("kim"); !reflect.DeepEqual(got, []int64{c1.ID, c2.ID}) {
 			t.Errorf("kim = %v, want [%d %d]", got, c1.ID, c2.ID)
 		}
-		if got := readable("root"); !reflect.DeepEqual(got, []int64{c2.ID}) {
-			t.Errorf("root = %v, want [%d]", got, c2.ID)
+		if got := readable("root"); !reflect.DeepEqual(got, []int64{c2.ID, c4.ID}) {
+			t.Errorf("root = %v, want [%d %d]", got, c2.ID, c4.ID)
 		}
 		if got := readable("ghost"); !reflect.DeepEqual(got, []int64{c2.ID}) {
 			t.Errorf("ghost = %v, want [%d]", got, c2.ID)
 		}
+		wantPerms(t, s, c4.ID, "root", perm{Read: true, Admin: true})
+		wantPerms(t, s, c4.ID, "kim", perm{})
+		wantPerms(t, s, c4.ID, "ghost", perm{})
 	})
 }
