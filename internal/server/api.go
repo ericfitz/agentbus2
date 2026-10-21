@@ -23,8 +23,8 @@ type api struct {
 	channels  channels.Service
 	sessions  sessions.Service  //nolint:unused // Task 5
 	delivery  delivery.Service  //nolint:unused // Task 5
-	messaging messaging.Service //nolint:unused // Task 7
-	search    search.Service    //nolint:unused // Task 7
+	messaging messaging.Service
+	search    search.Service
 	memories  memories.Service  //nolint:unused // Task 8
 	tasks     tasks.Service     //nolint:unused // Task 8
 }
