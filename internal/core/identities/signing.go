@@ -47,7 +47,8 @@ func (s Service) LoadOrCreateSigningKey(ctx context.Context) (crypto.Signer, key
 				if perr != nil {
 					return core.E(bus.CodeInternal, "signing key row %q is corrupt", row.KID)
 				}
-				if kid, kerr := keys.KID(sg.Public()); kerr != nil || kid != row.KID {
+				// The algorithm column must name the parsed key's algorithm.
+				if kid, kerr := keys.KID(sg.Public()); kerr != nil || kid != row.KID || a != keys.Algorithm(row.Algorithm) {
 					return core.E(bus.CodeInternal, "signing key row %q is corrupt", row.KID)
 				}
 				signer, alg = sg, a

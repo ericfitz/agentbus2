@@ -803,6 +803,24 @@ func TestSigningKeyLifecycle(t *testing.T) {
 	})
 	_, _, _, err = s3.LoadOrCreateSigningKey(ctx)
 	wantCode(t, err, bus.CodeInternal)
+
+	// a PEM whose KID matches but whose algorithm differs from the column
+	// (an ES256 key stored under EdDSA; the Store refuses any other value)
+	es, _ := keys.Generate(keys.ES256)
+	esPEM, _ := keys.EncodePrivatePEM(es)
+	esKID, _ := keys.KID(es.Public())
+	for _, colAlg := range []string{"EdDSA"} {
+		s4, _ := newSvc(t, nil)
+		tx(t, s4, func(ctx context.Context, tx store.Tx) error {
+			return tx.PutSigningKey(ctx, store.SigningKey{KID: esKID, Algorithm: colAlg, PrivateKeyPEM: string(esPEM), CreatedAt: startMs})
+		})
+		signer, _, _, err := s4.LoadOrCreateSigningKey(ctx)
+		if signer != nil {
+			t.Errorf("algorithm column %q: a signer for a mismatched row", colAlg)
+		}
+		wantCode(t, err, bus.CodeInternal)
+		wantDetail(t, err, esKID)
+	}
 }
 
 func TestEnrollmentTokenExpiresResolution(t *testing.T) {
