@@ -89,6 +89,26 @@ type WatchResult struct {
 	Channels []string
 }
 
+// PeekInput asks for a session's pending counts without reading them.
+// IncludeOwn is as WatchInput.IncludeOwn (default false).
+type PeekInput struct {
+	Session    string
+	IncludeOwn bool
+}
+
+// PeekChannel is the pending count of one channel.
+type PeekChannel struct {
+	Channel string
+	Count   int
+}
+
+// PeekResult is the read-only pending count above the watch floor: Count is
+// the sum, Channels the non-zero counts sorted by channel name.
+type PeekResult struct {
+	Count    int
+	Channels []PeekChannel
+}
+
 // SessionInfo describes one live session.
 type SessionInfo struct {
 	ID          string
@@ -110,6 +130,11 @@ type Sessions interface {
 	Close(ctx context.Context, in CloseSessionInput) error
 	Receive(ctx context.Context, in ReceiveInput) (ReceiveResult, error)
 	Watch(ctx context.Context, in WatchInput) (WatchResult, error)
+	// Peek counts what a Watch with After 0 would wake on, per channel,
+	// writing nothing (no lease renewal). It answers session_lapsed,
+	// session_closed and not_found as Receive does, and forbidden for a
+	// session that is not the caller's.
+	Peek(ctx context.Context, in PeekInput) (PeekResult, error)
 	// Identities lists identities with a live session (v1 discover).
 	Identities(ctx context.Context) ([]IdentityInfo, error)
 }

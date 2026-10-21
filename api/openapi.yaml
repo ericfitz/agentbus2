@@ -160,6 +160,28 @@ paths:
                 $ref: "#/components/schemas/Problem"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/sessions/{session}/peek:
+    get:
+      operationId: peek
+      tags: [sessions]
+      description: Read-only pending counts above the watch floor. Writes nothing (no lease renewal, no cursor, no watch row, no receipt).
+      parameters:
+        - $ref: "#/components/parameters/SessionParam"
+        - name: include_own
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+      responses:
+        "200":
+          description: The pending counts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Peek"
+        default:
+          $ref: "#/components/responses/Problem"
   /v1/identities:
     get:
       operationId: listIdentities
@@ -882,6 +904,22 @@ components:
           type: array
           items:
             type: string
+    Peek:
+      type: object
+      required: [count, channels]
+      properties:
+        count:
+          type: integer
+        channels:
+          type: array
+          items:
+            type: object
+            required: [channel, count]
+            properties:
+              channel:
+                type: string
+              count:
+                type: integer
     WellKnown:
       type: object
       required: [discover]

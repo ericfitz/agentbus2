@@ -94,6 +94,7 @@ func TestOperationTable(t *testing.T) {
 		"closeSession":         "DELETE /v1/sessions/{session}",
 		"receive":              "POST /v1/sessions/{session}/receive",
 		"watch":                "GET /v1/sessions/{session}/watch",
+		"peek":                 "GET /v1/sessions/{session}/peek",
 		"listIdentities":       "GET /v1/identities",
 		"listChannels":         "GET /v1/channels",
 		"createChannel":        "POST /v1/channels",
@@ -155,8 +156,8 @@ func TestOperationTable(t *testing.T) {
 			t.Errorf("unexpected operation %s", id)
 		}
 	}
-	if open != 6 || protected != 32 {
-		t.Fatalf("security: %d open, %d protected; want 6 and 32", open, protected)
+	if open != 6 || protected != 33 {
+		t.Fatalf("security: %d open, %d protected; want 6 and 33", open, protected)
 	}
 }
 

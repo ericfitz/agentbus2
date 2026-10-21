@@ -443,6 +443,15 @@ type OpenSessionRequest struct {
 	ResumeToken *string          `json:"resume_token,omitempty"`
 }
 
+// Peek defines model for Peek.
+type Peek struct {
+	Channels []struct {
+		Channel string `json:"channel"`
+		Count   int    `json:"count"`
+	} `json:"channels"`
+	Count int `json:"count"`
+}
+
 // PendingChannel defines model for PendingChannel.
 type PendingChannel struct {
 	Channel string `json:"channel"`
@@ -813,6 +822,11 @@ type CloseSessionParams struct {
 	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
 }
 
+// PeekParams defines parameters for Peek.
+type PeekParams struct {
+	IncludeOwn *bool `form:"include_own,omitempty" json:"include_own,omitempty"`
+}
+
 // WatchParams defines parameters for Watch.
 type WatchParams struct {
 	After *int64 `form:"after,omitempty" json:"after,omitempty"`
@@ -1114,6 +1128,11 @@ type ClientInterface interface {
 
 	// CloseSession performs a DELETE /v1/sessions/{session} (the `CloseSession` operationId) request.
 	CloseSession(ctx context.Context, session SessionParam, params *CloseSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Peek performs a GET /v1/sessions/{session}/peek (the `Peek` operationId) request.
+	//
+	// Read-only pending counts above the watch floor. Writes nothing (no lease renewal, no cursor, no watch row, no receipt).
+	Peek(ctx context.Context, session SessionParam, params *PeekParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ReceiveWithBody performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request,
 	// with any type of body and a specified content type.
@@ -1688,6 +1707,21 @@ func (c *Client) OpenSession(ctx context.Context, body OpenSessionJSONRequestBod
 // CloseSession performs a DELETE /v1/sessions/{session} (the `CloseSession` operationId) request.
 func (c *Client) CloseSession(ctx context.Context, session SessionParam, params *CloseSessionParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCloseSessionRequest(c.Server, session, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Peek performs a GET /v1/sessions/{session}/peek (the `Peek` operationId) request.
+//
+// Read-only pending counts above the watch floor. Writes nothing (no lease renewal, no cursor, no watch row, no receipt).
+func (c *Client) Peek(ctx context.Context, session SessionParam, params *PeekParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewPeekRequest(c.Server, session, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3359,6 +3393,67 @@ func NewCloseSessionRequest(server string, session SessionParam, params *CloseSe
 	return req, nil
 }
 
+// NewPeekRequest constructs an http.Request for the Peek method
+func NewPeekRequest(server string, session SessionParam, params *PeekParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session", session, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sessions/%s/peek", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.IncludeOwn != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "include_own", *params.IncludeOwn, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewReceiveRequest calls the generic Receive builder with application/json body
 func NewReceiveRequest(server string, session SessionParam, body ReceiveJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -4095,6 +4190,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns a wrapper object for the known response body format(s).
 	CloseSessionWithResponse(ctx context.Context, session SessionParam, params *CloseSessionParams, reqEditors ...RequestEditorFn) (*CloseSessionResponse, error)
+
+	// PeekWithResponse performs a GET /v1/sessions/{session}/peek (the `Peek` operationId) request.
+	//
+	// Read-only pending counts above the watch floor. Writes nothing (no lease renewal, no cursor, no watch row, no receipt).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	PeekWithResponse(ctx context.Context, session SessionParam, params *PeekParams, reqEditors ...RequestEditorFn) (*PeekResponse, error)
 
 	// ReceiveWithBodyWithResponse performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request,
 	// with any type of body and a specified content type.
@@ -5498,6 +5600,54 @@ func (r CloseSessionResponse) ContentType() string {
 	return ""
 }
 
+type PeekResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Peek
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r PeekResponse) GetJSON200() *Peek {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r PeekResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r PeekResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r PeekResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r PeekResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r PeekResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ReceiveResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -6358,6 +6508,19 @@ func (c *ClientWithResponses) CloseSessionWithResponse(ctx context.Context, sess
 		return nil, err
 	}
 	return ParseCloseSessionResponse(rsp)
+}
+
+// PeekWithResponse performs a GET /v1/sessions/{session}/peek (the `Peek` operationId) request.
+//
+// Read-only pending counts above the watch floor. Writes nothing (no lease renewal, no cursor, no watch row, no receipt).
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) PeekWithResponse(ctx context.Context, session SessionParam, params *PeekParams, reqEditors ...RequestEditorFn) (*PeekResponse, error) {
+	rsp, err := c.Peek(ctx, session, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParsePeekResponse(rsp)
 }
 
 // ReceiveWithBodyWithResponse performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request,
@@ -7428,6 +7591,39 @@ func ParseCloseSessionResponse(rsp *http.Response) (*CloseSessionResponse, error
 	return response, nil
 }
 
+// ParsePeekResponse parses an HTTP response from a PeekWithResponse call
+func ParsePeekResponse(rsp *http.Response) (*PeekResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &PeekResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Peek
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseReceiveResponse parses an HTTP response from a ReceiveWithResponse call
 func ParseReceiveResponse(rsp *http.Response) (*ReceiveResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -7816,6 +8012,9 @@ type ServerInterface interface {
 
 	// (DELETE /v1/sessions/{session})
 	CloseSession(w http.ResponseWriter, r *http.Request, session SessionParam, params CloseSessionParams)
+
+	// (GET /v1/sessions/{session}/peek)
+	Peek(w http.ResponseWriter, r *http.Request, session SessionParam, params PeekParams)
 
 	// (POST /v1/sessions/{session}/receive)
 	Receive(w http.ResponseWriter, r *http.Request, session SessionParam)
@@ -9003,6 +9202,48 @@ func (siw *ServerInterfaceWrapper) CloseSession(w http.ResponseWriter, r *http.R
 	handler.ServeHTTP(w, r)
 }
 
+// Peek operation middleware
+func (siw *ServerInterfaceWrapper) Peek(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "session" -------------
+	var session SessionParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "session", r.PathValue("session"), &session, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "session", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params PeekParams
+
+	// ------------- Optional query parameter "include_own" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "include_own", r.URL.Query(), &params.IncludeOwn, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "include_own"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "include_own", Err: err})
+		}
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Peek(w, r, session, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // Receive operation middleware
 func (siw *ServerInterfaceWrapper) Receive(w http.ResponseWriter, r *http.Request) {
 
@@ -9509,6 +9750,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions/{session}", wrapper.CloseSession)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions/{session}/receive", wrapper.Receive)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sessions/{session}/watch", wrapper.Watch)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sessions/{session}/peek", wrapper.Peek)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/identities", wrapper.ListIdentities)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/channels", wrapper.ListChannels)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/channels", wrapper.CreateChannel)
@@ -10642,6 +10884,46 @@ func (response CloseSessiondefaultApplicationProblemPlusJSONResponse) VisitClose
 	return err
 }
 
+type PeekRequestObject struct {
+	Session SessionParam `json:"session"`
+	Params  PeekParams
+}
+
+type PeekResponseObject interface {
+	VisitPeekResponse(w http.ResponseWriter) error
+}
+
+type Peek200JSONResponse Peek
+
+func (response Peek200JSONResponse) VisitPeekResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type PeekdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response PeekdefaultApplicationProblemPlusJSONResponse) VisitPeekResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ReceiveRequestObject struct {
 	Session SessionParam `json:"session"`
 	Body    *ReceiveJSONRequestBody
@@ -11099,6 +11381,9 @@ type StrictServerInterface interface {
 
 	// (DELETE /v1/sessions/{session})
 	CloseSession(ctx context.Context, request CloseSessionRequestObject) (CloseSessionResponseObject, error)
+
+	// (GET /v1/sessions/{session}/peek)
+	Peek(ctx context.Context, request PeekRequestObject) (PeekResponseObject, error)
 
 	// (POST /v1/sessions/{session}/receive)
 	Receive(ctx context.Context, request ReceiveRequestObject) (ReceiveResponseObject, error)
@@ -11981,6 +12266,33 @@ func (sh *strictHandler) CloseSession(w http.ResponseWriter, r *http.Request, se
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(CloseSessionResponseObject); ok {
 		if err := validResponse.VisitCloseSessionResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Peek operation middleware
+func (sh *strictHandler) Peek(w http.ResponseWriter, r *http.Request, session SessionParam, params PeekParams) {
+	var request PeekRequestObject
+
+	request.Session = session
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Peek(ctx, request.(PeekRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Peek")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(PeekResponseObject); ok {
+		if err := validResponse.VisitPeekResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
