@@ -54,4 +54,5 @@ type Tx interface {
 	Tasks
 	EnrollmentTokens
 	SigningKeys
+	AssertionReplays
 }

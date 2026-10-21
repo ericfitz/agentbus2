@@ -1,7 +1,6 @@
 package server
 
 import (
-	"github.com/ericfitz/agentbus2/internal/auth/token"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/channels"
 	"github.com/ericfitz/agentbus2/internal/core/delivery"
@@ -20,7 +19,6 @@ type api struct {
 	core    *core.Core
 	opts    Options
 	version string
-	replay  *token.Replay // jti set of accepted client assertions, one per New
 
 	channels  channels.Service
 	sessions  sessions.Service
@@ -40,7 +38,7 @@ func newAPI(c *core.Core, o Options) *api {
 	}
 	sess := sessions.Service{Core: c}
 	return &api{
-		core: c, opts: o, version: v, replay: token.NewReplay(),
+		core: c, opts: o, version: v,
 		channels:  channels.Service{Core: c},
 		sessions:  sess,
 		delivery:  delivery.Service{Core: c, Sessions: sess},

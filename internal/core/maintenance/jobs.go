@@ -275,6 +275,19 @@ func (s Service) memoryExpiry(ctx context.Context, now int64) (int, error) {
 	return expired, err
 }
 
+// assertionReplayExpiry deletes the assertion_jti rows whose retention
+// (client assertion exp + token.Leeway + 1s, set by the token endpoint) has
+// passed (Decision (Eric, 2026-10-21), Milestone 7 item 4). Idempotent. A
+// single DELETE: rows arrive at the token-exchange rate and leave every tick.
+func (s Service) assertionReplayExpiry(ctx context.Context, now int64) (n int, err error) {
+	err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		n, err = tx.DeleteAssertionJTIBefore(ctx, now)
+		return err
+	})
+	return n, err
+}
+
 // embeddings runs up to embedBatchesPT embedding batches. The HTTP calls carry
 // embed.RequestTimeout in real time (the endpoint does not read the fake
 // clock).

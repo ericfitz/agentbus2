@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentbus2/internal/store"
 )
 
 func issuerUnavailable() error {
@@ -57,11 +59,21 @@ func (a *api) Token(ctx context.Context, req gen.TokenRequestObject) (gen.TokenR
 		return nil, core.E(bus.CodeUnauthenticated, "%s", err)
 	}
 	// Verify accepts the assertion until exp plus the leeway inclusive, and
-	// Seen forgets an entry once now reaches its time, so the jti is
-	// remembered one second past exp+Leeway: remembering it only until exp
-	// would let a replay inside the leeway through.
-	if a.replay.Seen(p.JTI, p.Expiry.Add(token.Leeway+time.Second), now) {
+	// the expiry job deletes rows with expires_at < now, so the jti is kept
+	// until one second past exp+Leeway: forgetting it at exp would let a
+	// replay inside the leeway mint a second bearer. The insert is the whole
+	// transaction (Decision 26: no side effects); replicas racing on one jti
+	// serialize on the primary key and exactly one commits (Decision (Eric,
+	// 2026-10-21), Milestone 7 item 4).
+	keepUntil := p.Expiry.Add(token.Leeway + time.Second).UnixMilli()
+	err = a.core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		return tx.PutAssertionJTI(ctx, p.JTI, keepUntil)
+	})
+	if errors.Is(err, store.ErrConflict) {
 		return nil, core.E(bus.CodeUnauthenticated, "assertion replayed")
+	}
+	if err != nil {
+		return nil, core.FromStore(err)
 	}
 	raw, _, err := iss.Mint(p.Identity)
 	if err != nil {

@@ -62,6 +62,7 @@ type env struct {
 	auth     Authenticator
 	issuer   *token.Issuer
 	opts     Options // Registration, Issuer and External for New
+	dbPath   string
 
 	once sync.Once
 	h    http.Handler
@@ -78,16 +79,24 @@ type envOptions struct {
 	registration identities.Mode
 	external     []*token.External // sets Bearer.Verifier.External when issuer is set
 	autoCreate   bool              // sets Bearer.AutoCreate to CreateIdentity
+
+	// dbPath opens this SQLite file instead of a fresh one, so two envs
+	// model two replicas over one database.
+	dbPath string
 }
 
 func newEnv(t *testing.T, o envOptions) *env {
 	t.Helper()
-	s, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "ab2.db"), sqlite.Options{})
+	path := o.dbPath
+	if path == "" {
+		path = filepath.Join(t.TempDir(), "ab2.db")
+	}
+	s, err := sqlite.Open(context.Background(), path, sqlite.Options{})
 	if err != nil {
 		t.Fatalf("sqlite.Open: %v", err)
 	}
 	t.Cleanup(func() { _ = s.Close() })
-	e := &env{t: t, store: s, clock: &fakeClock{t: time.UnixMilli(fixedNowMs)}, auth: o.auth}
+	e := &env{t: t, store: s, clock: &fakeClock{t: time.UnixMilli(fixedNowMs)}, auth: o.auth, dbPath: path}
 	if e.auth == nil {
 		e.auth = InProcess{}
 	}

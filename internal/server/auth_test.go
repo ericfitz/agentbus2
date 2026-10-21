@@ -582,3 +582,19 @@ func TestTokenReplayInsideLeeway(t *testing.T) {
 	e.clock.Advance(p.Expiry.Add(token.Leeway).Sub(e.clock.Now()))
 	wantAuthProblem(t, e.exchange(b, ""), 401, "unauthenticated", "assertion replayed")
 }
+
+// TestTokenReplayIsShared: two server instances (replicas) over one database
+// share the assertion record. Milestone 5's per-process set answered 200
+// twice.
+func TestTokenReplayIsShared(t *testing.T) {
+	e1 := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
+	e2 := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen, dbPath: e1.dbPath})
+	pat := genKey(t, keys.EdDSA)
+	e1.mustRegister("pat", pat)
+	a := e1.assertionFor("pat", pat, "http://inproc/v1/auth/token", 0)
+	if resp := e1.exchange(a, ""); resp.StatusCode != 200 {
+		t.Fatalf("first replica: %d %s", resp.StatusCode, readBody(t, resp))
+	}
+	wantAuthProblem(t, e2.exchange(a, ""), 401, "unauthenticated", "assertion replayed")
+	wantAuthProblem(t, e1.exchange(a, ""), 401, "unauthenticated", "assertion replayed")
+}

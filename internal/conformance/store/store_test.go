@@ -40,6 +40,7 @@ func TestStoreImplementsEveryAggregate(t *testing.T) {
 					}
 					return nil
 				}},
+				{"PutAssertionJTI", func() error { return tx.PutAssertionJTI(ctx, "probe", 1) }},
 				{"ListIdentities", func() error { _, err := tx.ListIdentities(ctx); return err }},
 				{"Receipt", func() error { _, _, err := tx.Receipt(ctx, "nobody", "k", fixedNow); return err }},
 				{"ListChannels", func() error { _, err := tx.ListChannels(ctx); return err }},

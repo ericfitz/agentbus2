@@ -85,6 +85,7 @@ func (s Service) Jobs() []Job {
 		{"budget eviction", s.evictToBudget},
 		{"capacity notices", s.capacityNotice},
 		{"embeddings", s.embeddings},
+		{"assertion replay expiry", s.assertionReplayExpiry},
 	}
 }
 
