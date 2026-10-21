@@ -6,6 +6,7 @@ tool github.com/oapi-codegen/oapi-codegen/v2/cmd/oapi-codegen
 
 require (
 	github.com/jackc/pgx/v5 v5.11.0
+	github.com/jmoiron/sqlx v1.4.0
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	modernc.org/sqlite v1.60.1
