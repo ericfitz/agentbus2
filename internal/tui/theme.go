@@ -1,0 +1,179 @@
+package tui
+
+import (
+	"fmt"
+	"io"
+	"strconv"
+	"strings"
+
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
+)
+
+// Theme holds one terminal color per role. Only ANSI indices 0-15 and the
+// terminal default are representable, on purpose (see ColorIndex).
+type Theme struct {
+	BG, Text, Dim, Stamp, Tag, Agent, User, Mem, Tasks, Health, Warn, Error, Sel, SelInactive, SelText, Unsaved lipgloss.TerminalColor
+	// Name is the theme applied and Sources the resolved value per color key
+	// ("cyan", "default", ...), for the Health overlay.
+	Name    string
+	Sources map[string]string
+	// IconSet is the active icon set name (LoadIcons's return value), for
+	// the Health overlay.
+	IconSet string
+}
+
+// ParseColor is ColorIndex as a Lip Gloss color.
+func ParseColor(s string) (lipgloss.TerminalColor, error) {
+	n, err := ColorIndex(s)
+	if err != nil {
+		return nil, err
+	}
+	if n < 0 {
+		return lipgloss.NoColor{}, nil
+	}
+	return lipgloss.Color(strconv.Itoa(n)), nil
+}
+
+// LoadTheme applies the entry of s.Themes named s.Theme; "" means
+// "default", which is the built-in DefaultTheme unless s.Themes holds an
+// entry of that name. A name that is not in the list, and any value that is
+// empty or not a color, falls back to DefaultTheme; a bad value prints one
+// line to warn naming it and the accepted forms. The TUI always starts.
+func LoadTheme(s Settings, warn io.Writer) Theme {
+	def := DefaultTheme()
+	name := s.Theme
+	if name == "" {
+		name = def.Name
+	}
+	sel, ok := s.FindTheme(name)
+	if !ok {
+		if name != def.Name {
+			_, _ = fmt.Fprintf(warn, "agentbus2 tui: theme %q is not in themes; using %s\n", s.Theme, def.Name)
+		}
+		sel = def
+	}
+	defaults := map[string]string{}
+	for _, kv := range def.Colors() {
+		defaults[kv[0]] = kv[1]
+	}
+	t := Theme{Name: sel.Name, Sources: map[string]string{}}
+	for _, kv := range sel.Colors() {
+		key, value := kv[0], strings.ToLower(strings.TrimSpace(kv[1]))
+		if value == "" {
+			value = defaults[key]
+		} else if _, err := ParseColor(value); err != nil {
+			_, _ = fmt.Fprintf(warn, "agentbus2 tui: theme %q %s=%q is not a color (%v); accepted: %s; using %s\n", sel.Name, key, kv[1], err, ColorForms, defaults[key])
+			value = defaults[key]
+		}
+		c, _ := ParseColor(value) // defaults and validated values both parse
+		t.set(key, c)
+		t.Sources[key] = value
+	}
+	return t
+}
+
+func (t *Theme) set(key string, c lipgloss.TerminalColor) {
+	switch key {
+	case "background":
+		t.BG = c
+	case "text":
+		t.Text = c
+	case "dim":
+		t.Dim = c
+	case "timestamp":
+		t.Stamp = c
+	case "tag":
+		t.Tag = c
+	case "agent":
+		t.Agent = c
+	case "user":
+		t.User = c
+	case "memory":
+		t.Mem = c
+	case "tasks":
+		t.Tasks = c
+	case "health":
+		t.Health = c
+	case "warn":
+		t.Warn = c
+	case "error":
+		t.Error = c
+	case "selection":
+		t.Sel = c
+	case "selection_inactive":
+		t.SelInactive = c
+	case "selection_text":
+		t.SelText = c
+	case "unsaved":
+		t.Unsaved = c
+	}
+}
+
+// Style is a foreground-only style in color c.
+func (t Theme) Style(c lipgloss.TerminalColor) lipgloss.Style {
+	return lipgloss.NewStyle().Foreground(c)
+}
+
+// chipText is the chip foreground on tag background bg: black on the light
+// ANSI colors, bright white on the rest. v1 defines it in view.go; it lives
+// here because Highlight needs it and this task lands before the view.
+func chipText(bg lipgloss.TerminalColor) lipgloss.Color {
+	switch bg {
+	case lipgloss.Color("3"), lipgloss.Color("6"), lipgloss.Color("7"), lipgloss.Color("10"), lipgloss.Color("11"), lipgloss.Color("14"), lipgloss.Color("15"):
+		return lipgloss.Color("0")
+	}
+	return lipgloss.Color("15")
+}
+
+// Highlight renders line on background bg (Sel for a focused selection and
+// the stream cursor, SelInactive for a rail selection without focus).
+// Styled segments inside the line end with a reset that would drop the
+// background for the rest of that line, so it is re-applied after every
+// reset. A segment whose foreground is bg itself would vanish into it (the
+// default theme's dim and selection_inactive are both brightblack, so an
+// idle session's dim "name age" disappeared from a selected row while the
+// stream or compose had focus), so that foreground is swapped for
+// chipText(bg), the text color that reads on bg; every other color stays.
+func (t Theme) Highlight(bg lipgloss.TerminalColor, line string, width int) string {
+	style := lipgloss.NewStyle().Background(bg)
+	if pre := sgrPrefix(style); pre != "" {
+		line = strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+pre)
+	}
+	if same := sgrPrefix(t.Style(bg)); same != "" {
+		line = strings.ReplaceAll(line, same, sgrPrefix(t.Style(chipText(bg))))
+	}
+	return style.Width(width).Render(line)
+}
+
+// sgrPrefix is the escape sequence style opens with, "" for no styling (a
+// NoColor role, or the Ascii profile tests render under).
+func sgrPrefix(style lipgloss.Style) string {
+	pre, _, _ := strings.Cut(style.Render("\x00"), "\x00")
+	return pre
+}
+
+// SelBG is a rail selection's background: Sel while that rail has focus,
+// SelInactive while focus is in the stream or compose (v1 ADR 0011 section 3).
+func (t Theme) SelBG(focused bool) lipgloss.TerminalColor {
+	if focused {
+		return t.Sel
+	}
+	return t.SelInactive
+}
+
+// RailSel renders a rail's selected row. While its pane has focus, the row's
+// per-segment colors (cyan agent names, magenta memory, yellow tasks) are
+// unreadable on the Sel background, so the text is stripped to plain and
+// recolored in SelText before the background is applied; glyphs and content
+// are unchanged, only color. Without focus the row keeps its original colors
+// on SelInactive. The result is always one row: the caller cuts line to
+// width, so Highlight's word wrap has nothing to break, and MaxHeight makes
+// that structural (a wrapped second row would be clipped from the rail's
+// bottom or push the rows below it).
+func (t Theme) RailSel(focused bool, line string, width int) string {
+	if focused {
+		line = t.Style(t.SelText).Render(ansi.Strip(line))
+	}
+	return lipgloss.NewStyle().MaxHeight(1).Render(t.Highlight(t.SelBG(focused), line, width))
+}
