@@ -239,3 +239,33 @@ func TestChannelCreateInsideReadIsReadOnly(t *testing.T) {
 		})
 	})
 }
+
+// ListChannels and ListChannelsByKind are in byte order of the name on both
+// engines (the names are the ones that make SQLite's BINARY collation and
+// Postgres's database collation disagree).
+func TestChannelListIsByteOrder(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		for _, n := range byteOrderNames {
+			mustChannel(t, s, n, ab2store.KindTasks, "", nil)
+		}
+		mustChannel(t, s, "plain", ab2store.KindOrdinary, "", nil)
+		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			all, err := tx.ListChannels(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got, want := channelNames(all), []string{"Pat", "alpha-2", "alpha_1", "kim", "plain", "zed", "\u00c9mile"}; !equalStrings(got, want) {
+				t.Errorf("ListChannels = %q, want byte order %q", got, want)
+			}
+			tasks, err := tx.ListChannelsByKind(ctx, ab2store.KindTasks)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := channelNames(tasks); !equalStrings(got, byteOrderWant) {
+				t.Errorf("ListChannelsByKind(tasks) = %q, want byte order %q", got, byteOrderWant)
+			}
+			return nil
+		})
+	})
+}

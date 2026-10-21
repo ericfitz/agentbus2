@@ -117,17 +117,19 @@ func (t *tx) ChannelByName(ctx context.Context, name string) (store.Channel, err
 
 func (t *tx) ListChannels(ctx context.Context) ([]store.Channel, error) {
 	var rows []channelRow
-	if err := t.sel(ctx, &rows, "SELECT "+channelCols+" FROM channels ORDER BY name"); err != nil {
+	if err := t.sel(ctx, &rows, "SELECT "+channelCols+" FROM channels"); err != nil {
 		return nil, err
 	}
+	sortByBytes(rows, func(r channelRow) string { return r.Name })
 	return channelsOf(rows), nil
 }
 
 func (t *tx) ListChannelsByKind(ctx context.Context, k store.Kind) ([]store.Channel, error) {
 	var rows []channelRow
-	if err := t.sel(ctx, &rows, "SELECT "+channelCols+" FROM channels WHERE kind = ? ORDER BY name", string(k)); err != nil {
+	if err := t.sel(ctx, &rows, "SELECT "+channelCols+" FROM channels WHERE kind = ?", string(k)); err != nil {
 		return nil, err
 	}
+	sortByBytes(rows, func(r channelRow) string { return r.Name })
 	return channelsOf(rows), nil
 }
 

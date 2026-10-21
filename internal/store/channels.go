@@ -37,8 +37,8 @@ type Channels interface {
 	CreateChannel(ctx context.Context, c ChannelCreate) (Channel, error)
 	Channel(ctx context.Context, id int64) (Channel, error)
 	ChannelByName(ctx context.Context, name string) (Channel, error)
-	ListChannels(ctx context.Context) ([]Channel, error) // by name
-	ListChannelsByKind(ctx context.Context, k Kind) ([]Channel, error)
+	ListChannels(ctx context.Context) ([]Channel, error)               // by name, in byte order
+	ListChannelsByKind(ctx context.Context, k Kind) ([]Channel, error) // by name, in byte order
 	// RenameChannel: ErrInvalid, ErrConflict, ErrNotFound (Decision 89).
 	RenameChannel(ctx context.Context, id int64, name string) error
 	// DeleteChannel cascades to ACL rows, subscriptions, cursors, messages.

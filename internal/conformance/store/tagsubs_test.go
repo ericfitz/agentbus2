@@ -144,3 +144,38 @@ func TestTagSubMatchesAfter(t *testing.T) {
 		}
 	})
 }
+
+// TagSubscriptions lists the sets in byte order of the key and the patterns of
+// a set in byte order of the pattern on both engines: '*', '-', digits and ':'
+// sort differently under Postgres's database collation than by byte.
+func TestTagSubscriptionsAreByteOrdered(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		mustIdentity(t, s, "kim")
+		scrambled := []string{"a:b", "a0", "a*", "a-b"}
+		wantOrder := []string{"a*", "a-b", "a0", "a:b"}
+		for _, k := range scrambled {
+			tagSubscribe(t, s, tagSet("kim", k, 1, "x"))
+		}
+		tagSubscribe(t, s, tagSet("kim", "patterns", 1, scrambled...))
+		got := tagSubs(t, s, "kim")
+		var keys []string
+		for _, g := range got {
+			keys = append(keys, g.TagsKey)
+		}
+		if want := append(append([]string{}, wantOrder...), "patterns"); !equalStrings(keys, want) {
+			t.Errorf("TagSubscriptions keys = %q, want byte order %q", keys, want)
+		}
+		var pats []string
+		for _, g := range got {
+			if g.TagsKey == "patterns" {
+				for _, p := range g.Patterns {
+					pats = append(pats, p.Pattern)
+				}
+			}
+		}
+		if !equalStrings(pats, wantOrder) {
+			t.Errorf("patterns of the set = %q, want byte order %q", pats, wantOrder)
+		}
+	})
+}

@@ -70,17 +70,22 @@ func (t *tx) UnsubscribeTags(ctx context.Context, identity, tagsKey string) erro
 	return err
 }
 
-// TagSubscriptions lists the identity's sets in key order, patterns in
-// pattern order.
+// TagSubscriptions lists the identity's sets in byte order of the key,
+// patterns in byte order of the pattern (sorted here, not by ORDER BY: see
+// sortByBytes).
 func (t *tx) TagSubscriptions(ctx context.Context, identity string) ([]store.TagSubscription, error) {
 	var sets []tagSetRow
-	if err := t.sel(ctx, &sets, "SELECT tags_key, created_seq FROM tag_subscriptions WHERE identity = ? ORDER BY tags_key", identity); err != nil {
+	if err := t.sel(ctx, &sets, "SELECT tags_key, created_seq FROM tag_subscriptions WHERE identity = ?", identity); err != nil {
 		return nil, err
 	}
+	sortByBytes(sets, func(s tagSetRow) string { return s.TagsKey })
 	var pats []tagPatternRow
-	if err := t.sel(ctx, &pats, "SELECT tags_key, tag, lo, hi FROM tag_subscription_tags WHERE identity = ? ORDER BY tags_key, tag", identity); err != nil {
+	if err := t.sel(ctx, &pats, "SELECT tags_key, tag, lo, hi FROM tag_subscription_tags WHERE identity = ?", identity); err != nil {
 		return nil, err
 	}
+	// Grouped by set below, so the order within one set is what counts; a
+	// pattern is unique within its set.
+	sortByBytes(pats, func(p tagPatternRow) string { return p.Tag })
 	out := make([]store.TagSubscription, len(sets))
 	idx := make(map[string]int, len(sets))
 	for i, s := range sets {
