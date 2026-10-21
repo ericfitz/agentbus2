@@ -298,3 +298,54 @@ issuer's subject gets its row from `server admin create-identity` or, in
   enrollment token"), while a valid token binds the key. A keyless row
   without the flag is claimable in `open` mode. The `create-identity` usage
   text says so.
+
+## Milestone 6 addendum (2026-10-21)
+
+Milestone 6 built the stdio MCP server, the hooks and `watch`/`wait`. These
+are Claude's choices under the spec's delegation, then the items Eric decided
+on 2026-10-21 (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`,
+"Milestone 6"). The choice numbers are the plan's
+(`docs/superpowers/plans/2026-10-21-milestone-6-client-side.md`).
+
+- **Choice 8 and items 1 and 2, the Stop hook (Decision (Eric,
+  2026-10-21)).** The hook never calls `watch` (it would replace the
+  Monitor's watch) or `receive` (it would hand out a batch). It calls the
+  read-only `peek` operation, whose counts use the watch floor
+  `max(CursorSeq, PendingEndSeq)`, so a batch the agent already holds is not
+  counted and the hook never re-blocks for it. `peek` writes nothing, but it
+  needs a live session; on `session_lapsed` the hook makes one
+  `Open{ResumeToken}` from the state file and peeks again, the only write a
+  hook ever makes. The whole run is bounded by 500 ms; any failure falls open
+  (exit 0, nothing on stdout) and appends a line to
+  `<data dir>/logs/hook.log`. Tests: `TestStopHookPeeksWithoutSideEffects`,
+  `TestStopHookCountsUnackedBatch`; `internal/e2e` step `11-stop-hook` blocks
+  once for a new message and prints nothing after the MCP client acks.
+- **Choice 9, `watch` and `wait`, and item 4.** Both need a session: `-session
+  ID`, else the primary state file of the harness found by
+  `procs.FindHarness`. Whenever a state file was read, its profile and
+  identity bind the connection; a disagreeing `-profile` or `-identity` is
+  exit 2. A `session_lapsed` answer is recovered once per lapse with the
+  file's resume token. `-channel` and `-filter` are not offered (item 4,
+  Decision (Eric, 2026-10-21)): the wake lists its channels, and the
+  Milestone 8 TUI runs over the `Bus` and filters for display. The exit
+  codes are spec 3.5's, proved cell by cell by `internal/e2e`'s
+  `TestExitCodeTable` (11 cells).
+- **Choice 10 and item 1, the state file (Decision (Eric, 2026-10-21)).**
+  `<data dir>/sessions/<session>.json`, mode 0600, replaced atomically:
+  `session`, `identity`, `profile`, `display_name`, `resume_token`,
+  `harness_pid`, `harness_start`, `harness_client`,
+  `harness_client_version`, `mcp_pid`, `primary`, `opened_at`. The file
+  survives the MCP server's exit, clean or not; `close_session` removes it
+  on purpose, and the start-up sweep removes a file whose MCP server and
+  harness are both dead. A `register` without a hint and without a resume
+  token resumes the primary file of the same harness whose `mcp_pid` is dead
+  (Decision 79), within the retention window. On Windows the mode bits do not restrict the
+  file and no ACL is set on it, unlike the credential files; the resume
+  token is protected only by the directory's inherited permissions. Tests: `TestStateFileHoldsResumeToken`;
+  `internal/e2e` step `10-mcp-over-stdio` (state file kept after a clean
+  exit, restart resumes the same session with the new `mcp_pid`).
+- **Choice 15, the subagent text.** The SubagentStart hook reads the parent's
+  session from the state file and tells the subagent to call `register`
+  with a hint (agent type plus a random suffix) only if its prompt asks it to
+  use agentbus2, to pass its `session` on every call and never to arm
+  `watch` or `wait`.

@@ -35,7 +35,7 @@ func TestRunHelp(t *testing.T) {
 		if code := run([]string{arg}, nil, &out, &errb); code != 0 {
 			t.Fatalf("%s: exit %d", arg, code)
 		}
-		if !strings.HasPrefix(out.String(), "usage: agentbus2 <command>") || errb.Len() != 0 {
+		if out.String() != usage+"\n" || errb.Len() != 0 {
 			t.Fatalf("%s: stdout %q stderr %q", arg, out.String(), errb.String())
 		}
 	}
@@ -63,7 +63,7 @@ func TestUsageListsServer(t *testing.T) {
 	if code := run([]string{"help"}, nil, &out, io.Discard); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	if !strings.Contains(out.String(), "  server ") {
+	if !strings.Contains(out.String(), "|server|") {
 		t.Fatalf("usage %q lacks the server command", out.String())
 	}
 }
@@ -167,14 +167,33 @@ func TestSecondSignalExits(t *testing.T) {
 	}
 }
 
+// The twenty commands: the nineteen cases of cli.Main plus server. Each is in
+// the usage line and none is answered as an unknown command.
+func TestUsageListsEveryCommand(t *testing.T) {
+	names := []string{"init", "register", "login", "mcp", "server", "watch", "wait", "stop-hook", "subagent-hook",
+		"session", "channels", "send", "receive", "history", "search", "memories", "tasks", "status", "version", "help"}
+	if len(names) != 20 {
+		t.Fatalf("%d names, want 20", len(names))
+	}
+	for _, n := range names {
+		if !strings.Contains(strings.TrimSuffix(strings.TrimPrefix(usage, "usage: agentbus2 <"), "> [flags]"), n) {
+			t.Errorf("usage lacks %q", n)
+		}
+		var out, errb bytes.Buffer
+		// -h makes every command print its flags and exit 0 without touching
+		// anything; the unknown-command exit 2 is told apart by its message.
+		code := run([]string{n, "-h"}, nil, &out, &errb)
+		if strings.Contains(errb.String(), "unknown command") {
+			t.Errorf("%s: answered as an unknown command (exit %d)", n, code)
+		}
+	}
+	var errb bytes.Buffer
+	if code := run([]string{"frobnicate"}, nil, io.Discard, &errb); code != 2 || !strings.Contains(errb.String(), "unknown command") {
+		t.Errorf("unknown command: exit %d, stderr %q", code, errb.String())
+	}
+}
+
 func TestUsageListsServerAdmin(t *testing.T) {
-	var out bytes.Buffer
-	if code := run([]string{"help"}, nil, &out, io.Discard); code != 0 {
-		t.Fatalf("exit %d", code)
-	}
-	if !strings.Contains(out.String(), "server admin") {
-		t.Fatalf("usage %q lacks the server admin command", out.String())
-	}
 	// A bare `server admin` prints its usage and exits 2.
 	var errb bytes.Buffer
 	if code := run([]string{"server", "admin"}, nil, io.Discard, &errb); code != 2 || !strings.Contains(errb.String(), "subcommand is required") {

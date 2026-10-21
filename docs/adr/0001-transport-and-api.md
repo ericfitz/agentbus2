@@ -277,6 +277,44 @@ internal/` then prints nothing).
   `notify.NewPolling`, exercised in `internal/server/cmd`
   (`replaced_test.go`).
 
+## Milestone 6 addendum (2026-10-21)
+
+- **The `peek` operation (Task 12; item 2, Decision (Eric, 2026-10-21),
+  option B).** `GET /v1/sessions/{session}/peek` with an optional
+  `include_own` query parameter (default false) answers the pending counts,
+  total and per channel (`bus.Sessions.Peek`; only channels with a count
+  above zero, sorted by name), computed with the watch floor
+  `max(CursorSeq, PendingEndSeq)`. It writes nothing: no lease renewal, no
+  cursor change, no watch row, and it takes no `Idempotency-Key` (spec 3.4's
+  exemption list). It requires a live session and answers `session_lapsed`,
+  `session_closed` and `not_found` as `receive` does; another identity's
+  session is `not_found`. Tests: `TestPeekUsesWatchFloor`,
+  `TestPeekWritesNothing` (both engines, both transports).
+- **Choice 9, `watch` and `wait` over the long-poll (item 4, Decision (Eric,
+  2026-10-21)).** `watch` arms `GET .../watch` with the server's cap in a
+  loop and prints one line per wake; `wait` prints one JSON line
+  `{"seq","count","channels"}` and exits 0. Exit codes are spec 3.5's:
+  0 woke (`wait` only), 1 timeout (`wait -timeout`), 2 error, 3 replaced by
+  a newer watch (the 409) or ended by SIGINT, SIGTERM or SIGHUP, 4 harness
+  gone (polled every 2 s). When the context is canceled the exit follows
+  `context.Cause`, because a canceled remote `Watch` returns a wrapped
+  transport error and not `context.Canceled`. `-channel` and `-filter` are
+  not offered; the Milestone 8 TUI filters for display. Tests:
+  `TestWatchFlags`, and `TestExitCodeTable` in `internal/e2e` (a cell per
+  exit code and command, run against the built binary and a real server).
+- **Choice 11 and item 3, `wait_seconds` (Decision (Eric, 2026-10-21)).**
+  `receive` with `wait_seconds` above 0 on an empty result runs `Watch` and
+  receives again; the tool description and the skill say this replaces an
+  armed `agentbus2 watch` for that session, which then exits 3. Test:
+  `TestReceiveWaitSecondsReplacesWatch`.
+- **Decision 35 as shipped.** A local profile composes the core, the HTTP
+  handler and the in-process transport in each process over the shared
+  SQLite file; the notifier is the polling one (default 1 s), because
+  in-memory hints do not cross processes. The maintenance loop runs only in
+  `agentbus2 mcp`; one-shot commands never run it. Test:
+  `TestLocalWatchWakesAcrossConns`, whose replaced-notifier mutation is
+  block `replaced-exit-code-ignored` of `scripts/check-gates-selftest.sh`.
+
 ## Milestone 7 addendum (2026-10-21)
 
 - **Choice 8, replicas.** A watch is a plain long-poll that any replica

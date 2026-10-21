@@ -343,6 +343,74 @@ succeed. Gate self-test blocks 14 and 15 break the bearer signature check
 and the admin flag check and require the exit test to fail.
 `scripts/m5-exit-checks.sh` counts the subtests and checks the import rule.
 
+## Milestone 6 addendum (2026-10-21)
+
+Milestone 6 built the client side: profiles, credential files, the token
+source and the CLI that registers and logs in. These are Claude's choices
+under the spec's delegation, then the items Eric decided on 2026-10-21
+(`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`, "Milestone 6").
+The plan is `docs/superpowers/plans/2026-10-21-milestone-6-client-side.md`;
+the choice numbers below are its.
+
+- **Choice 1, directories.** Config is `$AGENTBUS2_CONFIG_DIR`, else
+  `$XDG_CONFIG_HOME/agentbus2`, else `$HOME/.config/agentbus2`; data is
+  `$AGENTBUS2_DATA_DIR`, else `$XDG_DATA_HOME/agentbus2`, else
+  `$HOME/.local/share/agentbus2`. Windows uses `%APPDATA%\agentbus2` and
+  `%LOCALAPPDATA%\agentbus2`. `HOME` is read from the command's environment,
+  then `os.UserHomeDir`; `os.UserConfigDir` is not used (on macOS it is
+  `~/Library/Application Support`, and the spec says `~/.config`).
+- **Choice 2, the file shape.** `config.json` is `{"profiles": {"<name>":
+  {"mode", "server", "identity", "credential_process", "sqlite"}}}`, loaded
+  strictly (an unknown key, `null`, trailing content or an empty file is an
+  error; an absent file is no profiles). `mode` is `local` or `server`;
+  `server` is an absolute `http` or `https` URL with no path, query or
+  fragment and only in server mode; `credential_process` only in server
+  mode; `sqlite` only in local mode. An undefined `default` is the built-in
+  local profile; any other undefined name is an error naming the file.
+- **Choice 3, selection.** `-profile`, then `AGENTBUS2_PROFILE`, then the
+  nearest `.local/agentbus2.json` walking up to the nearest `.git`, then
+  `default`. The repository file is `{"profile": "<name>"}` and every other
+  key is rejected, so a cloned repository cannot name a
+  `credential_process`.
+- **Choice 4, identity.** `-identity`, then `AGENTBUS2_IDENTITY`, then the
+  profile's `identity`, then, in server mode only, the one credential file
+  of the profile when exactly one exists; otherwise an error naming the
+  three ways to set it. A local profile has no credential to infer from.
+- **Choice 5, credential files.** `<config dir>/credentials/<profile>/
+  <identity>` is one PKCS#8 PEM block, written through a temp file at mode
+  0600 and renamed. A file wider than 0600 is refused on load (Unix); on
+  Windows an owner-only ACL is set after the rename. `register` generates
+  Ed25519, or ES256 with `-algorithm ES256`.
+- **Choice 6, the `credential_process` protocol.** Stdin is one JSON object
+  `{"version": 1, "identity", "token_endpoint", "audience", "jti"}`; stdout
+  is one JSON object with `"version": 1` and exactly one of
+  `private_key_pem`, `client_assertion`, `access_token` (the last with
+  `expires_at`). Any other shape, a non-zero exit, no output or more than
+  64 KiB is an error naming the process. It runs with a 10 s context and its
+  argv is executed without a shell. A returned client assertion is exchanged
+  at once, because its `jti` is single-use; a returned private key is held in
+  memory only.
+- **Choice 7 and item 7, the token cache (Decision (Eric, 2026-10-21)).**
+  Discovery reads `<server>/.well-known/openid-configuration` once per
+  process; the assertion `aud` is its `token_endpoint`, and the request goes
+  to the client's base URL, so a server bound to `0.0.0.0`, which advertises
+  `http://0.0.0.0:<port>`, is reachable at the address the client dials. The
+  bearer is cached on disk at `<data dir>/tokens/<profile>/<identity>.json`
+  (0600, atomic), reused until 60 s before `exp`, so hooks and one-shot
+  commands do not exchange on every call. An entry minted for another server
+  is a miss. The transport refreshes once on a 401 and replays the buffered
+  request; a failed refresh is `unauthenticated`. Tests:
+  `TestSourceCachesToken`, and step `9-stale-bearer-refreshes` of
+  `internal/e2e`'s `TestSection24Sequence`.
+- **Choice 14, `register` and `login` (item 6, Decision (Eric,
+  2026-10-21)).** `register -server URL` on an undefined profile creates it
+  as `{mode: server, server: URL, identity: I}`; the credential is saved only
+  after the server answers 201, and a same-key retry is idempotent. `login`
+  discovers, asserts, exchanges and caches, and refuses a local profile with
+  exit 2. Tests: `TestRegisterCreatesServerProfile`; in `internal/e2e` a
+  server on `0.0.0.0` (enrollment mode) refuses `register` without a token
+  as `forbidden` and accepts the same identity with one.
+
 ## Milestone 7 addendum (2026-10-21)
 
 - **Milestone 7 item 4, as decided (B).** The assertion `jti` replay set is

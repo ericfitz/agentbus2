@@ -480,6 +480,131 @@ block_assertion_replay_ignored() {
 		'^TestReplicasWake$/sqlite' TestReplicasWake/sqlite/assertion-single-use-across-replicas
 }
 
+# --- 23. m6-exit-script-fires ----------------------------------------------------------
+# Docker-free and without running the e2e test. The Milestone 6 exit script:
+# the import rule per group (the leaf group's internal/core row, the consumer
+# group's internal/gen row and internal/store row), the log form's refusal of a
+# missing or empty log, its counts on a synthetic log (and a deleted or failed
+# line), and the word check.
+M6_SEQUENCE_STEPS=(0-server 1-register 2-token 3-open-session 4-watch 5-send-from-another-identity 6-wake 7-receive 8-ack 9-stale-bearer-refreshes 10-mcp-over-stdio 11-stop-hook 12-watch-ends-only-by-signal)
+M6_CELLS=(wait-0-woke wait-1-timeout wait-2-error wait-3-replaced wait-3-signal wait-4-harness-gone watch-2-error watch-3-replaced watch-3-signal watch-4-harness-gone watch-never-0-or-1)
+
+# m6_log FILE: a synthetic e2e log with thirteen sequence and eleven cell leaf lines.
+m6_log() {
+	local f="$1" n
+	: >"$f"
+	printf '=== RUN   TestSection24Sequence\n--- PASS: TestSection24Sequence (3.00s)\n' >>"$f"
+	for n in "${M6_SEQUENCE_STEPS[@]}"; do printf '    --- PASS: TestSection24Sequence/%s (0.00s)\n' "$n" >>"$f"; done
+	printf -- '--- PASS: TestExitCodeTable (20.00s)\n' >>"$f"
+	for n in "${M6_CELLS[@]}"; do printf '    --- PASS: TestExitCodeTable/%s (0.00s)\n' "$n" >>"$f"; done
+}
+
+# m6_expect LABEL WHAT WANT_RC PRESENT [ABSENT]: runs the log form of the script
+# on $tmp/m6.log, matching its output with grep -qF.
+m6_expect() {
+	local label="$1" what="$2" want_rc="$3" present="$4" absent="${5:-}" log="$tmp/b23.log" rc=0
+	bash "$wt/scripts/m6-exit-checks.sh" "$tmp/m6.log" >"$log" 2>&1 || rc=$?
+	if [ "$rc" -ne "$want_rc" ]; then problem "$label" "$what: exit $rc, expected $want_rc: $(tail -n 3 "$log" | tr '\n' ' ')"; fi
+	grep -qF -- "$present" "$log" || problem "$label" "$what: output lacks '$present': $(tail -n 4 "$log" | tr '\n' ' ')"
+	if [ -n "$absent" ] && grep -qF -- "$absent" "$log"; then problem "$label" "$what: output has '$absent'"; fi
+}
+
+block_m6_exit_script_fires() {
+	local label=m6-exit-script-fires m=github.com/ericfitz/agentbus2 log="$tmp/b23z.log" rc
+	begin
+	if bash "$wt/scripts/m6-exit-checks.sh" --deps-only >"$log" 2>&1; then
+		grep -qF 'deps_ok=1' "$log" || problem "$label" "clean tree: exit 0 without deps_ok=1"
+	else
+		problem "$label" "clean tree: expected exit 0: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	deps_probe "$label" internal/profile/probe_m6.go "$m/internal/core" "deps_violation=$m/internal/profile imports $m/internal/core" m6-exit-checks.sh
+	deps_probe "$label" internal/mcpserver/probe_m6.go "$m/internal/gen" "deps_violation=$m/internal/mcpserver imports $m/internal/gen" m6-exit-checks.sh
+	deps_probe "$label" internal/cli/probe_m6.go "$m/internal/store/sqlite" "deps_violation=$m/internal/cli imports $m/internal/store/sqlite" m6-exit-checks.sh
+	rc=0
+	bash "$wt/scripts/m6-exit-checks.sh" "$tmp/does-not-exist.log" >"$log" 2>&1 || rc=$?
+	if [ "$rc" -ne 2 ]; then problem "$label" "missing log: exit $rc, expected 2"; fi
+	: >"$tmp/empty.log"
+	rc=0
+	bash "$wt/scripts/m6-exit-checks.sh" "$tmp/empty.log" >"$log" 2>&1 || rc=$?
+	if [ "$rc" -ne 2 ]; then problem "$label" "empty log: exit $rc, expected 2"; fi
+	m6_log "$tmp/m6.log"
+	m6_expect "$label" "good log" 0 'words_ok=1' 'words_hit'
+	grep -qF 'sequence=13' "$tmp/b23.log" || problem "$label" "good log: no sequence=13"
+	grep -qF 'exitcodes=11' "$tmp/b23.log" || problem "$label" "good log: no exitcodes=11"
+	grep -qF 'fail=0' "$tmp/b23.log" || problem "$label" "good log: no fail=0"
+	grep -vF 'TestExitCodeTable/wait-3-replaced' "$tmp/m6.log" >"$tmp/m6x.log" && cp "$tmp/m6x.log" "$tmp/m6.log"
+	m6_expect "$label" "deleted cell line" 1 'exitcodes=10'
+	m6_log "$tmp/m6.log"
+	sed 's/--- PASS: TestExitCodeTable\/wait-3-signal/--- FAIL: TestExitCodeTable\/wait-3-signal/' "$tmp/m6.log" >"$tmp/m6x.log" && cp "$tmp/m6x.log" "$tmp/m6.log"
+	m6_expect "$label" "failed cell line" 1 'fail=1'
+	m6_log "$tmp/m6.log"
+	printf '\ndm/ is gone in v2\n' >>"$wt/internal/cli/skills/using-agentbus2/SKILL.md"
+	m6_expect "$label" "word check" 1 'words_hit' 'words_ok'
+	finish "$label"
+	revert
+}
+
+# --- 24. replaced-exit-code-ignored ----------------------------------------------------
+# The Milestone 6 exit's negative halves, Docker-free. Each mutation must fail
+# the named test; TestMain of internal/e2e rebuilds the binary from the worktree.
+# mutate_file LABEL FILE FROM TO: FROM must occur on exactly one line.
+mutate_file() {
+	local label="$1" file="$2" from="$3" to="$4" f="$wt/$2" content
+	if [ "$(grep -cF -- "$from" "$f")" -ne 1 ]; then
+		problem "$label" "anchor text not exactly once in $file: $from"
+		return 1
+	fi
+	content="$(cat "$f")"
+	printf '%s\n' "${content//"$from"/"$to"}" >"$tmp/x" && cp "$tmp/x" "$f"
+	if ! grep -qF -- "$to" "$f"; then
+		problem "$label" "mutation changed nothing ($to absent from $file)"
+		return 1
+	fi
+}
+
+block_replaced_exit_ignored() {
+	local label=replaced-exit-code-ignored log="$tmp/b24.log" f="$wt/internal/cli/exit.go" before after
+	begin
+	# 1. The replaced exit: `return 3` on the line after the errReplaced case becomes `return 0`.
+	before="$(grep -c 'return 0' "$f" || true)"
+	awk '{ if (prev ~ /case errors.Is\(err, errReplaced\)/ && $0 ~ /return 3/) { sub(/return 3/, "return 0") } print; prev = $0 }' "$f" >"$tmp/x" && cp "$tmp/x" "$f"
+	after="$(grep -c 'return 0' "$f" || true)"
+	if [ "$after" -ne $((before + 1)) ]; then
+		problem "$label" "exit.go mutation changed nothing (return 0 count $before -> $after)"
+	else
+		(cd "$wt" && go test -count=1 -v -run '^TestExitCodeTable$/(wait|watch)-3-replaced$' ./internal/e2e/ >"$log" 2>&1) || true
+		grep -qF -- '--- FAIL: TestExitCodeTable/wait-3-replaced' "$log" || problem "$label" "log lacks '--- FAIL: TestExitCodeTable/wait-3-replaced': $(tail -n 3 "$log" | tr '\n' ' ')"
+		grep -qF -- '--- FAIL: TestExitCodeTable/watch-3-replaced' "$log" || problem "$label" "log lacks '--- FAIL: TestExitCodeTable/watch-3-replaced'"
+	fi
+	revert
+	# 2. A local Watch that cannot see another connection's send: the in-process
+	# notifier replaces the polling one.
+	if mutate_file "$label" internal/client/local.go 'n = notify.NewPolling(poll)' 'n, _ = notify.NewMemory(), poll'; then
+		if [ "$(grep -c 'notify.NewMemory()' "$wt/internal/client/local.go")" -ne 1 ]; then
+			problem "$label" "local.go: notify.NewMemory() count is not 1"
+		else
+			log="$tmp/b24b.log"
+			(cd "$wt" && go test -count=1 -run '^TestLocalWatchWakesAcrossConns$' ./internal/client/ >"$log" 2>&1) || true
+			grep -qF -- '--- FAIL' "$log" || problem "$label" "polling mutation: log lacks '--- FAIL': $(tail -n 3 "$log" | tr '\n' ' ')"
+		fi
+	fi
+	revert
+	# 3. The harness-gone cause: cancel(nil) maps through cancelCause to
+	# errReplaced, so both 4 cells read 3.
+	if mutate_file "$label" internal/procs/harness.go 'cancel(ErrHarnessGone)' 'cancel(nil)'; then
+		if [ "$(grep -c 'cancel(nil)' "$wt/internal/procs/harness.go")" -ne 1 ] || [ "$(grep -c 'cancel(ErrHarnessGone)' "$wt/internal/procs/harness.go" || true)" -ne 0 ]; then
+			problem "$label" "harness.go mutation is not exactly cancel(nil)"
+		else
+			log="$tmp/b24c.log"
+			(cd "$wt" && go test -count=1 -v -run '^TestExitCodeTable$/(wait|watch)-4-harness-gone$' ./internal/e2e/ >"$log" 2>&1) || true
+			grep -qF -- '--- FAIL: TestExitCodeTable/wait-4-harness-gone' "$log" || problem "$label" "log lacks '--- FAIL: TestExitCodeTable/wait-4-harness-gone': $(tail -n 3 "$log" | tr '\n' ' ')"
+			grep -qF -- '--- FAIL: TestExitCodeTable/watch-4-harness-gone' "$log" || problem "$label" "log lacks '--- FAIL: TestExitCodeTable/watch-4-harness-gone'"
+		fi
+	fi
+	finish "$label"
+	revert
+}
+
 block_skip_in_wiring
 block_unit_leak
 block_gen_edited
@@ -502,6 +627,8 @@ block_notify_append_removed
 block_advisory_lock_ignored
 block_sqlite_lease_ignored
 block_assertion_replay_ignored
+block_m6_exit_script_fires
+block_replaced_exit_ignored
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"
