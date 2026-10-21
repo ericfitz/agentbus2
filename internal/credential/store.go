@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"runtime"
 	"sort"
-	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -26,14 +25,11 @@ var tempName = regexp.MustCompile(`\.tmp-[0-9a-f]{16}$`)
 // by the identity (profile.CredentialDir(configDir, profile)).
 type Store struct{ Dir string }
 
-// checkName applies the identity name rule and refuses the names that would
-// leave Dir as a file name: ".", ".." and a backslash (a separator on Windows).
+// checkName applies the identity file name rule (store.FileNameRule): an
+// identity names its credential and token files.
 func checkName(identity string) error {
-	if err := store.NameRule(identity); err != nil {
+	if err := store.FileNameRule(identity); err != nil {
 		return fmt.Errorf("credential: identity %q: %w", identity, err)
-	}
-	if identity == "." || identity == ".." || strings.ContainsRune(identity, '\\') {
-		return fmt.Errorf("credential: identity %q is not usable as a file name", identity)
 	}
 	return nil
 }

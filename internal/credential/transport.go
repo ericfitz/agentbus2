@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"io"
 	"net/http"
+	"strings"
 )
 
 type refreshing struct {
@@ -11,8 +12,8 @@ type refreshing struct {
 	s    *Source
 }
 
-// Transport wraps base so that a 401 triggers exactly one refresh and one
-// replay of the request. Any other status or error passes through; a refresh
+// Transport wraps base so that a 401 to a request that carried a bearer
+// triggers exactly one refresh and one replay of the request. Any other status or error passes through; a refresh
 // that fails returns the original 401 response (the remote maps it to
 // unauthenticated).
 func Transport(base http.RoundTripper, s *Source) http.RoundTripper {
@@ -23,6 +24,11 @@ func Transport(base http.RoundTripper, s *Source) http.RoundTripper {
 }
 
 func (t *refreshing) RoundTrip(req *http.Request) (*http.Response, error) {
+	// A request without a bearer has no token to refresh: its 401 is the
+	// answer, not a stale credential.
+	if !strings.HasPrefix(req.Header.Get("Authorization"), "Bearer ") {
+		return t.base.RoundTrip(req)
+	}
 	hasBody := req.Body != nil && req.Body != http.NoBody
 	var body []byte
 	if hasBody {

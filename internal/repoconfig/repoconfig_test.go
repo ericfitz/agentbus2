@@ -153,7 +153,7 @@ func TestWriteAndReload(t *testing.T) {
 	if len(ents) != 1 {
 		t.Fatalf("temp file left: %v", ents)
 	}
-	for _, bad := range []string{"", "a/b", ".."} {
+	for _, bad := range []string{"", "a/b", "..", "a:b", `a\b`, "nul", "COM3.x"} {
 		if _, err := Write(repo, bad); err == nil {
 			t.Fatalf("Write(%q) must fail", bad)
 		}

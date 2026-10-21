@@ -67,7 +67,7 @@ func (p Profile) Validate() error {
 		}
 	}
 	if p.Identity != "" {
-		if err := store.NameRule(p.Identity); err != nil {
+		if err := store.FileNameRule(p.Identity); err != nil {
 			return fmt.Errorf("identity %q: %w", p.Identity, err)
 		}
 	}

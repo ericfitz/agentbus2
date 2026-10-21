@@ -14,7 +14,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -31,19 +30,10 @@ const FileName = ".local/agentbus2.json"
 func pathIn(dir string) string { return filepath.Join(dir, ".local", "agentbus2.json") }
 
 // ValidProfileName reports why name cannot name a profile: profile names
-// become directory names under credentials/ and tokens/, so besides
-// store.NameRule they exclude "." and "..", backslashes and a leading dash.
+// become directory names under credentials/ and tokens/, so they follow
+// store.FileNameRule.
 func ValidProfileName(name string) error {
-	if err := store.NameRule(name); err != nil {
-		return err
-	}
-	if name == "." || name == ".." {
-		return errors.New("must not be a dot name")
-	}
-	if strings.ContainsAny(name, `\:`) {
-		return errors.New(`must not contain '\' or ':'`)
-	}
-	return nil
+	return store.FileNameRule(name)
 }
 
 // Find walks up from dir to the nearest .local/agentbus2.json, stopping at the

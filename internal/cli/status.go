@@ -13,9 +13,10 @@ import (
 
 // RunStatus implements `agentbus2 status`: a human-readable report (the
 // shape of v1 internal/cli/status.go with the profile and mode in place of
-// config and data). The administrator-only lines are printed when
-// Admin.Status succeeds; a forbidden Status is silent. Storage usage is not
-// reported: Admin.Usage (Milestone 7 Task 6) is not on this branch.
+// config and data). The administrator-only lines (notices, embedding and
+// storage usage) are printed when Admin.Status succeeds; a forbidden Status or
+// Usage prints nothing. The usage line names the budget only when the store
+// is evictable (SQLite): a Postgres size is not held to it.
 func RunStatus(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	_ = stdin
 	cmd := newOpCmd("status", stderr)
@@ -43,6 +44,14 @@ func RunStatus(ctx context.Context, args []string, environ []string, stdin io.Re
 	st, serr := c.Bus.Status(ctx)
 	if serr != nil && bus.CodeOf(serr) != bus.CodeForbidden {
 		return fail(stderr, serr)
+	}
+	var usage bus.Usage
+	uerr := serr
+	if serr == nil {
+		usage, uerr = c.Bus.Usage(ctx)
+		if uerr != nil && bus.CodeOf(uerr) != bus.CodeForbidden {
+			return fail(stderr, uerr)
+		}
 	}
 
 	var b []byte
@@ -85,8 +94,21 @@ func RunStatus(ctx context.Context, args []string, environ []string, stdin io.Re
 			p("embedding error at %s: %s\n", time.UnixMilli(st.EmbeddingErrorAt).UTC().Format(time.RFC3339), st.EmbeddingError)
 		}
 	}
+	if uerr == nil {
+		p("%s\n", usageLine(usage))
+	}
 	if _, err := stdout.Write(b); err != nil {
 		return fail(stderr, errors.New("write: "+err.Error()))
 	}
 	return 0
+}
+
+// usageLine is v1 internal/cli/status.go's "usage: %.1f MiB of %d MiB budget",
+// without the budget when the store is not evictable.
+func usageLine(u bus.Usage) string {
+	line := fmt.Sprintf("usage: %.1f MiB", float64(u.Bytes)/(1<<20))
+	if u.Evictable {
+		line += fmt.Sprintf(" of %d MiB budget", u.BudgetBytes>>20)
+	}
+	return line
 }

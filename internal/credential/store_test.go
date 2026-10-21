@@ -100,7 +100,7 @@ func TestLoadRefusesWideMode(t *testing.T) {
 func TestLoadRejectsName(t *testing.T) {
 	s := Store{Dir: t.TempDir()}
 	k, _ := keys.Generate(keys.EdDSA)
-	for _, name := range []string{"a/b", "", ".", "..", `a\b`, "a\x00b"} {
+	for _, name := range []string{"a/b", "", ".", "..", `a\b`, "a\x00b", "a:b", "con", "NUL.txt", "com1"} {
 		if _, _, err := s.Load(name); err == nil {
 			t.Errorf("Load(%q) accepted", name)
 		}

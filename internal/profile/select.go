@@ -57,7 +57,7 @@ type IdentitySelection struct {
 // exactly one exists. The source is "flag", "env", "profile" or "credential".
 func (p Profile) ResolveIdentity(sel IdentitySelection) (identity, source string, err error) {
 	pick := func(id, src string) (string, string, error) {
-		if err := store.NameRule(id); err != nil {
+		if err := store.FileNameRule(id); err != nil {
 			return "", "", fmt.Errorf("identity %q (%s): %w", id, src, err)
 		}
 		return id, src, nil

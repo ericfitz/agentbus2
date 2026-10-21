@@ -43,6 +43,9 @@ func RunReceive(ctx context.Context, args []string, environ []string, _ io.Reade
 	if *session == "" && *ack != "" {
 		return c.usageErr("-ack needs -session: a throwaway session has no earlier batch")
 	}
+	if *ack != "" && *noAck {
+		return c.usageErr("-ack and -no-ack are mutually exclusive")
+	}
 	conn, code := c.connect(ctx, environ)
 	if conn == nil {
 		return code

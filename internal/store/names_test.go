@@ -84,3 +84,17 @@ func TestValidKind(t *testing.T) {
 		}
 	}
 }
+
+func TestFileNameRule(t *testing.T) {
+	for _, ok := range []string{"pat", "a-b.c", "con-man", "console", "com10", "lpt", "nul2x", "a.con"} {
+		if err := FileNameRule(ok); err != nil {
+			t.Errorf("FileNameRule(%q) = %v, want nil", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "a/b", "a\x00b", ".", "..", `a\b`, "a:b", ":", "CON", "con", "Con.json", "prn", "AUX", "nul", "NUL.txt",
+		"com0", "COM1", "com9", "lpt1", "LPT9", "com\u00b9", "LPT\u00b3.log"} {
+		if err := FileNameRule(bad); err == nil {
+			t.Errorf("FileNameRule(%q) accepted", bad)
+		}
+	}
+}

@@ -132,6 +132,19 @@ func TestChannelsLifecycle(t *testing.T) {
 	if code, _, er := run("y\n", "delete", "nosuch"); code != 1 || !strings.Contains(er, "not_found") {
 		t.Fatalf("missing channel: %d %q", code, er)
 	}
+	// A retried keyed delete replays: the channel is gone, so the pre-check
+	// leaves the answer to the bus, which replays the first result.
+	ok("create", "gone")
+	if code, _, er := run("y\n", "delete", "-key", "dk", "gone"); code != 0 {
+		t.Fatalf("keyed delete: %d %q", code, er)
+	}
+	if code, out, er := run("", "delete", "-key", "dk", "gone"); code != 0 || out != "" {
+		t.Fatalf("keyed delete retried: %d out %q err %q, want the replay", code, out, er)
+	}
+	// A key never used on a channel that never existed is still not_found.
+	if code, _, er := run("", "delete", "-key", "other", "nosuch"); code != 1 || !strings.Contains(er, "not_found") {
+		t.Fatalf("keyed delete of a missing channel: %d %q", code, er)
+	}
 }
 
 func TestChannelsUsage(t *testing.T) {

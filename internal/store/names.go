@@ -2,6 +2,7 @@ package store
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -41,6 +42,35 @@ func NameRule(name string) error {
 	for _, r := range name {
 		if unicode.IsControl(r) {
 			return errors.New("must not contain control characters")
+		}
+	}
+	return nil
+}
+
+// FileNameRule is NameRule for a name a client also uses as a file or
+// directory name (an identity's credential and token files, a profile's
+// directories): besides NameRule it refuses "." and "..", the separators and
+// drive mark of other platforms ('\\' and ':'), and the names Windows
+// reserves for devices (CON, PRN, AUX, NUL, COM0-9, LPT0-9 and their
+// superscript-digit forms), in any case and with any extension.
+func FileNameRule(name string) error {
+	if err := NameRule(name); err != nil {
+		return err
+	}
+	if name == "." || name == ".." {
+		return errors.New("must not be a dot name")
+	}
+	if strings.ContainsAny(name, `\:`) {
+		return errors.New(`must not contain '\' or ':'`)
+	}
+	base, _, _ := strings.Cut(name, ".")
+	switch b := strings.ToUpper(base); {
+	case b == "CON", b == "PRN", b == "AUX", b == "NUL":
+		return fmt.Errorf("must not be the Windows device name %s", b)
+	case len(b) > 3 && (b[:3] == "COM" || b[:3] == "LPT"):
+		switch d := b[3:]; d {
+		case "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "\u00b9", "\u00b2", "\u00b3":
+			return fmt.Errorf("must not be the Windows device name %s", b)
 		}
 	}
 	return nil

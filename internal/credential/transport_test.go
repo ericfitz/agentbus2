@@ -142,3 +142,30 @@ func TestTransportReplaysNonRewindableBody(t *testing.T) {
 		t.Errorf("%d requests, want 2", n)
 	}
 }
+
+// A 401 to a request that carried no bearer is not a stale token: the
+// transport passes it through without a refresh or a replay.
+func TestTransportPassesUnauthenticated401WithoutBearer(t *testing.T) {
+	f := newFakeServer(t)
+	f.accept = func(string, []byte) bool { return false }
+	s := f.source(t, Cache{Dir: t.TempDir()}, t0)
+	c := &http.Client{Transport: Transport(nil, s)}
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodPost, f.srv.URL+"/v1/echo", bytes.NewReader([]byte("x")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("status %d, want 401", resp.StatusCode)
+	}
+	if n := f.exchanges.Load(); n != 0 {
+		t.Errorf("%d exchanges, want 0 (no bearer, nothing to refresh)", n)
+	}
+	if n := f.echoes.Load(); n != 1 {
+		t.Errorf("%d requests, want 1 (no replay)", n)
+	}
+}

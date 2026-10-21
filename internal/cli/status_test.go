@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -33,8 +34,8 @@ func TestStatusReport(t *testing.T) {
 			t.Errorf("report lacks %q:\n%s", want, out)
 		}
 	}
-	if strings.Contains(out, "embedding") {
-		t.Errorf("a non-administrator sees the embedding lines:\n%s", out)
+	if strings.Contains(out, "embedding") || strings.Contains(out, "usage:") {
+		t.Errorf("a non-administrator sees the administrator lines:\n%s", out)
 	}
 
 	if err := (identities.Service{Core: pat.Core}).MakeAdmin(ctx, "pat", true); err != nil {
@@ -43,6 +44,10 @@ func TestStatusReport(t *testing.T) {
 	code, out, errs = run("-identity", "pat")
 	if code != 0 {
 		t.Fatalf("admin status: %d %q", code, errs)
+	}
+	// SQLite is evictable, so the budget is shown.
+	if !regexp.MustCompile(`(?m)^usage: \d+\.\d MiB of \d+ MiB budget$`).MatchString(out) {
+		t.Errorf("admin report lacks the usage line:\n%s", out)
 	}
 	for _, want := range []string{"embedding backlog: ", "general [ordinary] created by "} {
 		if !strings.Contains(out, want) {
@@ -57,6 +62,20 @@ func TestStatusRejectsBadInput(t *testing.T) {
 		var out, errb bytes.Buffer
 		if code := RunStatus(context.Background(), args, e.Environ, strings.NewReader(""), &out, &errb); code != 2 {
 			t.Errorf("%v: exit %d (stderr %q), want 2", args, code, errb.String())
+		}
+	}
+}
+
+func TestStatusUsageLine(t *testing.T) {
+	for _, tc := range []struct {
+		u    bus.Usage
+		want string
+	}{
+		{bus.Usage{Bytes: 3 << 19, BudgetBytes: 512 << 20, Evictable: true}, "usage: 1.5 MiB of 512 MiB budget"},
+		{bus.Usage{Bytes: 3 << 19, BudgetBytes: 512 << 20}, "usage: 1.5 MiB"},
+	} {
+		if got := usageLine(tc.u); got != tc.want {
+			t.Errorf("usageLine(%+v) = %q, want %q", tc.u, got, tc.want)
 		}
 	}
 }

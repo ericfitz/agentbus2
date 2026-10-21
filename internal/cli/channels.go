@@ -122,22 +122,37 @@ func runChannelsDelete(ctx context.Context, args []string, environ []string, std
 				kind = string(ch.Kind)
 			}
 		}
-		if kind == "" {
+		switch {
+		case kind == "" && *key != "":
+			// A retry of a keyed delete that already happened: nothing is
+			// left to confirm, and the bus replays the first result (or
+			// answers not_found when the key was never used).
+		case kind == "":
 			return fail(stderr, &bus.Error{Code: bus.CodeNotFound, Message: fmt.Sprintf("channel %q does not exist", name)})
-		}
-		if _, err := fmt.Fprintf(stdout, "Channel %q (%s) and everything in it will be deleted.\nDeleting it PERMANENTLY destroys its messages. There is no undo.\nDelete channel %q? [y/N] ", name, kind, name); err != nil {
-			return fail(stderr, err)
-		}
-		line, readErr := bufio.NewReader(stdin).ReadString('\n')
-		if readErr != nil && !errors.Is(readErr, io.EOF) {
-			return fail(stderr, readErr)
-		}
-		if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
-			return fail(stderr, errors.New("delete cancelled"))
+		default:
+			if code := confirmDelete(name, kind, stdin, stdout, stderr); code != 0 {
+				return code
+			}
 		}
 	}
 	if err := conn.Bus.DeleteChannel(ctx, bus.DeleteChannelInput{Name: name, IdempotencyKey: *key}); err != nil {
 		return fail(stderr, err)
+	}
+	return 0
+}
+
+// confirmDelete asks the y/N question of v1 internal/cli/delete.go; anything
+// but y or yes cancels (exit 1).
+func confirmDelete(name, kind string, stdin io.Reader, stdout, stderr io.Writer) int {
+	if _, err := fmt.Fprintf(stdout, "Channel %q (%s) and everything in it will be deleted.\nDeleting it PERMANENTLY destroys its messages. There is no undo.\nDelete channel %q? [y/N] ", name, kind, name); err != nil {
+		return fail(stderr, err)
+	}
+	line, readErr := bufio.NewReader(stdin).ReadString('\n')
+	if readErr != nil && !errors.Is(readErr, io.EOF) {
+		return fail(stderr, readErr)
+	}
+	if a := strings.ToLower(strings.TrimSpace(line)); a != "y" && a != "yes" {
+		return fail(stderr, errors.New("delete cancelled"))
 	}
 	return 0
 }

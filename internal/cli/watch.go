@@ -52,10 +52,12 @@ func watchLoop(ctx context.Context, s bus.Sessions, session, display string, flo
 		if _, err := fmt.Fprintln(stdout, watchLine(display, r)); err != nil {
 			return floor, err
 		}
+		gap := time.NewTimer(watchMinGap)
 		select {
 		case <-ctx.Done():
+			gap.Stop()
 			return floor, ctx.Err()
-		case <-time.After(watchMinGap):
+		case <-gap.C:
 		}
 	}
 }

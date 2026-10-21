@@ -92,6 +92,11 @@ func TestResolveIdentityOrder(t *testing.T) {
 		{"invalid flag", server, IdentitySelection{Flag: "a/b"}, "", "", "a/b"},
 		{"invalid env", server, IdentitySelection{Env: "a/b"}, "", "", "a/b"},
 		{"invalid credential file name", bare, IdentitySelection{Credentials: []string{"a/b"}}, "", "", "a/b"},
+		{"dot dot flag", server, IdentitySelection{Flag: ".."}, "", "", `".."`},
+		{"colon env", server, IdentitySelection{Env: "a:b"}, "", "", "a:b"},
+		{"backslash flag", server, IdentitySelection{Flag: `a\b`}, "", "", `a\\b`},
+		{"reserved flag", server, IdentitySelection{Flag: "CON"}, "", "", "CON"},
+		{"reserved profile identity", Profile{Name: "lab", Mode: ModeServer, Server: "https://h", Identity: "lpt1"}, IdentitySelection{}, "", "", "lpt1"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

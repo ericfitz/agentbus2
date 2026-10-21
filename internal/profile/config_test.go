@@ -109,6 +109,9 @@ func TestProfileValidate(t *testing.T) {
 		{"server with userinfo", Profile{Mode: ModeServer, Server: "https://u:p@h"}, "server"},
 		{"server with sqlite", Profile{Mode: ModeServer, Server: "https://h", SQLite: "/x"}, "sqlite"},
 		{"identity with slash", Profile{Mode: ModeLocal, Identity: "a/b"}, "identity"},
+		{"identity dot", Profile{Mode: ModeLocal, Identity: "."}, "identity"},
+		{"identity with colon", Profile{Mode: ModeLocal, Identity: "a:b"}, "identity"},
+		{"identity reserved", Profile{Mode: ModeLocal, Identity: "aux"}, "identity"},
 		{"empty credential_process word", Profile{Mode: ModeServer, Server: "https://h", CredentialProcess: []string{""}}, "credential_process"},
 		{"server with credential_process", Profile{Mode: ModeServer, Server: "https://h", CredentialProcess: []string{"x"}}, ""},
 	}

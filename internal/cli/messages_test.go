@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/store"
 )
 
 func TestSendReceiveAck(t *testing.T) {
@@ -89,6 +90,19 @@ func TestSendReceiveAck(t *testing.T) {
 				t.Errorf("the throwaway session survived: %+v", s)
 			}
 		}
+	}
+	// The throwaway was opened with hint "cli" and closed: its row is pat/cli
+	// with a close time.
+	var rows []store.Session
+	if err := pat.Core.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		rows, err = tx.ListSessions(ctx, "pat")
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 1 || rows[0].DisplayName != "pat/cli" || rows[0].Hint != "cli" || rows[0].ClosedAt == 0 {
+		t.Fatalf("throwaway session rows: %+v, want one closed pat/cli", rows)
 	}
 	// Nothing advanced the acked mark, so another throwaway sees it again.
 	if r := receive("-no-ack"); len(r.Messages) != 1 || r.Messages[0].Seq != s1 {
@@ -289,6 +303,7 @@ func TestOperatorMessageGrammarExits2(t *testing.T) {
 		}},
 		"receive": {RunReceive, [][]string{
 			{"extra"}, {"-nope"}, {"-count", "x"}, {"-ack", "T"}, {"-session", "s", "-no-ack", "-filter", "x"}, {"-include-own=maybe"},
+			{"-session", "s", "-ack", "T", "-no-ack"},
 		}},
 		"history": {RunHistory, [][]string{
 			nil, {"a", "b"}, {"-count", "x", "general"}, {"-before", "x", "general"}, {"-after", "1.5", "general"}, {"-nope", "general"},
