@@ -1,0 +1,97 @@
+// Stub created by Milestone 8 Task 3 from the call sites in v1 906dec8 model.go, view.go and compose.go; Task 7 replaces this file.
+//
+// Signatures and the v1 call site each came from:
+//
+//	openHelp() tea.Cmd                        model.go:613 updateNormal
+//	updateHelp(msg tea.Msg) tea.Cmd           model.go:367 update
+//	viewHelp() string                         view.go:266 View
+//	helpLines() []string                      v1 help.go updateHelp, viewHelp
+//
+// helpLines is v1's keymap minus the direct-message rows, with the v2 wording
+// of c (kinds) and the rail row (full names).
+
+package tui
+
+import (
+	"strings"
+
+	tea "github.com/charmbracelet/bubbletea"
+)
+
+func (m *Model) openHelp() tea.Cmd {
+	m.mode = modeHelp
+	m.helpScroll = 0
+	return nil
+}
+
+func (m *Model) updateHelp(msg tea.Msg) tea.Cmd {
+	switch keyString(msg) {
+	case "esc", "?", "q":
+		m.mode = modeNormal
+	case "up":
+		m.helpScroll = max(m.helpScroll-1, 0)
+	case "down":
+		m.helpScroll = min(m.helpScroll+1, max(len(m.helpLines())-1, 0))
+	}
+	return nil
+}
+
+// helpLines is the full keymap. Keys the status bar cannot fit (shift+tab,
+// home, the compose editing keys) live only here.
+func (m Model) helpLines() []string {
+	rows := [][2]string{
+		{"tab / shift+tab", "next / previous pane (the rail, its messages, compose); from the stream, back to a selected rail heading"},
+		{"home", "rail: select the channels heading"},
+		{"esc", "leave compose; cancel a task draft; clear the message cursor"},
+		{"i", "compose"},
+		{"enter", "reply to the cursor message, else compose; in a task list, save the draft"},
+		{"↑ / ↓", "previous / next in the focused pane (in the rail, section headings and their rows)"},
+		{"→ / ←", "open the cursor message's body, then its replies / hide its replies, then its body; on a rail heading, expand / collapse its section"},
+		{"enter (heading)", "on a rail heading, collapse or expand its section"},
+		{"pgup / pgdn", "scroll (pgup at the top loads older history)"},
+		{"g / G", "oldest / newest"},
+		{"space", "task list: cycle the cursor task's state (not started, in progress, completed) as a draft"},
+		{", / .", "newer / older version of the cursor memory"},
+		{"< / >", "narrow / widen the channel rail (saved in the config)"},
+		{"r", "reply to the cursor message"},
+		{"c", "new channel: <name> [memory|tasks]"},
+		{"s", "subscribe / unsubscribe the channel (no-op on a heading)"},
+		{"t", "rail: follow a tag set: <tag>[,<tag>...] (AND); task list: take the unassigned cursor task"},
+		{"u", "task list: unassign your not-started cursor task"},
+		{"a", "task list: assign the cursor task to an identity (unassigned tasks or yours)"},
+		{"d", "delete the channel and all its messages (asks first); on a tag set, unfollow it (no confirmation); no-op on a heading"},
+		{"/", "search (tab cycles text / semantic / both)"},
+		{"h", "health and config"},
+		{"?", "this help"},
+		{"q", "quit"},
+		{"", ""},
+		{"compose", ""},
+		{"enter", "send (a memory channel creates a memory)"},
+		{"alt+enter", "newline"},
+		{"↑", "recall the last sent message"},
+		{"↓", "clear the draft (on its last line)"},
+		{"ctrl+u", "clear"},
+		{"", ""},
+		{"(task lists)", "a tasks channel shows the task tree: → opens a task's details, then its subtasks; ← hides its subtasks, then its details; only unassigned tasks or yours can be changed"},
+		{"(rail)", "sections: channels, memories, tasks, tags, sessions, each under a heading; sessions is a display-only list; a collapsed heading shows (count[, N unread]); collapsing lasts until the TUI quits"},
+		{"(tags)", "the tags rail section shows messages carrying every tag of a set; read-only"},
+	}
+	key, dim := m.theme.Style(m.theme.Agent), m.theme.Style(m.theme.Dim)
+	lines := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r[1] == "" {
+			lines = append(lines, dim.Render(r[0]))
+			continue
+		}
+		lines = append(lines, key.Render(r[0])+strings.Repeat(" ", max(18-len([]rune(r[0])), 1))+r[1])
+	}
+	return lines
+}
+
+func (m Model) viewHelp() string {
+	lines := m.helpLines()
+	if m.helpScroll < len(lines) {
+		lines = lines[m.helpScroll:]
+	}
+	return m.overlay("help", m.theme.Agent, strings.Join(lines, "\n"), m.hints("↑↓", "scroll", "esc", "close"))
+}

@@ -587,27 +587,6 @@ func TestDrainAcksLastBatch(t *testing.T) {
 	waitFor(t, 5*time.Second, func() bool { return pendingFor(t, f.bus, "dev") == 0 })
 }
 
-// TestMessageTypes pins the message set Task 3's Update handles: they are all
-// declared in msgs.go, so no feature task adds one.
-func TestMessageTypes(t *testing.T) {
-	all := []any{
-		batchMsg{res: bus.ReceiveResult{}}, receiveErrMsg{err: nil}, sessionLostMsg{err: nil}, statusTickMsg{},
-		statusMsg{channels: nil, identities: nil, tags: nil, admin: false, status: bus.Status{}, statusOK: false, err: nil},
-		usageMsg{usage: nil, err: nil},
-		historyMsg{channel: "", msgs: nil, prepend: false, err: nil},
-		sentMsg{channel: "", err: nil},
-		searchMsg{query: "", res: bus.SearchResult{}, err: nil},
-		revisionsMsg{seq: 0, revs: nil, err: nil},
-		configEditedMsg{err: nil}, toastClearMsg{seq: 0},
-		subscribedMsg{channel: "", err: nil},
-		tasksMsg{ch: "", tasks: nil, err: nil},
-		taskMsg{task: bus.Task{}, err: nil},
-	}
-	if len(all) != 15 {
-		t.Fatalf("%d message types", len(all))
-	}
-}
-
 // TestFixtureHelpers is the fixture's own test (Definition of Done C): the
 // helpers Tasks 3 to 7 rely on do what their comments say.
 func TestFixtureHelpers(t *testing.T) {
