@@ -15,11 +15,21 @@ type Status struct {
 	EmbeddingErrorAt      int64
 }
 
+// Usage is the database size, the configured SQLite budget and the capacity
+// notice. Evictable is false on Postgres, where no budget is enforced.
+// Notice is the capacity notice text when one is set.
+type Usage struct {
+	Bytes, BudgetBytes int64
+	Evictable          bool
+	Notice             string
+}
+
 // Admin is the administrator seam. DeleteChannel and RenameChannel repeat
 // the Messaging operations with identical signatures (Decision 89: the same
 // operations, in the admin section).
 type Admin interface {
 	Status(ctx context.Context) (Status, error)
+	Usage(ctx context.Context) (Usage, error)
 	DeleteChannel(ctx context.Context, in DeleteChannelInput) error
 	RenameChannel(ctx context.Context, in RenameChannelInput) error
 	Reset(ctx context.Context, in ResetInput) error

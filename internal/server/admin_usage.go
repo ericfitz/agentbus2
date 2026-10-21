@@ -1,0 +1,19 @@
+package server
+
+import (
+	"context"
+
+	"github.com/ericfitz/agentbus2/internal/gen"
+)
+
+func (a *api) AdminUsage(ctx context.Context, _ gen.AdminUsageRequestObject) (gen.AdminUsageResponseObject, error) {
+	u, err := a.channels.Usage(ctx, IdentityFrom(ctx))
+	if err != nil {
+		return nil, err
+	}
+	out := gen.Usage{Bytes: u.Bytes, BudgetBytes: u.BudgetBytes, Evictable: u.Evictable}
+	if u.Notice != "" {
+		out.Notice = &u.Notice
+	}
+	return gen.AdminUsage200JSONResponse(out), nil
+}

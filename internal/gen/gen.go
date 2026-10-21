@@ -681,6 +681,16 @@ type TokenRequestClientAssertionType string
 // TokenRequestGrantType defines model for TokenRequest.GrantType.
 type TokenRequestGrantType string
 
+// Usage defines model for Usage.
+type Usage struct {
+	BudgetBytes int64 `json:"budget_bytes"`
+	Bytes       int64 `json:"bytes"`
+	Evictable   bool  `json:"evictable"`
+
+	// Notice The capacity notice text, when one is set.
+	Notice *string `json:"notice,omitempty"`
+}
+
 // Wake defines model for Wake.
 type Wake struct {
 	Channels []string `json:"channels"`
@@ -999,6 +1009,11 @@ type ClientInterface interface {
 	// AdminStatus performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
 	AdminStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// AdminUsage performs a GET /v1/admin/usage (the `AdminUsage` operationId) request.
+	//
+	// The database size, the configured SQLite budget and the capacity notice (spec 3.2, Decision 48).
+	AdminUsage(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// Jwks performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
 	Jwks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1237,6 +1252,21 @@ func (c *Client) AdminReset(ctx context.Context, params *AdminResetParams, reqEd
 // AdminStatus performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
 func (c *Client) AdminStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAdminStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AdminUsage performs a GET /v1/admin/usage (the `AdminUsage` operationId) request.
+//
+// The database size, the configured SQLite budget and the capacity notice (spec 3.2, Decision 48).
+func (c *Client) AdminUsage(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAdminUsageRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -2091,6 +2121,33 @@ func NewAdminStatusRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/v1/admin/status")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAdminUsageRequest constructs an http.Request for the AdminUsage method
+func NewAdminUsageRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/usage")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -4013,6 +4070,13 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	AdminStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AdminStatusResponse, error)
 
+	// AdminUsageWithResponse performs a GET /v1/admin/usage (the `AdminUsage` operationId) request.
+	//
+	// The database size, the configured SQLite budget and the capacity notice (spec 3.2, Decision 48).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	AdminUsageWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AdminUsageResponse, error)
+
 	// JwksWithResponse performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -4491,6 +4555,54 @@ func (r AdminStatusResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r AdminStatusResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AdminUsageResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Usage
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AdminUsageResponse) GetJSON200() *Usage {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r AdminUsageResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AdminUsageResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AdminUsageResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AdminUsageResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AdminUsageResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6128,6 +6240,19 @@ func (c *ClientWithResponses) AdminStatusWithResponse(ctx context.Context, reqEd
 	return ParseAdminStatusResponse(rsp)
 }
 
+// AdminUsageWithResponse performs a GET /v1/admin/usage (the `AdminUsage` operationId) request.
+//
+// The database size, the configured SQLite budget and the capacity notice (spec 3.2, Decision 48).
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) AdminUsageWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AdminUsageResponse, error) {
+	rsp, err := c.AdminUsage(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAdminUsageResponse(rsp)
+}
+
 // JwksWithResponse performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -6810,6 +6935,39 @@ func ParseAdminStatusResponse(rsp *http.Response) (*AdminStatusResponse, error) 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Status
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAdminUsageResponse parses an HTTP response from a AdminUsageWithResponse call
+func ParseAdminUsageResponse(rsp *http.Response) (*AdminUsageResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AdminUsageResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Usage
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -7941,6 +8099,9 @@ type ServerInterface interface {
 	// (GET /v1/admin/status)
 	AdminStatus(w http.ResponseWriter, r *http.Request)
 
+	// (GET /v1/admin/usage)
+	AdminUsage(w http.ResponseWriter, r *http.Request)
+
 	// (GET /v1/auth/jwks)
 	Jwks(w http.ResponseWriter, r *http.Request)
 
@@ -8190,6 +8351,20 @@ func (siw *ServerInterfaceWrapper) AdminStatus(w http.ResponseWriter, r *http.Re
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminUsage operation middleware
+func (siw *ServerInterfaceWrapper) AdminUsage(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminUsage(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -9777,6 +9952,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tasks/{id}/claim", wrapper.ClaimTask)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tasks/{id}/release", wrapper.ReleaseTask)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/status", wrapper.AdminStatus)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/usage", wrapper.AdminUsage)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/auth/token", wrapper.Token)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/auth/jwks", wrapper.Jwks)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/auth/register", wrapper.Register)
@@ -9964,6 +10140,44 @@ type AdminStatusdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response AdminStatusdefaultApplicationProblemPlusJSONResponse) VisitAdminStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminUsageRequestObject struct {
+}
+
+type AdminUsageResponseObject interface {
+	VisitAdminUsageResponse(w http.ResponseWriter) error
+}
+
+type AdminUsage200JSONResponse Usage
+
+func (response AdminUsage200JSONResponse) VisitAdminUsageResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminUsagedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AdminUsagedefaultApplicationProblemPlusJSONResponse) VisitAdminUsageResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -11310,6 +11524,9 @@ type StrictServerInterface interface {
 	// (GET /v1/admin/status)
 	AdminStatus(ctx context.Context, request AdminStatusRequestObject) (AdminStatusResponseObject, error)
 
+	// (GET /v1/admin/usage)
+	AdminUsage(ctx context.Context, request AdminUsageRequestObject) (AdminUsageResponseObject, error)
+
 	// (GET /v1/auth/jwks)
 	Jwks(ctx context.Context, request JwksRequestObject) (JwksResponseObject, error)
 
@@ -11570,6 +11787,30 @@ func (sh *strictHandler) AdminStatus(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminStatusResponseObject); ok {
 		if err := validResponse.VisitAdminStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminUsage operation middleware
+func (sh *strictHandler) AdminUsage(w http.ResponseWriter, r *http.Request) {
+	var request AdminUsageRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminUsage(ctx, request.(AdminUsageRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminUsage")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminUsageResponseObject); ok {
+		if err := validResponse.VisitAdminUsageResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

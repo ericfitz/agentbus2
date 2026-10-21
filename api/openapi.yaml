@@ -714,6 +714,22 @@ paths:
                 $ref: "#/components/schemas/Status"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/admin/usage:
+    get:
+      operationId: adminUsage
+      tags: [admin]
+      description: >-
+        The database size, the configured SQLite budget and the capacity
+        notice (spec 3.2, Decision 48).
+      responses:
+        "200":
+          description: Database usage for administrators.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Usage"
+        default:
+          $ref: "#/components/responses/Problem"
   /v1/auth/token:
     post:
       operationId: token
@@ -1518,6 +1534,21 @@ components:
         embedding_error_at:
           type: integer
           format: int64
+    Usage:
+      type: object
+      required: [bytes, budget_bytes, evictable]
+      properties:
+        bytes:
+          type: integer
+          format: int64
+        budget_bytes:
+          type: integer
+          format: int64
+        evictable:
+          type: boolean
+        notice:
+          type: string
+          description: The capacity notice text, when one is set.
     TokenRequest:
       type: object
       required: [grant_type, client_assertion_type, client_assertion]

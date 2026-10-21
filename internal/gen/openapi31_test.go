@@ -121,6 +121,7 @@ func TestOperationTable(t *testing.T) {
 		"claimTask":            "POST /v1/tasks/{id}/claim",
 		"releaseTask":          "POST /v1/tasks/{id}/release",
 		"adminStatus":          "GET /v1/admin/status",
+		"adminUsage":           "GET /v1/admin/usage",
 		"token":                "POST /v1/auth/token",
 		"jwks":                 "GET /v1/auth/jwks",
 		"register":             "POST /v1/auth/register",
@@ -156,8 +157,8 @@ func TestOperationTable(t *testing.T) {
 			t.Errorf("unexpected operation %s", id)
 		}
 	}
-	if open != 6 || protected != 33 {
-		t.Fatalf("security: %d open, %d protected; want 6 and 33", open, protected)
+	if open != 6 || protected != 34 {
+		t.Fatalf("security: %d open, %d protected; want 6 and 34", open, protected)
 	}
 }
 
