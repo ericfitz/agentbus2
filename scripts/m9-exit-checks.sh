@@ -16,6 +16,10 @@
 # dirs and worktree paths; a killed run leaves a registered worktree and a temp
 # dir under $TMPDIR, and `git worktree prune` (run before adding ours) clears
 # the registration.
+# SC2031: shellcheck follows the sourced release.sh into a $( ) and sees its
+# own tmp there; ours is never modified in a subshell. SC2016: the anchors and
+# the planted lines are literal text.
+# shellcheck disable=SC2016,SC2031
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
