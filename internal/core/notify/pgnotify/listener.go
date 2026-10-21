@@ -167,8 +167,18 @@ func (l *Listener) session(ctx context.Context) (listened bool) {
 		if id, seq, ok := postgres.ParsePayload(payload); ok {
 			l.Publish(notify.Hint{ChannelID: id, Seq: seq})
 		} else {
-			l.log.Warn("pgnotify: malformed payload", "payload", payload)
+			l.log.Warn("pgnotify: malformed payload", "payload", logPrefix(payload), "bytes", len(payload))
 			l.Publish(notify.Hint{})
 		}
 	}
+}
+
+// logPrefix bounds a payload quoted in a log line: whoever can NOTIFY on the
+// channel controls its content.
+func logPrefix(p string) string {
+	const limit = 64
+	if len(p) <= limit {
+		return p
+	}
+	return p[:limit] + "..."
 }

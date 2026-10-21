@@ -110,7 +110,12 @@ func (h *recHandler) Enabled(context.Context, slog.Level) bool { return true }
 func (h *recHandler) Handle(_ context.Context, r slog.Record) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	h.msgs = append(h.msgs, r.Level.String()+" "+r.Message)
+	m := r.Level.String() + " " + r.Message
+	r.Attrs(func(a slog.Attr) bool {
+		m += " " + a.Key + "=" + a.Value.String()
+		return true
+	})
+	h.msgs = append(h.msgs, m)
 	return nil
 }
 func (h *recHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
@@ -197,6 +202,17 @@ func TestListenerMalformedPayload(t *testing.T) {
 	}
 	if n := rh.count("malformed payload"); n != 2 {
 		t.Fatalf("malformed warnings = %d, want 2", n)
+	}
+	// Anyone who can NOTIFY on the channel controls the payload: the warning quotes a bounded prefix only.
+	c.events <- event{payload: strings.Repeat("x", 8000)}
+	if h := next(t, hints); h != (notify.Hint{}) {
+		t.Fatalf("long payload: hint = %+v", h)
+	}
+	rh.mu.Lock()
+	last := rh.msgs[len(rh.msgs)-1]
+	rh.mu.Unlock()
+	if !strings.Contains(last, "malformed payload") || len(last) > 200 {
+		t.Fatalf("long payload warning is %d bytes, want a bounded prefix", len(last))
 	}
 	c.events <- event{payload: "1:2"}
 	if h := next(t, hints); h != (notify.Hint{ChannelID: 1, Seq: 2}) {
