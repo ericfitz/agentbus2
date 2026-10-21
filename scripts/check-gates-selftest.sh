@@ -605,6 +605,113 @@ block_replaced_exit_ignored() {
 	revert
 }
 
+# --- 25. m8-exit-script-fires ----------------------------------------------------------
+# Docker-free. The Milestone 8 exit script on the committed tree: the import
+# allowlist, the log counts (derived from a real log, never a literal), the
+# word check and its test-file exemption.
+# m8_deps_probe LABEL FILE IMPORT WANT: deps_probe over the m8 script.
+m8_deps_probe() {
+	deps_probe "$1" "$2" "$3" "$4" m8-exit-checks.sh
+}
+
+# m8_expect LABEL WANT_RC LOG [WANT...]: run the m8 script on LOG in the
+# worktree; the exit status must equal WANT_RC and every WANT line be present.
+m8_expect() {
+	local label="$1" want_rc="$2" in="$3" rc=0 want out="$tmp/b25.out"
+	shift 3
+	bash "$wt/scripts/m8-exit-checks.sh" "$in" >"$out" 2>&1 || rc=$?
+	if [ "$rc" -ne "$want_rc" ]; then
+		problem "$label" "$in: exit $rc, expected $want_rc: $(tail -n 4 "$out" | tr '\n' ' ')"
+	fi
+	for want in "$@"; do
+		grep -qF -- "$want" "$out" || problem "$label" "$in: output lacks '$want': $(tail -n 4 "$out" | tr '\n' ' ')"
+	done
+}
+
+block_m8_exit_script_fires() {
+	local label=m8-exit-script-fires m=github.com/ericfitz/agentbus2 log="$tmp/b25z.log" rc=0 real="$tmp/b25-m8.log"
+	begin
+	if bash "$wt/scripts/m8-exit-checks.sh" --deps-only >"$log" 2>&1; then
+		grep -qF 'deps_ok=1' "$log" || problem "$label" "clean tree: exit 0 without deps_ok=1"
+	else
+		problem "$label" "clean tree: expected exit 0: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	m8_deps_probe "$label" internal/tui/probe_m8.go "$m/internal/bus/local" "deps_violation=$m/internal/tui imports $m/internal/bus/local"
+	m8_deps_probe "$label" internal/tui/probe_m8.go "$m/internal/gen" "deps_violation=$m/internal/tui imports $m/internal/gen"
+	# internal/filelock is named in no forbidden list anywhere: only an
+	# allowlist catches it.
+	m8_deps_probe "$label" internal/tui/probe_m8.go "$m/internal/filelock" "deps_violation=$m/internal/tui imports $m/internal/filelock"
+	: >"$tmp/empty.log"
+	m8_expect "$label" 2 "$tmp/missing.log"
+	m8_expect "$label" 2 "$tmp/empty.log"
+	bash "$wt/scripts/m8-exit-checks.sh" >"$log" 2>&1 || rc=$?
+	[ "$rc" -eq 2 ] || problem "$label" "no argument: exit $rc, expected 2"
+	(cd "$wt" && go test -count=1 -v -run '^(TestBothModes|TestNoInboxView)$' ./internal/tui/ >"$real" 2>&1) || true
+	m8_expect "$label" 0 "$real" modes=2 noinbox=1 fail=0 words_ok=1 deps_ok=1
+	sed '/TestBothModes\/server/d' "$real" >"$tmp/b25-m8-one.log"
+	m8_expect "$label" 1 "$tmp/b25-m8-one.log" modes=1
+	sed 's/^\(    --- \)PASS\(: TestBothModes\/local\)/\1FAIL\2/' "$real" >"$tmp/b25-m8-fail.log"
+	m8_expect "$label" 1 "$tmp/b25-m8-fail.log" fail=1
+	sed '/--- PASS: TestNoInboxView/d' "$real" >"$tmp/b25-m8-noinbox.log"
+	m8_expect "$label" 1 "$tmp/b25-m8-noinbox.log" noinbox=0
+	# The word check covers production files, comments included.
+	printf '// Inbox\n' >>"$wt/internal/tui/doc.go"
+	bash "$wt/scripts/m8-exit-checks.sh" "$real" >"$log" 2>&1 && rc=0 || rc=$?
+	[ "$rc" -eq 1 ] || problem "$label" "word in doc.go: exit $rc, expected 1"
+	if grep -qF 'words_ok=1' "$log"; then problem "$label" "word in doc.go: words_ok=1 printed"; fi
+	grep -qF 'doc.go' "$log" || problem "$label" "word in doc.go: match not printed"
+	revert
+	# Test files are out of scope.
+	printf '// inbox\n' >>"$wt/internal/tui/run_test.go"
+	m8_expect "$label" 0 "$real" words_ok=1
+	finish "$label"
+	revert
+}
+
+# --- 26. tui-hint-mutation ---------------------------------------------------------------
+# Three mutations of the TUI's client, each of which a test must catch.
+# Each mutation goes through a temp file and cp; the test runs under a 300 s alarm.
+block_tui_hint_mutation() {
+	local label=tui-hint-mutation log="$tmp/b26.log" f rc=0 before after
+	begin
+	# (1) the receive path
+	f="$wt/internal/tui/run.go"
+	sed '/go c\.receiveLoop(p\.Send)/d' "$f" >"$tmp/x" && cp "$tmp/x" "$f"
+	if [ "$(grep -c 'receiveLoop(p.Send)' "$f" || true)" -ne 0 ]; then
+		problem "$label" "mutation 1 changed nothing"
+	else
+		(cd "$wt" && perl -e 'alarm 300; exec @ARGV' go test -count=1 -v -run '^TestBothModes$' ./internal/tui/ >"$log" 2>&1) && rc=0 || rc=$?
+		if [ "$rc" -eq 142 ] || [ "$rc" -eq 124 ]; then problem "$label" "mutation 1: test timed out"; fi
+		grep -qF -- '--- FAIL: TestBothModes/local' "$log" || problem "$label" "mutation 1: lacks FAIL local: $(tail -n 3 "$log" | tr '\n' ' ')"
+		grep -qF -- '--- FAIL: TestBothModes/server' "$log" || problem "$label" "mutation 1: lacks FAIL server: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	revert
+	# (2) the session hint on the wire
+	f="$wt/internal/tui/client.go"
+	sed 's/^const sessionHint = "tui"$/const sessionHint = ""/' "$f" >"$tmp/x" && cp "$tmp/x" "$f"
+	if [ "$(grep -c 'sessionHint = ""' "$f" || true)" -ne 1 ]; then
+		problem "$label" "mutation 2 changed nothing"
+	else
+		(cd "$wt" && perl -e 'alarm 300; exec @ARGV' go test -count=1 -v -run '^TestBothModes$' ./internal/tui/ >"$log" 2>&1) && rc=0 || rc=$?
+		if [ "$rc" -eq 142 ] || [ "$rc" -eq 124 ]; then problem "$label" "mutation 2: test timed out"; fi
+		grep -qF -- '--- FAIL: TestBothModes/local' "$log" || problem "$label" "mutation 2: lacks FAIL local: $(tail -n 3 "$log" | tr '\n' ' ')"
+		grep -qF -- '--- FAIL: TestBothModes/server' "$log" || problem "$label" "mutation 2: lacks FAIL server: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	revert
+	# (3) own echo on Receive
+	before="$(grep -c 'IncludeOwn: true' "$f" || true)"
+	sed 's|IncludeOwn: true, // receive-own|IncludeOwn: false, // receive-own|' "$f" >"$tmp/x" && cp "$tmp/x" "$f"
+	after="$(grep -c 'IncludeOwn: true' "$f" || true)"
+	if [ "$((before - after))" -ne 1 ] || [ "$(grep -c 'IncludeOwn: false, // receive-own' "$f" || true)" -ne 1 ]; then
+		problem "$label" "mutation 3 changed nothing"
+	else
+		(cd "$wt" && perl -e 'alarm 300; exec @ARGV' go test -count=1 -run '^TestReceiveLoopIncludesOwnSends$' ./internal/tui/ >"$log" 2>&1) && rc=0 || rc=$?
+		grep -qF -- '--- FAIL' "$log" || problem "$label" "mutation 3: lacks '--- FAIL': $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	finish "$label"
+	revert
+}
+
 block_skip_in_wiring
 block_unit_leak
 block_gen_edited
@@ -629,6 +736,8 @@ block_sqlite_lease_ignored
 block_assertion_replay_ignored
 block_m6_exit_script_fires
 block_replaced_exit_ignored
+block_m8_exit_script_fires
+block_tui_hint_mutation
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"

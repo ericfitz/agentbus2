@@ -61,6 +61,7 @@ jobs:
       - run: bash scripts/m5-exit-checks.sh --deps-only
       - run: bash scripts/m6-exit-checks.sh --deps-only
       - run: bash scripts/m7-exit-checks.sh --deps-only
+      - run: bash scripts/m8-exit-checks.sh --deps-only
       - run: make check-gates-selftest
   docker-smoke: # the image builds, runs as nonroot and serves (not part of make verify)
     runs-on: ubuntu-latest
