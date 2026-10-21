@@ -129,26 +129,38 @@ func TestPgnotifyReconnects(t *testing.T) {
 	if !ok || got != (notify.Hint{}) {
 		t.Fatalf("got %v, %v; want the catch-up Hint{}", got, ok)
 	}
-	seq2 := h.sibling(harnessOptions{}).append(ch, "pat", "", "after")
-	if seq2 <= seq {
-		t.Fatalf("seq %d not after %d", seq2, seq)
+	// Each subscriber holds one pending hint and a Publish into a full slot is
+	// dropped (notify.Memory; the watch loop re-checks the Store on any hint).
+	// The outage append may commit after the new session's LISTEN (the backoff
+	// is 50 ms), and then its own hint {ch, seq} follows the catch-up one. If
+	// it is still in the slot when the next append's hint is published, that
+	// hint is dropped, so a stale hint answers with one more append. The
+	// outage hint arrives at most once, so one retry is all it can cost. The
+	// hint of any append made after the reconnect passes.
+	last := seq
+	sib := h.sibling(harnessOptions{})
+	appendAfter := func() {
+		next := sib.append(ch, "pat", "", "after")
+		if next <= last {
+			t.Fatalf("seq %d not after %d", next, last)
+		}
+		last = next
 	}
-	// The outage append may commit after the new session's LISTEN (the
-	// backoff is 50 ms), and then its own hint follows the catch-up one; it
-	// is the only hint allowed before seq2's.
-	deadline := time.After(time.Second)
+	appendAfter()
+	stale := false
 	for {
-		select {
-		case got := <-hints:
-			switch got {
-			case notify.Hint{ChannelID: ch.ID, Seq: seq2}:
-				return
-			case notify.Hint{ChannelID: ch.ID, Seq: seq}, notify.Hint{}:
-				continue
-			}
-			t.Fatalf("got hint %v, want %v", got, notify.Hint{ChannelID: ch.ID, Seq: seq2})
-		case <-deadline:
-			t.Fatalf("no hint %v within 1s", notify.Hint{ChannelID: ch.ID, Seq: seq2})
+		got, ok := nextHint(hints, time.Second)
+		switch {
+		case !ok:
+			t.Fatalf("no hint {%d %d..%d} within 1s", ch.ID, seq+1, last)
+		case got.ChannelID == ch.ID && got.Seq > seq && got.Seq <= last:
+			return
+		case got == notify.Hint{ChannelID: ch.ID, Seq: seq} && !stale:
+			stale = true
+			t.Log("the outage append's hint came after the catch-up one; appending again")
+			appendAfter()
+		default:
+			t.Fatalf("got hint %v, want {%d %d..%d}", got, ch.ID, seq+1, last)
 		}
 	}
 }
