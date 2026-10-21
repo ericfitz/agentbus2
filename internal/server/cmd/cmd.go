@@ -148,12 +148,10 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 	// External subjects are created on first use in open mode only (Decision
 	// (Eric, 2026-10-21), item 5); in every other mode a mapped but unknown
 	// name is 403 not_registered until `admin create-identity`.
+	// EnsureIdentity writes only when the row is missing.
 	var autoCreate func(context.Context, string) error
 	if mode == identities.ModeOpen {
-		autoCreate = func(ctx context.Context, name string) error {
-			_, err := svc.CreateIdentity(ctx, name)
-			return err
-		}
+		autoCreate = svc.EnsureIdentity
 	}
 
 	notifier, closeNotifier := storeNotifier(ctx, cfg, logger)

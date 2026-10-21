@@ -27,7 +27,8 @@ type Bearer struct {
 	// AutoCreate, when non-nil, is called with the identity of a bearer an
 	// External issuer verified (never one the own Issuer verified, so a
 	// deleted identity's own token stays 403 not_registered). Run sets it to
-	// identities.Service.CreateIdentity only in open registration mode
+	// identities.Service.EnsureIdentity (CreateIdentity behind a read, so a
+	// known name costs no write transaction) only in open registration mode
 	// (Decision (Eric, 2026-10-21), item 5). It is idempotent; its error is
 	// logged and the request goes on to the core, which answers
 	// not_registered.

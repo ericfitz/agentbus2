@@ -207,3 +207,25 @@ func (s Service) CreateIdentity(ctx context.Context, name string) (bool, error) 
 	}
 	return created, nil
 }
+
+// EnsureIdentity is CreateIdentity behind a read: a name that has a row costs
+// a read snapshot and no write transaction, so Bearer.AutoCreate on every
+// externally authenticated request in open mode does not queue behind the
+// writer lock. There is no cache, so a row deleted later (reset, registry
+// reset) is created again on the next call. Overlapping callers that all
+// miss the read fall through to CreateIdentity, which is idempotent and
+// reruns on a conflict.
+func (s Service) EnsureIdentity(ctx context.Context, name string) error {
+	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+		_, err := tx.Identity(ctx, name)
+		return err
+	})
+	switch {
+	case err == nil:
+		return nil
+	case !errors.Is(err, store.ErrNotFound):
+		return core.FromStore(err)
+	}
+	_, err = s.CreateIdentity(ctx, name)
+	return err
+}
