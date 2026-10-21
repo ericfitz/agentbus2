@@ -275,3 +275,26 @@ never claimed by trust-on-first-use; `Register` answers `forbidden`
 flag can still be claimed in `open` mode. Milestone 5 item 5: an external
 issuer's subject gets its row from `server admin create-identity` or, in
 `open` mode only, from its first valid external token (never admin).
+
+## Milestone 5 addendum (2026-10-21)
+
+- **Decision 77's mechanism.** `identities.Service.Register`,
+  `RegisterLocal` and `CreateIdentity`, and the open-mode auto-create of an
+  external subject (which calls `CreateIdentity`), each create the identity
+  row and subscribe it to `general` in one transaction; `Reset` subscribes
+  every remaining identity to the recreated `general`.
+- **Choice 12 and item 1, admin reset scope (Decision (Eric, 2026-10-21)).**
+  `data` (the default) keeps identities, keys, admin flags and enrollment
+  tokens and wipes the rest; `everything` also deletes every identity row
+  and its keys except the calling administrator's, and every enrollment
+  token. The signing key stays in both. Tests:
+  `TestResetKeepsIdentitiesAndKeys`, `TestResetEverythingKeepsCaller`,
+  `TestResetRegistryKeepsOne`, `TestAdminResetScopes`.
+- **Item 7, trust on first use on a keyless admin row (Decision (Eric,
+  2026-10-21), option B).** A keyless row with the admin flag, created on
+  the host by `create-identity` or registered locally and then given the
+  flag by `make-admin`, is never claimed by trust-on-first-use: `Register`
+  without an enrollment token is `forbidden` ("identity %q requires an
+  enrollment token"), while a valid token binds the key. A keyless row
+  without the flag is claimable in `open` mode. The `create-identity` usage
+  text says so.

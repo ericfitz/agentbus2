@@ -234,3 +234,22 @@ the markers are removed as the decisions land.
    and the Milestone 7 job list carry it. A channel with an ACL and a
    creator but no subscriber and no message is reaped like any other; a
    subscription keeps it.
+
+## Milestone 5 addendum (2026-10-21)
+
+- **The end-to-end proof.** Subtest `acl-refusals-and-successes` of
+  `TestAuthEndToEnd` runs over TCP with real bearers on both engines: an
+  identity the ACL omits is refused `Subscribe`, `History` and `Send`; the
+  creator, holding `admin` only, is refused `History` (Decision 80: the sets
+  are discrete) but may `SetACL`; an administrator with no entry holds
+  `admin` and reads and rewrites the ACL (the full list is sent, since
+  `SetACL` replaces every entry); a channel created without an ACL carries
+  the Decision 88 default.
+- **`default_acl`.** A setting whose entries may name only `everyone`,
+  `admins` and the placeholder `<creator>`: the Store enforces Decision 96 on
+  every ACL write, and `general` is created before any identity row exists,
+  so a concrete name could never start a server. A concrete name would need
+  a decision and a different first-start bootstrap; this is a noted limit,
+  not a pending item.
+- **`channel_creation`** is a setting; `TestRunChannelCreationSwitch` is its
+  proof over the wire.

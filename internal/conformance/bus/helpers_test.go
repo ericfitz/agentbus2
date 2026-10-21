@@ -85,6 +85,15 @@ func sweepStale(ctx context.Context, db *sql.DB, now time.Time) (int, error) {
 // closed at cleanup.
 func openStore(t *testing.T, e dbtest.Engine) (s ab2store.Store, reopen func() (ab2store.Store, error)) {
 	t.Helper()
+	s, reopen, _ = openStoreDSN(t, e)
+	return s, reopen
+}
+
+// openStoreDSN is openStore that also returns the DSN it opened: the SQLite
+// file path, or the schema-scoped Postgres DSN. A test that starts the real
+// server command over the same database passes it as -sqlite or -postgres.
+func openStoreDSN(t *testing.T, e dbtest.Engine) (s ab2store.Store, reopen func() (ab2store.Store, error), dsn string) {
+	t.Helper()
 	opts := sqlstore.Options{Now: func() int64 { return fixedNowMs }}
 	register := func(s ab2store.Store, err error) (ab2store.Store, error) {
 		if err == nil {
@@ -95,6 +104,7 @@ func openStore(t *testing.T, e dbtest.Engine) (s ab2store.Store, reopen func() (
 	switch e.Name {
 	case "sqlite":
 		path := e.DSN(t)
+		dsn = path
 		reopen = func() (ab2store.Store, error) {
 			return register(sqlite.Open(context.Background(), path, sqlite.Options{Store: opts}))
 		}
@@ -126,7 +136,8 @@ func openStore(t *testing.T, e dbtest.Engine) (s ab2store.Store, reopen func() (
 				t.Errorf("drop schema %s: %v", name, err)
 			}
 		})
-		dsn, err := postgres.WithSearchPath(base, name)
+		var err error
+		dsn, err = postgres.WithSearchPath(base, name)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -140,5 +151,5 @@ func openStore(t *testing.T, e dbtest.Engine) (s ab2store.Store, reopen func() (
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
-	return s, reopen
+	return s, reopen, dsn
 }

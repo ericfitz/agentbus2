@@ -11,8 +11,10 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 - `make test` is Docker-free (every package except `internal/conformance`); `make test-conformance` runs the suites only.
 - `make generate` regenerates `internal/gen` and `internal/gen/spec` from `api/openapi.yaml`.
 - `make test-conformance` runs the bus suite twice: `go test ./internal/conformance/...` (the `local` transport), then the `bus` package with `AGENTBUS2_BUS_TRANSPORT=inproc` (the remote `Bus` over the generated client and the in-process transport). Any other value fails the suite.
-- Run the server: `agentbus2 server -listen <host:port> (-sqlite <path> | -postgres <dsn>)` (interim flags until Milestone 5; every authenticated operation is refused).
+- Run the server: `agentbus2 server [-config FILE] [-listen host:port|unix:PATH] [-registration open|enrollment|closed] (-sqlite <path> | -postgres <dsn>) [-set name=value]...`; settings come from the file, then `AGENTBUS2_SERVER_<NAME>`, then the flags (`internal/server/config`, `config.Settings()` lists them). The registration default is `open` on a loopback or unix listener and `enrollment` on any other.
+- Host commands (no listener, no credential): `agentbus2 server admin [-config|-sqlite|-postgres|-set] make-admin NAME | reset-credential NAME | create-identity NAME | enrollment create|list|revoke`.
 - `scripts/m4-exit-checks.sh <local.log> <inproc.log>` checks the Milestone 4 exit counts and the import rule; `--deps-only` runs the import rule alone.
+- `scripts/m5-exit-checks.sh <auth.log>` checks the `TestAuthEndToEnd` counts (11 leaf subtests per engine) and the Milestone 5 import rule; `--deps-only` runs the import rule alone.
 - `make check-gates-selftest` tests the gate scripts themselves (minutes; CI runs it as its own job).
 
 ## Design
@@ -27,6 +29,10 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 - `internal/server` holds the handlers over the core, one file per aggregate; every error goes through `WriteProblem` (problem+json), and `Authenticator` is the authentication seam (`RefuseAll` by default). `internal/server/cmd` is `agentbus2 server`.
 - `internal/bus/remote` is the client side of Decision 47: a `Bus` over the generated client; it never imports `internal/gen/spec`, `internal/server`, `internal/core` or kin-openapi.
 - Decision 47 import rule (checked by `scripts/m4-exit-checks.sh`): `internal/bus`, `internal/core/...` and `internal/bus/local` do not import `internal/gen` or `internal/server`; `internal/server/...` does not import `internal/bus/local` or `internal/bus/remote`.
+- `internal/auth` (`keys`, `assertion`, `token`) is a leaf: it imports no `internal/store`, `internal/core`, `internal/server`, `internal/gen` or `internal/bus`, and `internal/bus/remote` never imports `internal/auth/token` (checked by `scripts/m5-exit-checks.sh`).
+- `internal/core/identities` holds registration, enrollment tokens, the admin flag, reset and the signing-key rules; the host commands and the handlers both call it. `internal/server/config` is Decision 85's configuration.
+- The server's token signing key is a Store row created at first start (`signing_keys`, plaintext PEM): read access to the database equals the admin flag. Rotation is issue #6, a key provider issue #8.
+- `make verify` covers schema version 2 (`enrollment_tokens`, `signing_keys`) on both engines; `TestAuthEndToEnd` (`internal/conformance/bus/auth_test.go`) is the Milestone 5 exit over TCP.
 - v1 code is ported deliberately: the commit message names the v1 source file. Do not port artifacts of decisions v2 changed (DMs, identity derived from the harness, `-filter`).
 
 ## Git

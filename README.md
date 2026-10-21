@@ -4,13 +4,14 @@ A message bus, shared memory and shared task queue that let multiple agents work
 
 agentbus2 is the successor to [agentbus](https://github.com/ericfitz/agentbus). It is a breaking redesign, not an upgrade: it uses its own binary, data directory, configuration and MCP server name, so it can be installed next to agentbus 1.x without touching 1.x data.
 
-Status: Milestone 4 (OpenAPI, server, client, local mode) done; the server refuses every authenticated call until Milestone 5.
+Status: Milestone 5 (authentication, registration, policy) done; a server with enrollment or TOFU registration is usable from a hand-written client; the CLI and MCP server are Milestone 6.
 
 ## Development
 
 Requirements: Go 1.27, Docker, golangci-lint v2.14.0. `make verify` needs Docker even when `AGENTBUS2_TEST_POSTGRES_DSN` is set: the variable only replaces testcontainers as the suites' Postgres.
 
 - `make verify`: the done gate (build, vet, gofmt, lint, generated-code freshness, unit tests, both conformance suites on SQLite and Postgres, gate checks).
+- The server's token signing key is stored in clear in the database (the `signing_keys` row), so read access to the database is equivalent to the admin flag.
 - The Postgres database must use a UTF-8 ctype (text-search normalization relies on `[[:alnum:]]` matching non-ASCII letters).
 - `make generate`: regenerate `internal/gen` from `api/openapi.yaml`.
 - `make check-gates`: the negative halves of the gate (unreachable Postgres, no Docker and no variable, and others), runnable alone.

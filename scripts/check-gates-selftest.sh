@@ -334,6 +334,46 @@ block_transport_check_fires() {
 	revert
 }
 
+# --- 14 and 15. the Milestone 5 exit's negative halves -----------------------------------
+# Docker-free: both run only the SQLite half of the exit test. The anchor line
+# must stay on one line in the source, exactly once. A break must fail the
+# named subtest.
+mutate_auth_block() {
+	local label="$1" file="$2" from="$3" to="$4" want="$5"
+	local log="$tmp/$label.log" f="$wt/$file" content
+	begin
+	if [ "$(grep -cF -- "$from" "$f")" -ne 1 ]; then
+		problem "$label" "anchor text not exactly once in $file: $from"
+	else
+		content="$(cat "$f")"
+		printf '%s\n' "${content//"$from"/"$to"}" >"$tmp/x" && cp "$tmp/x" "$f"
+		if ! grep -qF -- "$to" "$f"; then
+			problem "$label" "mutation changed nothing ($to absent from $file)"
+		else
+			(cd "$wt" && go test -count=1 -p 1 -v -run '^TestAuthEndToEnd$/sqlite' ./internal/conformance/bus/ >"$log" 2>&1) || true
+			grep -qF -- "--- FAIL: $want" "$log" || problem "$label" "log lacks '--- FAIL: $want': $(tail -n 3 "$log" | tr '\n' ' ')"
+		fi
+	fi
+	finish "$label"
+	revert
+}
+
+# 14. A bearer whose signature is not checked: only the forged-bearer subtest
+# sends something whose signature matters (the no-token subtest sends nothing).
+block_bearer_signature_ignored() {
+	mutate_auth_block bearer-signature-ignored internal/auth/token/issuer.go \
+		'if err := tok.Claims(i.key.Public(), &c); err != nil {' \
+		'if err := tok.UnsafeClaimsWithoutVerification(&c); err != nil {' \
+		TestAuthEndToEnd/sqlite/forged-bearer-refused
+}
+
+# 15. An administrator check that lets everyone through.
+block_admin_flag_ignored() {
+	mutate_auth_block admin-flag-ignored internal/core/authz.go \
+		'if !id.Admin {' 'if false {' \
+		TestAuthEndToEnd/sqlite/admin-refused-as-non-admin
+}
+
 block_skip_in_wiring
 block_unit_leak
 block_gen_edited
@@ -348,6 +388,8 @@ block_pending_batch_wakes
 block_inproc_crosses_the_wire
 block_deps_rule_fires
 block_transport_check_fires
+block_bearer_signature_ignored
+block_admin_flag_ignored
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"

@@ -309,3 +309,25 @@ maintenance job. Milestone 5 item 2 (Decision (Eric, 2026-10-21)) adds the
 `signing_keys` row (version 2, beside the enrollment tokens): the server's
 private signing key as plaintext PEM, so database read access is
 equivalent to admin.
+
+## Milestone 5 addendum (2026-10-21)
+
+- **Version 2 migration.** `0002_auth.sql` on both engines adds
+  `enrollment_tokens` and `signing_keys` (the migration the Milestone 2
+  addendum reserved). The open tests judge the schema version by
+  `len(Migrations())`, so a further step needs no test edit.
+- **New aggregates.** `EnrollmentTokens` and `SigningKeys` are embedded in
+  `Tx`. `signing_keys` is a singleton (`singleton = 1`, unique); the private
+  key is plaintext PEM (Decision (Eric, 2026-10-21), Milestone 5 item 2).
+- **Reset.** `Meta.ResetData` deletes notices, messages, channels (and what
+  cascades from them), subscriptions, tag subscriptions, sessions, memory
+  access and receipts; it keeps `schema_meta`, `seq_counter`, leases,
+  `signing_keys`, identities, `identity_keys` and `enrollment_tokens`.
+  `Meta.ResetRegistry(keep)` deletes every identity row except `keep` (its
+  keys cascade) and every enrollment token, and keeps `signing_keys`. Scope
+  `data` runs the first, scope `everything` both (Milestone 5 choice 12,
+  item 1, as decided).
+- **`ErrConflict` rerun.** `Register` and `CreateIdentity` re-run their
+  transaction after `ErrConflict` at most twice, and
+  `LoadOrCreateSigningKey` once. The `Tx` contract is unchanged:
+  `ErrConflict` still ends the transaction, and the rerun is the core's.
