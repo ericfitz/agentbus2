@@ -1,10 +1,15 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestClassifyListen(t *testing.T) {
@@ -116,5 +121,115 @@ func TestListenTCPAndEmptyUnix(t *testing.T) {
 	if l, err := Listen("unix:"); err == nil {
 		_ = l.Close()
 		t.Fatal("empty unix path accepted")
+	}
+}
+
+// Two servers starting together on one stale socket: without serialization
+// both probe the stale file as refused, the first removes it and listens, and
+// the second then removes the first's live socket and listens too, orphaning
+// the first. Exactly one may succeed, and the survivor must be reachable.
+func TestListenConcurrentStaleTakeover(t *testing.T) {
+	// A short directory: the test name would push t.TempDir past the
+	// sun_path limit (104 bytes on macOS).
+	dir, err := os.MkdirTemp("", "ab")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	path := filepath.Join(dir, "bus.sock")
+	stale, err := net.Listen("unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale.(*net.UnixListener).SetUnlinkOnClose(false)
+	_ = stale.Close()
+
+	type result struct {
+		l   net.Listener
+		err error
+	}
+	second := make(chan result, 1)
+	var started atomic.Bool
+	beforeStaleRemove = func() {
+		if !started.CompareAndSwap(false, true) {
+			return
+		}
+		go func() {
+			l, err := Listen("unix:" + path)
+			second <- result{l, err}
+		}()
+		// Give the second Listen time to run to completion when nothing
+		// holds it back; with the lock it waits for this one.
+		select {
+		case r := <-second:
+			second <- r
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	t.Cleanup(func() { beforeStaleRemove = func() {} })
+
+	first, err1 := Listen("unix:" + path)
+	r := <-second
+	for _, l := range []net.Listener{first, r.l} {
+		if l != nil {
+			t.Cleanup(func() { _ = l.Close() })
+		}
+	}
+	if (err1 == nil) == (r.err == nil) {
+		t.Fatalf("exactly one Listen must succeed: first err %v, second err %v", err1, r.err)
+	}
+	if lost := errors.Join(err1, r.err); !strings.Contains(lost.Error(), "in use") {
+		t.Fatalf("the losing Listen failed for another reason: %v", lost)
+	}
+	live := first
+	if live == nil {
+		live = r.l
+	}
+	go func() {
+		if c, err := live.Accept(); err == nil {
+			_ = c.Close()
+		}
+	}()
+	c, err := net.Dial("unix", path)
+	if err != nil {
+		t.Fatalf("the surviving listener is unreachable: %v", err)
+	}
+	_ = c.Close()
+}
+
+// A hostname is local only when every address it resolves to is loopback.
+func TestClassifyListenHostnameResolution(t *testing.T) {
+	ip := func(s string) net.IPAddr { return net.IPAddr{IP: net.ParseIP(s)} }
+	answers := map[string][]net.IPAddr{
+		"loop.test":   {ip("127.0.0.1"), ip("::1")},
+		"mapped.test": {ip("::ffff:127.0.0.1")},
+		"public.test": {ip("192.0.2.1")},
+		"mixed.test":  {ip("127.0.0.1"), ip("192.0.2.1")},
+		"empty.test":  {},
+	}
+	lookupIPAddr = func(_ context.Context, host string) ([]net.IPAddr, error) {
+		a, ok := answers[host]
+		if !ok {
+			return nil, &net.DNSError{Err: "no such host", Name: host, IsNotFound: true}
+		}
+		return a, nil
+	}
+	t.Cleanup(func() { lookupIPAddr = net.DefaultResolver.LookupIPAddr })
+	cases := []struct {
+		host           string
+		local, wantErr bool
+	}{
+		{"loop.test", true, false},
+		{"mapped.test", true, false},
+		{"public.test", false, false},
+		{"mixed.test", false, false},
+		{"empty.test", false, true},
+		{"missing.test", false, true},
+	}
+	for _, c := range cases {
+		local, err := ClassifyListen(c.host + ":0")
+		if (err != nil) != c.wantErr || local != c.local {
+			t.Errorf("ClassifyListen(%s:0) = %v, %v; want %v, error %v", c.host, local, err, c.local, c.wantErr)
+		}
 	}
 }
