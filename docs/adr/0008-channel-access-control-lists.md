@@ -192,3 +192,36 @@ entries may be removed (yes; the implicit entries remain).
 ## Open questions for Eric
 
 None. Questions 25 to 32 were decided on 2026-10-20 as above.
+
+## Milestone 3 addendum (2026-10-21)
+
+- **The core check.** `Core.Authorize(ctx, tx, identity, channelID, p)` in
+  `internal/core/authz.go` is the one place a channel permission is
+  decided. Reserved names are refused by `Authorize` and
+  `ReadableChannelIDs`.
+- **The matrix.** `TestACLMatrix` in `internal/conformance/bus` has 26
+  sub-cases, one per spec section 4.6 row and variant, each with a refusal
+  and a success leaf on both engines: 52 leaves per engine, counted by
+  `scripts/m3-exit-counts.sh`. Gate self-test block `acl-check-removed`
+  proves the matrix fails on both engines when the readable-channel check in
+  `Receive` is removed.
+- **Decision 94 in the types.** `bus.Channel` carries name and kind only,
+  which is what `ListChannels` returns to anyone. `bus.ChannelInfo` embeds it
+  with `Creator` and `CreatedAt` and is returned only to the creator on
+  `CreateChannel` and to an administrator on `Status`.
+
+### Pending Eric
+
+Each proceeds on the plan's recommendation (option A) with a
+`// pending Eric: Milestone 3 item N` marker.
+
+6. **`general` cannot be deleted or renamed**, by anyone including
+   administrators: the server recreates it at start and every identity is
+   subscribed to it (Decision 92). Option B: allow holders of `admin`.
+   Marker: `TestChannelGeneralIsProtected`.
+7. **No live-subscriber refusal on delete** (v1 `deleteChannel`): `admin` on
+   the channel decides (Decision 89) and subscriptions and cursors cascade.
+   Option B: port it with `except` for the caller. No marker.
+8. **No empty-channel reaping** (v1 `reapEmptyChannels`): a channel with an
+   ACL and a creator is configuration; only task lists expire. Option B:
+   port it. No marker.

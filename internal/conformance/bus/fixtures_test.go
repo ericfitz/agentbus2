@@ -321,19 +321,6 @@ func (h *harness) session(identity, display string) ab2store.Session {
 	return s
 }
 
-// open is as(identity) then Open with no hint, t.Fatal on error. It calls
-// the real Open: only for tests of the sessions, delivery and integration
-// tasks.
-func (h *harness) open(identity string) (ab2bus.Bus, ab2bus.Session) {
-	h.t.Helper()
-	b := h.as(identity)
-	s, err := b.Open(context.Background(), ab2bus.OpenSessionInput{})
-	if err != nil {
-		h.t.Fatalf("Open(%s): %v", identity, err)
-	}
-	return b, s
-}
-
 // codeOf fails the test unless err carries the wanted bus code.
 func codeOf(t *testing.T, err error, want ab2bus.Code) {
 	t.Helper()

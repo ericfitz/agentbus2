@@ -200,6 +200,50 @@ block_search_sqlite_prefix() {
 		's/ftsPrefix = "\*"/ftsPrefix = ""/' 'ftsPrefix = ""' sqlite postgres
 }
 
+# mutate_block LABEL FILE FROM TO TEST WANT...: replace the exact text FROM with
+# TO in the worktree (through a temp file and cp), require TO to be present
+# afterwards, run the named Bus conformance test and require every WANT line in
+# its log. Runs against the ambient Postgres like block 7.
+mutate_block() {
+	local label="$1" file="$2" from="$3" to="$4" test="$5"
+	shift 5
+	local log="$tmp/$label.log" f="$wt/$file" want content
+	begin
+	if ! grep -qF -- "$from" "$f"; then
+		problem "$label" "anchor text absent from $file: $from"
+	else
+		content="$(cat "$f")"
+		printf '%s\n' "${content//"$from"/"$to"}" >"$tmp/x" && cp "$tmp/x" "$f"
+		if ! grep -qF -- "$to" "$f"; then
+			problem "$label" "mutation changed nothing ($to absent from $file)"
+		else
+			(cd "$wt" && go test -count=1 -p 1 -v -run "^${test}\$" ./internal/conformance/bus/ >"$log" 2>&1) || true
+			for want in "$@"; do
+				grep -qF -- "$want" "$log" || problem "$label" "log lacks '$want': $(tail -n 3 "$log" | tr '\n' ' ')"
+			done
+		fi
+	fi
+	finish "$label"
+	revert
+}
+
+# --- 9. acl-check-removed -------------------------------------------------------------
+# Receive without the readable-channel check must fail the ACL matrix on both engines.
+block_acl_check_removed() {
+	mutate_block acl-check-removed internal/core/delivery/receive.go \
+		'if !readable[sub.ChannelID] {' 'if false {' TestACLMatrix \
+		'--- FAIL: TestACLMatrix/sqlite' '--- FAIL: TestACLMatrix/postgres'
+}
+
+# --- 10. pending-batch-wakes ------------------------------------------------------------
+# A watch floor that ignores the pending batch wakes on messages already delivered.
+block_pending_batch_wakes() {
+	mutate_block pending-batch-wakes internal/core/delivery/peek.go \
+		'floor := max(c.CursorSeq, c.PendingEndSeq, after)' 'floor := max(c.CursorSeq, after)' \
+		TestWatchIgnoresPendingBatch \
+		'--- FAIL: TestWatchIgnoresPendingBatch/sqlite' '--- FAIL: TestWatchIgnoresPendingBatch/postgres'
+}
+
 block_skip_in_wiring
 block_unit_leak
 block_gen_edited
@@ -208,6 +252,8 @@ block_ci_gate_negative
 block_ci_sim
 block_search_postgres_phrase
 block_search_sqlite_prefix
+block_acl_check_removed
+block_pending_batch_wakes
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"

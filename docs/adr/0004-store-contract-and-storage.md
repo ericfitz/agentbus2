@@ -270,3 +270,28 @@ one-line change.
   data on a write is `ErrInvalid`, a string naming another row answers as
   for an unknown row. The query helpers refuse any remaining failing string
   argument with `ErrInvalid`, so no such string reaches either engine.
+
+## Milestone 3 addendum (2026-10-21)
+
+- **Store amendment (choice 11).** Own-message exclusion and the search
+  filters are SQL, not Go post-filters over a page: `MessagesAfter`,
+  `MessagesInRange` and `TagMatchesAfter` take a
+  `MessageFilter{ExcludeSender, ExcludeSessionID}`; `MessagesBefore` serves
+  history's newest-first window; `TagMatchesAfter` takes an upper bound for
+  bounded redelivery; `SearchText` and `Embeddings` take a `SearchFilter`;
+  `MessagesBySeqs` loads semantic hits; `EmbedFailures` reads the
+  rejected-row count and latest reason for `Admin.Status`. Both engines,
+  with Store conformance cases.
+- **`core.RowRejected`** is the embedder's row-refusal contract: an embedder
+  that refuses one row returns an error wrapping `*core.RowRejected`
+  (`IsRowRejected`), the batch records the failure and goes on instead of
+  failing whole.
+
+### Pending Eric
+
+3. **Two spec 5.7 jobs are deferred to Milestone 7**: budget eviction and
+   capacity notices (and the usage figure in `Admin.Status`) need an
+   engine-specific size query the Store does not have. The Milestone 3 job
+   list ships without them. Option B: add `Usage` to the Store now. Marker:
+   `TestMaintenanceRunJobRejectsUnknown`, which asserts both names are
+   `validation` in this milestone.

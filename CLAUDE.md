@@ -16,6 +16,10 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 
 - The design decisions (made by Eric) go in the spec under `docs/superpowers/specs/` and the ADRs in `docs/adr/`. Read them before changing an interface, the Store contract, auth or the wire protocol.
 - The Store contract is `internal/store`; the engines are `internal/store/sqlite` and `internal/store/postgres` over `internal/store/sqlstore`; the Store suite is `internal/conformance/store` and isolates Postgres tests in a schema per test.
+- `internal/bus` is the seam: the `Bus` interfaces and their domain types and errors; clients never import `internal/store`.
+- `internal/core` holds the rules over the Store, one aggregate package each (`channels`, `sessions`, `messaging`, `memories`, `tasks`, `search`, `delivery`, `maintenance`) plus `rules` (pure ports) and `notify`; every mutation obeys the Decision 26 rules (see Global Constraints in `docs/superpowers/plans/2026-10-21-milestone-3-core-bus.md`).
+- `internal/bus/local` is the in-process `Bus` bound to one identity; it delegates to the core.
+- `internal/conformance/bus` is the Bus suite on both engines, including the ACL matrix (`TestACLMatrix`); `scripts/m3-exit-counts.sh` checks a `-v` log of it against the Milestone 3 exit counts.
 - v1 code is ported deliberately: the commit message names the v1 source file. Do not port artifacts of decisions v2 changed (DMs, identity derived from the harness, `-filter`).
 
 ## Git

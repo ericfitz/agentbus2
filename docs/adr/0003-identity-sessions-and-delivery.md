@@ -179,3 +179,80 @@ All six resolved on 2026-10-20:
 5. Harness-to-session mapping: a local state file (Decision 78).
 6. Resume token validity and the pending batch: the session retention
    window; the batch is dropped with the row (Decision 79).
+
+## Milestone 3 addendum (2026-10-21)
+
+Milestone 3 built the core and the local Bus. These are Claude's choices
+under the spec's delegation, then the items the plan put to Eric. Eric did
+not answer before execution: each item proceeds on the plan's
+recommendation (option A) and is a `Claude proposal, pending Eric`; the test
+markers `// pending Eric: Milestone 3 item N` encode it, so a reversal is a
+small, findable change.
+
+### Choices delegated by the spec
+
+1. **Caller binding.** Core service methods take the identity explicitly;
+   a `Bus` value is bound to one credential at construction
+   (`local.New(core, identity)`). Session-scoped calls (`Receive`, `Watch`,
+   `Close`) take the session id, so one `Bus` can drive several sessions of
+   its identity (Decision 15).
+4. **Resume token.** 32 random bytes, base64url without padding, generated
+   once by `Open` and returned by it and by every resume while the row is
+   retained; stored as its SHA-256 hex. The Store has no method to rotate
+   the hash, and no decision asked for a rotation.
+5. **Display names (Decision 39).** The first free of `<identity>`,
+   `<identity>-2`, ...; with a hint, `<identity>/<hint>`,
+   `<identity>/<hint>-2`, ... The hint passes `NameRule` and never affects
+   authorization. See pending item 11 for which rows count as taken.
+6. **Defaults the spec names without a value.** `SessionLeaseSeconds` 90,
+   `LeaseSkewSeconds` 5, `SessionRetentionHours` 72, `WatchMaxSeconds` 50,
+   `WatchMergeSeconds` 2. Consequence: an owner's tasks become reclaimable
+   about 95 s (lease plus skew) after the owner's last `Open`, `Receive` or
+   `Watch` (pending item 13).
+7. **Rate limiting across retries (Decision 26).** `Limits.Check` is a
+   read-only refill-and-compare that may run inside the transaction;
+   `Limits.Charge` pays after commit, so a retried transaction is charged
+   once. A concurrent burst can overshoot by the calls in flight.
+10. **One receipt helper (Decision 46).** `Core.WithReceipt` replays the
+    stored result on a hit, rejects a different payload with `conflict`,
+    and runs the operation otherwise. Keys are per identity and expire after
+    `ReceiptRetentionMinutes`.
+
+### Pending Eric
+
+1. **Own-message exclusion is per session**, not per identity (a parent and
+   its subagents share a credential, Decision 15). Option B: per identity.
+   Marker: `TestReceiveExcludesOwnSessionOnly`.
+2. **Lease renewal.** `Open`, `Receive` and `Watch` renew the lease; a
+   session-scoped call on a lapsed row is `session_lapsed` (`Close`
+   excepted); `Open` with the resume token revives the same row within the
+   retention window. Option B: a lapsed session's call silently renews it.
+   Marker: `TestSessionLapsedRefusesAndResumes`.
+4. **Idle subscription expiry is not ported** (v1 `cursor_idle_hours`):
+   subscriptions persist (Decision 37). Option B: port it. No marker: the
+   absence of the job.
+9. **The polling guard is not ported** (v1 `pollingGuardEmptyWaits`):
+   `receive` is non-blocking (Decision 83). Option B: port it. No marker.
+10. **Wake grace and swept-row restore are not ported** (v1 ADR 0022 and
+    0023): they ride on `meta`, which Milestone 2 did not port. Liveness is
+    the lease. Option B: port the clock-sample detection onto a lease
+    extension. No marker.
+11. **Lapsed sessions hold their display name**: the taken set is every row
+    with `ClosedAt == 0`, so a resumed session keeps its name and two live
+    sessions never share one; the cost is `pat-2` after a crash, for at most
+    `SessionRetentionHours`. Option B: live rows only. Marker:
+    `TestSessionDisplayNameUniqueAcrossResumable`.
+12. **`Open`, `Receive` and `Watch` take no idempotency key**, a departure
+    from the literal "every mutating call" of spec 3.4. `Open` returns the
+    resume token and the row stores only its hash, so a receipt would keep
+    the plaintext; `Receive` is idempotent by construction (Decisions 16
+    and 40); `Watch` writes only a lease and a watch id the next call
+    replaces (Decision 68). Option B: give all three a key. Marker:
+    `TestSessionOpenRetryLeavesLapsedRow`.
+13. **Owner liveness for abandoned tasks** is session liveness alone
+    (`ClosedAt == 0` and the lease plus skew not before now), so a task is
+    reclaimable about 95 s after the owner's last `Open`, `Receive` or
+    `Watch`; an explicit `LeasedUntil` is reclaimed by the earlier of the
+    two. Option B: a separate `TaskOwnerGraceSeconds` (default 300).
+    Option C: lease expiry only. Markers: `TestTaskAbandonedByDeadOwner`,
+    `TestMaintenanceAbandonedTasks`.

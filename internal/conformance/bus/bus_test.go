@@ -23,23 +23,7 @@ func TestScaffold(t *testing.T) {
 	})
 }
 
-// tolerable reports whether a smoke call's error is acceptable while Wave 3
-// replaces the stubs one by one: the stub's ErrNotImplemented, or a bus
-// error such as not_found from a real implementation. Task 13 rewrites the
-// test to require the real outcomes.
-func tolerable(err error) bool {
-	if err == nil || errors.Is(err, local.ErrNotImplemented) {
-		return true
-	}
-	var be *ab2bus.Error
-	return errors.As(err, &be)
-}
-
 var _ ab2bus.Bus = (*local.Bus)(nil)
-
-// open calls Task 5's Open, so nothing here can run it yet; the reference
-// keeps the linter's unused check quiet until Tasks 5, 10, 12 and 13 use it.
-var _ = (*harness).open
 
 func TestCodeOfHelper(t *testing.T) {
 	codeOf(t, core.E(ab2bus.CodeNotFound, "x"), ab2bus.CodeNotFound)
@@ -54,18 +38,21 @@ func TestLocalBusImplementsEveryInterface(t *testing.T) {
 		if _, ok := h.as("pat").(*local.Bus); !ok {
 			t.Fatalf("newBus returned %T, want *local.Bus", h.as("pat"))
 		}
-		calls := map[string]func() error{
-			"Messaging.ListChannels": func() error { _, err := b.ListChannels(ctx); return err },
-			"Sessions.Identities":    func() error { _, err := b.Identities(ctx); return err },
-			"Memories.GetMemory":     func() error { _, err := b.GetMemory(ctx, 1); return err },
-			"Tasks.GetTask":          func() error { _, err := b.GetTask(ctx, 1); return err },
-			"Admin.Status":           func() error { _, err := b.Status(ctx); return err },
-		}
-		for name, call := range calls {
-			if err := call(); !tolerable(err) {
-				t.Errorf("%s: %v is neither ErrNotImplemented nor a *bus.Error", name, err)
+		must := func(name string, err error) {
+			if err != nil {
+				t.Errorf("%s: %v, want nil", name, err)
 			}
 		}
+		_, err := b.ListChannels(ctx)
+		must("Messaging.ListChannels", err)
+		_, err = b.Identities(ctx)
+		must("Sessions.Identities", err)
+		_, err = b.Status(ctx)
+		must("Admin.Status", err)
+		_, err = b.GetMemory(ctx, 1)
+		codeOf(t, err, ab2bus.CodeNotFound)
+		_, err = b.GetTask(ctx, 1)
+		codeOf(t, err, ab2bus.CodeNotFound)
 	})
 }
 
