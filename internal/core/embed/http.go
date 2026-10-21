@@ -39,7 +39,9 @@ func (e *HTTP) Model() string { return e.model }
 // Embed posts texts and returns one vector per text, in order. A 400, 413 or
 // 422 answer is the endpoint refusing the input itself and is returned as a
 // *core.RowRejected with Index -1 (retrying that text alone fails the same
-// way). Every other failure is a plain error.
+// way); its Reason is the start of the response body, except for a 422, whose
+// body echoes the input and is replaced by the status line. Every other
+// failure is a plain error.
 func (e *HTTP) Embed(ctx context.Context, texts []string) (vecs [][]float32, err error) {
 	body, err := json.Marshal(map[string]any{"input": texts, "model": e.model})
 	if err != nil {
@@ -63,8 +65,13 @@ func (e *HTTP) Embed(ctx context.Context, texts []string) (vecs [][]float32, err
 		}
 	}()
 	if resp.StatusCode/100 != 2 {
-		snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
-		text := strings.Join(strings.Fields(string(snippet)), " ")
+		// A 422 body (validation detail) often echoes the input back, and the
+		// text reaches status output, so it is never read (v1 ADR 0018).
+		var text string
+		if resp.StatusCode != http.StatusUnprocessableEntity {
+			snippet, _ := io.ReadAll(io.LimitReader(resp.Body, 300))
+			text = strings.Join(strings.Fields(string(snippet)), " ")
+		}
 		switch resp.StatusCode {
 		case http.StatusBadRequest, http.StatusRequestEntityTooLarge, http.StatusUnprocessableEntity:
 			if text == "" {

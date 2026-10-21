@@ -74,12 +74,22 @@ func TestHTTPRowRejectedStatuses(t *testing.T) {
 		_, _ = io.WriteString(w, "input   too\nlong")
 	}))
 	e := NewHTTP(srv.URL, "m", "k", nil)
-	for _, code := range []int{400, 413, 422} {
-		status = code
+	for _, c := range []struct {
+		code   int
+		reason string
+	}{
+		{400, "input too long"},
+		{413, "input too long"},
+		// A 422 body is validation detail that echoes the input (memory
+		// content) and the reason reaches Admin.Status, so only the status
+		// is kept (v1 ADR 0018).
+		{422, "422 Unprocessable Entity"},
+	} {
+		status = c.code
 		_, err := e.Embed(context.Background(), []string{"x"})
 		var rr *core.RowRejected
-		if !core.IsRowRejected(err) || !errors.As(err, &rr) || rr.Index != -1 || rr.Reason != "input too long" {
-			t.Errorf("status %d: err = %v", code, err)
+		if !core.IsRowRejected(err) || !errors.As(err, &rr) || rr.Index != -1 || rr.Reason != c.reason {
+			t.Errorf("status %d: err = %v, want reason %q", c.code, err, c.reason)
 		}
 	}
 	for _, code := range []int{401, 403, 429, 500, 503} {
