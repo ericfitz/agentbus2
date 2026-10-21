@@ -569,4 +569,16 @@ func TestTokenReplayInsideLeeway(t *testing.T) {
 	}
 	e.clock.Advance(time.Minute + token.Leeway/2) // past exp, inside the leeway
 	wantAuthProblem(t, e.exchange(a, ""), 401, "unauthenticated", "assertion replayed")
+
+	// The last accepted instant, exp + Leeway exactly, is still a replay.
+	b := e.assertionFor("pat", pat, "http://inproc/v1/auth/token", time.Minute)
+	p, err := assertion.Parse(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := e.exchange(b, ""); resp.StatusCode != 200 {
+		t.Fatalf("first use of b: %d %s", resp.StatusCode, readBody(t, resp))
+	}
+	e.clock.Advance(p.Expiry.Add(token.Leeway).Sub(e.clock.Now()))
+	wantAuthProblem(t, e.exchange(b, ""), 401, "unauthenticated", "assertion replayed")
 }

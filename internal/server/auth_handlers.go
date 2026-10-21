@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"time"
 
 	"github.com/go-jose/go-jose/v4"
 
@@ -55,10 +56,11 @@ func (a *api) Token(ctx context.Context, req gen.TokenRequestObject) (gen.TokenR
 	if err := p.Verify(pub, iss.TokenEndpoint(), now, token.Leeway); err != nil {
 		return nil, core.E(bus.CodeUnauthenticated, "%s", err)
 	}
-	// Verify accepts the assertion until exp plus the leeway, so its jti is
-	// remembered that long: remembering it only until exp would let a replay
-	// inside the leeway through.
-	if a.replay.Seen(p.JTI, p.Expiry.Add(token.Leeway), now) {
+	// Verify accepts the assertion until exp plus the leeway inclusive, and
+	// Seen forgets an entry once now reaches its time, so the jti is
+	// remembered one second past exp+Leeway: remembering it only until exp
+	// would let a replay inside the leeway through.
+	if a.replay.Seen(p.JTI, p.Expiry.Add(token.Leeway+time.Second), now) {
 		return nil, core.E(bus.CodeUnauthenticated, "assertion replayed")
 	}
 	raw, _, err := iss.Mint(p.Identity)
