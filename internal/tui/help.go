@@ -1,14 +1,6 @@
-// Stub created by Milestone 8 Task 3 from the call sites in v1 906dec8 model.go, view.go and compose.go; Task 7 replaces this file.
-//
-// Signatures and the v1 call site each came from:
-//
-//	openHelp() tea.Cmd                        model.go:613 updateNormal
-//	updateHelp(msg tea.Msg) tea.Cmd           model.go:367 update
-//	viewHelp() string                         view.go:266 View
-//	helpLines() []string                      v1 help.go updateHelp, viewHelp
-//
-// helpLines is v1's keymap minus the direct-message rows, with the v2 wording
-// of c (kinds) and the rail row (full names).
+// Ported from agentbus v1 internal/tui/help.go at 906dec8 (Milestone 8
+// Task 7): the keymap with the v2 wording of c (kinds) and of the rail row
+// (names shown in full), and only the rows v2 has.
 
 package tui
 
