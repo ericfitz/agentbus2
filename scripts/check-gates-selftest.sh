@@ -449,6 +449,7 @@ mutate_replicas_block() {
 # 18. An append whose NOTIFY carries nothing: the watch on the other replica
 # times out at 3 s instead of waking inside the merge window plus 1 s.
 block_notify_append_removed() {
+	# shellcheck disable=SC2016 # the single-quoted arguments are literal Go source
 	mutate_replicas_block notify-append-removed internal/store/postgres/notify.go \
 		'const notifySQL = "SELECT pg_notify(" + channelExpr + ", $1)"' \
 		'const notifySQL = "SELECT $1::text"' \
@@ -457,6 +458,7 @@ block_notify_append_removed() {
 
 # 19. A Postgres advisory lock that is always granted: both replicas run the jobs.
 block_advisory_lock_ignored() {
+	# shellcheck disable=SC2016 # the single-quoted arguments are literal Go source
 	mutate_replicas_block advisory-lock-ignored internal/store/postgres/lock.go \
 		'const tryLockSQL = "SELECT pg_try_advisory_lock(hashtext(current_schema()), hashtext($1))"' \
 		'const tryLockSQL = "SELECT true OR $1::text IS NULL"' \

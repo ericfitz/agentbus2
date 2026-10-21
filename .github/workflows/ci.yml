@@ -68,6 +68,22 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: make docker-smoke
+  release-lint: # actionlint and shellcheck over the workflows and scripts (not part of make verify)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install actionlint (download script pinned by commit SHA)
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/download-actionlint.bash" https://raw.githubusercontent.com/rhysd/actionlint/914e7df21a07ef503a81201c76d2b11c789d3fca/scripts/download-actionlint.bash
+          bash "$RUNNER_TEMP/download-actionlint.bash" 1.7.12 "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+      - run: make release-lint
+  release-install-check: # the installer matrix in Docker, every image (not part of make verify)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+      - run: make release-install-check
   gate-negative-no-docker: # variable unset and no Docker at all; verify must fail with the unset-and-could-not-start text
     runs-on: ubuntu-latest
     steps:

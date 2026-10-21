@@ -1,4 +1,4 @@
-.PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates check-gates-selftest verify docker-image docker-smoke
+.PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates check-gates-selftest verify docker-image docker-smoke vet-cross release-check release-lint release-install-check
 export CGO_ENABLED=0
 PKGS_UNIT = $$(go list ./... | grep -v '^github.com/ericfitz/agentbus2/internal/conformance')
 
@@ -35,7 +35,28 @@ docker-image: ## Build the agentbus2:local Docker image (not part of verify)
 	docker build -t agentbus2:local .
 docker-smoke: ## Build the image and smoke-test it with Docker (not part of verify; its own CI job)
 	bash scripts/docker-smoke.sh
-verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, tidy go.mod, generated-code freshness, unit tests, conformance suites on both engines, gate checks
+vet-cross:   ## go vet for linux and windows on amd64 and arm64, and golangci-lint for windows (ported from v1)
+	GOOS=linux GOARCH=amd64 go vet ./...
+	GOOS=linux GOARCH=arm64 go vet ./...
+	GOOS=windows GOARCH=amd64 go vet ./...
+	GOOS=windows GOARCH=arm64 go vet ./...
+	GOOS=windows golangci-lint run ./...
+release-check: ## Part of verify. Release tooling: check-pins, the installer, release, render and build-archive harnesses, the local dry run (test-pipeline), vet-cross. Needs bash, git, go, golangci-lint, python3, jq, shasum, OpenSSL 3, ruby, tar, zip, curl; docker on macOS
+	bash release/check-pins.sh
+	bash release/test-install.sh --self-test
+	bash release/test-release.sh
+	bash release/test-render.sh
+	bash release/build-archive.sh --self-test
+	bash release/test-pipeline.sh
+	$(MAKE) vet-cross
+release-lint: ## actionlint over the workflows and shellcheck over release/, scripts/ and install.sh (not part of verify; its own CI job)
+	@for t in actionlint shellcheck; do command -v $$t >/dev/null || { echo "release-lint: $$t is not installed"; exit 1; }; done
+	actionlint .github/workflows/*.yml
+	shellcheck -x release/*.sh scripts/*.sh
+	shellcheck -s sh install.sh
+release-install-check: ## The installer matrix in Docker (RELEASE_INSTALL_ARGS=--quick for one image; not part of verify; its own CI job)
+	bash release/test-install.sh $(RELEASE_INSTALL_ARGS)
+verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, tidy go.mod, generated-code freshness, unit tests, conformance suites on both engines, gate checks, release-check
 	$(MAKE) build
 	$(MAKE) build-all
 	$(MAKE) vet
@@ -46,4 +67,5 @@ verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, tidy go.mod, gen
 	$(MAKE) test
 	$(MAKE) test-conformance
 	$(MAKE) check-gates
+	$(MAKE) release-check
 	@echo "verify: OK"
