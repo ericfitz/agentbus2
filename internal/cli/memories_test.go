@@ -109,6 +109,7 @@ func TestMemoriesRejectsBadInput(t *testing.T) {
 		{"edit", "-subject", "s", "-clear-subject", "1", "x"},
 		{"edit", "-tag", "a", "-clear-tags", "1", "x"},
 		{"edit", "-metadata", "novalue", "1", "x"},
+		{"edit", "-metadata", "a=1", "-metadata", "a=2", "1", "x"},
 		{"delete", "-tag", "x", "1"},
 	} {
 		var out, errb bytes.Buffer

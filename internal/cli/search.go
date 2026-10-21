@@ -39,8 +39,5 @@ func RunSearch(ctx context.Context, args []string, environ []string, _ io.Reader
 	if res.Hits == nil {
 		res.Hits = []bus.SearchHit{}
 	}
-	if err := printJSON(stdout, res); err != nil {
-		return fail(stderr, err)
-	}
-	return 0
+	return opPrint(stdout, stderr, res)
 }

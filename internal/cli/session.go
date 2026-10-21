@@ -5,171 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"slices"
-	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
 )
-
-// This file also holds the small grammar helpers of the operator commands of
-// Task 9 (session, channels, send, receive, history, search). They carry the
-// op prefix so that the commands of the other tasks of the package add their
-// own without colliding.
-
-// opCmd is one operator (sub)command: its flag set, with -profile and
-// -identity registered, and the client options they fill.
-type opCmd struct {
-	name   string
-	fs     *flag.FlagSet
-	o      client.Options
-	stderr io.Writer
-}
-
-func newOpCmd(name string, stderr io.Writer) *opCmd {
-	c := &opCmd{name: name, stderr: stderr}
-	c.fs = newFlagSet(name, stderr)
-	client.Flags(c.fs, &c.o)
-	return c
-}
-
-// parse parses args and checks the positional count (maxArgs < 0: unbounded).
-// ok is false when the command must return code at once: -h is 0, a flag
-// error or a wrong positional count is 2 with the usage on stderr.
-func (c *opCmd) parse(args []string, minArgs, maxArgs int) (rest []string, code int, ok bool) {
-	if err := c.fs.Parse(args); err != nil {
-		return nil, parseExit(err), false
-	}
-	rest = c.fs.Args()
-	if len(rest) < minArgs || (maxArgs >= 0 && len(rest) > maxArgs) {
-		_, _ = fmt.Fprintf(c.stderr, "agentbus2 %s: wrong number of arguments (%d)\n", c.name, len(rest))
-		c.fs.Usage()
-		return nil, 2, false
-	}
-	return rest, 0, true
-}
-
-// usageErr reports a grammar error of the command's own flags: exit 2.
-func (c *opCmd) usageErr(format string, a ...any) int {
-	_, _ = fmt.Fprintf(c.stderr, "agentbus2 %s: %s\n", c.name, fmt.Sprintf(format, a...))
-	return 2
-}
-
-// connect builds the Conn; the caller closes it. A nil Conn comes with the
-// exit code.
-func (c *opCmd) connect(ctx context.Context, environ []string) (*client.Conn, int) {
-	c.o.Environ = environ
-	return open(ctx, c.o, c.stderr)
-}
-
-// seen reports whether the flag was given on the command line.
-func (c *opCmd) seen(name string) bool {
-	found := false
-	c.fs.Visit(func(f *flag.Flag) {
-		if f.Name == name {
-			found = true
-		}
-	})
-	return found
-}
-
-type opRunFunc func(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int
-
-// opDispatch routes args[0] to a subcommand. No subcommand or an unknown one
-// is exit 2 with the usage on stderr; help, -h and --help print it on stdout
-// and exit 0.
-func opDispatch(ctx context.Context, name string, subs map[string]opRunFunc, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	names := make([]string, 0, len(subs))
-	for n := range subs {
-		names = append(names, n)
-	}
-	sort.Strings(names)
-	usage := "usage: agentbus2 " + name + " <" + strings.Join(names, "|") + "> [flags]\n"
-	if len(args) == 0 {
-		_, _ = io.WriteString(stderr, usage)
-		return 2
-	}
-	switch args[0] {
-	case "-h", "-help", "--help", "help":
-		_, _ = io.WriteString(stdout, usage)
-		return 0
-	}
-	run, ok := subs[args[0]]
-	if !ok {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 %s: unknown subcommand %q\n%s", name, args[0], usage)
-		return 2
-	}
-	return run(ctx, args[1:], environ, stdin, stdout, stderr)
-}
-
-// opList is a repeatable string flag.
-type opList []string
-
-func (l *opList) String() string { return strings.Join(*l, ",") }
-func (l *opList) Set(v string) error {
-	*l = append(*l, v)
-	return nil
-}
-
-// opMeta is the repeatable -metadata k=v flag. A value without "=", an empty
-// key or a repeated key is a grammar error.
-type opMeta map[string]string
-
-func (m *opMeta) String() string { return fmt.Sprint(map[string]string(*m)) }
-func (m *opMeta) Set(v string) error {
-	k, val, ok := strings.Cut(v, "=")
-	if !ok || k == "" {
-		return fmt.Errorf("metadata %q is not k=v", v)
-	}
-	if *m == nil {
-		*m = opMeta{}
-	}
-	if _, dup := (*m)[k]; dup {
-		return fmt.Errorf("metadata key %q given twice", k)
-	}
-	(*m)[k] = val
-	return nil
-}
-
-// opInt is an optional integer flag: nil until given.
-type opInt struct{ v *int64 }
-
-func (i *opInt) String() string {
-	if i == nil || i.v == nil {
-		return ""
-	}
-	return strconv.FormatInt(*i.v, 10)
-}
-func (i *opInt) Set(s string) error {
-	n, err := strconv.ParseInt(s, 10, 64)
-	if err != nil {
-		return fmt.Errorf("%q is not an integer", s)
-	}
-	i.v = &n
-	return nil
-}
-
-// opCursors is the repeatable -cursor CH=SEQ flag of session open.
-type opCursors []bus.OfferedCursor
-
-func (c *opCursors) String() string { return fmt.Sprint(len(*c)) }
-func (c *opCursors) Set(v string) error {
-	i := strings.LastIndex(v, "=")
-	if i <= 0 {
-		return fmt.Errorf("cursor %q is not CHANNEL=SEQ", v)
-	}
-	n, err := strconv.ParseInt(v[i+1:], 10, 64)
-	if err != nil {
-		return fmt.Errorf("cursor %q: %q is not an integer", v, v[i+1:])
-	}
-	*c = append(*c, bus.OfferedCursor{Channel: v[:i], Seq: n})
-	return nil
-}
 
 // opSplitTags splits a comma-separated tag list, trimming space around each
 // tag (ported from v1 main.go splitTags).
@@ -280,10 +122,7 @@ func runSessionOpen(ctx context.Context, args []string, environ []string, _ io.R
 	for _, r := range s.RejectedCursors {
 		out.RejectedCursors = append(out.RejectedCursors, opRejectedOut{Channel: r.Channel, Reason: r.Reason})
 	}
-	if err := printJSON(stdout, out); err != nil {
-		return fail(stderr, err)
-	}
-	return 0
+	return opPrint(stdout, stderr, out)
 }
 
 func runSessionClose(ctx context.Context, args []string, environ []string, _ io.Reader, _, stderr io.Writer) int {

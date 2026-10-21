@@ -32,8 +32,5 @@ func RunHistory(ctx context.Context, args []string, environ []string, _ io.Reade
 	if ms == nil {
 		ms = []bus.Message{}
 	}
-	if err := printJSON(stdout, ms); err != nil {
-		return fail(stderr, err)
-	}
-	return 0
+	return opPrint(stdout, stderr, ms)
 }

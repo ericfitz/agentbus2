@@ -176,7 +176,8 @@ func TestUsageListsEveryCommand(t *testing.T) {
 		t.Fatalf("%d names, want 21", len(names))
 	}
 	for _, n := range names {
-		if !strings.Contains(strings.TrimSuffix(strings.TrimPrefix(usage, "usage: agentbus2 <"), "> [flags]"), n) {
+		line, _, _ := strings.Cut(usage, "\n")
+		if !strings.Contains(strings.TrimSuffix(strings.TrimPrefix(line, "usage: agentbus2 <"), "> [flags]"), n) {
 			t.Errorf("usage lacks %q", n)
 		}
 		var out, errb bytes.Buffer

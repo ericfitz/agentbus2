@@ -40,8 +40,5 @@ func RunSend(ctx context.Context, args []string, environ []string, stdin io.Read
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if err := printJSON(stdout, res); err != nil {
-		return fail(stderr, err)
-	}
-	return 0
+	return opPrint(stdout, stderr, res)
 }

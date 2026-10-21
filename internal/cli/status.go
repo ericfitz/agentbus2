@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/profile"
 )
 
@@ -19,17 +18,11 @@ import (
 // reported: Admin.Usage (Milestone 7 Task 6) is not on this branch.
 func RunStatus(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	_ = stdin
-	fs := newFlagSet("status", stderr)
-	var o client.Options
-	o.Environ = environ
-	client.Flags(fs, &o)
-	if err := fs.Parse(args); err != nil {
-		return parseExit(err)
+	cmd := newOpCmd("status", stderr)
+	if _, code, ok := cmd.parse(args, 0, 0); !ok {
+		return code
 	}
-	if fs.NArg() != 0 {
-		return opUsage(stderr, "status takes no arguments, got %q", fs.Arg(0))
-	}
-	c, code := open(ctx, o, stderr)
+	c, code := cmd.connect(ctx, environ)
 	if c == nil {
 		return code
 	}

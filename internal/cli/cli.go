@@ -10,10 +10,10 @@ import (
 	"github.com/ericfitz/agentbus2/internal/version"
 )
 
-// Usage is the top-level usage line. `server` is dispatched by package main
-// (it is the API server, not a client command); every other name is a case of
-// Main.
-const Usage = "usage: agentbus2 <init|register|login|mcp|server|watch|wait|stop-hook|subagent-hook|session|channels|send|receive|history|search|memories|tasks|status|tui|version|help> [flags]"
+// Usage is the top-level usage: the command line, then OpGrammar. `server` is
+// dispatched by package main (it is the API server, not a client command);
+// every other name is a case of Main.
+const Usage = "usage: agentbus2 <init|register|login|mcp|server|watch|wait|stop-hook|subagent-hook|session|channels|send|receive|history|search|memories|tasks|status|tui|version|help> [flags]\n" + OpGrammar
 
 // runFunc is the shape of every command.
 type runFunc func(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int

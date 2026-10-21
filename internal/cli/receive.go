@@ -85,8 +85,8 @@ func receiveOnce(ctx context.Context, b bus.Bus, stdout, stderr io.Writer, in bu
 	for _, g := range res.Gaps {
 		out.Gaps = append(out.Gaps, opGapOut{Channel: g.Channel, From: g.From, To: g.To})
 	}
-	if err := printJSON(stdout, out); err != nil {
-		return fail(stderr, err)
+	if code := opPrint(stdout, stderr, out); code != 0 {
+		return code
 	}
 	if ackAfter && res.Batch != "" {
 		in.Ack = res.Batch

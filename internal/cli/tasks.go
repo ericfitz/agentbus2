@@ -6,10 +6,7 @@ import (
 	"io"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
 )
-
-const tasksUsage = "usage: agentbus2 tasks <create|list|get|update|claim|release> [flags] ..."
 
 // opTaskStatus rejects a status other than the three the core defines.
 func opTaskStatus(s string) error {
@@ -20,32 +17,26 @@ func opTaskStatus(s string) error {
 	return fmt.Errorf("-status %q: want pending, in_progress or completed", s)
 }
 
-// RunTasks implements `agentbus2 tasks`.
+// RunTasks implements `agentbus2 tasks create|list|get|update|claim|release`.
 func RunTasks(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	_ = stdin
-	if len(args) == 0 {
-		return opUsage(stderr, "%s", tasksUsage)
+	subs := map[string]opRunFunc{}
+	for _, sub := range []string{"create", "list", "get", "update", "claim", "release"} {
+		subs[sub] = func(ctx context.Context, args []string, environ []string, _ io.Reader, stdout, stderr io.Writer) int {
+			return runTasks(ctx, sub, args, environ, stdout, stderr)
+		}
 	}
-	sub, args := args[0], args[1:]
-	switch sub {
-	case "create", "list", "get", "update", "claim", "release":
-	case "-h", "-help", "--help":
-		_, _ = fmt.Fprintln(stderr, tasksUsage)
-		return 0
-	default:
-		return opUsage(stderr, "unknown tasks subcommand %q\n%s", sub, tasksUsage)
-	}
+	return opDispatch(ctx, "tasks", subs, args, environ, stdin, stdout, stderr)
+}
 
-	fs := newFlagSet("tasks "+sub, stderr)
-	var o client.Options
-	o.Environ = environ
-	client.Flags(fs, &o)
+func runTasks(ctx context.Context, sub string, args []string, environ []string, stdout, stderr io.Writer) int {
+	c := newOpCmd("tasks "+sub, stderr)
+	fs := c.fs
 	var (
 		description, status, owner, subject, key string
 		parent, leasedUntil, before, after       int64
 		clearOwner, del, force                   bool
-		blockedBy, addBlocked, removeBlocked     opStrings
-		metaVals                                 opStrings
+		blockedBy, addBlocked, removeBlocked     opList
+		meta                                     opMeta
 	)
 	switch sub {
 	case "create":
@@ -54,7 +45,7 @@ func RunTasks(ctx context.Context, args []string, environ []string, stdin io.Rea
 		fs.Int64Var(&before, "before", 0, "sibling id to order before")
 		fs.Int64Var(&after, "after", 0, "sibling id to order after")
 		fs.Var(&blockedBy, "blocked-by", "blocking task id (repeatable)")
-		fs.Var(&metaVals, "metadata", "metadata k=v (repeatable)")
+		fs.Var(&meta, "metadata", "metadata k=v (repeatable)")
 		fs.StringVar(&key, "key", "", "idempotency key")
 	case "list":
 		fs.StringVar(&status, "status", "", "filter by status")
@@ -71,7 +62,7 @@ func RunTasks(ctx context.Context, args []string, environ []string, stdin io.Rea
 		fs.Var(&addBlocked, "add-blocked-by", "blocker id to add (repeatable)")
 		fs.Var(&removeBlocked, "remove-blocked-by", "blocker id to remove (repeatable)")
 		fs.Int64Var(&leasedUntil, "leased-until", 0, "lease expiry, Unix milliseconds")
-		fs.Var(&metaVals, "metadata", "metadata k=v (repeatable)")
+		fs.Var(&meta, "metadata", "metadata k=v (repeatable)")
 		fs.BoolVar(&del, "delete", false, "delete the task")
 		fs.BoolVar(&force, "force", false, "force")
 		fs.StringVar(&key, "key", "", "idempotency key")
@@ -81,75 +72,67 @@ func RunTasks(ctx context.Context, args []string, environ []string, stdin io.Rea
 	case "release":
 		fs.StringVar(&key, "key", "", "idempotency key")
 	}
-	pos, err := opParse(fs, args)
-	if err != nil {
-		return parseExit(err)
-	}
-	set := opFlagsSet(fs)
-
-	want := 1
+	want := 1 // ID, or CHANNEL for list
 	if sub == "create" {
-		want = 2
+		want = 2 // CHANNEL SUBJECT
 	}
-	if len(pos) != want {
-		return opUsage(stderr, "tasks %s: want %d argument(s), got %d", sub, want, len(pos))
+	pos, code, ok := c.parse(args, want, want)
+	if !ok {
+		return code
 	}
-	if set["status"] {
+	if c.seen("status") {
 		if err := opTaskStatus(status); err != nil {
-			return opUsage(stderr, "%v", err)
+			return c.usageErr("%v", err)
 		}
 	}
-	if set["leased-until"] && leasedUntil < 0 {
-		return opUsage(stderr, "-leased-until %d: want a non-negative Unix millisecond time", leasedUntil)
+	if c.seen("leased-until") && leasedUntil < 0 {
+		return c.usageErr("-leased-until %d: want a non-negative Unix millisecond time", leasedUntil)
 	}
-	if set["before"] && set["after"] {
-		return opUsage(stderr, "-before and -after are mutually exclusive")
+	if c.seen("before") && c.seen("after") {
+		return c.usageErr("-before and -after are mutually exclusive")
 	}
-	if set["owner"] && clearOwner {
-		return opUsage(stderr, "-owner and -clear-owner are mutually exclusive")
+	if c.seen("owner") && clearOwner {
+		return c.usageErr("-owner and -clear-owner are mutually exclusive")
 	}
-	meta, err := opMetadata(metaVals)
-	if err != nil {
-		return opUsage(stderr, "%v", err)
-	}
-	if set["parent"] && parent < 0 {
-		return opUsage(stderr, "-parent %d: want a task id", parent)
+	if c.seen("parent") && parent < 0 {
+		return c.usageErr("-parent %d: want a task id", parent)
 	}
 	for _, f := range []struct {
 		name string
 		id   int64
 	}{{"before", before}, {"after", after}} {
-		if set[f.name] && f.id <= 0 {
-			return opUsage(stderr, "-%s %d: want a positive task id", f.name, f.id)
+		if c.seen(f.name) && f.id <= 0 {
+			return c.usageErr("-%s %d: want a positive task id", f.name, f.id)
 		}
 	}
 
 	var id int64
+	var err error
 	if sub != "create" && sub != "list" {
 		if id, err = opID(pos[0]); err != nil {
-			return opUsage(stderr, "%v", err)
+			return c.usageErr("%v", err)
 		}
 	}
 	var blockers, adds, removes []int64
 	if blockers, err = opIDs("blocked-by", blockedBy); err != nil {
-		return opUsage(stderr, "%v", err)
+		return c.usageErr("%v", err)
 	}
 	if adds, err = opIDs("add-blocked-by", addBlocked); err != nil {
-		return opUsage(stderr, "%v", err)
+		return c.usageErr("%v", err)
 	}
 	if removes, err = opIDs("remove-blocked-by", removeBlocked); err != nil {
-		return opUsage(stderr, "%v", err)
+		return c.usageErr("%v", err)
 	}
 
-	c, code := open(ctx, o, stderr)
-	if c == nil {
+	conn, code := c.connect(ctx, environ)
+	if conn == nil {
 		return code
 	}
-	defer func() { _ = c.Close() }()
+	defer func() { _ = conn.Close() }()
 
 	switch sub {
 	case "create":
-		t, err := c.Bus.Create(ctx, bus.TaskCreateInput{
+		t, err := conn.Bus.Create(ctx, bus.TaskCreateInput{
 			Channel: pos[0], Subject: pos[1], Description: description, Parent: parent,
 			Before: before, After: after, BlockedBy: blockers, Metadata: meta, IdempotencyKey: key,
 		})
@@ -158,7 +141,7 @@ func RunTasks(ctx context.Context, args []string, environ []string, stdin io.Rea
 		}
 		return opPrint(stdout, stderr, t)
 	case "list":
-		rows, err := c.Bus.List(ctx, bus.TaskListInput{Channel: pos[0], Status: status, Owner: owner})
+		rows, err := conn.Bus.List(ctx, bus.TaskListInput{Channel: pos[0], Status: status, Owner: owner})
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -167,19 +150,19 @@ func RunTasks(ctx context.Context, args []string, environ []string, stdin io.Rea
 		}
 		return opPrint(stdout, stderr, rows)
 	case "get":
-		t, err := c.Bus.GetTask(ctx, id)
+		t, err := conn.Bus.GetTask(ctx, id)
 		if err != nil {
 			return fail(stderr, err)
 		}
 		return opPrint(stdout, stderr, t)
 	case "claim":
-		r, err := c.Bus.Claim(ctx, bus.TaskClaimInput{ID: id, LeasedUntil: leasedUntil, IdempotencyKey: key})
+		r, err := conn.Bus.Claim(ctx, bus.TaskClaimInput{ID: id, LeasedUntil: leasedUntil, IdempotencyKey: key})
 		if err != nil {
 			return fail(stderr, err)
 		}
 		return opPrint(stdout, stderr, r)
 	case "release":
-		r, err := c.Bus.Release(ctx, bus.TaskReleaseInput{ID: id, IdempotencyKey: key})
+		r, err := conn.Bus.Release(ctx, bus.TaskReleaseInput{ID: id, IdempotencyKey: key})
 		if err != nil {
 			return fail(stderr, err)
 		}
@@ -190,29 +173,29 @@ func RunTasks(ctx context.Context, args []string, environ []string, stdin io.Rea
 		ID: id, Before: before, After: after, AddBlockedBy: adds, RemoveBlockedBy: removes,
 		Metadata: meta, Delete: del, Force: force, IdempotencyKey: key,
 	}
-	if set["status"] {
+	if c.seen("status") {
 		p.Status = &status
 	}
 	switch {
 	case clearOwner:
 		empty := ""
 		p.Owner = &empty
-	case set["owner"]:
+	case c.seen("owner"):
 		p.Owner = &owner
 	}
-	if set["subject"] {
+	if c.seen("subject") {
 		p.Subject = &subject
 	}
-	if set["description"] {
+	if c.seen("description") {
 		p.Description = &description
 	}
-	if set["parent"] {
+	if c.seen("parent") {
 		p.Parent = &parent
 	}
-	if set["leased-until"] {
+	if c.seen("leased-until") {
 		p.LeasedUntil = &leasedUntil
 	}
-	r, err := c.Bus.Update(ctx, p)
+	r, err := conn.Bus.Update(ctx, p)
 	if err != nil {
 		return fail(stderr, err)
 	}

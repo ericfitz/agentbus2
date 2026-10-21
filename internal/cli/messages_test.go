@@ -315,3 +315,30 @@ func TestOperatorMessageGrammarExits2(t *testing.T) {
 		t.Fatalf("history after usage errors: %v %v", ms, err)
 	}
 }
+
+// TestOperatorGrammarIsUniform pins OpGrammar on the Task 9 commands: flags
+// after the arguments are flags, and "--" makes a dash-leading argument a
+// positional.
+func TestOperatorGrammarIsUniform(t *testing.T) {
+	e := newTestEnv(t)
+	ctx := context.Background()
+	run := func(f func(context.Context, []string, []string, io.Reader, io.Writer, io.Writer) int, args ...string) (int, string, string) {
+		var o, er bytes.Buffer
+		code := f(ctx, args, e.Environ, strings.NewReader(""), &o, &er)
+		return code, o.String(), er.String()
+	}
+	if code, _, er := run(RunSend, "general", "-5 degrees", "-identity", "sam"); code != 2 || !strings.Contains(er, OpGrammar) {
+		t.Fatalf("a dash-leading content without --: exit %d %q, want 2", code, er)
+	}
+	if code, _, er := run(RunSend, "general", "-subject", "s", "-identity", "sam", "--", "-5 degrees"); code != 0 {
+		t.Fatalf("send with flags after the channel and -- : %d %q", code, er)
+	}
+	code, out, er := run(RunHistory, "general", "-count", "5", "-identity", "sam")
+	var ms []struct{ Subject, Content string }
+	if err := json.Unmarshal([]byte(out), &ms); code != 0 || err != nil || len(ms) != 1 || ms[0].Content != "-5 degrees" || ms[0].Subject != "s" {
+		t.Fatalf("history with trailing flags: %d %q %q %v", code, out, er, err)
+	}
+	if code, _, er := run(RunSession, "close", "-identity", "sam"); code != 2 || !strings.Contains(er, "agentbus2 session close: want 1 argument(s), got 0") {
+		t.Fatalf("session close without an id: %d %q", code, er)
+	}
+}

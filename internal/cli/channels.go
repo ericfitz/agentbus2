@@ -62,10 +62,7 @@ func runChannelsList(ctx context.Context, args []string, environ []string, _ io.
 	for _, ch := range cs {
 		out = append(out, opChannelOut{Name: ch.Name, Kind: string(ch.Kind)})
 	}
-	if err := printJSON(stdout, out); err != nil {
-		return fail(stderr, err)
-	}
-	return 0
+	return opPrint(stdout, stderr, out)
 }
 
 func runChannelsCreate(ctx context.Context, args []string, environ []string, _ io.Reader, stdout, stderr io.Writer) int {
@@ -94,10 +91,7 @@ func runChannelsCreate(ctx context.Context, args []string, environ []string, _ i
 	if err != nil {
 		return fail(stderr, err)
 	}
-	if err := printJSON(stdout, opChannelInfoOut{Name: info.Name, Kind: string(info.Kind), Creator: info.Creator, CreatedAt: info.CreatedAt}); err != nil {
-		return fail(stderr, err)
-	}
-	return 0
+	return opPrint(stdout, stderr, opChannelInfoOut{Name: info.Name, Kind: string(info.Kind), Creator: info.Creator, CreatedAt: info.CreatedAt})
 }
 
 // runChannelsDelete keeps the y/N prompt and -y of v1 internal/cli/delete.go.
@@ -207,10 +201,7 @@ func runChannelsACL(ctx context.Context, args []string, environ []string, _ io.R
 		}
 		out = append(out, opACLOut{Identity: en.Identity, Permissions: perms})
 	}
-	if err := printJSON(stdout, out); err != nil {
-		return fail(stderr, err)
-	}
-	return 0
+	return opPrint(stdout, stderr, out)
 }
 
 func runChannelsSubscribe(ctx context.Context, args []string, environ []string, _ io.Reader, _, stderr io.Writer) int {
@@ -289,8 +280,5 @@ func runChannelsTags(ctx context.Context, args []string, environ []string, _ io.
 	if sets == nil {
 		sets = [][]string{}
 	}
-	if err := printJSON(stdout, sets); err != nil {
-		return fail(stderr, err)
-	}
-	return 0
+	return opPrint(stdout, stderr, sets)
 }

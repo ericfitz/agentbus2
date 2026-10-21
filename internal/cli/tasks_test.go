@@ -169,6 +169,8 @@ func TestTasksRejectsBadInput(t *testing.T) {
 		{"update", "-leased-until", "-5", "1"},
 		{"update", "-add-blocked-by", "x", "1"},
 		{"update", "-metadata", "bad", "1"},
+		{"update", "-metadata", "a=1", "-metadata", "a=2", "1"},
+		{"create", "todo", "s", "--", "-x"},
 		{"create", "-blocked-by", "0", "todo", "s"},
 		{"get", "0"},
 		{"get", "x"},
