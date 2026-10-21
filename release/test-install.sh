@@ -314,6 +314,22 @@ truncated_cases() {
     done
 }
 
+# redirect_cases: a download redirected to plain http is refused (curl
+# --proto-redir =https), with a control that the same host and release install
+# when nothing redirects. A fake uname makes any host look like Linux x86_64.
+redirect_cases() {
+    local d="$WORK/linux-fake" real
+    mkdir -p "$d" "$FX/redirect-http"
+    real="$(command -v uname)"
+    printf '#!/bin/sh\ncase "$1" in -s) echo Linux ;; -m) echo x86_64 ;; *) exec %s "$@" ;; esac\n' "$real" > "$d/uname"
+    chmod 755 "$d/uname"
+    printf 'http://127.0.0.1:%s/valid\n' "$PORT" > "$FX/redirect-http/redirect"
+    mkdir -p "$WORK/redir-ok" "$WORK/redir-http"
+    check redirect-control-installs 0 "installed agentbus2 9.0.1" -- env PATH="$d:$PATH" HOME="$WORK/redir-ok" AGENTBUS2_SKIP_SIGNATURE=1 AGENTBUS2_VERSION=v9.0.1 AGENTBUS2_BASE_URL="http://127.0.0.1:$PORT/valid" sh "$FX/install.sh"
+    check redirect-to-http-refused 1 "download failed: http://127.0.0.1:$PORT/redirect-http/releases/download/v9.0.1/agentbus2-v9.0.1-linux-amd64.tar.gz" -- env PATH="$d:$PATH" HOME="$WORK/redir-http" AGENTBUS2_SKIP_SIGNATURE=1 AGENTBUS2_VERSION=v9.0.1 AGENTBUS2_BASE_URL="http://127.0.0.1:$PORT/redirect-http" sh "$FX/install.sh"
+    assert "redirect-to-http-refused: nothing installed" "[[ ! -e '$WORK/redir-http/.local/bin/agentbus2' ]]"
+}
+
 # darwin_case: install.sh refuses macOS and names the brew command (Review Focus 3).
 darwin_case() {
     local d="$WORK/darwin-fake" real
@@ -372,6 +388,7 @@ self_test() {
     start_server
     assert "server redirects latest" "[[ \$(curl -sI -o /dev/null -w '%{redirect_url}' http://127.0.0.1:$PORT/valid/releases/latest) == */valid/releases/tag/v9.0.1 ]]"
     assert "server serves SHA256SUMS" "curl -fsS http://127.0.0.1:$PORT/valid/releases/download/v9.0.1/SHA256SUMS | cmp -s - '$FX/valid/v9.0.1/SHA256SUMS'"
+    redirect_cases
     local pid="$SERVER_PID"
     kill "$pid" 2>/dev/null || true; wait "$pid" 2>/dev/null || true
     assert "server stopped" "! kill -0 $pid 2>/dev/null"

@@ -7,7 +7,8 @@ usage: fixture-server.py <root> <port>
 <root>/<variant>/<tag>/<asset>   release assets
 
 GET|HEAD /<variant>/releases/latest                  -> 302 /<variant>/releases/tag/<tag>
-GET|HEAD /<variant>/releases/download/<tag>/<asset>  -> the file
+GET|HEAD /<variant>/releases/download/<tag>/<asset>  -> the file, or, when
+    <root>/<variant>/redirect exists, 302 to <its one line>/releases/download/<tag>/<asset>
 anything else -> 404; a path part of ".." -> 400
 """
 
@@ -47,6 +48,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             return None
         if len(parts) == 5 and parts[1:3] == ["releases", "download"]:
+            redirect = os.path.join(ROOT, parts[0], "redirect")
+            if os.path.isfile(redirect):
+                with open(redirect, encoding="ascii") as f:
+                    target = f.read().strip()
+                self.send_response(302)
+                self.send_header("Location", f"{target}/releases/download/{parts[3]}/{parts[4]}")
+                self.send_header("Content-Length", "0")
+                self.end_headers()
+                return None
             path = os.path.join(ROOT, parts[0], parts[3], parts[4])
             if not os.path.isfile(path):
                 return self.status(404)

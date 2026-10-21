@@ -117,11 +117,12 @@ resolve_version() {
 }
 
 # fetch <remote-name> <local-name>. A 404 on the release archive means the tag
-# has no Linux build; any other failure is a download error.
+# has no Linux build; any other failure is a download error. Redirects are
+# followed only to https (GitHub sends release assets to its CDN).
 fetch() {
     url="$BASE_URL/releases/download/$TAG/$1"
     rc=0
-    code="$(curl -fsSL -o "$TMP/$2" -w '%{http_code}' "$url")" || rc=$?
+    code="$(curl -fsSL --proto-redir =https -o "$TMP/$2" -w '%{http_code}' "$url")" || rc=$?
     [ "$rc" -ne 0 ] || return 0
     if [ "$1" = "$ASSET" ] && [ "$rc" -eq 22 ] && [ "$code" = 404 ]; then
         die "release $TAG has no Linux build: $ASSET was not found at $url"
