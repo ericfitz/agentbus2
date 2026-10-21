@@ -23,6 +23,7 @@
 # internal/core/notify; github.com/jackc/pgx covers github.com/jackc/pgx/v5).
 # Prints deps_ok=1 when nothing matched; otherwise one
 # deps_violation=<package> imports <forbidden> line per hit and exits 1.
+# A go list failure exits 2.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -37,9 +38,17 @@ check_deps() {
 	local pattern="$1" pkg dep f
 	shift
 	local pkgs deps
-	pkgs="$(cd "$ROOT" && go list "$pattern")"
+	# Explicit exits: set -e is off inside `import_check || rc=1`, and a go
+	# list failure must never read as a package with no imports.
+	pkgs="$(cd "$ROOT" && go list "$pattern")" || {
+		echo "m7-exit-checks: go list $pattern failed" >&2
+		exit 2
+	}
 	for pkg in $pkgs; do
-		deps="$(cd "$ROOT" && go list -deps "$pkg")"
+		deps="$(cd "$ROOT" && go list -deps "$pkg")" || {
+			echo "m7-exit-checks: go list -deps $pkg failed" >&2
+			exit 2
+		}
 		for f in "$@"; do
 			if [[ "$f" == github.com/* ]]; then
 				dep="$f"

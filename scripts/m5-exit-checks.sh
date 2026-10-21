@@ -38,9 +38,15 @@ check_deps() {
 	local pattern="$1" pkg dep f
 	shift
 	local pkgs deps
-	pkgs="$(cd "$ROOT" && go list "$pattern")"
+	pkgs="$(cd "$ROOT" && go list "$pattern")" || {
+		echo "m5-exit-checks: go list $pattern failed" >&2
+		exit 2
+	}
 	for pkg in $pkgs; do
-		deps="$(cd "$ROOT" && go list -deps "$pkg")"
+		deps="$(cd "$ROOT" && go list -deps "$pkg")" || {
+			echo "m5-exit-checks: go list -deps $pkg failed" >&2
+			exit 2
+		}
 		for f in "$@"; do
 			dep="$MOD/$f"
 			if printf '%s\n' "$deps" | grep -F -x -q -- "$dep" || printf '%s\n' "$deps" | grep -F -q -- "$dep/"; then
@@ -58,9 +64,15 @@ check_allowlist() {
 	local pattern="$1" pkg dep a ok
 	shift
 	local pkgs deps
-	pkgs="$(cd "$ROOT" && go list "$pattern")"
+	pkgs="$(cd "$ROOT" && go list "$pattern")" || {
+		echo "m5-exit-checks: go list $pattern failed" >&2
+		exit 2
+	}
 	for pkg in $pkgs; do
-		deps="$(cd "$ROOT" && go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' "$pkg")"
+		deps="$(cd "$ROOT" && go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' "$pkg")" || {
+			echo "m5-exit-checks: go list -deps $pkg failed" >&2
+			exit 2
+		}
 		for dep in $deps; do
 			ok=0
 			for a in "$@"; do

@@ -59,6 +59,7 @@ jobs:
         with: { version: v2.14.0, install-only: true }
       - run: bash scripts/m4-exit-checks.sh --deps-only
       - run: bash scripts/m5-exit-checks.sh --deps-only
+      - run: bash scripts/m7-exit-checks.sh --deps-only
       - run: make check-gates-selftest
   docker-smoke: # the image builds, runs as nonroot and serves (not part of make verify)
     runs-on: ubuntu-latest

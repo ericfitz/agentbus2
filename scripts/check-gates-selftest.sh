@@ -337,6 +337,32 @@ block_m5_deps_rule_fires() {
 	revert
 }
 
+# --- 22. m7-deps-rule-fires ------------------------------------------------------------
+# Docker-free. The Milestone 7 import rule: store never imports core, notify
+# stays a leaf (pgx/v5 is caught only by the prefix match), pgnotify never
+# imports the server (a subpackage, likewise). An import go list cannot
+# resolve must exit 2, never pass as a package with no imports.
+block_m7_deps_rule_fires() {
+	local label=m7-deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b22z.log" rc=0
+	begin
+	deps_probe "$label" internal/store/sqlstore/probe_m7.go "$m/internal/core/notify" "deps_violation=$m/internal/store/sqlstore imports $m/internal/core" m7-exit-checks.sh
+	deps_probe "$label" internal/core/notify/probe_m7.go github.com/jackc/pgx/v5 "deps_violation=$m/internal/core/notify imports github.com/jackc/pgx" m7-exit-checks.sh
+	deps_probe "$label" internal/core/notify/pgnotify/probe_m7.go "$m/internal/server/config" "deps_violation=$m/internal/core/notify/pgnotify imports $m/internal/server" m7-exit-checks.sh
+	printf 'package notify\n\nimport _ "%s"\n' "$m/internal/no/such/package" >"$wt/internal/core/notify/probe_m7.go"
+	bash "$wt/scripts/m7-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
+	if [ "$rc" -ne 2 ]; then
+		problem "$label" "an unresolvable import: exit $rc, expected 2: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	rm -f "$wt/internal/core/notify/probe_m7.go"
+	if bash "$wt/scripts/m7-exit-checks.sh" --deps-only >"$log" 2>&1; then
+		grep -qF 'deps_ok=1' "$log" || problem "$label" "clean tree: exit 0 without deps_ok=1"
+	else
+		problem "$label" "clean tree: expected exit 0: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	finish "$label"
+	revert
+}
+
 # --- 13. transport-check-fires -----------------------------------------------------------
 # Without the os.Exit(2) of the transport selection an unknown
 # AGENTBUS2_BUS_TRANSPORT falls through to the suite; check 6 must FAIL.
@@ -471,6 +497,7 @@ block_transport_check_fires
 block_bearer_signature_ignored
 block_admin_flag_ignored
 block_m5_deps_rule_fires
+block_m7_deps_rule_fires
 block_notify_append_removed
 block_advisory_lock_ignored
 block_sqlite_lease_ignored

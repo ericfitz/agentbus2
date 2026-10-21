@@ -33,9 +33,15 @@ check_deps() {
 	local pattern="$1" pkg dep f
 	shift
 	local pkgs deps
-	pkgs="$(cd "$ROOT" && go list "$pattern")"
+	pkgs="$(cd "$ROOT" && go list "$pattern")" || {
+		echo "m4-exit-checks: go list $pattern failed" >&2
+		exit 2
+	}
 	for pkg in $pkgs; do
-		deps="$(cd "$ROOT" && go list -deps "$pkg")"
+		deps="$(cd "$ROOT" && go list -deps "$pkg")" || {
+			echo "m4-exit-checks: go list -deps $pkg failed" >&2
+			exit 2
+		}
 		for f in "$@"; do
 			if [[ "$f" == github.com/* ]]; then
 				dep="$f"
