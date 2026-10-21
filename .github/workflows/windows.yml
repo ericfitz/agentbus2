@@ -1,0 +1,37 @@
+# Informational: runs the Go unit tests and the install.ps1 harness on Windows
+# amd64 and arm64. It does not gate; `make verify` is the done gate.
+name: windows
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, windows-11-arm]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - run: go vet ./...
+      # The Store and Bus suites (internal/conformance) need Docker, which the
+      # Windows runners lack; `make test` is not assumed on Windows.
+      - name: go test (unit packages)
+        shell: bash
+        run: go list ./... | grep -v internal/conformance | xargs go test
+      - name: install.ps1 harness self-test (Windows PowerShell 5.1)
+        shell: powershell
+        run: .\release\test-install.ps1 -SelfTest
+      - name: install.ps1 harness (Windows PowerShell 5.1)
+        shell: powershell
+        run: .\release\test-install.ps1
+      - name: install.ps1 harness (PowerShell 7)
+        shell: pwsh
+        run: ./release/test-install.ps1
