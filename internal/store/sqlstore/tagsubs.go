@@ -35,10 +35,26 @@ type tagPatternRow struct {
 }
 
 // SubscribeTags inserts the set and its pattern rows; no-op when present.
-// ErrNotFound on an unknown identity.
+// ErrInvalid on a key, pattern, lo or hi failing TextRule; then ErrNotFound
+// on an unknown identity, or one failing TextRule (every method here treats
+// such an identity, or key, as unknown).
 func (t *tx) SubscribeTags(ctx context.Context, s store.TagSubscription) error {
+	if err := t.writable(); err != nil {
+		return err
+	}
 	if len(s.Patterns) == 0 {
 		return fmt.Errorf("%w: a tag subscription needs at least one pattern", store.ErrInvalid)
+	}
+	if err := checkText("tag subscription", "key", s.TagsKey); err != nil {
+		return err
+	}
+	for _, p := range s.Patterns {
+		if err := checkText("tag subscription", "pattern", p.Pattern, "lo", p.Lo, "hi", p.Hi); err != nil {
+			return err
+		}
+	}
+	if err := t.guardIdentityName(s.Identity); err != nil {
+		return err
 	}
 	res, err := t.execW(ctx, `INSERT INTO tag_subscriptions (identity, tags_key, created_seq) VALUES (?, ?, ?)
 ON CONFLICT (identity, tags_key) DO NOTHING`, s.Identity, s.TagsKey, s.CreatedSeq)
@@ -66,6 +82,12 @@ ON CONFLICT (identity, tags_key) DO NOTHING`, s.Identity, s.TagsKey, s.CreatedSe
 
 // UnsubscribeTags removes the set; its pattern rows go by cascade.
 func (t *tx) UnsubscribeTags(ctx context.Context, identity, tagsKey string) error {
+	if err := t.writable(); err != nil {
+		return err
+	}
+	if badText(identity, tagsKey) {
+		return nil
+	}
 	_, err := t.execW(ctx, "DELETE FROM tag_subscriptions WHERE identity = ? AND tags_key = ?", identity, tagsKey)
 	return err
 }
@@ -74,6 +96,9 @@ func (t *tx) UnsubscribeTags(ctx context.Context, identity, tagsKey string) erro
 // patterns in byte order of the pattern (sorted here, not by ORDER BY: see
 // sortByBytes).
 func (t *tx) TagSubscriptions(ctx context.Context, identity string) ([]store.TagSubscription, error) {
+	if badText(identity) {
+		return []store.TagSubscription{}, nil
+	}
 	var sets []tagSetRow
 	if err := t.sel(ctx, &sets, "SELECT tags_key, created_seq FROM tag_subscriptions WHERE identity = ?", identity); err != nil {
 		return nil, err

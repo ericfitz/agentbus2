@@ -36,17 +36,27 @@ func (t *tx) writable() error {
 func (t *tx) rebind(q string) string { return sqlx.Rebind(t.d.BindType(), q) }
 
 // get and sel are for SELECT only. A mutating statement, even with
-// RETURNING, goes through getW, selW or execW.
+// RETURNING, goes through getW, selW or execW. Every helper refuses a string
+// argument failing store.TextRule (textArgs) after the read-only guard.
 func (t *tx) get(ctx context.Context, dest any, q string, args ...any) error {
+	if err := textArgs(args); err != nil {
+		return err
+	}
 	return t.tx.GetContext(ctx, dest, t.rebind(q), args...)
 }
 
 func (t *tx) sel(ctx context.Context, dest any, q string, args ...any) error {
+	if err := textArgs(args); err != nil {
+		return err
+	}
 	return t.tx.SelectContext(ctx, dest, t.rebind(q), args...)
 }
 
 func (t *tx) execW(ctx context.Context, q string, args ...any) (sql.Result, error) {
 	if err := t.writable(); err != nil {
+		return nil, err
+	}
+	if err := textArgs(args); err != nil {
 		return nil, err
 	}
 	return t.tx.ExecContext(ctx, t.rebind(q), args...)
@@ -56,12 +66,17 @@ func (t *tx) getW(ctx context.Context, dest any, q string, args ...any) error {
 	if err := t.writable(); err != nil {
 		return err
 	}
+	if err := textArgs(args); err != nil {
+		return err
+	}
 	return t.tx.GetContext(ctx, dest, t.rebind(q), args...)
 }
 
-//nolint:unused // used by the aggregate tasks (4 to 11)
 func (t *tx) selW(ctx context.Context, dest any, q string, args ...any) error {
 	if err := t.writable(); err != nil {
+		return err
+	}
+	if err := textArgs(args); err != nil {
 		return err
 	}
 	return t.tx.SelectContext(ctx, dest, t.rebind(q), args...)

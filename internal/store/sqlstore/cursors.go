@@ -18,17 +18,33 @@ type cursorRow struct {
 	PendingEndSeq int64  `db:"pending_end_seq"`
 }
 
+// SetPendingToken: ErrInvalid on a token failing TextRule.
 func (t *tx) SetPendingToken(ctx context.Context, id, token string) error {
+	if err := t.writable(); err != nil {
+		return err
+	}
+	if err := checkText("session", "pending token", token); err != nil {
+		return err
+	}
+	if err := t.guardSessionID(id); err != nil {
+		return err
+	}
 	res, err := t.execW(ctx, "UPDATE sessions SET pending_token = ? WHERE id = ?", token, id)
 	return sessionUpdated(res, err, id)
 }
 
 func (t *tx) SetTagsCursor(ctx context.Context, id string, cursorSeq, pendingEndSeq int64) error {
+	if err := t.guardSessionID(id); err != nil {
+		return err
+	}
 	res, err := t.execW(ctx, "UPDATE sessions SET tags_cursor_seq = ?, tags_pending_end_seq = ? WHERE id = ?", cursorSeq, pendingEndSeq, id)
 	return sessionUpdated(res, err, id)
 }
 
 func (t *tx) Cursors(ctx context.Context, sessionID string) ([]store.Cursor, error) {
+	if badText(sessionID) {
+		return []store.Cursor{}, nil
+	}
 	var rows []cursorRow
 	if err := t.sel(ctx, &rows, "SELECT session_id, channel_id, cursor_seq, pending_end_seq FROM session_cursors WHERE session_id = ? ORDER BY channel_id", sessionID); err != nil {
 		return nil, err
@@ -41,8 +57,11 @@ func (t *tx) Cursors(ctx context.Context, sessionID string) ([]store.Cursor, err
 }
 
 // PutCursor upserts; an unknown session or channel fails the foreign key and
-// maps to ErrNotFound.
+// maps to ErrNotFound, as does a session id failing TextRule.
 func (t *tx) PutCursor(ctx context.Context, c store.Cursor) error {
+	if err := t.guardSessionID(c.SessionID); err != nil {
+		return err
+	}
 	_, err := t.execW(ctx, `INSERT INTO session_cursors (session_id, channel_id, cursor_seq, pending_end_seq) VALUES (?, ?, ?, ?)
 ON CONFLICT (session_id, channel_id) DO UPDATE SET cursor_seq = excluded.cursor_seq, pending_end_seq = excluded.pending_end_seq`,
 		c.SessionID, c.ChannelID, c.CursorSeq, c.PendingEndSeq)
@@ -54,6 +73,12 @@ ON CONFLICT (session_id, channel_id) DO UPDATE SET cursor_seq = excluded.cursor_
 
 // DeleteCursor removes the row; an absent row is not an error.
 func (t *tx) DeleteCursor(ctx context.Context, sessionID string, channelID int64) error {
+	if err := t.writable(); err != nil {
+		return err
+	}
+	if badText(sessionID) {
+		return nil
+	}
 	_, err := t.execW(ctx, "DELETE FROM session_cursors WHERE session_id = ? AND channel_id = ?", sessionID, channelID)
 	return err
 }

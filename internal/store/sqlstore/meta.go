@@ -33,8 +33,15 @@ func (t *tx) MaxSeq(ctx context.Context) (int64, error) {
 }
 
 // TryLease is v1 takeLease (internal/bus/maintenance.go) with the lease name,
-// owner and times given by the caller.
+// owner and times given by the caller; ErrInvalid on a name or owner failing
+// TextRule.
 func (t *tx) TryLease(ctx context.Context, name, owner string, now, until int64) (bool, error) {
+	if err := t.writable(); err != nil {
+		return false, err
+	}
+	if err := checkText("lease", "name", name, "owner", owner); err != nil {
+		return false, err
+	}
 	r, err := t.execW(ctx,
 		"UPDATE leases SET owner = ?, expires_at = ? WHERE name = ? AND (expires_at < ? OR owner = ?)",
 		owner, until, name, now, owner)
@@ -48,19 +55,36 @@ func (t *tx) TryLease(ctx context.Context, name, owner string, now, until int64)
 	return n == 1, nil
 }
 
+// SetNotice: ErrInvalid on a kind or message failing TextRule.
 func (t *tx) SetNotice(ctx context.Context, n store.Notice) error {
+	if err := t.writable(); err != nil {
+		return err
+	}
+	if err := checkText("notice", "kind", n.Kind, "message", n.Message); err != nil {
+		return err
+	}
 	_, err := t.execW(ctx,
 		"INSERT INTO notices (kind, message, set_at) VALUES (?, ?, ?) ON CONFLICT (kind) DO UPDATE SET message = excluded.message, set_at = excluded.set_at",
 		n.Kind, n.Message, n.SetAt)
 	return err
 }
 
+// ClearNotice and Notice treat a kind failing TextRule as absent.
 func (t *tx) ClearNotice(ctx context.Context, kind string) error {
+	if err := t.writable(); err != nil {
+		return err
+	}
+	if badText(kind) {
+		return nil
+	}
 	_, err := t.execW(ctx, "DELETE FROM notices WHERE kind = ?", kind)
 	return err
 }
 
 func (t *tx) Notice(ctx context.Context, kind string) (store.Notice, bool, error) {
+	if badText(kind) {
+		return store.Notice{}, false, nil
+	}
 	var n store.Notice
 	err := t.get(ctx, &n, "SELECT kind AS kind, message AS message, set_at AS setat FROM notices WHERE kind = ?", kind)
 	if errors.Is(err, sql.ErrNoRows) {

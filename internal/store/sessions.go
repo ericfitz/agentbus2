@@ -26,12 +26,14 @@ type Sessions interface {
 	OpenSession(ctx context.Context, s Session) error
 	Session(ctx context.Context, id string) (Session, error)
 	SessionByResumeTokenHash(ctx context.Context, hash string) (Session, error)
-	// ListSessions: identity "" means every identity; by opened_at, id.
+	// ListSessions: identity "" means every identity; by opened_at, then id
+	// in byte order.
 	ListSessions(ctx context.Context, identity string) ([]Session, error)
 	RenewLease(ctx context.Context, id string, until int64) error
 	CloseSession(ctx context.Context, id string, at int64) error
 	// DeleteSessions removes sessions with lease_expires_at < lapsedBefore
-	// (Decision 79 retention); cascades cursors.
+	// (Decision 79 retention); cascades cursors. ErrInvalid on a limit below
+	// 1.
 	DeleteSessions(ctx context.Context, lapsedBefore int64, limit int) (int, error)
 	// RegisterWatch sets watch_id and renews the lease (Decisions 42, 68).
 	RegisterWatch(ctx context.Context, id, watchID string, leaseUntil int64) error

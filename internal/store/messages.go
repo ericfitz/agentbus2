@@ -58,8 +58,8 @@ type Messages interface {
 	// by some tag (v1 tagsFilter).
 	MessagesInRange(ctx context.Context, channelID, fromSeq, toSeq int64, patterns []TagPattern, limit int) ([]Message, error)
 	// SearchText: live, on channelIDs only; ErrInvalid on an empty query
-	// (checked before the dialect is asked); empty channelIDs: empty result,
-	// no query.
+	// (checked before the dialect is asked) or a term failing TextRule;
+	// empty channelIDs: empty result, no query.
 	SearchText(ctx context.Context, q search.Query, channelIDs []int64, limit int) ([]Message, error)
 	// TombstoneMessage returns false when already tombstoned or missing.
 	TombstoneMessage(ctx context.Context, seq, at int64) (bool, error)
@@ -70,7 +70,8 @@ type Messages interface {
 	// ascending seq (v1 deleteOrdinaryChunk).
 	OrdinaryMessagesBefore(ctx context.Context, createdBefore int64, limit int) ([]SeqChannel, error)
 	// UnembeddedMemories: v1 unembeddedFrom: live memories on channels of kind
-	// <> 'tasks' with no embedding and no failure for model.
+	// <> 'tasks' with no embedding and no failure for model. ErrInvalid on a
+	// model failing TextRule, as for DeleteStaleModel and the puts.
 	UnembeddedMemories(ctx context.Context, model string, limit int) ([]Message, error)
 	// PutEmbedding and PutEmbedFailure replace; they act only when the message
 	// is a live memory (v1 embed.go), else no-op.

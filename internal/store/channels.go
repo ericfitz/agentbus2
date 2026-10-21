@@ -38,7 +38,7 @@ type Channels interface {
 	Channel(ctx context.Context, id int64) (Channel, error)
 	ChannelByName(ctx context.Context, name string) (Channel, error)
 	ListChannels(ctx context.Context) ([]Channel, error)               // by name, in byte order
-	ListChannelsByKind(ctx context.Context, k Kind) ([]Channel, error) // by name, in byte order
+	ListChannelsByKind(ctx context.Context, k Kind) ([]Channel, error) // by name, in byte order; ErrInvalid on an unknown kind
 	// RenameChannel: ErrInvalid, ErrConflict, ErrNotFound (Decision 89).
 	RenameChannel(ctx context.Context, id int64, name string) error
 	// DeleteChannel cascades to ACL rows, subscriptions, cursors, messages.

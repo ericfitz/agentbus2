@@ -121,6 +121,9 @@ func (t *tx) SetACL(ctx context.Context, id int64, entries []store.ACLEntry) err
 }
 
 func (t *tx) isAdmin(ctx context.Context, name string) (bool, error) {
+	if badText(name) {
+		return false, nil
+	}
 	var n int
 	if err := t.get(ctx, &n, "SELECT count(*) FROM identities WHERE name = ? AND is_admin = TRUE", name); err != nil {
 		return false, err
@@ -131,7 +134,8 @@ func (t *tx) isAdmin(ctx context.Context, name string) (bool, error) {
 // EffectivePermissions is the union of the stored rows for the identity,
 // everyone, and admins (when the identity is admin), plus the implicit
 // entries: the creator and every admin hold admin (Decisions 73, 96). An
-// unregistered identity is not admin.
+// unregistered identity is not admin. An identity failing TextRule is such an
+// identity: everyone is bound in its place (a repeat matches nothing new).
 func (t *tx) EffectivePermissions(ctx context.Context, id int64, identity string) (store.Permissions, error) {
 	var creator string
 	if err := t.get(ctx, &creator, "SELECT creator FROM channels WHERE id = ?", id); err != nil {
@@ -148,9 +152,13 @@ func (t *tx) EffectivePermissions(ctx context.Context, id int64, identity string
 	if admin {
 		adminsName = store.Admins
 	}
+	who := identity
+	if badText(who) {
+		who = store.Everyone
+	}
 	var rows []aclRow
 	if err := t.sel(ctx, &rows, "SELECT identity, can_read, can_write, can_admin FROM channel_acl WHERE channel_id = ? AND identity IN (?, ?, ?)",
-		id, identity, store.Everyone, adminsName); err != nil {
+		id, who, store.Everyone, adminsName); err != nil {
 		return store.Permissions{}, err
 	}
 	var p store.Permissions
@@ -164,8 +172,13 @@ func (t *tx) EffectivePermissions(ctx context.Context, id int64, identity string
 }
 
 // ReadableChannels lists the ids where EffectivePermissions.Read holds, in
-// one query. Implicit entries grant admin, not read.
+// one query. Implicit entries grant admin, not read. An identity failing
+// TextRule is unregistered: everyone is bound in its place (no identity is
+// named everyone, a reserved name).
 func (t *tx) ReadableChannels(ctx context.Context, identity string) ([]int64, error) {
+	if badText(identity) {
+		identity = store.Everyone
+	}
 	var ids []int64
 	err := t.sel(ctx, &ids, `SELECT c.id FROM channels c WHERE EXISTS (
   SELECT 1 FROM channel_acl a WHERE a.channel_id = c.id AND a.can_read = TRUE AND (

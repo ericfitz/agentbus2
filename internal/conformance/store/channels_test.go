@@ -84,6 +84,9 @@ func TestChannelCreate(t *testing.T) {
 			if _, err := tx.Channel(ctx, 9999); !errors.Is(err, ab2store.ErrNotFound) {
 				t.Errorf("Channel(9999) err = %v, want ErrNotFound", err)
 			}
+			if _, err := tx.ListChannelsByKind(ctx, ab2store.Kind("dm")); !errors.Is(err, ab2store.ErrInvalid) {
+				t.Errorf("ListChannelsByKind(dm) err = %v, want ErrInvalid", err)
+			}
 			return nil
 		})
 	})

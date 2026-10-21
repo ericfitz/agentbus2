@@ -22,8 +22,6 @@ const fixedNow int64 = 1_700_000_000_000
 type txFunc = func(ctx context.Context, tx ab2store.Tx) error
 
 // mustTx runs fn in Store.Tx and fails the test on error.
-//
-//nolint:unused // used by the aggregate tasks (4 to 11)
 func mustTx(t *testing.T, s ab2store.Store, fn txFunc) {
 	t.Helper()
 	if err := s.Tx(context.Background(), fn); err != nil {
@@ -32,8 +30,6 @@ func mustTx(t *testing.T, s ab2store.Store, fn txFunc) {
 }
 
 // mustAppendTx runs fn in Store.Append and fails the test on error.
-//
-//nolint:unused // used by the aggregate tasks (4 to 11)
 func mustAppendTx(t *testing.T, s ab2store.Store, fn txFunc) {
 	t.Helper()
 	if err := s.Append(context.Background(), fn); err != nil {
@@ -42,8 +38,6 @@ func mustAppendTx(t *testing.T, s ab2store.Store, fn txFunc) {
 }
 
 // mustRead runs fn in Store.Read and fails the test on error.
-//
-//nolint:unused // used by the aggregate tasks (4 to 11)
 func mustRead(t *testing.T, s ab2store.Store, fn txFunc) {
 	t.Helper()
 	if err := s.Read(context.Background(), fn); err != nil {
@@ -52,8 +46,6 @@ func mustRead(t *testing.T, s ab2store.Store, fn txFunc) {
 }
 
 // mustIdentity creates the identity name at fixedNow.
-//
-//nolint:unused // used by the aggregate tasks (4 to 11)
 func mustIdentity(t *testing.T, s ab2store.Store, name string) {
 	t.Helper()
 	mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error {
@@ -62,8 +54,6 @@ func mustIdentity(t *testing.T, s ab2store.Store, name string) {
 }
 
 // mustAdmin creates the identity name and grants it the admin flag.
-//
-//nolint:unused // used by the aggregate tasks (4 to 11)
 func mustAdmin(t *testing.T, s ab2store.Store, name string) {
 	t.Helper()
 	mustIdentity(t, s, name)
@@ -75,8 +65,6 @@ func mustAdmin(t *testing.T, s ab2store.Store, name string) {
 // mustChannel creates a channel with CreatedSeq = MaxSeq() and CreatedAt =
 // fixedNow. A nil acl means "without an ACL" (the Store substitutes the
 // default, plan choice 9).
-//
-//nolint:unused // used by the aggregate tasks (4 to 11)
 func mustChannel(t *testing.T, s ab2store.Store, name string, kind ab2store.Kind, creator string, acl []ab2store.ACLEntry) ab2store.Channel {
 	t.Helper()
 	var ch ab2store.Channel
@@ -96,8 +84,6 @@ func mustChannel(t *testing.T, s ab2store.Store, name string, kind ab2store.Kind
 
 // mustAppend appends m inside Store.Append and returns its seq; CreatedAt
 // defaults to fixedNow when 0.
-//
-//nolint:unused // used by the aggregate tasks (4 to 11)
 func mustAppend(t *testing.T, s ab2store.Store, m ab2store.NewMessage) int64 {
 	t.Helper()
 	if m.CreatedAt == 0 {
@@ -112,8 +98,6 @@ func mustAppend(t *testing.T, s ab2store.Store, m ab2store.NewMessage) int64 {
 }
 
 // mustTombstone tombstones seq at fixedNow; the row must have been live.
-//
-//nolint:unused // used by the aggregate tasks (4 to 11)
 func mustTombstone(t *testing.T, s ab2store.Store, seq int64) {
 	t.Helper()
 	var did bool

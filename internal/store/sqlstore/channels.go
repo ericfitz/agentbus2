@@ -41,8 +41,12 @@ func channelsOf(rows []channelRow) []store.Channel {
 	return out
 }
 
-// identityRegistered reports whether name is a row of identities.
+// identityRegistered reports whether name is a row of identities; a name
+// failing TextRule is not, without a query.
 func (t *tx) identityRegistered(ctx context.Context, name string) (bool, error) {
+	if badText(name) {
+		return false, nil
+	}
 	var n int
 	if err := t.get(ctx, &n, "SELECT count(*) FROM identities WHERE name = ?", name); err != nil {
 		return false, err
@@ -103,7 +107,11 @@ func (t *tx) Channel(ctx context.Context, id int64) (store.Channel, error) {
 	return r.channel(), nil
 }
 
+// ChannelByName answers ErrNotFound for a name failing TextRule.
 func (t *tx) ChannelByName(ctx context.Context, name string) (store.Channel, error) {
+	if badText(name) {
+		return store.Channel{}, fmt.Errorf("%w: channel %q", store.ErrNotFound, name)
+	}
 	var r channelRow
 	err := t.get(ctx, &r, "SELECT "+channelCols+" FROM channels WHERE name = ?", name)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -124,7 +132,11 @@ func (t *tx) ListChannels(ctx context.Context) ([]store.Channel, error) {
 	return channelsOf(rows), nil
 }
 
+// ListChannelsByKind: ErrInvalid on an unknown kind.
 func (t *tx) ListChannelsByKind(ctx context.Context, k store.Kind) ([]store.Channel, error) {
+	if !store.ValidKind(k) {
+		return nil, fmt.Errorf("%w: unknown channel kind %q", store.ErrInvalid, k)
+	}
 	var rows []channelRow
 	if err := t.sel(ctx, &rows, "SELECT "+channelCols+" FROM channels WHERE kind = ?", string(k)); err != nil {
 		return nil, err

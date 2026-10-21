@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"slices"
 
 	"github.com/jmoiron/sqlx"
@@ -106,8 +107,39 @@ func checkLimit(limit int) error {
 	return nil
 }
 
+// checkMessageText runs TextRule over every TEXT the message stores. The
+// metadata is marshaled to one JSON column, which would escape a NUL and
+// replace invalid UTF-8 silently; it is refused instead of stored altered.
+func checkMessageText(m store.NewMessage) error {
+	if err := checkText("message", "sender", m.Sender, "session id", m.SessionID, "type", m.Type, "subject", m.Subject, "content", m.Content); err != nil {
+		return err
+	}
+	for _, tag := range m.Tags {
+		if err := checkText("message", "tag", tag); err != nil {
+			return err
+		}
+	}
+	for _, k := range slices.Sorted(maps.Keys(m.Metadata)) {
+		if err := checkText("message", "metadata key", k, "metadata value", m.Metadata[k]); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// AppendMessage runs the read-only and append guards, then checkMessageText,
+// before NextSeq allocates.
 func (t *tx) AppendMessage(ctx context.Context, m store.NewMessage) (int64, error) {
-	seq, err := t.NextSeq(ctx) // read-only and append guards
+	if err := t.writable(); err != nil {
+		return 0, err
+	}
+	if !t.append {
+		return 0, store.ErrNotAppend
+	}
+	if err := checkMessageText(m); err != nil {
+		return 0, err
+	}
+	seq, err := t.NextSeq(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -161,10 +193,17 @@ func (t *tx) MessagesAfter(ctx context.Context, channelID, afterSeq int64, limit
 		channelID, afterSeq, limit)
 }
 
-// MessagesInRange applies v1 tagsFilter: one EXISTS per pattern, ANDed.
+// MessagesInRange applies v1 tagsFilter: one EXISTS per pattern, ANDed. A
+// pattern whose range fails TextRule matches no stored tag, so the result is
+// empty without a query.
 func (t *tx) MessagesInRange(ctx context.Context, channelID, fromSeq, toSeq int64, patterns []store.TagPattern, limit int) ([]store.Message, error) {
 	if err := checkLimit(limit); err != nil {
 		return nil, err
+	}
+	for _, p := range patterns {
+		if badText(p.Lo, p.Hi) {
+			return []store.Message{}, nil
+		}
 	}
 	q := "SELECT " + messageCols + " FROM messages m WHERE m.channel_id = ? AND m.seq >= ? AND m.seq <= ? AND m.tombstone = FALSE"
 	args := []any{channelID, fromSeq, toSeq}
@@ -178,13 +217,19 @@ func (t *tx) MessagesInRange(ctx context.Context, channelID, fromSeq, toSeq int6
 }
 
 // SearchText: the one query shape, engine-independent; the dialect supplies
-// the condition on alias m.
+// the condition on alias m. A term failing TextRule is ErrInvalid (search.Parse
+// keeps a NUL inside a word).
 func (t *tx) SearchText(ctx context.Context, q search.Query, channelIDs []int64, limit int) ([]store.Message, error) {
 	if q.Empty() {
 		return nil, fmt.Errorf("%w: search query has no searchable terms", store.ErrInvalid)
 	}
 	if err := checkLimit(limit); err != nil {
 		return nil, err
+	}
+	for _, term := range q.Terms {
+		if err := checkText("search", "term", term.Text); err != nil {
+			return nil, err
+		}
 	}
 	if len(channelIDs) == 0 {
 		return []store.Message{}, nil

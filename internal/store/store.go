@@ -33,6 +33,13 @@ type Store interface {
 }
 
 // Tx is the set of repositories available inside a transaction.
+//
+// Every caller-supplied string bound to a TEXT column must pass TextRule
+// (valid UTF-8, no NUL), checked before the query on both engines (Decision
+// 54). A write of the caller's own data answers ErrInvalid, the field named;
+// a string naming another row (an identity, a session id) answers as for an
+// unknown row: ErrNotFound on a write that needs the row, none, false or a
+// no-op on a lookup or delete.
 type Tx interface {
 	Meta
 	Identities

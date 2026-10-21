@@ -237,6 +237,15 @@ func TestSessionDeleteLapsedBefore(t *testing.T) {
 			})
 			return n
 		}
+		for _, limit := range []int{0, -1} {
+			err := s.Tx(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
+				_, err := tx.DeleteSessions(ctx, 100, limit)
+				return err
+			})
+			if !errors.Is(err, ab2store.ErrInvalid) {
+				t.Errorf("DeleteSessions(limit %d) err = %v, want ErrInvalid", limit, err)
+			}
+		}
 		if a, b, c := del(1), del(1), del(1); a != 1 || b != 1 || c != 0 {
 			t.Errorf("deleted = %d, %d, %d; want 1, 1, 0", a, b, c)
 		}
@@ -273,5 +282,29 @@ func TestSessionCursorsDeletedWithChannel(t *testing.T) {
 			}
 			return nil
 		})
+	})
+}
+
+// ListSessions breaks an opened_at tie by id in byte order on both engines
+// (the ids are the names that make SQLite's BINARY collation and Postgres's
+// database collation disagree).
+func TestSessionListIsByteOrder(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		mustIdentity(t, s, "pat")
+		for i, id := range byteOrderNames {
+			sessionOpen(t, s, sessionX(id, "pat", "h"+itoa(int64(i)), 1, 1000))
+		}
+		sessionOpen(t, s, sessionX("first", "pat", "hf", 0, 1000))
+		want := append([]string{"first"}, byteOrderWant...)
+		for _, identity := range []string{"", "pat"} {
+			mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+				ss, err := tx.ListSessions(ctx, identity)
+				if err != nil || !equalStrings(sessionIDs(ss), want) {
+					t.Errorf("ListSessions(%q) = %q, %v; want %q", identity, sessionIDs(ss), err, want)
+				}
+				return nil
+			})
+		}
 	})
 }

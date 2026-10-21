@@ -70,7 +70,9 @@ const receiptDeleteChunk = 500
 
 // DeleteExpiredReceipts selects up to limit expired keys, then deletes them
 // (no LIMIT inside DELETE, portability rule) receiptDeleteChunk keys per
-// statement.
+// statement. Receipts with equal expires_at at the limit boundary are taken
+// in (identity, key) order under the engine's collation, so which of those
+// goes first may differ by engine; all expired receipts go eventually.
 func (t *tx) DeleteExpiredReceipts(ctx context.Context, now int64, limit int) (int, error) {
 	if err := t.writable(); err != nil {
 		return 0, err
