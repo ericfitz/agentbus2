@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Renders every release template with fake values, asserts no __PLACEHOLDER__
 # survives, and syntax-checks the result. No network. When brew is installed it
-# also runs `brew style` and a stubbed OS/CPU URL-selection check on the formula.
+# also runs a stubbed OS/CPU URL-selection check on the formula, and `brew style`
+# when AGENTBUS2_BREW_STYLE=1 (that one needs the network).
 #   release/test-render.sh
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -50,11 +51,19 @@ else
     echo "PASS templates name only agentbus2"
 fi
 
-# Optional, offline: brew style must report no offenses. brew only treats the
-# file as a formula under a Formula/ directory.
+# Optional: when brew is installed, the URL-selection checks below run offline.
+# brew style needs the network (its first run installs RuboCop gems from
+# rubygems.org), so it runs only with AGENTBUS2_BREW_STYLE=1; make verify must
+# not depend on the network. brew only treats the file as a formula under a
+# Formula/ directory.
 if command -v brew >/dev/null 2>&1; then
     mkdir -p "$WORK/Formula" && cp "$WORK/agentbus2.rb" "$WORK/Formula/agentbus2.rb"
-    if brew style "$WORK/Formula/agentbus2.rb" >"$WORK/style.out" 2>&1; then echo "PASS brew style"; else echo "FAIL brew style"; cat "$WORK/style.out"; FAIL=1; fi
+    case "${AGENTBUS2_BREW_STYLE:-}" in
+    1)
+        if brew style "$WORK/Formula/agentbus2.rb" >"$WORK/style.out" 2>&1; then echo "PASS brew style"; else echo "FAIL brew style"; cat "$WORK/style.out"; FAIL=1; fi ;;
+    "") echo "SKIP brew style (set AGENTBUS2_BREW_STYLE=1; it needs the network)" ;;
+    *) echo "FAIL AGENTBUS2_BREW_STYLE must be 1 or unset, got '${AGENTBUS2_BREW_STYLE}'"; FAIL=1 ;;
+    esac
     # Host-conditional URL selection with OS/CPU stubbed (SimulateSystem cannot
     # see host conditionals, so redefine the predicates themselves).
     cat > "$WORK/select.rb" <<'RB'
