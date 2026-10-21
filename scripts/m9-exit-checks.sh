@@ -224,6 +224,33 @@ anchors_missing() {
 	grep -qF -- "$FORLINE" "$ROOT/release/release.sh" || echo "release.sh download_archives lacks: $FORLINE"
 }
 
+# checkout_offenders FILE...: prints FILE:LINE of every actions/checkout step
+# whose block lacks `persist-credentials: false` (the step ends at the next line
+# indented no deeper than its dash).
+checkout_offenders() {
+	awk '
+		function flush() { if (open && !ok) print where; open = 0 }
+		FNR == 1 { flush() }
+		{ match($0, /^ */); ind = RLENGTH }
+		open && $0 !~ /^[[:space:]]*$/ && ind <= dash { flush() }
+		open && $0 ~ /^[[:space:]]*persist-credentials:[[:space:]]*false[[:space:]]*(#.*)?$/ { ok = 1 }
+		$0 ~ /^[[:space:]]*-[[:space:]]+uses:[[:space:]]+actions\/checkout@/ { flush(); open = 1; ok = 0; dash = ind; where = FILENAME ":" FNR }
+		END { flush() }
+	' "$@"
+}
+
+# Every checkout drops its token (persist-credentials: false), and the check
+# itself fires on a synthetic workflow that keeps one.
+check_checkout_credentials() {
+	local n=checkout-no-persisted-credentials off
+	off="$(checkout_offenders "$ROOT"/.github/workflows/*.yml)"
+	if [ -z "$off" ]; then pass "$n"; else fail "$n" "checkout keeps the token: $(echo "$off" | tr '\n' ' ')"; fi
+	n=checkout-credentials-check-fires
+	printf 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@x # v1\n        with:\n          persist-credentials: false\n      - uses: actions/checkout@x # v1\n        with:\n          fetch-depth: 0\n      - run: echo persist-credentials: false\n' >"$tmp/creds.yml"
+	off="$(checkout_offenders "$tmp/creds.yml")"
+	if [ "$off" = "$tmp/creds.yml:7" ]; then pass "$n"; else fail "$n" "want only $tmp/creds.yml:7, got: $off"; fi
+}
+
 check_workflow_names() {
 	local n=workflow-names-agree miss
 	sed 's/windows-arm64\.zip/windows-arm46.zip/g' "$ROOT/.github/workflows/release-build.yml" >"$tmp/planted.yml"
@@ -291,6 +318,7 @@ check_shared_helpers
 check_templates_render
 check_pipeline_selftest
 check_workflow_names
+check_checkout_credentials
 check_no_v1_names
 check_version_var
 check_usage

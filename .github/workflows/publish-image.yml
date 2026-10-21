@@ -2,8 +2,11 @@
 # Gated off: the job does nothing unless the repository variable
 # IMAGE_REPOSITORY is set (for example ghcr.io/ericfitz/agentbus2). It is
 # ghcr-only by construction (it logs in with GITHUB_TOKEN); another registry
-# needs its own credential secret and an explicit decision. Nothing in the
-# automated release run triggers it.
+# needs its own credential secret and an explicit decision. Publishing a
+# release fires it: release.sh's `gh release edit --draft=false` (run with the
+# maintainer's token, not GITHUB_TOKEN) sends `release: published`. The
+# --no-publish dry run never undrafts, so it never triggers this workflow;
+# with IMAGE_REPOSITORY unset the job is skipped either way.
 name: publish-image
 run-name: publish-image ${{ github.event.release.tag_name || inputs.tag }}
 on:
