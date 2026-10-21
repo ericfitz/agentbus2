@@ -1,0 +1,195 @@
+openapi: 3.0.3
+info:
+  title: agentbus2 codegen spike
+  version: 0.0.1
+servers:
+  - url: http://localhost
+security:
+  - bearerAuth: []
+  - oidc: []
+paths:
+  /.well-known/agentbus2:
+    get:
+      operationId: wellKnown
+      security: []
+      responses:
+        "200":
+          description: Pointer to the versioned discovery endpoint.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WellKnown"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/discover:
+    get:
+      operationId: discover
+      security: []
+      responses:
+        "200":
+          description: Server versions, capabilities and auth methods.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Discovery"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/sessions/{session}/watch:
+    get:
+      operationId: watch
+      parameters:
+        - name: session
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: after
+          in: query
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - name: timeout
+          in: query
+          required: false
+          schema:
+            type: integer
+            default: 30
+      responses:
+        "200":
+          description: Woke.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Wake"
+        "204":
+          description: Timed out, nothing new.
+        "409":
+          description: Replaced by a newer watch on the same session.
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/channels/{channel}/messages:
+    post:
+      operationId: sendMessage
+      parameters:
+        - name: channel
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/NewMessage"
+      responses:
+        "201":
+          description: Message appended.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Message"
+        default:
+          $ref: "#/components/responses/Problem"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    oidc:
+      type: openIdConnect
+      openIdConnectUrl: https://issuer.example/.well-known/openid-configuration
+  responses:
+    Problem:
+      description: RFC 9457 problem details.
+      content:
+        application/problem+json:
+          schema:
+            $ref: "#/components/schemas/Problem"
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code, retryable]
+      properties:
+        type:
+          type: string
+          format: uri
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+        code:
+          type: string
+          description: agentbus2 extension member (RFC 9457 section 3.2).
+        retryable:
+          type: boolean
+          description: agentbus2 extension member (RFC 9457 section 3.2).
+    Wake:
+      type: object
+      required: [seq, count, channels]
+      properties:
+        seq:
+          type: integer
+          format: int64
+        count:
+          type: integer
+        channels:
+          type: array
+          items:
+            type: string
+    WellKnown:
+      type: object
+      required: [discover]
+      properties:
+        discover:
+          type: string
+    Discovery:
+      type: object
+      required: [api_versions, server_version, capabilities, auth_methods]
+      properties:
+        api_versions:
+          type: array
+          items:
+            type: string
+        server_version:
+          type: string
+        capabilities:
+          type: array
+          items:
+            type: string
+        auth_methods:
+          type: array
+          items:
+            type: string
+    NewMessage:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+    Message:
+      type: object
+      required: [seq, channel, text]
+      properties:
+        seq:
+          type: integer
+          format: int64
+        channel:
+          type: string
+        text:
+          type: string

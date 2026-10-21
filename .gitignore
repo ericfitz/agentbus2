@@ -3,3 +3,9 @@ HANDOFF.md
 .local/
 /dist/
 .worktrees/
+
+# Code-generator spike: generated output (Eric, 2026-10-20)
+/docs/superpowers/specs/2026-10-19-codegen-spike/*/gen/
+/docs/superpowers/specs/2026-10-19-codegen-spike/*/probes/
+/docs/superpowers/specs/2026-10-19-codegen-spike/logs/
+/docs/superpowers/specs/2026-10-19-codegen-spike/last-run-summary.log
