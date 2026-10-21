@@ -247,7 +247,7 @@ function Add-UserPath([string]$Dir) {
     # SetEnvironmentVariable broadcasts WM_SETTINGCHANGE, which the registry
     # write above does not; deleting a variable that does not exist is the
     # cheapest way to send it, so running programs see the new Path.
-    try { [Environment]::SetEnvironmentVariable('AGENTBUS2_PATH_REFRESH', $null, 'User') } catch { }
+    try { [Environment]::SetEnvironmentVariable('AGENTBUS2_PATH_REFRESH', [NullString]::Value, 'User') } catch { }
     Write-Host "added $Dir to your user PATH; new terminals pick it up"
 }
 
