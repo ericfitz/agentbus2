@@ -89,7 +89,9 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		return fail(2, "issuer is required when listen is a unix socket (set issuer)")
 	}
 
-	st, err := openStore(ctx, cfg)
+	logger := newLogger(cfg, stderr)
+
+	st, err := openStore(ctx, cfg, logger)
 	if err != nil {
 		return fail(1, "%v", err)
 	}
@@ -109,8 +111,6 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 			_, _ = fmt.Fprintf(stdout, "issuer is unset: clients will see %s in openid-configuration (set issuer)\n", issuerURL)
 		}
 	}
-
-	logger := slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: logLevel(cfg.LogLevel)}))
 
 	// The signing key is a Store row (Milestone 5 choice 6). This Core exists
 	// only for it and for AutoCreate; Serve builds its own over the same Store.

@@ -74,7 +74,7 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 		return code
 	}
 
-	_, st, cc, err := openFromConfig(ctx, &f, fs, environ)
+	_, st, cc, err := openFromConfig(ctx, &f, fs, environ, stderr)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin: %v\n", err)
 		var ce *configError

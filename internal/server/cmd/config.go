@@ -4,6 +4,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	"log/slog"
 	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/core"
@@ -76,12 +78,13 @@ func (e *configError) Unwrap() error { return e.error }
 
 // openFromConfig loads the configuration and opens the store it names. It
 // never reads cfg.Listen. Flag and configuration errors are *configError.
-func openFromConfig(ctx context.Context, f *flags, fs *flag.FlagSet, environ []string) (cfg config.Config, st store.Store, cc core.Config, err error) {
+// Store warnings go to stderr.
+func openFromConfig(ctx context.Context, f *flags, fs *flag.FlagSet, environ []string, stderr io.Writer) (cfg config.Config, st store.Store, cc core.Config, err error) {
 	cfg, cc, err = loadConfig(f, fs, environ)
 	if err != nil {
 		return cfg, nil, cc, err
 	}
-	st, err = openStore(ctx, cfg)
+	st, err = openStore(ctx, cfg, newLogger(cfg, stderr))
 	if err != nil {
 		return cfg, nil, cc, err
 	}
@@ -106,10 +109,16 @@ func loadConfig(f *flags, fs *flag.FlagSet, environ []string) (cfg config.Config
 	return cfg, cc, nil
 }
 
+// newLogger is the text logger on stderr at cfg's log level.
+func newLogger(cfg config.Config, stderr io.Writer) *slog.Logger {
+	return slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: logLevel(cfg.LogLevel)}))
+}
+
 // openStore opens the store cfg names (Validate guarantees exactly one).
-func openStore(ctx context.Context, cfg config.Config) (st store.Store, err error) {
+// logger receives the SQLite file-mode warning.
+func openStore(ctx context.Context, cfg config.Config, logger *slog.Logger) (st store.Store, err error) {
 	if cfg.SQLite != "" {
-		st, err = sqlite.Open(ctx, cfg.SQLite, sqlite.Options{})
+		st, err = sqlite.Open(ctx, cfg.SQLite, sqlite.Options{Logger: logger})
 		if err != nil {
 			err = fmt.Errorf("opening the sqlite store: %w", err)
 		}
