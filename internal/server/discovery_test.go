@@ -62,7 +62,6 @@ func TestCapabilitiesComputed(t *testing.T) {
 	}
 }
 
-// Decision (Eric, 2026-10-21): Milestone 4 item 2
 func TestOpenIDConfigurationNamesMilestone5Paths(t *testing.T) {
 	e := newEnv(t, envOptions{})
 	r, err := e.client("").OpenidConfigurationWithResponse(context.Background())
@@ -76,12 +75,6 @@ func TestOpenIDConfigurationNamesMilestone5Paths(t *testing.T) {
 	if !slices.Equal(c.TokenEndpointAuthMethodsSupported, []string{"private_key_jwt"}) ||
 		!slices.Equal(c.TokenEndpointAuthSigningAlgValuesSupported, []string{"EdDSA", "ES256"}) {
 		t.Errorf("%+v", c)
-	}
-	for _, path := range []string{"/v1/auth/token", "/v1/auth/jwks"} {
-		resp := e.raw("", newReq(t, "GET", path, nil))
-		if p := readProblem(t, resp); resp.StatusCode != 404 || string(p.Code) != "not_found" {
-			t.Errorf("%s: %d %+v", path, resp.StatusCode, p)
-		}
 	}
 }
 

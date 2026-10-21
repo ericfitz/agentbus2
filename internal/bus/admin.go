@@ -22,4 +22,30 @@ type Admin interface {
 	Status(ctx context.Context) (Status, error)
 	DeleteChannel(ctx context.Context, in DeleteChannelInput) error
 	RenameChannel(ctx context.Context, in RenameChannelInput) error
+	Reset(ctx context.Context, in ResetInput) error
+	ResetCredential(ctx context.Context, in ResetCredentialInput) (ResetCredentialResult, error)
+}
+
+// ResetScope selects what Reset removes (Milestone 5 choice 12).
+type ResetScope string
+
+// The reset scopes: data keeps identities and keys; everything removes them too.
+const (
+	ResetData       ResetScope = "data"
+	ResetEverything ResetScope = "everything"
+)
+
+// ResetInput is Reset's input; an empty Scope means ResetData.
+type ResetInput struct {
+	Scope          ResetScope
+	IdempotencyKey string
+}
+
+// ResetCredentialInput names the identity whose registered keys are removed.
+type ResetCredentialInput struct{ Identity, IdempotencyKey string }
+
+// ResetCredentialResult reports how many keys were removed.
+type ResetCredentialResult struct {
+	Identity    string
+	KeysRemoved int
 }

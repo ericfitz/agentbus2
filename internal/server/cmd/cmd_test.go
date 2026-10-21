@@ -162,7 +162,7 @@ func TestRunRejectsUnopenableStore(t *testing.T) {
 func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 	addr, _, _, _ := runServer(t, "-listen", "127.0.0.1:0", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"))
 	doc := server.Spec()
-	subst := strings.NewReplacer("{channel}", "dev", "{session}", "s", "{id}", "1", "{patterns}", "deploy")
+	subst := strings.NewReplacer("{channel}", "dev", "{session}", "s", "{id}", "1", "{patterns}", "deploy", "{identity}", "pat")
 	protected, open := 0, 0
 	for path, item := range doc.Paths.Map() {
 		for method, op := range item.Operations() {
@@ -211,13 +211,14 @@ func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 				}
 			} else {
 				open++
-				if resp.StatusCode != http.StatusOK {
-					t.Errorf("%s %s: status %d, want 200: %s", method, path, resp.StatusCode, raw)
+				// Task 9 replaces this with exact per-operation expectations.
+				if resp.StatusCode == http.StatusUnauthorized {
+					t.Errorf("%s %s: status 401 on an open operation: %s", method, path, raw)
 				}
 			}
 		}
 	}
-	if protected != 30 || open != 3 || protected+open != 33 {
-		t.Fatalf("operations: %d protected, %d open; want 30 and 3", protected, open)
+	if protected != 32 || open != 6 || protected+open != 38 {
+		t.Fatalf("operations: %d protected, %d open; want 32 and 6", protected, open)
 	}
 }

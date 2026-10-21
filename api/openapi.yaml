@@ -21,6 +21,7 @@ tags:
   - name: memories
   - name: tasks
   - name: admin
+  - name: auth
 paths:
   /.well-known/agentbus2:
     get:
@@ -689,6 +690,105 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Status"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/auth/token:
+    post:
+      operationId: token
+      tags: [auth]
+      security: []
+      description: >-
+        RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70):
+        the client assertion's iss and sub are the identity and its aud is this
+        endpoint.
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: "#/components/schemas/TokenRequest"
+      responses:
+        "200":
+          description: A short-lived bearer token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AccessToken"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/auth/jwks:
+    get:
+      operationId: jwks
+      tags: [auth]
+      security: []
+      responses:
+        "200":
+          description: The public keys that verify tokens this server issues.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JWKS"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/auth/register:
+    post:
+      operationId: register
+      tags: [auth]
+      security: []
+      description: >-
+        Registers an identity's public key (trust on first use, or with an
+        enrollment token; Decisions 20, 58, 72).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RegisterRequest"
+      responses:
+        "201":
+          description: The registration.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Registration"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/reset:
+    post:
+      operationId: adminReset
+      tags: [admin]
+      parameters:
+        - name: scope
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [data, everything]
+            default: data
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      responses:
+        "204":
+          description: The server's data was reset.
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/identities/{identity}/reset-credential:
+    post:
+      operationId: resetCredential
+      tags: [admin]
+      parameters:
+        - name: identity
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      responses:
+        "200":
+          description: The identity's registered keys were removed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/CredentialReset"
         default:
           $ref: "#/components/responses/Problem"
 components:
@@ -1380,3 +1480,68 @@ components:
         embedding_error_at:
           type: integer
           format: int64
+    TokenRequest:
+      type: object
+      required: [grant_type, client_assertion_type, client_assertion]
+      properties:
+        grant_type:
+          type: string
+          enum: [client_credentials]
+        client_assertion_type:
+          type: string
+          enum: ["urn:ietf:params:oauth:client-assertion-type:jwt-bearer"]
+        client_assertion:
+          type: string
+    AccessToken:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+        expires_in:
+          type: integer
+          format: int64
+    JWK:
+      type: object
+      additionalProperties: true
+    JWKS:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/JWK"
+    RegisterRequest:
+      type: object
+      required: [identity, public_key_jwk]
+      properties:
+        identity:
+          type: string
+        public_key_jwk:
+          $ref: "#/components/schemas/JWK"
+        enrollment_token:
+          type: string
+    Registration:
+      type: object
+      required: [identity, kid, algorithm, created]
+      properties:
+        identity:
+          type: string
+        kid:
+          type: string
+        algorithm:
+          type: string
+          enum: [EdDSA, ES256]
+        created:
+          type: boolean
+    CredentialReset:
+      type: object
+      required: [identity, keys_removed]
+      properties:
+        identity:
+          type: string
+        keys_removed:
+          type: integer

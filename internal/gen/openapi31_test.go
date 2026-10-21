@@ -120,6 +120,11 @@ func TestOperationTable(t *testing.T) {
 		"claimTask":            "POST /v1/tasks/{id}/claim",
 		"releaseTask":          "POST /v1/tasks/{id}/release",
 		"adminStatus":          "GET /v1/admin/status",
+		"token":                "POST /v1/auth/token",
+		"jwks":                 "GET /v1/auth/jwks",
+		"register":             "POST /v1/auth/register",
+		"adminReset":           "POST /v1/admin/reset",
+		"resetCredential":      "POST /v1/admin/identities/{identity}/reset-credential",
 	}
 	doc := loadDoc(t)
 	got := map[string]string{}
@@ -150,8 +155,8 @@ func TestOperationTable(t *testing.T) {
 			t.Errorf("unexpected operation %s", id)
 		}
 	}
-	if open != 3 || protected != 30 {
-		t.Fatalf("security: %d open, %d protected; want 3 and 30", open, protected)
+	if open != 6 || protected != 32 {
+		t.Fatalf("security: %d open, %d protected; want 6 and 32", open, protected)
 	}
 }
 
@@ -159,12 +164,35 @@ func TestOperationTable(t *testing.T) {
 // interface makes any other call panic, and none is made.
 type stub struct {
 	gen.StrictServerInterface
-	mu       sync.Mutex
-	channel  string
-	patterns []string
-	key      *string
-	body     *gen.SendMessageJSONRequestBody
-	called   int
+	mu        sync.Mutex
+	channel   string
+	patterns  []string
+	key       *string
+	body      *gen.SendMessageJSONRequestBody
+	called    int
+	assertion string
+}
+
+func (s *stub) Token(_ context.Context, r gen.TokenRequestObject) (gen.TokenResponseObject, error) {
+	s.mu.Lock()
+	s.called++
+	s.assertion = r.Body.ClientAssertion
+	s.mu.Unlock()
+	return gen.Token200JSONResponse{AccessToken: "t", TokenType: "Bearer", ExpiresIn: 3600}, nil
+}
+
+func (s *stub) Register(_ context.Context, _ gen.RegisterRequestObject) (gen.RegisterResponseObject, error) {
+	s.mu.Lock()
+	s.called++
+	s.mu.Unlock()
+	return gen.Register201JSONResponse{Identity: "pat", Kid: "k", Algorithm: gen.EdDSA, Created: true}, nil
+}
+
+func (s *stub) AdminReset(_ context.Context, _ gen.AdminResetRequestObject) (gen.AdminResetResponseObject, error) {
+	s.mu.Lock()
+	s.called++
+	s.mu.Unlock()
+	return gen.AdminReset204Response{}, nil
 }
 
 func (s *stub) WellKnown(_ context.Context, _ gen.WellKnownRequestObject) (gen.WellKnownResponseObject, error) {
@@ -284,6 +312,34 @@ func TestValidatorOnRealDocument(t *testing.T) {
 		if rec := do(t, h, "GET", p, "", nil); rec.Code != 200 || s.called != before+1 {
 			t.Fatalf("%s without token: status %d: %s", p, rec.Code, rec.Body)
 		}
+	}
+
+	form := map[string]string{"Content-Type": "application/x-www-form-urlencoded"}
+	const grant = "grant_type=client_credentials&client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+	if rec := do(t, h, "POST", "/v1/auth/token", grant+"&client_assertion=a.b.c", form); rec.Code != 200 || s.assertion != "a.b.c" {
+		t.Fatalf("token: status %d assertion %q: %s", rec.Code, s.assertion, rec.Body)
+	}
+	for name, body := range map[string]string{
+		"no assertion": grant,
+		"password":     "grant_type=password&client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer&client_assertion=a.b.c",
+	} {
+		before = s.called
+		if rec := do(t, h, "POST", "/v1/auth/token", body, form); rec.Code != 400 || s.called != before {
+			t.Fatalf("token %s: status %d called %d: %s", name, rec.Code, s.called-before, rec.Body)
+		}
+	}
+	before = s.called
+	if rec := do(t, h, "POST", "/v1/auth/register", `{"identity":"pat"}`, nil); rec.Code != 400 || s.called != before {
+		t.Fatalf("register without key: status %d: %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, "POST", "/v1/admin/reset", "", nil); rec.Code != 401 || s.called != before {
+		t.Fatalf("reset without token: status %d: %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, "POST", "/v1/admin/reset?scope=all", "", tok); rec.Code != 400 || s.called != before {
+		t.Fatalf("reset scope=all: status %d: %s", rec.Code, rec.Body)
+	}
+	if rec := do(t, h, "POST", "/v1/admin/reset?scope=everything", "", tok); rec.Code != 204 {
+		t.Fatalf("reset scope=everything: status %d: %s", rec.Code, rec.Body)
 	}
 
 	rec = do(t, h, "PATCH", "/v1/sessions/x", `{}`, tok)

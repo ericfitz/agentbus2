@@ -151,6 +151,24 @@ func (e ProblemCode) Valid() bool {
 	}
 }
 
+// Defines values for RegistrationAlgorithm.
+const (
+	ES256 RegistrationAlgorithm = "ES256"
+	EdDSA RegistrationAlgorithm = "EdDSA"
+)
+
+// Valid indicates whether the value is a known member of the RegistrationAlgorithm enum.
+func (e RegistrationAlgorithm) Valid() bool {
+	switch e {
+	case ES256:
+		return true
+	case EdDSA:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for RejectedCursorReason.
 const (
 	Ahead           RejectedCursorReason = "ahead"
@@ -193,6 +211,54 @@ func (e SubscribeRequestFrom) Valid() bool {
 	}
 }
 
+// Defines values for TokenRequestClientAssertionType.
+const (
+	UrnIetfParamsOauthClientAssertionTypeJwtBearer TokenRequestClientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+)
+
+// Valid indicates whether the value is a known member of the TokenRequestClientAssertionType enum.
+func (e TokenRequestClientAssertionType) Valid() bool {
+	switch e {
+	case UrnIetfParamsOauthClientAssertionTypeJwtBearer:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for TokenRequestGrantType.
+const (
+	ClientCredentials TokenRequestGrantType = "client_credentials"
+)
+
+// Valid indicates whether the value is a known member of the TokenRequestGrantType enum.
+func (e TokenRequestGrantType) Valid() bool {
+	switch e {
+	case ClientCredentials:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for AdminResetParamsScope.
+const (
+	Data       AdminResetParamsScope = "data"
+	Everything AdminResetParamsScope = "everything"
+)
+
+// Valid indicates whether the value is a known member of the AdminResetParamsScope enum.
+func (e AdminResetParamsScope) Valid() bool {
+	switch e {
+	case Data:
+		return true
+	case Everything:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SearchParamsMode.
 const (
 	Both     SearchParamsMode = "both"
@@ -222,6 +288,13 @@ type ACLEntry struct {
 
 // ACLEntryPermissions defines model for ACLEntry.Permissions.
 type ACLEntryPermissions string
+
+// AccessToken defines model for AccessToken.
+type AccessToken struct {
+	AccessToken string `json:"access_token"`
+	ExpiresIn   int64  `json:"expires_in"`
+	TokenType   string `json:"token_type"`
+}
 
 // AuthMethod defines model for AuthMethod.
 type AuthMethod struct {
@@ -267,6 +340,12 @@ type CreateChannelRequest struct {
 // CreateChannelRequestKind defines model for CreateChannelRequest.Kind.
 type CreateChannelRequestKind string
 
+// CredentialReset defines model for CredentialReset.
+type CredentialReset struct {
+	Identity    string `json:"identity"`
+	KeysRemoved int    `json:"keys_removed"`
+}
+
 // Discovery defines model for Discovery.
 type Discovery struct {
 	ApiVersions         []string     `json:"api_versions"`
@@ -306,6 +385,14 @@ type Identity struct {
 	Admin    bool          `json:"admin"`
 	Name     string        `json:"name"`
 	Sessions []SessionInfo `json:"sessions"`
+}
+
+// JWK defines model for JWK.
+type JWK map[string]interface{}
+
+// JWKS defines model for JWKS.
+type JWKS struct {
+	Keys []JWK `json:"keys"`
 }
 
 // Message defines model for Message.
@@ -397,6 +484,24 @@ type ReceiveResult struct {
 	Notice      *string   `json:"notice,omitempty"`
 	Redelivered bool      `json:"redelivered"`
 }
+
+// RegisterRequest defines model for RegisterRequest.
+type RegisterRequest struct {
+	EnrollmentToken *string `json:"enrollment_token,omitempty"`
+	Identity        string  `json:"identity"`
+	PublicKeyJwk    JWK     `json:"public_key_jwk"`
+}
+
+// Registration defines model for Registration.
+type Registration struct {
+	Algorithm RegistrationAlgorithm `json:"algorithm"`
+	Created   bool                  `json:"created"`
+	Identity  string                `json:"identity"`
+	Kid       string                `json:"kid"`
+}
+
+// RegistrationAlgorithm defines model for Registration.Algorithm.
+type RegistrationAlgorithm string
 
 // RejectedCursor defines model for RejectedCursor.
 type RejectedCursor struct {
@@ -554,6 +659,19 @@ type TaskUpdateResult struct {
 	Task     Task  `json:"task"`
 }
 
+// TokenRequest defines model for TokenRequest.
+type TokenRequest struct {
+	ClientAssertion     string                          `json:"client_assertion"`
+	ClientAssertionType TokenRequestClientAssertionType `json:"client_assertion_type"`
+	GrantType           TokenRequestGrantType           `json:"grant_type"`
+}
+
+// TokenRequestClientAssertionType defines model for TokenRequest.ClientAssertionType.
+type TokenRequestClientAssertionType string
+
+// TokenRequestGrantType defines model for TokenRequest.GrantType.
+type TokenRequestGrantType string
+
 // Wake defines model for Wake.
 type Wake struct {
 	Channels []string `json:"channels"`
@@ -577,6 +695,23 @@ type IdempotencyKeyParam = string
 
 // SessionParam defines model for SessionParam.
 type SessionParam = string
+
+// ResetCredentialParams defines parameters for ResetCredential.
+type ResetCredentialParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// AdminResetParams defines parameters for AdminReset.
+type AdminResetParams struct {
+	Scope *AdminResetParamsScope `form:"scope,omitempty" json:"scope,omitempty"`
+
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// AdminResetParamsScope defines parameters for AdminReset.
+type AdminResetParamsScope string
 
 // CreateChannelParams defines parameters for CreateChannel.
 type CreateChannelParams struct {
@@ -719,6 +854,12 @@ type ReleaseTaskParams struct {
 	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
 }
 
+// RegisterJSONRequestBody defines body for Register for application/json ContentType.
+type RegisterJSONRequestBody = RegisterRequest
+
+// TokenFormdataRequestBody defines body for Token for application/x-www-form-urlencoded ContentType.
+type TokenFormdataRequestBody = TokenRequest
+
 // CreateChannelJSONRequestBody defines body for CreateChannel for application/json ContentType.
 type CreateChannelJSONRequestBody = CreateChannelRequest
 
@@ -835,8 +976,41 @@ type ClientInterface interface {
 	// OpenidConfiguration performs a GET /.well-known/openid-configuration (the `OpenidConfiguration` operationId) request.
 	OpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ResetCredential performs a POST /v1/admin/identities/{identity}/reset-credential (the `ResetCredential` operationId) request.
+	ResetCredential(ctx context.Context, identity string, params *ResetCredentialParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// AdminReset performs a POST /v1/admin/reset (the `AdminReset` operationId) request.
+	AdminReset(ctx context.Context, params *AdminResetParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// AdminStatus performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
 	AdminStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Jwks performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
+	Jwks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RegisterWithBody performs a POST /v1/auth/register (the `Register` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Registers an identity's public key (trust on first use, or with an enrollment token; Decisions 20, 58, 72).
+	RegisterWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// Register performs a POST /v1/auth/register (the `Register` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// Registers an identity's public key (trust on first use, or with an enrollment token; Decisions 20, 58, 72).
+	Register(ctx context.Context, body RegisterJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TokenWithBody performs a POST /v1/auth/token (the `Token` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+	TokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// TokenWithFormdataBody performs a POST /v1/auth/token (the `Token` operationId) request.
+	// Takes a body of the `application/x-www-form-urlencoded` content type.
+	//
+	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+	TokenWithFormdataBody(ctx context.Context, body TokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListChannels performs a GET /v1/channels (the `ListChannels` operationId) request.
 	ListChannels(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1015,9 +1189,112 @@ func (c *Client) OpenidConfiguration(ctx context.Context, reqEditors ...RequestE
 	return c.Client.Do(req)
 }
 
+// ResetCredential performs a POST /v1/admin/identities/{identity}/reset-credential (the `ResetCredential` operationId) request.
+func (c *Client) ResetCredential(ctx context.Context, identity string, params *ResetCredentialParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewResetCredentialRequest(c.Server, identity, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AdminReset performs a POST /v1/admin/reset (the `AdminReset` operationId) request.
+func (c *Client) AdminReset(ctx context.Context, params *AdminResetParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAdminResetRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // AdminStatus performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
 func (c *Client) AdminStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAdminStatusRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Jwks performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
+func (c *Client) Jwks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewJwksRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RegisterWithBody performs a POST /v1/auth/register (the `Register` operationId) request,
+// with any type of body and a specified content type.
+//
+// Registers an identity's public key (trust on first use, or with an enrollment token; Decisions 20, 58, 72).
+func (c *Client) RegisterWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Register performs a POST /v1/auth/register (the `Register` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// Registers an identity's public key (trust on first use, or with an enrollment token; Decisions 20, 58, 72).
+func (c *Client) Register(ctx context.Context, body RegisterJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRegisterRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// TokenWithBody performs a POST /v1/auth/token (the `Token` operationId) request,
+// with any type of body and a specified content type.
+//
+// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+func (c *Client) TokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTokenRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// TokenWithFormdataBody performs a POST /v1/auth/token (the `Token` operationId) request.
+// Takes a body of the `application/x-www-form-urlencoded` content type.
+//
+// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+func (c *Client) TokenWithFormdataBody(ctx context.Context, body TokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewTokenRequestWithFormdataBody(c.Server, body)
 	if err != nil {
 		return nil, err
 	}
@@ -1652,6 +1929,124 @@ func NewOpenidConfigurationRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewResetCredentialRequest constructs an http.Request for the ResetCredential method
+func NewResetCredentialRequest(server string, identity string, params *ResetCredentialParams) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "identity", identity, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/identities/%s/reset-credential", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewAdminResetRequest constructs an http.Request for the AdminReset method
+func NewAdminResetRequest(server string, params *AdminResetParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/reset")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Scope != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "scope", *params.Scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
 // NewAdminStatusRequest constructs an http.Request for the AdminStatus method
 func NewAdminStatusRequest(server string) (*http.Request, error) {
 	var err error
@@ -1675,6 +2070,113 @@ func NewAdminStatusRequest(server string) (*http.Request, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return req, nil
+}
+
+// NewJwksRequest constructs an http.Request for the Jwks method
+func NewJwksRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/auth/jwks")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRegisterRequest calls the generic Register builder with application/json body
+func NewRegisterRequest(server string, body RegisterJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewRegisterRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewRegisterRequestWithBody constructs an http.Request for the Register method, with any body, and a specified content type
+func NewRegisterRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/auth/register")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewTokenRequestWithFormdataBody calls the generic Token builder with application/x-www-form-urlencoded body
+func NewTokenRequestWithFormdataBody(server string, body TokenFormdataRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	bodyStr, err := runtime.MarshalForm(body, nil)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = strings.NewReader(bodyStr.Encode())
+	return NewTokenRequestWithBody(server, "application/x-www-form-urlencoded", bodyReader)
+}
+
+// NewTokenRequestWithBody constructs an http.Request for the Token method, with any body, and a specified content type
+func NewTokenRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/auth/token")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	return req, nil
 }
@@ -3401,10 +3903,53 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	OpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpenidConfigurationResponse, error)
 
+	// ResetCredentialWithResponse performs a POST /v1/admin/identities/{identity}/reset-credential (the `ResetCredential` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ResetCredentialWithResponse(ctx context.Context, identity string, params *ResetCredentialParams, reqEditors ...RequestEditorFn) (*ResetCredentialResponse, error)
+
+	// AdminResetWithResponse performs a POST /v1/admin/reset (the `AdminReset` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	AdminResetWithResponse(ctx context.Context, params *AdminResetParams, reqEditors ...RequestEditorFn) (*AdminResetResponse, error)
+
 	// AdminStatusWithResponse performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	AdminStatusWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AdminStatusResponse, error)
+
+	// JwksWithResponse performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	JwksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*JwksResponse, error)
+
+	// RegisterWithBodyWithResponse performs a POST /v1/auth/register (the `Register` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Registers an identity's public key (trust on first use, or with an enrollment token; Decisions 20, 58, 72).
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RegisterWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterResponse, error)
+
+	// RegisterWithResponse performs a POST /v1/auth/register (the `Register` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Registers an identity's public key (trust on first use, or with an enrollment token; Decisions 20, 58, 72).
+	RegisterWithResponse(ctx context.Context, body RegisterJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterResponse, error)
+
+	// TokenWithBodyWithResponse performs a POST /v1/auth/token (the `Token` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	TokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TokenResponse, error)
+
+	// TokenWithFormdataBodyWithResponse performs a POST /v1/auth/token (the `Token` operationId) request.
+	// Takes a body of the `application/x-www-form-urlencoded` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+	TokenWithFormdataBodyWithResponse(ctx context.Context, body TokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*TokenResponse, error)
 
 	// ListChannelsWithResponse performs a GET /v1/channels (the `ListChannels` operationId) request.
 	//
@@ -3713,6 +4258,95 @@ func (r OpenidConfigurationResponse) ContentType() string {
 	return ""
 }
 
+type ResetCredentialResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *CredentialReset
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ResetCredentialResponse) GetJSON200() *CredentialReset {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ResetCredentialResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ResetCredentialResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ResetCredentialResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ResetCredentialResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ResetCredentialResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type AdminResetResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r AdminResetResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AdminResetResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AdminResetResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AdminResetResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AdminResetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type AdminStatusResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -3755,6 +4389,150 @@ func (r AdminStatusResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r AdminStatusResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type JwksResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *JWKS
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r JwksResponse) GetJSON200() *JWKS {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r JwksResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r JwksResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r JwksResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r JwksResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r JwksResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RegisterResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *Registration
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r RegisterResponse) GetJSON201() *Registration {
+	return r.JSON201
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RegisterResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RegisterResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RegisterResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RegisterResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RegisterResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type TokenResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AccessToken
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r TokenResponse) GetJSON200() *AccessToken {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r TokenResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r TokenResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r TokenResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r TokenResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r TokenResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -5167,6 +5945,28 @@ func (c *ClientWithResponses) OpenidConfigurationWithResponse(ctx context.Contex
 	return ParseOpenidConfigurationResponse(rsp)
 }
 
+// ResetCredentialWithResponse performs a POST /v1/admin/identities/{identity}/reset-credential (the `ResetCredential` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ResetCredentialWithResponse(ctx context.Context, identity string, params *ResetCredentialParams, reqEditors ...RequestEditorFn) (*ResetCredentialResponse, error) {
+	rsp, err := c.ResetCredential(ctx, identity, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseResetCredentialResponse(rsp)
+}
+
+// AdminResetWithResponse performs a POST /v1/admin/reset (the `AdminReset` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) AdminResetWithResponse(ctx context.Context, params *AdminResetParams, reqEditors ...RequestEditorFn) (*AdminResetResponse, error) {
+	rsp, err := c.AdminReset(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAdminResetResponse(rsp)
+}
+
 // AdminStatusWithResponse performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -5176,6 +5976,69 @@ func (c *ClientWithResponses) AdminStatusWithResponse(ctx context.Context, reqEd
 		return nil, err
 	}
 	return ParseAdminStatusResponse(rsp)
+}
+
+// JwksWithResponse performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) JwksWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*JwksResponse, error) {
+	rsp, err := c.Jwks(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseJwksResponse(rsp)
+}
+
+// RegisterWithBodyWithResponse performs a POST /v1/auth/register (the `Register` operationId) request,
+// with any type of body and a specified content type.
+//
+// Registers an identity's public key (trust on first use, or with an enrollment token; Decisions 20, 58, 72).
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RegisterWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*RegisterResponse, error) {
+	rsp, err := c.RegisterWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterResponse(rsp)
+}
+
+// RegisterWithResponse performs a POST /v1/auth/register (the `Register` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Registers an identity's public key (trust on first use, or with an enrollment token; Decisions 20, 58, 72).
+func (c *ClientWithResponses) RegisterWithResponse(ctx context.Context, body RegisterJSONRequestBody, reqEditors ...RequestEditorFn) (*RegisterResponse, error) {
+	rsp, err := c.Register(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRegisterResponse(rsp)
+}
+
+// TokenWithBodyWithResponse performs a POST /v1/auth/token (the `Token` operationId) request,
+// with any type of body and a specified content type.
+//
+// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) TokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TokenResponse, error) {
+	rsp, err := c.TokenWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTokenResponse(rsp)
+}
+
+// TokenWithFormdataBodyWithResponse performs a POST /v1/auth/token (the `Token` operationId) request.
+// Takes a body of the `application/x-www-form-urlencoded` content type, and returns a wrapper object for the known response body format(s).
+//
+// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+func (c *ClientWithResponses) TokenWithFormdataBodyWithResponse(ctx context.Context, body TokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*TokenResponse, error) {
+	rsp, err := c.TokenWithFormdataBody(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseTokenResponse(rsp)
 }
 
 // ListChannelsWithResponse performs a GET /v1/channels (the `ListChannels` operationId) request.
@@ -5706,6 +6569,68 @@ func ParseOpenidConfigurationResponse(rsp *http.Response) (*OpenidConfigurationR
 	return response, nil
 }
 
+// ParseResetCredentialResponse parses an HTTP response from a ResetCredentialWithResponse call
+func ParseResetCredentialResponse(rsp *http.Response) (*ResetCredentialResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ResetCredentialResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest CredentialReset
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseAdminResetResponse parses an HTTP response from a AdminResetWithResponse call
+func ParseAdminResetResponse(rsp *http.Response) (*AdminResetResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AdminResetResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseAdminStatusResponse parses an HTTP response from a AdminStatusWithResponse call
 func ParseAdminStatusResponse(rsp *http.Response) (*AdminStatusResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -5722,6 +6647,105 @@ func ParseAdminStatusResponse(rsp *http.Response) (*AdminStatusResponse, error) 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Status
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseJwksResponse parses an HTTP response from a JwksWithResponse call
+func ParseJwksResponse(rsp *http.Response) (*JwksResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &JwksResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest JWKS
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRegisterResponse parses an HTTP response from a RegisterWithResponse call
+func ParseRegisterResponse(rsp *http.Response) (*RegisterResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RegisterResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest Registration
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseTokenResponse parses an HTTP response from a TokenWithResponse call
+func ParseTokenResponse(rsp *http.Response) (*TokenResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &TokenResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AccessToken
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -6712,8 +7736,23 @@ type ServerInterface interface {
 	// (GET /.well-known/openid-configuration)
 	OpenidConfiguration(w http.ResponseWriter, r *http.Request)
 
+	// (POST /v1/admin/identities/{identity}/reset-credential)
+	ResetCredential(w http.ResponseWriter, r *http.Request, identity string, params ResetCredentialParams)
+
+	// (POST /v1/admin/reset)
+	AdminReset(w http.ResponseWriter, r *http.Request, params AdminResetParams)
+
 	// (GET /v1/admin/status)
 	AdminStatus(w http.ResponseWriter, r *http.Request)
+
+	// (GET /v1/auth/jwks)
+	Jwks(w http.ResponseWriter, r *http.Request)
+
+	// (POST /v1/auth/register)
+	Register(w http.ResponseWriter, r *http.Request)
+
+	// (POST /v1/auth/token)
+	Token(w http.ResponseWriter, r *http.Request)
 
 	// (GET /v1/channels)
 	ListChannels(w http.ResponseWriter, r *http.Request)
@@ -6843,11 +7882,157 @@ func (siw *ServerInterfaceWrapper) OpenidConfiguration(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// ResetCredential operation middleware
+func (siw *ServerInterfaceWrapper) ResetCredential(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "identity" -------------
+	var identity string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "identity", r.PathValue("identity"), &identity, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "identity", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params ResetCredentialParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ResetCredential(w, r, identity, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AdminReset operation middleware
+func (siw *ServerInterfaceWrapper) AdminReset(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminResetParams
+
+	// ------------- Optional query parameter "scope" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "scope", r.URL.Query(), &params.Scope, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "scope"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AdminReset(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // AdminStatus operation middleware
 func (siw *ServerInterfaceWrapper) AdminStatus(w http.ResponseWriter, r *http.Request) {
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminStatus(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Jwks operation middleware
+func (siw *ServerInterfaceWrapper) Jwks(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Jwks(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Register operation middleware
+func (siw *ServerInterfaceWrapper) Register(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Register(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// Token operation middleware
+func (siw *ServerInterfaceWrapper) Token(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Token(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -8350,6 +9535,11 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tasks/{id}/claim", wrapper.ClaimTask)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/tasks/{id}/release", wrapper.ReleaseTask)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/status", wrapper.AdminStatus)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/auth/token", wrapper.Token)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/auth/jwks", wrapper.Jwks)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/auth/register", wrapper.Register)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/reset", wrapper.AdminReset)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/identities/{identity}/reset-credential", wrapper.ResetCredential)
 
 	return m
 }
@@ -8432,6 +9622,79 @@ func (response OpenidConfigurationdefaultApplicationProblemPlusJSONResponse) Vis
 	return err
 }
 
+type ResetCredentialRequestObject struct {
+	Identity string `json:"identity"`
+	Params   ResetCredentialParams
+}
+
+type ResetCredentialResponseObject interface {
+	VisitResetCredentialResponse(w http.ResponseWriter) error
+}
+
+type ResetCredential200JSONResponse CredentialReset
+
+func (response ResetCredential200JSONResponse) VisitResetCredentialResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ResetCredentialdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ResetCredentialdefaultApplicationProblemPlusJSONResponse) VisitResetCredentialResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminResetRequestObject struct {
+	Params AdminResetParams
+}
+
+type AdminResetResponseObject interface {
+	VisitAdminResetResponse(w http.ResponseWriter) error
+}
+
+type AdminReset204Response struct {
+}
+
+func (response AdminReset204Response) VisitAdminResetResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type AdminResetdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AdminResetdefaultApplicationProblemPlusJSONResponse) VisitAdminResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AdminStatusRequestObject struct {
 }
 
@@ -8459,6 +9722,122 @@ type AdminStatusdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response AdminStatusdefaultApplicationProblemPlusJSONResponse) VisitAdminStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JwksRequestObject struct {
+}
+
+type JwksResponseObject interface {
+	VisitJwksResponse(w http.ResponseWriter) error
+}
+
+type Jwks200JSONResponse JWKS
+
+func (response Jwks200JSONResponse) VisitJwksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type JwksdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response JwksdefaultApplicationProblemPlusJSONResponse) VisitJwksResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterRequestObject struct {
+	Body *RegisterJSONRequestBody
+}
+
+type RegisterResponseObject interface {
+	VisitRegisterResponse(w http.ResponseWriter) error
+}
+
+type Register201JSONResponse Registration
+
+func (response Register201JSONResponse) VisitRegisterResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(201)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RegisterdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RegisterdefaultApplicationProblemPlusJSONResponse) VisitRegisterResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TokenRequestObject struct {
+	Body *TokenFormdataRequestBody
+}
+
+type TokenResponseObject interface {
+	VisitTokenResponse(w http.ResponseWriter) error
+}
+
+type Token200JSONResponse AccessToken
+
+func (response Token200JSONResponse) VisitTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type TokendefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response TokendefaultApplicationProblemPlusJSONResponse) VisitTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -9640,8 +11019,23 @@ type StrictServerInterface interface {
 	// (GET /.well-known/openid-configuration)
 	OpenidConfiguration(ctx context.Context, request OpenidConfigurationRequestObject) (OpenidConfigurationResponseObject, error)
 
+	// (POST /v1/admin/identities/{identity}/reset-credential)
+	ResetCredential(ctx context.Context, request ResetCredentialRequestObject) (ResetCredentialResponseObject, error)
+
+	// (POST /v1/admin/reset)
+	AdminReset(ctx context.Context, request AdminResetRequestObject) (AdminResetResponseObject, error)
+
 	// (GET /v1/admin/status)
 	AdminStatus(ctx context.Context, request AdminStatusRequestObject) (AdminStatusResponseObject, error)
+
+	// (GET /v1/auth/jwks)
+	Jwks(ctx context.Context, request JwksRequestObject) (JwksResponseObject, error)
+
+	// (POST /v1/auth/register)
+	Register(ctx context.Context, request RegisterRequestObject) (RegisterResponseObject, error)
+
+	// (POST /v1/auth/token)
+	Token(ctx context.Context, request TokenRequestObject) (TokenResponseObject, error)
 
 	// (GET /v1/channels)
 	ListChannels(ctx context.Context, request ListChannelsRequestObject) (ListChannelsResponseObject, error)
@@ -9821,6 +11215,59 @@ func (sh *strictHandler) OpenidConfiguration(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// ResetCredential operation middleware
+func (sh *strictHandler) ResetCredential(w http.ResponseWriter, r *http.Request, identity string, params ResetCredentialParams) {
+	var request ResetCredentialRequestObject
+
+	request.Identity = identity
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ResetCredential(ctx, request.(ResetCredentialRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ResetCredential")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ResetCredentialResponseObject); ok {
+		if err := validResponse.VisitResetCredentialResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminReset operation middleware
+func (sh *strictHandler) AdminReset(w http.ResponseWriter, r *http.Request, params AdminResetParams) {
+	var request AdminResetRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminReset(ctx, request.(AdminResetRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminReset")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AdminResetResponseObject); ok {
+		if err := validResponse.VisitAdminResetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AdminStatus operation middleware
 func (sh *strictHandler) AdminStatus(w http.ResponseWriter, r *http.Request) {
 	var request AdminStatusRequestObject
@@ -9838,6 +11285,96 @@ func (sh *strictHandler) AdminStatus(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminStatusResponseObject); ok {
 		if err := validResponse.VisitAdminStatusResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Jwks operation middleware
+func (sh *strictHandler) Jwks(w http.ResponseWriter, r *http.Request) {
+	var request JwksRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Jwks(ctx, request.(JwksRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Jwks")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(JwksResponseObject); ok {
+		if err := validResponse.VisitJwksResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Register operation middleware
+func (sh *strictHandler) Register(w http.ResponseWriter, r *http.Request) {
+	var request RegisterRequestObject
+
+	var body RegisterJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Register(ctx, request.(RegisterRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Register")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RegisterResponseObject); ok {
+		if err := validResponse.VisitRegisterResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Token operation middleware
+func (sh *strictHandler) Token(w http.ResponseWriter, r *http.Request) {
+	var request TokenRequestObject
+
+	if err := r.ParseForm(); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode formdata: %w", err))
+		return
+	}
+	var body TokenFormdataRequestBody
+	if err := runtime.BindForm(&body, r.Form, nil, nil); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't bind formdata: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Token(ctx, request.(TokenRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Token")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(TokenResponseObject); ok {
+		if err := validResponse.VisitTokenResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
