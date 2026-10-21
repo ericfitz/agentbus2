@@ -3,12 +3,14 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"net/http"
 	"testing"
 
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core/channels"
 	"github.com/ericfitz/agentbus2/internal/core/messaging"
+	"github.com/ericfitz/agentbus2/internal/core/sessions"
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -244,9 +246,6 @@ func TestTaskPatchMembersRoundTrip(t *testing.T) {
 	if after := patch(gen.TaskPatch{After: &b}); before.Rank == "" || after.Rank == before.Rank {
 		t.Fatalf("before rank %q, after rank %q: want distinct non-empty ranks", before.Rank, after.Rank)
 	}
-	if tk := patch(gen.TaskPatch{After: &b}); tk.Rank == "" {
-		t.Fatalf("after: %+v", tk)
-	}
 	if tk := patch(gen.TaskPatch{Parent: &parent}); tk.Parent == nil || *tk.Parent != parent {
 		t.Fatalf("parent: %+v", tk)
 	}
@@ -255,10 +254,47 @@ func TestTaskPatchMembersRoundTrip(t *testing.T) {
 		*tk.Owner != "pat" || tk.LeasedUntil == nil || *tk.LeasedUntil != lease || tk.Status != "in_progress" {
 		t.Fatalf("owner/status/lease: %+v", tk)
 	}
+
+	// Force only matters against the owner guard: give b to another identity
+	// (with a live session, or the task is reclaimed as abandoned) and in
+	// progress, then Delete alone is refused and Delete with Force deletes.
+	f.e.identity("sam", false)
+	if _, err := (sessions.Service{Core: f.e.core}).Open(ctx, "sam", ab2bus.OpenSessionInput{}); err != nil {
+		t.Fatalf("open sam's session: %v", err)
+	}
+	bPatch, err := f.c.UpdateTaskWithResponse(ctx, b, &gen.UpdateTaskParams{},
+		gen.TaskPatch{Owner: sp("sam"), Status: sp("in_progress")})
+	if err != nil || bPatch.JSON200 == nil || bPatch.JSON200.Task.Owner == nil || *bPatch.JSON200.Task.Owner != "sam" {
+		t.Fatalf("give b to sam: %+v, %v", bPatch, err)
+	}
 	tr := true
-	r, err := f.c.UpdateTaskWithResponse(ctx, b, &gen.UpdateTaskParams{}, gen.TaskPatch{Delete: &tr, Force: &tr})
+	r, err := f.c.UpdateTaskWithResponse(ctx, b, &gen.UpdateTaskParams{}, gen.TaskPatch{Delete: &tr})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantProblem(t, r.StatusCode(), r.ApplicationproblemJSONDefault, http.StatusConflict, gen.Conflict)
+	r, err = f.c.UpdateTaskWithResponse(ctx, b, &gen.UpdateTaskParams{}, gen.TaskPatch{Delete: &tr, Force: &tr})
 	if err != nil || r.JSON200 == nil || r.JSON200.Deleted == nil || !*r.JSON200.Deleted {
 		t.Fatalf("delete/force: %+v, %v", r, err)
+	}
+}
+
+// TestHandlersRefuseAMissingBody pins the handlers' own guard behind the
+// validator, which rejects a missing required body first: the error is the
+// validation code with the same wording as the messages handlers.
+func TestHandlersRefuseAMissingBody(t *testing.T) {
+	a := &api{}
+	ctx := context.Background()
+	const want = "the request body is required"
+	for name, call := range map[string]func() error{
+		"EditMemory": func() error { _, err := a.EditMemory(ctx, gen.EditMemoryRequestObject{Id: 1}); return err },
+		"CreateTask": func() error { _, err := a.CreateTask(ctx, gen.CreateTaskRequestObject{Channel: "work"}); return err },
+		"UpdateTask": func() error { _, err := a.UpdateTask(ctx, gen.UpdateTaskRequestObject{Id: 1}); return err },
+	} {
+		var be *ab2bus.Error
+		if err := call(); !errors.As(err, &be) || be.Code != ab2bus.CodeValidation || be.Retryable || be.Message != want {
+			t.Errorf("%s with no body: %v, want validation %q", name, err, want)
+		}
 	}
 }
 

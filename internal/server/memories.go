@@ -52,7 +52,7 @@ func (a *api) GetMemory(ctx context.Context, r gen.GetMemoryRequestObject) (gen.
 
 func (a *api) EditMemory(ctx context.Context, r gen.EditMemoryRequestObject) (gen.EditMemoryResponseObject, error) {
 	if r.Body == nil {
-		return nil, &ab2bus.Error{Code: ab2bus.CodeValidation, Message: "request body required"}
+		return nil, ab2bus.Errorf(ab2bus.CodeValidation, false, "the request body is required")
 	}
 	b := r.Body
 	in := ab2bus.EditMemoryInput{

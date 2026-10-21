@@ -7,7 +7,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/gen"
 )
 
-func optStr(s string) *string {
+func mtOptStr(s string) *string {
 	if s == "" {
 		return nil
 	}
@@ -31,7 +31,7 @@ func optInts(s []int64) *[]int64 {
 func taskToGen(t ab2bus.Task) gen.Task {
 	out := gen.Task{
 		Id: t.ID, Channel: t.Channel, Revision: t.Revision, Subject: t.Subject,
-		Description: optStr(t.Description), Status: t.Status, Owner: optStr(t.Owner),
+		Description: mtOptStr(t.Description), Status: t.Status, Owner: mtOptStr(t.Owner),
 		Parent: optInt64(t.Parent), Rank: t.Rank, BlockedBy: optInts(t.BlockedBy),
 		LeasedUntil: optInt64(t.LeasedUntil), Blocked: t.Blocked,
 		OpenBlockers: optInts(t.OpenBlockers), UpdatedAt: t.UpdatedAt, UpdatedBy: t.UpdatedBy,
@@ -62,7 +62,7 @@ func deref[T any](p *T) T {
 
 func (a *api) CreateTask(ctx context.Context, r gen.CreateTaskRequestObject) (gen.CreateTaskResponseObject, error) {
 	if r.Body == nil {
-		return nil, &ab2bus.Error{Code: ab2bus.CodeValidation, Message: "request body required"}
+		return nil, ab2bus.Errorf(ab2bus.CodeValidation, false, "the request body is required")
 	}
 	b := r.Body
 	in := ab2bus.TaskCreateInput{
@@ -88,7 +88,7 @@ func (a *api) ListTasks(ctx context.Context, r gen.ListTasksRequestObject) (gen.
 	out := make(gen.ListTasks200JSONResponse, len(ts))
 	for i, s := range ts {
 		g := gen.TaskSummary{
-			Id: s.ID, Subject: s.Subject, Status: s.Status, Owner: optStr(s.Owner),
+			Id: s.ID, Subject: s.Subject, Status: s.Status, Owner: mtOptStr(s.Owner),
 			Parent: optInt64(s.Parent), Depth: s.Depth, OpenBlockers: optInts(s.OpenBlockers),
 			LeasedUntil: optInt64(s.LeasedUntil),
 		}
@@ -111,7 +111,7 @@ func (a *api) GetTask(ctx context.Context, r gen.GetTaskRequestObject) (gen.GetT
 
 func (a *api) UpdateTask(ctx context.Context, r gen.UpdateTaskRequestObject) (gen.UpdateTaskResponseObject, error) {
 	if r.Body == nil {
-		return nil, &ab2bus.Error{Code: ab2bus.CodeValidation, Message: "request body required"}
+		return nil, ab2bus.Errorf(ab2bus.CodeValidation, false, "the request body is required")
 	}
 	b := r.Body
 	p := ab2bus.TaskPatch{
