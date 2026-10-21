@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/bus/remote"
+	"github.com/ericfitz/agentbus2/internal/core/notify/pgnotify"
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/server"
 	"github.com/ericfitz/agentbus2/internal/server/config"
@@ -298,6 +300,33 @@ func TestRunConfiguresLogging(t *testing.T) {
 	}
 	if got.Registration != "open" || got.Issuer == nil || got.Listener == nil {
 		t.Fatalf("Config %+v: want registration open, an issuer and the bound listener", got)
+	}
+	if got.Notifier != nil {
+		t.Fatalf("Notifier %T on sqlite, want nil (Serve's in-process Memory)", got.Notifier)
+	}
+}
+
+// A Postgres store gets the LISTEN/NOTIFY listener (Decision 52), and the
+// close function Run defers stops it; SQLite gets none. The listener never
+// fails on an unreachable server, so this needs no database.
+func TestStoreNotifier(t *testing.T) {
+	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
+	n, closeN := storeNotifier(t.Context(), config.Config{SQLite: "ab2.db"}, logger)
+	closeN()
+	if n != nil {
+		t.Fatalf("sqlite notifier %T, want nil", n)
+	}
+	n, closeN = storeNotifier(t.Context(), config.Config{Postgres: "postgres://127.0.0.1:1/none?connect_timeout=1"}, logger)
+	if _, ok := n.(*pgnotify.Listener); !ok {
+		closeN()
+		t.Fatalf("postgres notifier %T, want *pgnotify.Listener", n)
+	}
+	done := make(chan struct{})
+	go func() { closeN(); close(done) }()
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		t.Fatal("closing the listener did not return within 5 s")
 	}
 }
 

@@ -32,7 +32,8 @@ type Dialect interface {
 	LockAppend(ctx context.Context, tx *sqlx.Tx) error     // SQLite: no-op; Postgres: LOCK TABLE seq_counter (choice 4)
 	// TextSearch (Task 10) returns a condition on alias m with ? placeholders.
 	TextSearch(q search.Query) (cond string, args []any, err error)
-	// NotifyAppend is the Milestone 7 hook; a no-op now.
+	// NotifyAppend runs inside the append transaction: Postgres queues a NOTIFY
+	// (delivered on commit, dropped on rollback; Decision 52), SQLite does nothing.
 	NotifyAppend(ctx context.Context, tx *sqlx.Tx, channelID int64, seq int64) error
 	// Usage and Reclaim back store.Space.
 	Usage(ctx context.Context, db *sqlx.DB) (store.Usage, error)

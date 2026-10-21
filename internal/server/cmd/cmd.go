@@ -153,14 +153,8 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		}
 	}
 
-	// A Postgres store shares hints across replicas through LISTEN/NOTIFY
-	// (Decision 52); SQLite keeps the in-process Memory (Serve's default).
-	var notifier notify.Notifier
-	if cfg.Postgres != "" {
-		l := pgnotify.New(ctx, cfg.Postgres, pgnotify.Options{Logger: logger})
-		defer l.Close()
-		notifier = l
-	}
+	notifier, closeNotifier := storeNotifier(ctx, cfg, logger)
+	defer closeNotifier()
 
 	engine := "postgres"
 	if cfg.SQLite != "" {
@@ -187,6 +181,19 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		return fail(1, "%v", err)
 	}
 	return 0
+}
+
+// storeNotifier is the Notifier Serve gets for cfg's store, and the function
+// that ends it. A Postgres store shares hints across replicas through
+// LISTEN/NOTIFY (Decision 52), so it gets a pgnotify listener that lives as
+// long as Run; SQLite gets nil, Serve's in-process Memory (Milestone 4 choice
+// 14: two servers over one SQLite file do not share hints).
+func storeNotifier(ctx context.Context, cfg config.Config, logger *slog.Logger) (notify.Notifier, func()) {
+	if cfg.Postgres == "" {
+		return nil, func() {}
+	}
+	l := pgnotify.New(ctx, cfg.Postgres, pgnotify.Options{Logger: logger})
+	return l, l.Close
 }
 
 // boundAuthority is the bound address as a URL authority. A wildcard listen

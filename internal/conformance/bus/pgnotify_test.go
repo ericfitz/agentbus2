@@ -177,4 +177,8 @@ func TestPgnotifyRolledBackAppendDoesNotNotify(t *testing.T) {
 		t.Fatalf("Append err = %v, want boom", err)
 	}
 	expectNoSeqHint(t, hints, 500*time.Millisecond)
+	// The same append committed does notify, so the silent window above was
+	// not for want of a working listener.
+	seq := h.append(ch, "pat", "", "committed")
+	expectHint(t, hints, time.Second, notify.Hint{ChannelID: ch.ID, Seq: seq})
 }
