@@ -106,6 +106,8 @@ func (p Profile) normalized() Profile {
 type Config struct {
 	Path     string             `json:"-"`
 	Profiles map[string]Profile `json:"profiles"`
+	// TUI holds the terminal UI's settings; nil when config.json has no "tui".
+	TUI *TUISettings `json:"tui,omitempty"`
 }
 
 // Getenv looks name up in environ with os.Environ semantics (the last
@@ -125,6 +127,7 @@ func DefaultProfile() Profile { return Profile{Name: "default", Mode: ModeLocal}
 
 type configFile struct {
 	Profiles map[string]Profile `json:"profiles"`
+	TUI      *TUISettings       `json:"tui,omitempty"`
 }
 
 // Load reads path strictly: unknown keys, null, trailing content and an empty
@@ -164,6 +167,15 @@ func Load(path string) (Config, error) {
 	if err := strictjson.Check(body, reflect.TypeFor[configFile]()); err != nil {
 		return Config{}, fmt.Errorf("%s: %w", path, err)
 	}
+	if v, ok := raw["tui"]; ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+		return Config{}, fmt.Errorf(`%s: "tui" must not be null`, path)
+	}
+	if f.TUI != nil {
+		if err := f.TUI.Validate(); err != nil {
+			return Config{}, fmt.Errorf("%s: %w", path, err)
+		}
+		c.TUI = f.TUI
+	}
 	for name, p := range f.Profiles {
 		if err := repoconfig.ValidProfileName(name); err != nil {
 			return Config{}, fmt.Errorf("%s: profile %q: %w", path, name, err)
@@ -185,7 +197,12 @@ func (c Config) Save() error {
 	if c.Path == "" {
 		return errors.New("config path is empty")
 	}
-	out := configFile{Profiles: make(map[string]Profile, len(c.Profiles))}
+	out := configFile{Profiles: make(map[string]Profile, len(c.Profiles)), TUI: c.TUI}
+	if c.TUI != nil {
+		if err := c.TUI.Validate(); err != nil {
+			return err
+		}
+	}
 	for name, p := range c.Profiles {
 		if err := repoconfig.ValidProfileName(name); err != nil {
 			return fmt.Errorf("profile %q: %w", name, err)
@@ -254,4 +271,80 @@ func SQLitePath(p Profile, dataDir string) string {
 // CredentialDir is the directory holding a profile's credential files.
 func CredentialDir(configDir, profileName string) string {
 	return filepath.Join(configDir, "credentials", profileName)
+}
+
+// TUIColorTheme is one named set of TUI colors. Values are not validated at
+// load: the TUI warns about and replaces any it cannot use.
+type TUIColorTheme struct {
+	Name              string `json:"name"`
+	Background        string `json:"background"`
+	Text              string `json:"text"`
+	Dim               string `json:"dim"`
+	Timestamp         string `json:"timestamp"`
+	Tag               string `json:"tag"`
+	Agent             string `json:"agent"`
+	User              string `json:"user"`
+	Memory            string `json:"memory"`
+	Tasks             string `json:"tasks"`
+	Health            string `json:"health"`
+	Warn              string `json:"warn"`
+	Error             string `json:"error"`
+	Selection         string `json:"selection"`
+	SelectionInactive string `json:"selection_inactive"`
+	SelectionText     string `json:"selection_text"`
+	Unsaved           string `json:"unsaved"`
+}
+
+// TUISettings is the "tui" object of config.json.
+type TUISettings struct {
+	Theme     string            `json:"theme,omitempty"`
+	Themes    []TUIColorTheme   `json:"themes,omitempty"`
+	Icons     string            `json:"icons,omitempty"`
+	IconMap   map[string]string `json:"icon_map,omitempty"`
+	RailWidth int               `json:"rail_width,omitempty"`
+}
+
+// Validate checks the settings' shape. Color values and icon_map names are
+// the TUI's to warn about.
+func (s TUISettings) Validate() error {
+	if s.RailWidth < 0 || s.RailWidth > 1000 {
+		return fmt.Errorf("tui.rail_width must be between 0 and 1000, got %d", s.RailWidth)
+	}
+	switch s.Icons {
+	case "", "emoji", "nerdfont", "custom":
+	default:
+		return fmt.Errorf("tui.icons must be emoji, nerdfont or custom, got %q", s.Icons)
+	}
+	seen := make(map[string]int, len(s.Themes))
+	for i, t := range s.Themes {
+		if t.Name == "" {
+			return fmt.Errorf("tui.themes[%d].name must not be empty", i)
+		}
+		if j, dup := seen[t.Name]; dup {
+			return fmt.Errorf("tui.themes[%d].name %q repeats tui.themes[%d]", i, t.Name, j)
+		}
+		seen[t.Name] = i
+	}
+	if s.Theme != "" && s.Theme != "default" {
+		if _, ok := seen[s.Theme]; !ok {
+			return fmt.Errorf("tui.theme %q is not default or the name of an entry of tui.themes", s.Theme)
+		}
+	}
+	return nil
+}
+
+// SetTUIRailWidth loads the config at path, sets tui.rail_width (creating
+// tui) and saves it, so profiles written meanwhile are kept. Load's errors
+// are returned and nothing is written; an absent file is created holding
+// only tui.
+func SetTUIRailWidth(path string, width int) error {
+	c, err := Load(path)
+	if err != nil {
+		return err
+	}
+	if c.TUI == nil {
+		c.TUI = &TUISettings{}
+	}
+	c.TUI.RailWidth = width
+	return c.Save()
 }

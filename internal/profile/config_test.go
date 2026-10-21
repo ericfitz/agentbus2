@@ -216,3 +216,135 @@ func TestSQLitePathAndCredentialDir(t *testing.T) {
 		t.Fatalf("CredentialDir = %q", got)
 	}
 }
+
+func TestLoadTUISettings(t *testing.T) {
+	p := writeCfg(t, `{"profiles":{},"tui":{"theme":"dark","themes":[{"name":"dark","agent":"cyan"}],"icons":"nerdfont","icon_map":{"idle":"z"},"rail_width":24}}`)
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &TUISettings{Theme: "dark", Themes: []TUIColorTheme{{Name: "dark", Agent: "cyan"}}, Icons: "nerdfont", IconMap: map[string]string{"idle": "z"}, RailWidth: 24}
+	if !reflect.DeepEqual(c.TUI, want) {
+		t.Fatalf("TUI = %+v, want %+v", c.TUI, want)
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	c2, err := Load(p)
+	if err != nil || !reflect.DeepEqual(c2.TUI, want) {
+		t.Fatalf("round trip = %+v, %v", c2.TUI, err)
+	}
+
+	bad := []struct{ name, tui, want string }{
+		{"unknown key", `{"colour":"x"}`, "colour"},
+		{"null tui", `null`, `"tui" must not be null`},
+		{"rail 1001", `{"rail_width":1001}`, "tui.rail_width must be between 0 and 1000, got 1001"},
+		{"rail -1", `{"rail_width":-1}`, "tui.rail_width must be between 0 and 1000, got -1"},
+		{"icons ascii", `{"icons":"ascii"}`, `tui.icons must be emoji, nerdfont or custom, got "ascii"`},
+		{"empty theme name", `{"themes":[{"agent":"red"}]}`, "tui.themes[0].name must not be empty"},
+		{"repeated theme", `{"themes":[{"name":"dark"},{"name":"dark"}]}`, `tui.themes[1].name "dark" repeats tui.themes[0]`},
+		{"dangling theme", `{"theme":"light"}`, `tui.theme "light" is not default or the name of an entry of tui.themes`},
+	}
+	for _, tc := range bad {
+		t.Run(tc.name, func(t *testing.T) {
+			p := writeCfg(t, `{"profiles":{},"tui":`+tc.tui+`}`)
+			_, err := Load(p)
+			if err == nil || !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), p) {
+				t.Fatalf("Load = %v, want error naming %q and %q", err, p, tc.want)
+			}
+		})
+	}
+
+	for _, ok := range []string{`{"rail_width":0}`, `{"rail_width":1000}`, `{"theme":"default"}`, `{"icons":"emoji"}`, `{"icons":"custom"}`} {
+		if _, err := Load(writeCfg(t, `{"tui":`+ok+`}`)); err != nil {
+			t.Fatalf("%s rejected: %v", ok, err)
+		}
+	}
+	c3, err := Load(writeCfg(t, `{"profiles":{}}`))
+	if err != nil || c3.TUI != nil {
+		t.Fatalf("no tui: %+v, %v", c3.TUI, err)
+	}
+}
+
+func TestSaveRejectsInvalidTUI(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "config.json")
+	c := Config{Path: p, Profiles: map[string]Profile{}, TUI: &TUISettings{Icons: "ascii"}}
+	if err := c.Save(); err == nil || !strings.Contains(err.Error(), "tui.icons") {
+		t.Fatalf("Save = %v", err)
+	}
+	if _, err := os.Stat(p); err == nil {
+		t.Fatal("file written")
+	}
+}
+
+func TestSetTUIRailWidthTwice(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "sub", "config.json")
+	// Missing file: Load answers an empty Config, so the file is created
+	// holding only tui, mode 0600.
+	if err := SetTUIRailWidth(p, 30); err != nil {
+		t.Fatal(err)
+	}
+	first, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := SetTUIRailWidth(p, 30); err != nil {
+		t.Fatal(err)
+	}
+	second, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(first) != string(second) {
+		t.Fatalf("second run changed the file:\n%s\n---\n%s", first, second)
+	}
+	if n := strings.Count(string(second), `"tui"`); n != 1 {
+		t.Fatalf("%d tui objects in %s", n, second)
+	}
+	c, err := Load(p)
+	if err != nil || c.TUI == nil || c.TUI.RailWidth != 30 || len(c.Profiles) != 0 {
+		t.Fatalf("Load = %+v, %v", c, err)
+	}
+	if runtime.GOOS != "windows" {
+		if fi, err := os.Stat(p); err != nil || fi.Mode().Perm() != 0o600 {
+			t.Fatalf("mode = %v, %v", fi, err)
+		}
+	}
+}
+
+func TestSetTUIRailWidthErrors(t *testing.T) {
+	p := writeCfg(t, `{"profiles":{},"colour":1}`)
+	before, _ := os.ReadFile(p)
+	if err := SetTUIRailWidth(p, 30); err == nil {
+		t.Fatal("invalid file accepted")
+	}
+	after, _ := os.ReadFile(p)
+	if string(before) != string(after) {
+		t.Fatal("invalid file rewritten")
+	}
+	good := writeCfg(t, `{"profiles":{}}`)
+	for _, w := range []int{-1, 1001} {
+		if err := SetTUIRailWidth(good, w); err == nil || !strings.Contains(err.Error(), "tui.rail_width") {
+			t.Fatalf("width %d: %v", w, err)
+		}
+	}
+}
+
+func TestSetTUIRailWidthKeepsProfiles(t *testing.T) {
+	p := writeCfg(t, `{"profiles":{"lab":{"mode":"server","server":"https://x.example","identity":"pat"}},"tui":{"icons":"emoji"}}`)
+	if err := SetTUIRailWidth(p, 30); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Profiles["lab"].Server != "https://x.example" || c.TUI == nil || c.TUI.RailWidth != 30 || c.TUI.Icons != "emoji" {
+		t.Fatalf("reload = %+v", c)
+	}
+	if runtime.GOOS != "windows" {
+		if fi, err := os.Stat(p); err != nil || fi.Mode().Perm() != 0o600 {
+			t.Fatalf("mode = %v, %v", fi, err)
+		}
+	}
+}
