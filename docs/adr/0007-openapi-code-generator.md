@@ -22,7 +22,8 @@ RFC 9457 errors, bearer and OIDC security schemes, and long-poll.
 The spike was run on 2026-10-20 and is written up in
 `docs/superpowers/specs/2026-10-19-codegen-spike.md`, with the rerunnable
 spec, driver and tests in `docs/superpowers/specs/2026-10-19-codegen-spike/`
-(`bash run.sh`). Versions: oapi-codegen v2.8.0 (released 2026-07-17,
+(`bash run.sh`); that directory was removed on 2026-10-21 and is recoverable
+from commit `2de3799`. Versions: oapi-codegen v2.8.0 (released 2026-07-17,
 requires Go 1.25), ogen v1.24.0 (released 2026-08-07), Go 1.27.2,
 `CGO_ENABLED=0` throughout. The sample spec (OpenAPI 3.0.3) had four
 operations: the well-known path, `GET /v1/discover`, the long-poll

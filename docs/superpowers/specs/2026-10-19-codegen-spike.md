@@ -4,8 +4,10 @@ Date: 2026-10-20 (task opened 2026-10-19). Author: Claude (Fable 5.1), for Eric.
 Open question from `HANDOFF.md`: which OpenAPI code generator serves decisions 3, 4, 19, 35, 42, 43, 46 and 47.
 
 Everything below was observed by running the spike, not recalled. The rerunnable
-files (spec, driver, both test modules) are in
-`docs/superpowers/specs/2026-10-19-codegen-spike/`.
+files (spec, driver, both test modules) were removed from the tree on 2026-10-21
+(Eric: its Go modules drew Dependabot alerts and Milestone 4 had ported what it
+needed); the last commit that has them is `2de3799`. Restore them with
+`git checkout 2de3799 -- docs/superpowers/specs/2026-10-19-codegen-spike`.
 
 ## Versions
 
@@ -229,6 +231,8 @@ If Eric prefers ogen, the spec must omit the `openIdConnect` scheme (or carry
 `NewError` that calls `ogenerrors.ErrorCode`.
 
 ## How to rerun
+
+Restore the files first (`git checkout 2de3799 -- docs/superpowers/specs/2026-10-19-codegen-spike`), then:
 
 ```
 bash /Users/efitz/Projects/agentbus2/docs/superpowers/specs/2026-10-19-codegen-spike/run.sh

@@ -880,7 +880,7 @@ Decision 64 (Eric, 2026-10-20): the generator is oapi-codegen v2.8.0
 with `std-http-server` + `strict-server` + `client` + `models`, and
 authentication and authorization in hand-written `net/http` middleware
 (ADR 0007). The spike
-(`2026-10-19-codegen-spike.md`, rerunnable with its `run.sh`) exercised
+(`2026-10-19-codegen-spike.md`; its `run.sh` is recoverable from commit `2de3799`) exercised
 oapi-codegen v2.8.0 and ogen v1.24.0 against a four-operation sample of
 this API (well-known, discover, watch, send) under `CGO_ENABLED=0`, and
 both generated, built, vetted and passed the same tests. Findings that
@@ -937,8 +937,9 @@ the generated code is stale (section 8).
   section 4.6 table, on both engines.
 - Generated-code freshness: CI regenerates from the schema and fails on a
   diff (`git diff --exit-code -- internal/gen`), as the spike proposed.
-- A rerun of the spike (`run.sh`) stays available as the generator's
-  regression check until the real schema replaces its sample.
+- A rerun of the spike (`run.sh`) served as the generator's regression
+  check until the real schema replaced its sample in Milestone 4; the spike
+  was then removed (2026-10-21) and is recoverable from commit `2de3799`.
 
 ## 9. Porting map
 
