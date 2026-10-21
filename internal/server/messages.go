@@ -20,8 +20,8 @@ func (a *api) SendMessage(ctx context.Context, req gen.SendMessageRequestObject)
 		Content:        b.Content,
 		Type:           derefOr(b.Type),
 		ReplyTo:        b.ReplyTo,
-		Metadata:       optMap(b.Metadata),
-		Tags:           optSlice(b.Tags),
+		Metadata:       derefOr(b.Metadata),
+		Tags:           derefOr(b.Tags),
 		Session:        derefOr(b.Session),
 		IdempotencyKey: derefOr(req.Params.IdempotencyKey),
 	})
@@ -36,7 +36,7 @@ func (a *api) History(ctx context.Context, req gen.HistoryRequestObject) (gen.Hi
 	p := req.Params
 	msgs, err := a.messaging.History(ctx, IdentityFrom(ctx), bus.HistoryInput{
 		Channel: req.Channel, Before: p.Before, After: p.After,
-		Count: derefOr(p.Count), Tags: optSlice(p.Tags),
+		Count: derefOr(p.Count), Tags: derefOr(p.Tags),
 	})
 	if err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func (a *api) Search(ctx context.Context, req gen.SearchRequestObject) (gen.Sear
 	p := req.Params
 	in := bus.SearchInput{
 		Query: derefOr(p.Q), Channel: derefOr(p.Channel), Sender: derefOr(p.Sender),
-		Since: p.Since, Until: p.Until, Thread: p.Thread, Tags: optSlice(p.Tags),
+		Since: p.Since, Until: p.Until, Thread: p.Thread, Tags: derefOr(p.Tags),
 		Count: derefOr(p.Count), Cursor: derefOr(p.Cursor),
 	}
 	if p.Mode != nil {

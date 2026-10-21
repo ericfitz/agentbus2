@@ -16,20 +16,6 @@ func derefOr[T any](p *T) T {
 	return *p
 }
 
-func optMap(m *map[string]string) map[string]string {
-	if m == nil {
-		return nil
-	}
-	return *m
-}
-
-func optSlice(s *[]string) []string {
-	if s == nil {
-		return nil
-	}
-	return *s
-}
-
 func toGenMessage(m bus.Message) gen.Message {
 	out := gen.Message{
 		Seq: m.Seq, Channel: m.Channel, Sender: m.Sender, Display: m.Display,

@@ -42,7 +42,7 @@ func (b *Bus) Send(ctx context.Context, in ab2bus.SendInput) (ab2bus.SendResult,
 
 // History reads a window of the channel; count 0 is absent.
 func (b *Bus) History(ctx context.Context, in ab2bus.HistoryInput) ([]ab2bus.Message, error) {
-	p := &gen.HistoryParams{Before: in.Before, After: in.After, Tags: slicePtr(in.Tags)}
+	p := &gen.HistoryParams{Before: in.Before, After: in.After, Tags: queryTags(in.Tags)}
 	if in.Count != 0 {
 		p.Count = ptr(in.Count)
 	}
@@ -67,7 +67,7 @@ func (b *Bus) History(ctx context.Context, in ab2bus.HistoryInput) ([]ab2bus.Mes
 func (b *Bus) Search(ctx context.Context, in ab2bus.SearchInput) (ab2bus.SearchResult, error) {
 	p := &gen.SearchParams{
 		Q: ptr(in.Query), Channel: strPtr(in.Channel), Sender: strPtr(in.Sender),
-		Since: in.Since, Until: in.Until, Thread: in.Thread, Tags: slicePtr(in.Tags),
+		Since: in.Since, Until: in.Until, Thread: in.Thread, Tags: queryTags(in.Tags),
 		Cursor: strPtr(in.Cursor),
 	}
 	if in.Mode != "" {
@@ -94,4 +94,15 @@ func (b *Bus) Search(ctx context.Context, in ab2bus.SearchInput) (ab2bus.SearchR
 		out.Hits[i] = ab2bus.SearchHit{Message: fromGenMessage(h.Message), Score: h.Score}
 	}
 	return out, nil
+}
+
+// queryTags is the tags query parameter: nil for an empty list. A
+// form/explode:false query array cannot encode the empty set (the validator
+// rejects "tags="), and the core reads an empty tag list as no filter, so the
+// empty list travels as an absent parameter (a wire-encoding rule).
+func queryTags(tags []string) *[]string {
+	if len(tags) == 0 {
+		return nil
+	}
+	return &tags
 }
