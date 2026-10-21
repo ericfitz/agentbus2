@@ -80,6 +80,7 @@ func (s Service) Jobs() []Job {
 		{"tombstone purge", s.tombstonePurge},
 		{"task expiry", s.taskExpiry},
 		{"memory expiry", s.memoryExpiry},
+		{"empty channels", s.emptyChannels},
 		{"embeddings", s.embeddings},
 	}
 }

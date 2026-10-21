@@ -43,6 +43,18 @@ type Channels interface {
 	RenameChannel(ctx context.Context, id int64, name string) error
 	// DeleteChannel cascades to ACL rows, subscriptions, cursors, messages.
 	DeleteChannel(ctx context.Context, id int64) error
+	// EmptyChannelsBefore lists the ordinary channels created before
+	// createdBefore that have no message row (tombstones count) and no
+	// subscriptions row (any identity; tag subscriptions do not count), by
+	// name in byte order. It does not know which channel the server protects:
+	// the caller skips `general` (Decision (Eric, 2026-10-21), Milestone 3
+	// item 8; v1 reapEmptyChannels).
+	EmptyChannelsBefore(ctx context.Context, createdBefore int64) ([]Channel, error)
+	// DeleteChannelIfEmpty deletes the channel when it still satisfies
+	// EmptyChannelsBefore's condition, in one statement, and reports whether
+	// it did. A channel that is gone, not ordinary, too young, or no longer
+	// empty is left alone and is not an error. Cascades like DeleteChannel.
+	DeleteChannelIfEmpty(ctx context.Context, id, createdBefore int64) (bool, error)
 	// SetEvictedBefore sets the mark to max(current, seq).
 	SetEvictedBefore(ctx context.Context, id int64, seq int64) error
 	ACL(ctx context.Context, id int64) ([]ACLEntry, error) // insertion order

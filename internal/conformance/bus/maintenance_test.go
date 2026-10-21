@@ -9,6 +9,7 @@ import (
 
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/channels"
 	"github.com/ericfitz/agentbus2/internal/core/maintenance"
 	"github.com/ericfitz/agentbus2/internal/dbtest"
 	ab2store "github.com/ericfitz/agentbus2/internal/store"
@@ -332,7 +333,8 @@ func TestMaintenanceTickIdempotent(t *testing.T) {
 			return tx.PutReceipt(ctx, ab2store.Receipt{Identity: "pat", Key: "k", Fingerprint: "f", Result: []byte("{}"), ExpiresAt: h.core.NowMs() + 60_000})
 		})
 		h.clock.Advance(hours(h.cfg.MessageRetentionHours + 1))
-		want := map[string]int{"lapsed sessions": 1, "message retention": 2, "receipts": 1}
+		// "ord" loses both messages to retention, then is empty and old in the same tick.
+		want := map[string]int{"lapsed sessions": 1, "message retention": 2, "receipts": 1, "empty channels": 1}
 		check := func(round string, want map[string]int) {
 			t.Helper()
 			ran, rep := maint(h).Tick(ctx)
@@ -348,6 +350,56 @@ func TestMaintenanceTickIdempotent(t *testing.T) {
 		check("first", want)
 		h.clock.Advance(time.Duration(2*h.cfg.MaintenanceIntervalSeconds+1) * time.Second)
 		check("second", nil)
+	})
+}
+
+// Decision (Eric, 2026-10-21), Milestone 3 item 8 (v1 reapEmptyChannels).
+func TestMaintenanceEmptyChannels(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		if err := (channels.Service{Core: h.core}).EnsureGeneral(ctx); err != nil {
+			t.Fatal(err)
+		}
+		h.channel("empty", ab2store.KindOrdinary, "pat", nil)
+		withMsg := h.channel("with-message", ab2store.KindOrdinary, "pat", nil)
+		withSub := h.channel("with-subscription", ab2store.KindOrdinary, "pat", nil)
+		h.channel("memory-empty", ab2store.KindMemory, "pat", nil)
+		h.channel("tasks-empty", ab2store.KindTasks, "pat", nil)
+		h.append(withMsg, "pat", "", "hello")
+		h.ensureIdentity("kim")
+		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+			// kim has no live session; a subscription of any identity still counts.
+			return tx.Subscribe(ctx, "kim", withSub.ID, 0, h.core.NowMs())
+		})
+
+		h.clock.Advance(hours(h.cfg.EmptyChannelReapHours) - time.Minute)
+		h.channel("young", ab2store.KindOrdinary, "pat", nil)
+		h.clock.Advance(2 * time.Minute)
+		// "empty" is now N hours and a minute old; "young" is two minutes old.
+		if n := h.runJob("empty channels"); n != 1 {
+			t.Fatalf("reaped %d, want 1 (empty)", n)
+		}
+		for name, want := range map[string]bool{
+			"empty": false, "with-message": true, "with-subscription": true, "memory-empty": true,
+			"tasks-empty": true, "young": true, channels.GeneralChannel: true,
+		} {
+			if got := channelExists(h, name); got != want {
+				t.Errorf("channel %q exists = %v, want %v", name, got, want)
+			}
+		}
+		if n := h.runJob("empty channels"); n != 0 {
+			t.Fatalf("second run reaped %d", n)
+		}
+
+		// Once young ages past N it goes too; general, empty and old, stays.
+		h.clock.Advance(hours(h.cfg.EmptyChannelReapHours))
+		if n := h.runJob("empty channels"); n != 1 {
+			t.Fatalf("reaped %d, want 1 (young)", n)
+		}
+		if channelExists(h, "young") || !channelExists(h, channels.GeneralChannel) {
+			t.Fatal("young should be gone and general kept")
+		}
 	})
 }
 

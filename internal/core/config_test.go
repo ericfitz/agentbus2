@@ -41,6 +41,7 @@ func TestConfigBounds(t *testing.T) {
 		{"receive_default_count", 1, 1000, func(c *Config, v int) { c.ReceiveDefaultCount, c.ReceiveMaxCount = v, 10000 }},
 		{"receive_max_count", 1, 10000, func(c *Config, v int) { c.ReceiveDefaultCount, c.ReceiveMaxCount = 1, v }},
 		{"result_default_kib", 1, 4096, func(c *Config, v int) { c.ResultDefaultKiB = v }},
+		{"empty_channel_reap_hours", 1, 8760, func(c *Config, v int) { c.EmptyChannelReapHours = v }},
 		{"task_expiry_hours", 0, 87600, func(c *Config, v int) { c.TaskExpiryHours = v }},
 		{"memory_expiry_hours", 0, 87600, func(c *Config, v int) { c.MemoryExpiryHours = v }},
 	}

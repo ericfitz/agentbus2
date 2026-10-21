@@ -5,6 +5,7 @@ import (
 	"errors"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/core/channels"
 	"github.com/ericfitz/agentbus2/internal/core/embed"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -182,6 +183,50 @@ func (s Service) taskExpiry(ctx context.Context, now int64) (int, error) {
 		if gone {
 			deleted++
 			s.Log.Info("task channel expired", "channel", ch.Name)
+		}
+	}
+	return deleted, nil
+}
+
+// emptyChannels deletes every ordinary channel, except `general`, that has no
+// messages and no subscriptions and was created more than
+// EmptyChannelReapHours ago (v1 internal/bus/channels.go reapEmptyChannels;
+// Decision (Eric, 2026-10-21), Milestone 3 item 8). Task lists and memory
+// channels are never ordinary, so the Store never offers them. Candidates are
+// listed first and each is deleted by a conditional statement that re-checks
+// emptiness, so a message or subscription landing in between keeps its
+// channel. Idempotent: a second run finds nothing.
+func (s Service) emptyChannels(ctx context.Context, now int64) (int, error) {
+	cutoff := now - int64(s.Cfg.EmptyChannelReapHours)*hourMs
+	var cands []store.Channel
+	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		cands, err = tx.EmptyChannelsBefore(ctx, cutoff)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	deleted := 0
+	for _, ch := range cands {
+		if ch.Name == channels.GeneralChannel {
+			continue
+		}
+		if s.pastDeadline(ctx) {
+			break
+		}
+		var gone bool
+		err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+			var err error
+			gone, err = tx.DeleteChannelIfEmpty(ctx, ch.ID, cutoff)
+			return err
+		})
+		if err != nil {
+			return deleted, err
+		}
+		if gone {
+			deleted++
+			s.Log.Info("empty channel reaped", "channel", ch.Name)
 		}
 	}
 	return deleted, nil

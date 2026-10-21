@@ -40,10 +40,14 @@ type Config struct {
 	// means store.DefaultACL (Decision 88).
 	DefaultACL func(creator string) []store.ACLEntry
 
-	MessageRetentionHours   int
-	TombstoneMinHours       int
-	TaskExpiryHours         int // 0 disables the rule (v1 ADR 0013)
-	MemoryExpiryHours       int // 0 disables the rule
+	MessageRetentionHours int
+	TombstoneMinHours     int
+	TaskExpiryHours       int // 0 disables the rule (v1 ADR 0013)
+	MemoryExpiryHours     int // 0 disables the rule
+	// EmptyChannelReapHours is the age after which an ordinary channel with
+	// no messages and no subscriptions is deleted (Decision (Eric,
+	// 2026-10-21), Milestone 3 item 8; key empty_channel_reap_hours).
+	EmptyChannelReapHours   int
 	ReceiptRetentionMinutes int
 	MaxMessageKiB           int
 	SendMessagesPerSecond   int
@@ -72,6 +76,7 @@ func Defaults() Config {
 		TombstoneMinHours:            72,
 		TaskExpiryHours:              720,
 		MemoryExpiryHours:            8760,
+		EmptyChannelReapHours:        24,
 		ReceiptRetentionMinutes:      60,
 		MaxMessageKiB:                64,
 		SendMessagesPerSecond:        100,
@@ -106,6 +111,7 @@ func (c Config) Validate() error {
 		{"receive_default_count", c.ReceiveDefaultCount, 1, 1000},
 		{"receive_max_count", c.ReceiveMaxCount, 1, 10000},
 		{"result_default_kib", c.ResultDefaultKiB, 1, 4096},
+		{"empty_channel_reap_hours", c.EmptyChannelReapHours, 1, 8760},
 		{"task_expiry_hours", c.TaskExpiryHours, 0, 87600},
 		{"memory_expiry_hours", c.MemoryExpiryHours, 0, 87600},
 	}

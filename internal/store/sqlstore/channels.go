@@ -14,7 +14,9 @@ import (
 // deleteChannel (:223-307: the three deletes become one cascade),
 // RenameChannel (:347-385: one row update, plan choice 6) and ChannelKind
 // (:109-121, now Channel.Kind). v1's ensureDefaults, isDefaultChannel and
-// reapEmptyChannels are not ported.
+// reapEmptyChannels are not ported, except that EmptyChannelsBefore and
+// DeleteChannelIfEmpty port reapEmptyChannels' condition (Decision (Eric,
+// 2026-10-21), Milestone 3 item 8).
 
 type channelRow struct {
 	ID               int64  `db:"id"`
@@ -180,6 +182,32 @@ func (t *tx) RenameChannel(ctx context.Context, id int64, name string) error {
 func (t *tx) DeleteChannel(ctx context.Context, id int64) error {
 	res, err := t.execW(ctx, "DELETE FROM channels WHERE id = ?", id)
 	return channelUpdated(res, err, id)
+}
+
+// emptyChannelCond is the reaping condition over channels c: ordinary, older
+// than the cutoff, no message rows, no subscription rows (v1
+// reapEmptyChannels' two NOT EXISTS, minus the liveness join: any identity,
+// live or not, keeps a channel).
+const emptyChannelCond = `c.kind = 'ordinary' AND c.created_at < ?
+	AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.channel_id = c.id)
+	AND NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.channel_id = c.id)`
+
+func (t *tx) EmptyChannelsBefore(ctx context.Context, createdBefore int64) ([]store.Channel, error) {
+	var rows []channelRow
+	if err := t.sel(ctx, &rows, "SELECT "+channelCols+" FROM channels c WHERE "+emptyChannelCond, createdBefore); err != nil {
+		return nil, err
+	}
+	sortByBytes(rows, func(r channelRow) string { return r.Name })
+	return channelsOf(rows), nil
+}
+
+func (t *tx) DeleteChannelIfEmpty(ctx context.Context, id, createdBefore int64) (bool, error) {
+	res, err := t.execW(ctx, "DELETE FROM channels WHERE id = ? AND id IN (SELECT c.id FROM channels c WHERE "+emptyChannelCond+")", id, createdBefore)
+	if err != nil {
+		return false, err
+	}
+	n, err := res.RowsAffected()
+	return n > 0, err
 }
 
 // SetEvictedBefore sets the mark to max(current, seq) with a CASE (no scalar
