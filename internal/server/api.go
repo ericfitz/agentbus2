@@ -21,8 +21,8 @@ type api struct {
 	version string
 
 	channels  channels.Service
-	sessions  sessions.Service //nolint:unused // Task 5
-	delivery  delivery.Service //nolint:unused // Task 5
+	sessions  sessions.Service
+	delivery  delivery.Service
 	messaging messaging.Service
 	search    search.Service
 	memories  memories.Service //nolint:unused // Task 8
