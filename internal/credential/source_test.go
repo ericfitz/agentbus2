@@ -1,6 +1,7 @@
 package credential
 
 import (
+	"context"
 	"crypto"
 	"encoding/json"
 	"fmt"
@@ -423,5 +424,66 @@ func TestSourceProcessInput(t *testing.T) {
 	}
 	if len(jtis) != 2 {
 		t.Errorf("the jti was reused across runs: %v", jtis)
+	}
+}
+
+// A cached discovery whose token endpoint the server no longer advertises
+// does not wedge the profile: a failed exchange rediscovers once and retries.
+func TestStaleCachedDiscoveryIsRediscovered(t *testing.T) {
+	f := newFakeServer(t)
+	cache := Cache{Dir: t.TempDir()}
+	if _, err := f.source(t, cache, t0).Token(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	f.mu.Lock()
+	f.advertised = f.srv.URL + "/v1/auth/token?moved=1"
+	f.mu.Unlock()
+	later := t0.Add(2 * time.Hour) // the cached bearer has expired
+	if _, err := f.source(t, cache, later).Token(context.Background()); err != nil {
+		t.Fatalf("Token after the endpoint moved: %v", err)
+	}
+	if e, ok, _ := cache.Load("pat"); !ok || e.Discovery.TokenEndpoint != f.srv.URL+"/v1/auth/token?moved=1" {
+		t.Fatalf("cached discovery %+v, want the new endpoint", e.Discovery)
+	}
+	f.mu.Lock()
+	f.advertised = f.srv.URL + "/v1/auth/token?moved=2"
+	f.mu.Unlock()
+	if _, err := f.source(t, cache, later).Refresh(context.Background()); err != nil {
+		t.Fatalf("Refresh after the endpoint moved again: %v", err)
+	}
+}
+
+// The token exchange is bounded like discovery and the process.
+func TestTokenExchangeIsBounded(t *testing.T) {
+	prev := exchangeTimeout
+	exchangeTimeout = 200 * time.Millisecond
+	t.Cleanup(func() { exchangeTimeout = prev })
+	block := make(chan struct{})
+	var srv *httptest.Server
+	mux := http.NewServeMux()
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]string{"issuer": "x", "token_endpoint": srv.URL + "/v1/auth/token"})
+	})
+	mux.HandleFunc("/v1/auth/token", func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-block:
+		case <-r.Context().Done():
+		}
+	})
+	srv = httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	t.Cleanup(func() { close(block) })
+	k, _ := keys.Generate(keys.EdDSA)
+	c, _ := gen.NewClientWithResponses(srv.URL, gen.WithHTTPClient(&http.Client{}))
+	s := &Source{Server: srv.URL, Identity: "pat", Signer: k, Client: c, Cache: Cache{Dir: t.TempDir()}}
+	done := make(chan error, 1)
+	go func() { _, err := s.Token(context.Background()); done <- err }()
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("Token succeeded against a server that never answers")
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Token still blocked: the exchange is unbounded")
 	}
 }

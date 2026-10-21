@@ -147,22 +147,28 @@ func (s *Source) Refresh(ctx context.Context) (string, error) {
 	return s.refresh(ctx)
 }
 
-func (s *Source) discovery(ctx context.Context) (Discovery, error) {
+// discovery returns the held or cached discovery document, else a fresh one;
+// fresh reports whether it was fetched by this call.
+func (s *Source) discovery(ctx context.Context) (d Discovery, fresh bool, err error) {
 	if s.disc != nil {
-		return *s.disc, nil
+		return *s.disc, false, nil
 	}
 	if e, ok, err := s.Cache.Load(s.Identity); err == nil && ok && e.Server == s.Server && e.Discovery.TokenEndpoint != "" {
 		d := e.Discovery
 		s.disc = &d
-		return d, nil
+		return d, false, nil
 	}
-	d, err := Discover(ctx, s.HTTP, s.Server)
-	if err != nil {
-		return Discovery{}, err
+	if d, err = Discover(ctx, s.HTTP, s.Server); err != nil {
+		return Discovery{}, false, err
 	}
 	s.disc = &d
-	return d, nil
+	return d, true, nil
 }
+
+// exchangeTimeout bounds one token exchange, as discoveryTimeout bounds
+// discovery and ProcessTimeout a credential_process (Global Constraints). A
+// var so a test does not wait it out.
+var exchangeTimeout = 10 * time.Second
 
 func newJTI() (string, error) {
 	var b [16]byte
@@ -172,14 +178,33 @@ func newJTI() (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b[:]), nil
 }
 
+// refresh mints a bearer. When that fails with a discovery document that was
+// held or cached rather than fetched now, it rediscovers once and, if the
+// server now advertises another token endpoint, mints again: a stale cached
+// document must not wedge the profile until its cache file is deleted.
 func (s *Source) refresh(ctx context.Context) (string, error) {
 	if s.Signer == nil && len(s.Process) == 0 {
 		return "", errors.New("credential: no signing key and no credential_process")
 	}
-	d, err := s.discovery(ctx)
+	d, fresh, err := s.discovery(ctx)
 	if err != nil {
 		return "", err
 	}
+	tok, err := s.mint(ctx, d)
+	if err == nil || fresh || ctx.Err() != nil {
+		return tok, err
+	}
+	nd, derr := Discover(ctx, s.HTTP, s.Server)
+	if derr != nil || nd == d {
+		return "", err
+	}
+	s.disc = &nd
+	return s.mint(ctx, nd)
+}
+
+// mint runs the credential_process or signs an assertion for d's token
+// endpoint, exchanges it and caches the result with d.
+func (s *Source) mint(ctx context.Context, d Discovery) (string, error) {
 	signer := s.Signer
 	if signer == nil {
 		signer = s.procKey
@@ -221,7 +246,9 @@ func (s *Source) refresh(ctx context.Context) (string, error) {
 			return "", err
 		}
 	}
-	at, err := remote.Token(ctx, s.Client, raw)
+	xctx, cancel := context.WithTimeout(ctx, exchangeTimeout)
+	defer cancel()
+	at, err := remote.Token(xctx, s.Client, raw)
 	if err != nil {
 		return "", err // a *bus.Error is returned as is
 	}
