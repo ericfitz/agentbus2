@@ -10,6 +10,7 @@ package cli
 // written, and a file that does change is first copied to <file>.bak.
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -340,8 +341,10 @@ func (in *initer) hook(path, event, cmd, matcher string) error {
 // hooks merges event hooks running their commands into a Claude Code
 // settings.json, Codex hooks.json, or Grok hooks file, leaving everything else
 // in the file alone (Go's encoder re-sorts object keys, nothing more). A hook
-// already present is not added again, and the file is written once, so its
-// .bak holds the file as it was before init touched it.
+// already present is not added again; a file that already runs every hook is
+// not rewritten at all; otherwise the file is written once, so its .bak holds
+// the file as it was before init touched it. A "hooks" value, or an event's
+// value, of a shape other than Claude Code's is refused rather than replaced.
 func (in *initer) hooks(path string, specs ...hookSpec) error {
 	doc := map[string]any{}
 	if body, err := os.ReadFile(path); err == nil {
@@ -351,12 +354,24 @@ func (in *initer) hooks(path string, specs ...hookSpec) error {
 	} else if !os.IsNotExist(err) {
 		return err
 	}
-	hooks, _ := doc["hooks"].(map[string]any)
-	if hooks == nil {
-		hooks = map[string]any{}
+	hooks := map[string]any{}
+	if v, ok := doc["hooks"]; ok && v != nil {
+		m, isMap := v.(map[string]any)
+		if !isMap {
+			return fmt.Errorf("%s: \"hooks\" is not an object (fix or remove it, then rerun)", path)
+		}
+		hooks = m
 	}
+	added := false
 	for _, sp := range specs {
-		entries, _ := hooks[sp.event].([]any)
+		var entries []any
+		if v, ok := hooks[sp.event]; ok && v != nil {
+			list, isList := v.([]any)
+			if !isList {
+				return fmt.Errorf("%s: hooks.%s is not an array (fix or remove it, then rerun)", path, sp.event)
+			}
+			entries = list
+		}
 		present := false
 		for _, s := range entries {
 			if hasHookCommand(s, sp.cmd) {
@@ -373,13 +388,21 @@ func (in *initer) hooks(path string, specs ...hookSpec) error {
 			entry["matcher"] = sp.matcher
 		}
 		hooks[sp.event] = append(entries, entry)
+		added = true
+	}
+	if !added {
+		return nil
 	}
 	doc["hooks"] = hooks
-	data, err := json.MarshalIndent(doc, "", "  ")
-	if err != nil {
+	// No HTML escaping: the user's other commands keep their && and >.
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetEscapeHTML(false)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(doc); err != nil {
 		return err
 	}
-	return in.write(path, append(data, '\n'))
+	return in.write(path, buf.Bytes())
 }
 
 // hasHookCommand reports whether a hook entry already runs cmd (as the whole

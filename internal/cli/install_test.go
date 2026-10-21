@@ -303,6 +303,57 @@ func TestHookIdempotent(t *testing.T) {
 	}
 }
 
+// TestHookLeavesTheUserFileAlone: a file that already runs our hooks is not
+// rewritten (no reformatting, no .bak), an added hook does not HTML-escape the
+// user's other commands, and a "hooks" value of an unrecognized shape is
+// refused rather than replaced.
+func TestHookLeavesTheUserFileAlone(t *testing.T) {
+	dir := t.TempDir()
+	in := &initer{out: &bytes.Buffer{}}
+	present := filepath.Join(dir, "present.json")
+	orig := "{\n    \"model\": \"opus\",\n    \"hooks\": {\n        \"Stop\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"agentbus2 stop-hook\"}]}],\n        \"SubagentStart\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"agentbus2 subagent-hook\"}]}]\n    }\n}\n"
+	if err := os.WriteFile(present, []byte(orig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := in.hooks(present, hookSpec{"Stop", stopHookCommand, ""}, hookSpec{"SubagentStart", subagentHookCommand, ""}); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(present); string(b) != orig {
+		t.Fatalf("a file already holding both hooks was rewritten:\n%s", b)
+	}
+	if _, err := os.Stat(present + ".bak"); !os.IsNotExist(err) {
+		t.Fatalf("an unchanged file got a backup: %v", err)
+	}
+
+	amp := filepath.Join(dir, "amp.json")
+	if err := os.WriteFile(amp, []byte(`{"hooks":{"PreToolUse":[{"hooks":[{"type":"command","command":"cd /x && make >/dev/null"}]}]}}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := in.hook(amp, "Stop", stopHookCommand, ""); err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(amp); !strings.Contains(string(b), `"cd /x && make >/dev/null"`) {
+		t.Fatalf("the user's command was escaped:\n%s", b)
+	}
+
+	for name, body := range map[string]string{
+		"hooks-array.json":  `{"hooks":[]}`,
+		"hooks-string.json": `{"hooks":"x"}`,
+		"event-object.json": `{"hooks":{"Stop":{"command":"x"}}}`,
+	} {
+		path := filepath.Join(dir, name)
+		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := in.hook(path, "Stop", stopHookCommand, ""); err == nil || !strings.Contains(err.Error(), path) {
+			t.Fatalf("%s: err = %v", name, err)
+		}
+		if b, _ := os.ReadFile(path); string(b) != body {
+			t.Fatalf("%s rewritten: %q", name, b)
+		}
+	}
+}
+
 func TestRequireOnPath(t *testing.T) {
 	dir := t.TempDir()
 	self := filepath.Join(dir, "self", "agentbus2.exe")

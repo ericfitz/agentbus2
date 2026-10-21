@@ -73,12 +73,20 @@ func TestLoginExchangesAndCaches(t *testing.T) {
 	// A second login exchanges again (it proves the credential) and still
 	// succeeds; an assertion's jti is single-use, so this also shows each
 	// exchange signs a fresh one.
+	// The cached token is still valid, so only a forced refresh replaces it.
+	first, err := os.ReadFile(cache)
+	if err != nil {
+		t.Fatal(err)
+	}
 	out, errb = &syncBuf{}, &syncBuf{}
 	if code := RunLogin(ctx, []string{"-profile", "lab"}, e.Environ, nil, out, errb); code != 0 {
 		t.Fatalf("second login: %d %s", code, errb.String())
 	}
 	if fi2, _ := os.Stat(cache); fi2 == nil || fi2.Size() == 0 || fi2.Mode().Perm() != fi.Mode().Perm() {
 		t.Fatalf("cache after a second login: %v", fi2)
+	}
+	if second, _ := os.ReadFile(cache); string(second) == string(first) {
+		t.Fatal("the second login reused the cached token instead of exchanging again")
 	}
 
 	// A local profile: exit 2, with the mode message, even with no identity.
