@@ -43,20 +43,20 @@ func TestSearchTextMatchesAgreeAcrossEngines(t *testing.T) {
 		limit int
 		want  []int64
 	}{
-		{"word", "rate", false, 100, []int64{1, 2, 3, 4, 5, 17}},
-		{"two words", "rate limit", false, 100, []int64{1, 2, 3, 4, 17}},
-		{"phrase", `"rate limit"`, false, 100, []int64{1, 17}},
-		{"prefix", "e159*", false, 100, []int64{6, 7, 8, 9, 10, 11}},
+		{"word", "rate", false, 100, []int64{17, 5, 4, 3, 2, 1}},
+		{"two words", "rate limit", false, 100, []int64{17, 4, 3, 2, 1}},
+		{"phrase", `"rate limit"`, false, 100, []int64{17, 1}},
+		{"prefix", "e159*", false, 100, []int64{11, 10, 9, 8, 7, 6}},
 		{"punctuated", "commit:e159e8c", false, 100, []int64{6}},
 		{"punctuated prefix", "commit:e159*", false, 100, []int64{6}},
-		{"path compound", "owner/repo@e159*", false, 100, []int64{10, 11}},
-		{"hyphen", "foo-bar", false, 100, []int64{13, 14}},
-		{"hyphen phrase", `"foo bar"`, false, 100, []int64{13, 14}},
+		{"path compound", "owner/repo@e159*", false, 100, []int64{11, 10}},
+		{"hyphen", "foo-bar", false, 100, []int64{14, 13}},
+		{"hyphen phrase", `"foo bar"`, false, 100, []int64{14, 13}},
 		{"no diacritic folding", "cafe", false, 100, []int64{16}},
 		{"diacritic exact", "café", false, 100, []int64{15}},
 		{"missing", "missing", false, 100, []int64{}},
-		{"channel scoping", "rate", true, 100, []int64{1, 2, 3, 4, 5}},
-		{"limit", "rate", false, 2, []int64{1, 2}},
+		{"channel scoping", "rate", true, 100, []int64{5, 4, 3, 2, 1}},
+		{"limit keeps the newest", "rate", false, 2, []int64{17, 5}},
 	}
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		s, _, _ := openStore(t, e, sqlstore.Options{})

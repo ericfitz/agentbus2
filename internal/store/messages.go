@@ -79,9 +79,10 @@ type Messages interface {
 	// MessagesBefore: live, seq < beforeSeq on the channel, every pattern
 	// matched by some tag, DESCENDING seq (v1 History with before only).
 	MessagesBefore(ctx context.Context, channelID, beforeSeq int64, patterns []TagPattern, f MessageFilter, limit int) ([]Message, error)
-	// SearchText: live, on channelIDs only; ErrInvalid on an empty query
-	// (checked before the dialect is asked) or a term failing TextRule;
-	// empty channelIDs: empty result, no query.
+	// SearchText: live, on channelIDs only, DESCENDING seq, so limit keeps
+	// the newest matches (the Store ranks no better than recency); ErrInvalid
+	// on an empty query (checked before the dialect is asked) or a term
+	// failing TextRule; empty channelIDs: empty result, no query.
 	SearchText(ctx context.Context, q search.Query, channelIDs []int64, f SearchFilter, limit int) ([]Message, error)
 	// TombstoneMessage returns false when already tombstoned or missing.
 	TombstoneMessage(ctx context.Context, seq, at int64) (bool, error)

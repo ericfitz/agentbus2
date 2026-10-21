@@ -26,8 +26,9 @@ type scored struct {
 	score float64
 }
 
-// textRank is the text half: the Store's matches (at most SearchPageMax),
-// newest first, with score 0 (the Store ranks no better than seq).
+// textRank is the text half: the Store's matches, newest first and at most
+// SearchPageMax (the cap drops the oldest, never the newest), with score 0
+// (the Store ranks no better than seq).
 func (s Service) textRank(ctx context.Context, tx store.Tx, q query.Query, channelIDs []int64, f store.SearchFilter) ([]scored, error) {
 	msgs, err := tx.SearchText(ctx, q, channelIDs, f, rules.SearchPageMax)
 	if err != nil {
@@ -35,7 +36,7 @@ func (s Service) textRank(ctx context.Context, tx store.Tx, q query.Query, chann
 	}
 	out := make([]scored, len(msgs))
 	for i, m := range msgs {
-		out[len(msgs)-1-i] = scored{msg: m}
+		out[i] = scored{msg: m}
 	}
 	return out, nil
 }

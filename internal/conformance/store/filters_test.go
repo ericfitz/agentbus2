@@ -158,13 +158,13 @@ func TestSearchTextFilters(t *testing.T) {
 			f    ab2store.SearchFilter
 			want []int64
 		}{
-			{"none", ab2store.SearchFilter{}, []int64{1, 2, 3, 4}},
-			{"sender", ab2store.SearchFilter{Sender: "kim"}, []int64{2, 4}},
-			{"since inclusive", ab2store.SearchFilter{Since: i64(200)}, []int64{2, 3, 4}},
-			{"until inclusive", ab2store.SearchFilter{Until: i64(300)}, []int64{1, 2, 3}},
-			{"since and until", ab2store.SearchFilter{Since: i64(200), Until: i64(300)}, []int64{2, 3}},
-			{"thread", ab2store.SearchFilter{Thread: i64(r1)}, []int64{1, 2, 4}},
-			{"pattern", ab2store.SearchFilter{Patterns: pats("x")}, []int64{1, 2}},
+			{"none", ab2store.SearchFilter{}, []int64{4, 3, 2, 1}},
+			{"sender", ab2store.SearchFilter{Sender: "kim"}, []int64{4, 2}},
+			{"since inclusive", ab2store.SearchFilter{Since: i64(200)}, []int64{4, 3, 2}},
+			{"until inclusive", ab2store.SearchFilter{Until: i64(300)}, []int64{3, 2, 1}},
+			{"since and until", ab2store.SearchFilter{Since: i64(200), Until: i64(300)}, []int64{3, 2}},
+			{"thread", ab2store.SearchFilter{Thread: i64(r1)}, []int64{4, 2, 1}},
+			{"pattern", ab2store.SearchFilter{Patterns: pats("x")}, []int64{2, 1}},
 			{"patterns all", ab2store.SearchFilter{Patterns: pats("x", "y")}, []int64{1}},
 			{"combined", ab2store.SearchFilter{Sender: "kim", Thread: i64(r1), Patterns: pats("x")}, []int64{2}},
 		}

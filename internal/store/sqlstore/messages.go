@@ -310,7 +310,7 @@ func (t *tx) MessagesInRange(ctx context.Context, channelID, fromSeq, toSeq int6
 
 // SearchText: the one query shape, engine-independent; the dialect supplies
 // the condition on alias m. A term failing TextRule is ErrInvalid (search.Parse
-// keeps a NUL inside a word).
+// keeps a NUL inside a word). Newest first, so limit keeps the newest matches.
 func (t *tx) SearchText(ctx context.Context, q search.Query, channelIDs []int64, f store.SearchFilter, limit int) ([]store.Message, error) {
 	if q.Empty() {
 		return nil, fmt.Errorf("%w: search query has no searchable terms", store.ErrInvalid)
@@ -339,7 +339,7 @@ func (t *tx) SearchText(ctx context.Context, q search.Query, channelIDs []int64,
 	// The filter's placeholders follow the channel list, in SQL order.
 	qargs := append(slices.Clone(condArgs), channelIDs)
 	qargs = append(append(qargs, fargs...), limit)
-	query, args, err := sqlx.In("SELECT "+messageCols+" FROM messages m WHERE ("+cond+") AND m.tombstone = FALSE AND m.channel_id IN (?)"+fq+" ORDER BY m.seq LIMIT ?",
+	query, args, err := sqlx.In("SELECT "+messageCols+" FROM messages m WHERE ("+cond+") AND m.tombstone = FALSE AND m.channel_id IN (?)"+fq+" ORDER BY m.seq DESC LIMIT ?",
 		qargs...)
 	if err != nil {
 		return nil, err

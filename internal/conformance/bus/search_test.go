@@ -12,6 +12,7 @@ import (
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/embed"
+	"github.com/ericfitz/agentbus2/internal/core/rules"
 	"github.com/ericfitz/agentbus2/internal/dbtest"
 	ab2store "github.com/ericfitz/agentbus2/internal/store"
 )
@@ -149,6 +150,50 @@ func TestSearchMatchesAgreeAcrossEngines(t *testing.T) {
 			if got := hitSeqs(res); !slices.IsSortedFunc(got, func(a, b int64) int { return int(b - a) }) {
 				t.Errorf("%s: hits %v not newest first", c.name, got)
 			}
+		}
+	})
+}
+
+// With more matches than one search can rank, the cap drops the oldest, never
+// the newest: a message appended after the cap was reached must be on page 1.
+func TestSearchTextCapKeepsNewestMatches(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ch := h.channel("c", ab2store.KindOrdinary, "pat", nil)
+		var first, last int64
+		// One Append transaction: a thousand separate ones would dominate the run.
+		err := h.raw.Append(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
+			for i := 0; i <= rules.SearchPageMax; i++ {
+				seq, _, err := h.core.Append(ctx, tx, core.AppendInput{
+					ChannelID: ch.ID, Channel: ch.Name, Kind: ch.Kind, Sender: "pat", Content: "rate " + strconv.Itoa(i),
+				})
+				if err != nil {
+					return err
+				}
+				if i == 0 {
+					first = seq
+				}
+				last = seq
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if last-first != int64(rules.SearchPageMax) {
+			t.Fatalf("appended seqs %d..%d, want %d matches", first, last, rules.SearchPageMax+1)
+		}
+		ctx := context.Background()
+		b := h.as("pat")
+		res, err := b.Search(ctx, ab2bus.SearchInput{Query: "rate", Mode: "text", Count: 1})
+		if err != nil || !reflect.DeepEqual(hitSeqs(res), []int64{last}) || res.Next != "1" {
+			t.Fatalf("page 1 = %v next %q, %v; want the newest [%d]", hitSeqs(res), res.Next, err, last)
+		}
+		// The last reachable hit is the second-oldest match: only the oldest is
+		// dropped, and nothing follows.
+		res, err = b.Search(ctx, ab2bus.SearchInput{Query: "rate", Mode: "text", Count: 5, Cursor: strconv.Itoa(rules.SearchPageMax - 1)})
+		if err != nil || !reflect.DeepEqual(hitSeqs(res), []int64{first + 1}) || res.Next != "" {
+			t.Fatalf("last page = %v next %q, %v; want [%d] and no next", hitSeqs(res), res.Next, err, first+1)
 		}
 	})
 }

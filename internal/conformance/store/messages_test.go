@@ -338,7 +338,7 @@ func TestMessageSearchTextWiring(t *testing.T) {
 		b := mustChannel(t, s, "b", ab2store.KindOrdinary, "", nil)
 		hello := mustAppend(t, s, ab2store.NewMessage{ChannelID: a.ID, Sender: "p", Content: "hello world"})
 		mustAppend(t, s, ab2store.NewMessage{ChannelID: a.ID, Sender: "p", Content: "goodbye"})
-		mustAppend(t, s, ab2store.NewMessage{ChannelID: b.ID, Sender: "p", Content: "hello elsewhere"})
+		elsewhere := mustAppend(t, s, ab2store.NewMessage{ChannelID: b.ID, Sender: "p", Content: "hello elsewhere"})
 		gone := mustAppend(t, s, ab2store.NewMessage{ChannelID: a.ID, Sender: "p", Content: "hello tombstoned"})
 		mustTombstone(t, s, gone)
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
@@ -361,8 +361,8 @@ func TestMessageSearchTextWiring(t *testing.T) {
 				t.Errorf("missing = %v, %v; want empty", got, err)
 			}
 			got, err = tx.SearchText(ctx, search.Parse("hello"), []int64{a.ID, b.ID}, ab2store.SearchFilter{}, 1)
-			if err != nil || len(got) != 1 || got[0].Seq != hello {
-				t.Errorf("limit 1 = %v, %v; want [%d]", messageSeqs(got), err, hello)
+			if err != nil || len(got) != 1 || got[0].Seq != elsewhere {
+				t.Errorf("limit 1 = %v, %v; want the newest match [%d]", messageSeqs(got), err, elsewhere)
 			}
 			return nil
 		})
