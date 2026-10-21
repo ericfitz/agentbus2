@@ -299,10 +299,18 @@ check attest-skips-macos 0 "" -- with_dist ": > '$WORK/gh.log'; MACOS_ARCHIVE=ag
 # --- render_formula, render_scoop, render_winget and --no-publish ------------
 h() { printf '%s%0*d' "$1" $((64 - ${#1})) "$2"; } # h <hex-prefix> <n>: 64 hex chars
 M="$(h 1a 1)"; LA="$(h 2b 2)"; LR="$(h 3c 3)"; WA="$(h abcdef 4)"; WR="$(h fedcba 5)"; S1="$(h 6d 6)"; S2="$(h 7e 7)"
+WA_UPPER="$(printf '%s' "$WA" | tr 'a-f' 'A-F')" # not ${WA^^}: the harness runs under macOS bash 3.2 too
 mkdir -p "$WORK/rdist" "$WORK/rroot/release"
 printf '%s  agentbus2-v1.2.3-macos-universal.tar.gz\n%s  agentbus2-v1.2.3-linux-amd64.tar.gz\n%s  agentbus2-v1.2.3-linux-arm64.tar.gz\n%s  agentbus2-v1.2.3-windows-amd64.zip\n%s  agentbus2-v1.2.3-windows-arm64.zip\n%s  install.sh\n%s  install.ps1\n' "$M" "$LA" "$LR" "$WA" "$WR" "$S1" "$S2" > "$WORK/rdist/SHA256SUMS"
 cp "$HERE"/agentbus2.rb.tmpl "$HERE"/agentbus2.scoop.json.tmpl "$HERE"/agentbus2.winget.*.yaml.tmpl "$WORK/rroot/release/"
-with_render() { with_stub "DIST='$WORK/rdist'; REPO_ROOT='$WORK/rroot'; TAP_DIR='$WORK/no-tap'; SCOOP_DIR='$WORK/no-scoop'; KOMAC_KEY_FILE='$WORK/no-komac-key'; $1"; }
+# The tap and bucket paths do not exist, so a regression past the --no-publish
+# gate would clone from GitHub: git clone, pull, push and fetch, and komac,
+# refuse here instead.
+cat > "$WORK/net-guard.sh" <<'EOF'
+git() { local a; for a in "$@"; do case "$a" in clone | pull | push | fetch) echo "test: refused git $a (network)" >&2; return 97 ;; esac; done; command git "$@"; }
+komac() { echo "test: refused komac (network)" >&2; return 97; }
+EOF
+with_render() { with_stub "source '$WORK/net-guard.sh'; DIST='$WORK/rdist'; REPO_ROOT='$WORK/rroot'; TAP_DIR='$WORK/no-tap'; SCOOP_DIR='$WORK/no-scoop'; KOMAC_KEY_FILE='$WORK/no-komac-key'; $1"; }
 FORMULA_CHECK="ruby -c \"\$DIST/agentbus2.rb\" >/dev/null && grep -q '^class Agentbus2 < Formula' \"\$DIST/agentbus2.rb\" && [[ \$(grep -c 'sha256 \"' \"\$DIST/agentbus2.rb\") == 3 ]] && grep -q 'sha256 \"$M\"' \"\$DIST/agentbus2.rb\" && grep -q 'sha256 \"$LA\"' \"\$DIST/agentbus2.rb\" && grep -q 'sha256 \"$LR\"' \"\$DIST/agentbus2.rb\""
 check no-publish-renders-formula 0 "rendered: $WORK/rdist/agentbus2.rb" -- with_render "NO_PUBLISH=1 publish_release && $FORMULA_CHECK"
 SCOOP_CHECK="python3 -I -m json.tool \"\$DIST/agentbus2.scoop.json\" >/dev/null && python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert m['version']=='1.2.3' and m['bin']=='agentbus2.exe' and m['architecture']['64bit']['hash']=='$WA' and m['architecture']['arm64']['hash']=='$WR' and m['architecture']['arm64']['url']=='https://github.com/ericfitz/agentbus2/releases/download/v1.2.3/agentbus2-v1.2.3-windows-arm64.zip' and 'checkver' in m and 'autoupdate' in m\" \"\$DIST/agentbus2.scoop.json\""
@@ -311,7 +319,7 @@ WINGET_CHECK="w=\"\$DIST/winget\"; for f in ericfitz.agentbus2.yaml ericfitz.age
     [[ \$(ls \"\$w\" | wc -l | tr -d ' ') == 3 ]] || { echo 'winget dir is not exactly three files'; exit 1; }
     got=\$(grep '^  InstallerSha256:' \"\$w/ericfitz.agentbus2.installer.yaml\" | awk '{print \$2}' | tr 'A-F' 'a-f' | tr '\n' ' ')
     [[ \"\$got\" == '$WA $WR ' ]] || { echo \"installer hashes: \$got\"; exit 1; }
-    grep -q '^  InstallerSha256: ${WA^^}\$' \"\$w/ericfitz.agentbus2.installer.yaml\" || { echo 'hash not upper-cased'; exit 1; }"
+    grep -q '^  InstallerSha256: $WA_UPPER\$' \"\$w/ericfitz.agentbus2.installer.yaml\" || { echo 'hash not upper-cased'; exit 1; }"
 check no-publish-renders-winget 0 "rendered: $WORK/rdist/winget/ericfitz.agentbus2.locale.en-US.yaml" -- with_render "NO_PUBLISH=1 publish_release && $WINGET_CHECK"
 check no-publish-five-rendered-lines 0 "5" -- with_render "NO_PUBLISH=1 publish_release | grep -c '^rendered: '"
 check no-publish-stops 0 "stopping before publish" -- with_render ": > '$WORK/gh.log'; update_tap() { echo TAP; }; NO_PUBLISH=1 publish_release && ! grep -q 'release edit' '$WORK/gh.log'"
@@ -471,6 +479,10 @@ check draft-reuse-edit-failure-stops 1 "could not update the notes of release v1
 git -C "$WORK/repo" worktree add -q "$WORK/stale-wt" v0.0.92
 rm -rf "$WORK/stale-wt"
 check checkout-tag-after-killed-run 0 "" -- bash -c "source '$HERE/release.sh'; REPO_ROOT='$WORK/repo'; DIST='$WORK/co-dist'; TAG=v0.0.92; checkout_tag && [[ -f \"\$SRC/release/build-archive.sh\" && -d '$WORK/co-dist' ]]"
+check checkout-tag-prunes-stale-registration 0 "" -- bash -c "source '$HERE/release.sh'; REPO_ROOT='$WORK/repo'; DIST='$WORK/co-dist'; TAG=v0.0.92; checkout_tag && ! git -C '$WORK/repo' worktree list --porcelain | grep -q stale-wt"
+# A killed run's partial dist/ is replaced, not reused.
+mkdir -p "$WORK/co-dist2" && : > "$WORK/co-dist2/leftover"
+check checkout-tag-replaces-dist 0 "" -- bash -c "source '$HERE/release.sh'; REPO_ROOT='$WORK/repo'; DIST='$WORK/co-dist2'; TAG=v0.0.92; checkout_tag && [[ -d '$WORK/co-dist2' && ! -e '$WORK/co-dist2/leftover' ]]"
 
 echo "test-release: $PASS passed, $FAIL failed"
 [[ "$FAIL" -eq 0 ]]
