@@ -14,8 +14,10 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	nethttpmiddleware "github.com/oapi-codegen/nethttp-middleware"
 
+	"github.com/ericfitz/agentbus2/internal/auth/token"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/gen/spec"
 )
@@ -24,8 +26,18 @@ import (
 type Options struct {
 	Auth    Authenticator // nil: RefuseAll
 	Version string        // "": version.Version
-	Issuers []string      // external issuers for discover; nil until Milestone 5
 	Logger  *slog.Logger  // nil: discard
+
+	// Registration is the mode the register handler enforces. "" is treated
+	// as closed: registration is never open by omission.
+	Registration identities.Mode
+	// Issuer mints and publishes the server's own bearers. nil: the token
+	// endpoint and JWKS answer 503 unavailable (local mode, Decision 36) and
+	// openid-configuration falls back to the request's base URL.
+	Issuer *token.Issuer
+	// External are the configured external issuers (Decision 57); their
+	// Issuer URLs are what discover lists.
+	External []*token.External
 }
 
 var (
@@ -83,6 +95,9 @@ func New(c *core.Core, o Options) http.Handler {
 	validator := nethttpmiddleware.OapiRequestValidatorWithOptions(Spec(), &nethttpmiddleware.Options{
 		Options: openapi3filter.Options{
 			AuthenticationFunc: func(ctx context.Context, _ *openapi3filter.AuthenticationInput) error {
+				if err := authErrorFrom(ctx); err != nil {
+					return err
+				}
 				if IdentityFrom(ctx) == "" {
 					return errors.New("no identity")
 				}
@@ -98,17 +113,21 @@ func New(c *core.Core, o Options) http.Handler {
 	return limitBody(authenticate(o.Auth, validator(mux)), limit)
 }
 
-// authenticate always writes the identity key (possibly "") after calling the
-// Authenticator and records the request's base URL for discovery. An
-// Authenticate error is a 401 problem.
+// authenticate never refuses by itself. It always writes the identity key
+// (possibly "", and "" on error), stashes an Authenticate error under
+// authErrorKey for the validator's AuthenticationFunc, and records the
+// request's base URL for discovery. The 401 therefore comes from the
+// validator and only for operations that require security: an open operation
+// ignores a bad bearer.
 func authenticate(a Authenticator, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		id, err := a.Authenticate(r)
+		ctx := r.Context()
 		if err != nil {
-			WriteProblem(w, r, http.StatusUnauthorized, bus.CodeUnauthenticated, err.Error(), false)
-			return
+			id = ""
+			ctx = context.WithValue(ctx, authErrorKey{}, err)
 		}
-		ctx := WithIdentity(r.Context(), id)
+		ctx = WithIdentity(ctx, id)
 		ctx = context.WithValue(ctx, baseURLKey{}, baseURL(r))
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})

@@ -44,10 +44,14 @@ func (a *api) WellKnown(context.Context, gen.WellKnownRequestObject) (gen.WellKn
 }
 
 // OpenidConfiguration answers GET /.well-known/openid-configuration
-// (Decisions 55, 70, 84, 91). The token and jwks paths arrive in Milestone 5
-// (Decision (Eric, 2026-10-21): Milestone 4 item 2) and answer 404 until then.
+// (Decisions 55, 70, 84, 91). The issuer is the configured one when set
+// (Decision (Eric, 2026-10-21), item 3), never derived from the request Host
+// then; without an issuer it is the request's base URL.
 func (a *api) OpenidConfiguration(ctx context.Context, _ gen.OpenidConfigurationRequestObject) (gen.OpenidConfigurationResponseObject, error) {
 	issuer := baseURLFrom(ctx)
+	if a.opts.Issuer != nil {
+		issuer = a.opts.Issuer.URL()
+	}
 	return gen.OpenidConfiguration200JSONResponse{
 		Issuer:                            issuer,
 		TokenEndpoint:                     issuer + "/v1/auth/token",
@@ -60,7 +64,11 @@ func (a *api) OpenidConfiguration(ctx context.Context, _ gen.OpenidConfiguration
 // Discover answers GET /v1/discover, computed from the embedded document
 // (Decision 65 by construction).
 func (a *api) Discover(ctx context.Context, _ gen.DiscoverRequestObject) (gen.DiscoverResponseObject, error) {
-	oidcURL := baseURLFrom(ctx) + openidConfigurationPath
+	base := baseURLFrom(ctx)
+	if a.opts.Issuer != nil {
+		base = a.opts.Issuer.URL()
+	}
+	oidcURL := base + openidConfigurationPath
 	schemes := Spec().Components.SecuritySchemes
 	names := make([]string, 0, len(schemes))
 	for n := range schemes {
@@ -85,7 +93,12 @@ func (a *api) Discover(ctx context.Context, _ gen.DiscoverRequestObject) (gen.Di
 		}
 		methods = append(methods, m)
 	}
-	issuers := append([]string{}, a.opts.Issuers...)
+	issuers := make([]string, 0, len(a.opts.External))
+	for _, e := range a.opts.External {
+		if e != nil {
+			issuers = append(issuers, e.Issuer)
+		}
+	}
 	return gen.Discover200JSONResponse{
 		ApiVersions:         []string{"v1"},
 		AuthMethods:         methods,

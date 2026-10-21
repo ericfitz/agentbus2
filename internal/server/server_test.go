@@ -203,8 +203,13 @@ func TestAuthenticateErrorIs401(t *testing.T) {
 	e := newEnv(t, envOptions{auth: authFunc(func(*http.Request) (string, error) { return "", errors.New("token expired") })})
 	resp := e.raw("", newReq(t, "GET", "/v1/channels", nil))
 	p := readProblem(t, resp)
-	if resp.StatusCode != 401 || p.Code != gen.ProblemCode("unauthenticated") || p.Detail == nil || *p.Detail != "token expired" {
+	// The validator may prefix the text, so the detail contains the reason.
+	if resp.StatusCode != 401 || p.Code != gen.ProblemCode("unauthenticated") || p.Detail == nil || !strings.Contains(*p.Detail, "token expired") {
 		t.Fatalf("got %d %+v", resp.StatusCode, p)
+	}
+	// An open operation ignores the error.
+	if resp := e.raw("", newReq(t, "GET", "/v1/discover", nil)); resp.StatusCode != 200 {
+		t.Fatalf("discover: %d", resp.StatusCode)
 	}
 }
 

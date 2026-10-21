@@ -8,7 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentbus2/internal/auth/token"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -57,6 +60,8 @@ type env struct {
 	clock    *fakeClock
 	embedder core.Embedder
 	auth     Authenticator
+	issuer   *token.Issuer
+	opts     Options // Registration, Issuer and External for New
 
 	once sync.Once
 	h    http.Handler
@@ -65,7 +70,14 @@ type env struct {
 type envOptions struct {
 	cfg      func(*core.Config)
 	embedder bool
-	auth     Authenticator // nil: InProcess{}
+	auth     Authenticator // nil: InProcess{}, or Bearer when issuer is set
+
+	// issuer builds token.NewIssuer("http://inproc", <a test Ed25519 key>,
+	// time.Hour, clock.Now) and, unless auth is set, Bearer over it.
+	issuer       bool
+	registration identities.Mode
+	external     []*token.External // sets Bearer.Verifier.External when issuer is set
+	autoCreate   bool              // sets Bearer.AutoCreate to CreateIdentity
 }
 
 func newEnv(t *testing.T, o envOptions) *env {
@@ -78,6 +90,23 @@ func newEnv(t *testing.T, o envOptions) *env {
 	e := &env{t: t, store: s, clock: &fakeClock{t: time.UnixMilli(fixedNowMs)}, auth: o.auth}
 	if e.auth == nil {
 		e.auth = InProcess{}
+	}
+	if o.issuer {
+		key, err := keys.Generate(keys.EdDSA)
+		if err != nil {
+			t.Fatalf("keys.Generate: %v", err)
+		}
+		e.issuer, err = token.NewIssuer("http://inproc", key, time.Hour, e.clock.Now)
+		if err != nil {
+			t.Fatalf("token.NewIssuer: %v", err)
+		}
+		e.opts = Options{Registration: o.registration, Issuer: e.issuer, External: o.external}
+		if o.auth == nil {
+			b := Bearer{Verifier: token.Verifier{Own: e.issuer, External: o.external}, Now: e.clock.Now}
+			e.auth = b
+		}
+	} else {
+		e.opts = Options{Registration: o.registration, External: o.external}
 	}
 	cfg := core.Defaults()
 	if o.cfg != nil {
@@ -94,12 +123,25 @@ func newEnv(t *testing.T, o envOptions) *env {
 		t.Fatalf("core.New: %v", err)
 	}
 	e.core = c
+	if b, ok := e.auth.(Bearer); ok && o.autoCreate {
+		b.AutoCreate = func(ctx context.Context, name string) error {
+			_, err := identities.Service{Core: c}.CreateIdentity(ctx, name)
+			return err
+		}
+		e.auth = b
+	}
 	return e
 }
 
 func (e *env) handler() http.Handler {
-	e.once.Do(func() { e.h = New(e.core, Options{Auth: e.auth}) })
+	e.once.Do(func() { e.h = New(e.core, e.withAuth()) })
 	return e.h
+}
+
+func (e *env) withAuth() Options {
+	o := e.opts
+	o.Auth = e.auth
+	return o
 }
 
 // identity registers name (and makes it an administrator when admin).

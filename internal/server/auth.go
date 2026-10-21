@@ -19,12 +19,20 @@ import (
 type (
 	identityKey       struct{}
 	inprocIdentityKey struct{}
+	// authErrorKey holds a non-nil Authenticator error for the validator's
+	// AuthenticationFunc, which alone turns it into a 401.
+	authErrorKey struct{}
 )
+
+func authErrorFrom(ctx context.Context) error {
+	err, _ := ctx.Value(authErrorKey{}).(error)
+	return err
+}
 
 // Authenticator maps a request to the registered identity it acts as. ""
 // with a nil error means no identity (protected operations then fail the
-// document's security requirement); an error is a 401 with err.Error() as
-// the problem detail.
+// document's security requirement); an error is a 401 on a protected
+// operation with err.Error() in the detail, and ignored on an open one.
 type Authenticator interface {
 	Authenticate(r *http.Request) (identity string, err error)
 }

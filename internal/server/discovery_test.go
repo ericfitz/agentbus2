@@ -7,6 +7,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/ericfitz/agentbus2/internal/auth/token"
 	"github.com/ericfitz/agentbus2/internal/version"
 )
 
@@ -50,6 +51,21 @@ func TestDiscoverAgreesWithDocument(t *testing.T) {
 	}
 	if d.Issuers == nil || len(d.Issuers) != 0 {
 		t.Errorf("issuers %#v", d.Issuers)
+	}
+}
+
+func TestDiscoverListsConfiguredExternalIssuers(t *testing.T) {
+	ext := []*token.External{
+		{Issuer: "https://idp.example", JWKSURI: "https://idp.example/jwks", Audience: "agentbus2", Subjects: map[string]string{"s": "pat"}},
+		{Issuer: "https://other.example", JWKSURI: "https://other.example/jwks", Audience: "agentbus2", Subjects: map[string]string{"s": "kim"}},
+	}
+	e := newEnv(t, envOptions{issuer: true, external: ext})
+	r, err := e.client("").DiscoverWithResponse(context.Background())
+	if err != nil || r.JSON200 == nil {
+		t.Fatalf("%v %v", r, err)
+	}
+	if !slices.Equal(r.JSON200.Issuers, []string{"https://idp.example", "https://other.example"}) {
+		t.Errorf("issuers %v", r.JSON200.Issuers)
 	}
 }
 
