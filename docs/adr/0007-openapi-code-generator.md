@@ -198,10 +198,14 @@ Resolved on 2026-10-20:
   a wrong method as 404. `internal/bus/remote` never imports `internal/gen/spec`
   or kin-openapi, so the MCP server and CLI of Milestone 6 do not link them;
   `scripts/m4-exit-checks.sh` enforces the Decision 47 import rule
-  (`--deps-only` runs it alone, in CI). The measured
-  `go list -deps ./internal/bus/remote | wc -l` is 207 packages (standard
-  library included), against the count of 5 non-standard packages without the
-  embedded document and 24 with it that this ADR gave.
+  (`--deps-only` runs it alone, in CI). Measured on the tree:
+  `internal/bus/remote` links 4 third-party packages
+  (`github.com/apapsch/go-jsonmerge/v2`, `github.com/google/uuid`,
+  `github.com/oapi-codegen/runtime`, `github.com/oapi-codegen/runtime/types`),
+  against the 5 non-standard packages without the embedded document and 24
+  with it that this ADR gave; `go list -deps ./internal/bus/remote | wc -l`
+  is 207 in all (the standard library and this module's own packages
+  included).
 - **Choice 7, discovery.** `auth_methods` is computed from
   `components.securitySchemes`; `capabilities` from what the core has
   (`long_poll` always, `semantic_search` with an embedder); the document's

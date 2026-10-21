@@ -102,11 +102,10 @@ func validatorCode(status int) bus.Code {
 // responseError is the strict server's ResponseErrorHandlerFunc: every
 // handler failure goes through ProblemFor (choice 4).
 func responseError(w http.ResponseWriter, r *http.Request, err error) {
-	status, p, write := ProblemFor(err)
+	_, p, write := ProblemFor(err)
 	if !write {
 		return
 	}
-	_ = status
 	if r != nil && r.URL != nil {
 		inst := r.URL.Path
 		p.Instance = &inst

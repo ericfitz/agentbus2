@@ -7,13 +7,6 @@ import (
 	"github.com/ericfitz/agentbus2/internal/gen"
 )
 
-func mtOptStr(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
 func optInt64(n int64) *int64 {
 	if n == 0 {
 		return nil
@@ -31,7 +24,7 @@ func optInts(s []int64) *[]int64 {
 func taskToGen(t ab2bus.Task) gen.Task {
 	out := gen.Task{
 		Id: t.ID, Channel: t.Channel, Revision: t.Revision, Subject: t.Subject,
-		Description: mtOptStr(t.Description), Status: t.Status, Owner: mtOptStr(t.Owner),
+		Description: optStr(t.Description), Status: t.Status, Owner: optStr(t.Owner),
 		Parent: optInt64(t.Parent), Rank: t.Rank, BlockedBy: optInts(t.BlockedBy),
 		LeasedUntil: optInt64(t.LeasedUntil), Blocked: t.Blocked,
 		OpenBlockers: optInts(t.OpenBlockers), UpdatedAt: t.UpdatedAt, UpdatedBy: t.UpdatedBy,
@@ -52,24 +45,16 @@ func taskResultToGen(r ab2bus.TaskUpdateResult) gen.TaskUpdateResult {
 	return out
 }
 
-func deref[T any](p *T) T {
-	var zero T
-	if p == nil {
-		return zero
-	}
-	return *p
-}
-
 func (a *api) CreateTask(ctx context.Context, r gen.CreateTaskRequestObject) (gen.CreateTaskResponseObject, error) {
 	if r.Body == nil {
 		return nil, ab2bus.Errorf(ab2bus.CodeValidation, false, "the request body is required")
 	}
 	b := r.Body
 	in := ab2bus.TaskCreateInput{
-		Channel: r.Channel, Subject: b.Subject, Description: deref(b.Description),
-		Parent: deref(b.Parent), Before: deref(b.Before), After: deref(b.After),
-		BlockedBy: deref(b.BlockedBy), Metadata: deref(b.Metadata),
-		IdempotencyKey: mtIdemKey(r.Params.IdempotencyKey),
+		Channel: r.Channel, Subject: b.Subject, Description: derefOr(b.Description),
+		Parent: derefOr(b.Parent), Before: derefOr(b.Before), After: derefOr(b.After),
+		BlockedBy: derefOr(b.BlockedBy), Metadata: derefOr(b.Metadata),
+		IdempotencyKey: idemKey(r.Params.IdempotencyKey),
 	}
 	t, err := a.tasks.Create(ctx, IdentityFrom(ctx), in)
 	if err != nil {
@@ -80,7 +65,7 @@ func (a *api) CreateTask(ctx context.Context, r gen.CreateTaskRequestObject) (ge
 
 func (a *api) ListTasks(ctx context.Context, r gen.ListTasksRequestObject) (gen.ListTasksResponseObject, error) {
 	ts, err := a.tasks.List(ctx, IdentityFrom(ctx), ab2bus.TaskListInput{
-		Channel: r.Channel, Status: deref(r.Params.Status), Owner: deref(r.Params.Owner),
+		Channel: r.Channel, Status: derefOr(r.Params.Status), Owner: derefOr(r.Params.Owner),
 	})
 	if err != nil {
 		return nil, err
@@ -88,7 +73,7 @@ func (a *api) ListTasks(ctx context.Context, r gen.ListTasksRequestObject) (gen.
 	out := make(gen.ListTasks200JSONResponse, len(ts))
 	for i, s := range ts {
 		g := gen.TaskSummary{
-			Id: s.ID, Subject: s.Subject, Status: s.Status, Owner: mtOptStr(s.Owner),
+			Id: s.ID, Subject: s.Subject, Status: s.Status, Owner: optStr(s.Owner),
 			Parent: optInt64(s.Parent), Depth: s.Depth, OpenBlockers: optInts(s.OpenBlockers),
 			LeasedUntil: optInt64(s.LeasedUntil),
 		}
@@ -116,11 +101,11 @@ func (a *api) UpdateTask(ctx context.Context, r gen.UpdateTaskRequestObject) (ge
 	b := r.Body
 	p := ab2bus.TaskPatch{
 		ID: r.Id, Status: b.Status, Owner: b.Owner, Subject: b.Subject, Description: b.Description,
-		Parent: b.Parent, Before: deref(b.Before), After: deref(b.After),
-		AddBlockedBy: deref(b.AddBlockedBy), RemoveBlockedBy: deref(b.RemoveBlockedBy),
-		LeasedUntil: b.LeasedUntil, Metadata: deref(b.Metadata),
-		Delete: deref(b.Delete), Force: deref(b.Force),
-		IdempotencyKey: mtIdemKey(r.Params.IdempotencyKey),
+		Parent: b.Parent, Before: derefOr(b.Before), After: derefOr(b.After),
+		AddBlockedBy: derefOr(b.AddBlockedBy), RemoveBlockedBy: derefOr(b.RemoveBlockedBy),
+		LeasedUntil: b.LeasedUntil, Metadata: derefOr(b.Metadata),
+		Delete: derefOr(b.Delete), Force: derefOr(b.Force),
+		IdempotencyKey: idemKey(r.Params.IdempotencyKey),
 	}
 	res, err := a.tasks.Update(ctx, IdentityFrom(ctx), p)
 	if err != nil {
@@ -130,9 +115,9 @@ func (a *api) UpdateTask(ctx context.Context, r gen.UpdateTaskRequestObject) (ge
 }
 
 func (a *api) ClaimTask(ctx context.Context, r gen.ClaimTaskRequestObject) (gen.ClaimTaskResponseObject, error) {
-	in := ab2bus.TaskClaimInput{ID: r.Id, IdempotencyKey: mtIdemKey(r.Params.IdempotencyKey)}
+	in := ab2bus.TaskClaimInput{ID: r.Id, IdempotencyKey: idemKey(r.Params.IdempotencyKey)}
 	if r.Body != nil {
-		in.LeasedUntil = deref(r.Body.LeasedUntil)
+		in.LeasedUntil = derefOr(r.Body.LeasedUntil)
 	}
 	res, err := a.tasks.Claim(ctx, IdentityFrom(ctx), in)
 	if err != nil {
@@ -143,7 +128,7 @@ func (a *api) ClaimTask(ctx context.Context, r gen.ClaimTaskRequestObject) (gen.
 
 func (a *api) ReleaseTask(ctx context.Context, r gen.ReleaseTaskRequestObject) (gen.ReleaseTaskResponseObject, error) {
 	res, err := a.tasks.Release(ctx, IdentityFrom(ctx), ab2bus.TaskReleaseInput{
-		ID: r.Id, IdempotencyKey: mtIdemKey(r.Params.IdempotencyKey),
+		ID: r.Id, IdempotencyKey: idemKey(r.Params.IdempotencyKey),
 	})
 	if err != nil {
 		return nil, err

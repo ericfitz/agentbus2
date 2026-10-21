@@ -7,47 +7,12 @@ import (
 	"github.com/ericfitz/agentbus2/internal/gen"
 )
 
-// memoryMessageToGen converts a memory revision to its wire form. It is local
-// to this file (not shared with the send and history handlers) so that the
-// aggregate tasks stay independent.
-func memoryMessageToGen(m ab2bus.Message) gen.Message {
-	out := gen.Message{
-		Seq: m.Seq, Channel: m.Channel, Sender: m.Sender, Display: m.Display,
-		CreatedAt: m.CreatedAt, Type: m.Type, Subject: m.Subject, Content: m.Content,
-		ReplyTo: m.ReplyTo, MemoryId: m.MemoryID, Revision: m.Revision,
-	}
-	if m.Session != "" {
-		s := m.Session
-		out.Session = &s
-	}
-	if m.Metadata != nil {
-		md := m.Metadata
-		out.Metadata = &md
-	}
-	if m.Tags != nil {
-		tg := m.Tags
-		out.Tags = &tg
-	}
-	if m.MatchedTags != nil {
-		mt := m.MatchedTags
-		out.MatchedTags = &mt
-	}
-	return out
-}
-
-func mtIdemKey(k *string) string {
-	if k == nil {
-		return ""
-	}
-	return *k
-}
-
 func (a *api) GetMemory(ctx context.Context, r gen.GetMemoryRequestObject) (gen.GetMemoryResponseObject, error) {
 	m, err := a.memories.Get(ctx, IdentityFrom(ctx), r.Id)
 	if err != nil {
 		return nil, err
 	}
-	return gen.GetMemory200JSONResponse(memoryMessageToGen(m)), nil
+	return gen.GetMemory200JSONResponse(toGenMessage(m)), nil
 }
 
 func (a *api) EditMemory(ctx context.Context, r gen.EditMemoryRequestObject) (gen.EditMemoryResponseObject, error) {
@@ -56,7 +21,7 @@ func (a *api) EditMemory(ctx context.Context, r gen.EditMemoryRequestObject) (ge
 	}
 	b := r.Body
 	in := ab2bus.EditMemoryInput{
-		ID: r.Id, Subject: b.Subject, Content: b.Content, IdempotencyKey: mtIdemKey(r.Params.IdempotencyKey),
+		ID: r.Id, Subject: b.Subject, Content: b.Content, IdempotencyKey: idemKey(r.Params.IdempotencyKey),
 	}
 	if b.Type != nil {
 		in.Type = *b.Type
@@ -82,13 +47,13 @@ func (a *api) ListMemoryRevisions(ctx context.Context, r gen.ListMemoryRevisions
 	}
 	out := make(gen.ListMemoryRevisions200JSONResponse, len(ms))
 	for i, m := range ms {
-		out[i] = memoryMessageToGen(m)
+		out[i] = toGenMessage(m)
 	}
 	return out, nil
 }
 
 func (a *api) DeleteMemory(ctx context.Context, r gen.DeleteMemoryRequestObject) (gen.DeleteMemoryResponseObject, error) {
-	err := a.memories.Delete(ctx, IdentityFrom(ctx), ab2bus.DeleteMemoryInput{ID: r.Id, IdempotencyKey: mtIdemKey(r.Params.IdempotencyKey)})
+	err := a.memories.Delete(ctx, IdentityFrom(ctx), ab2bus.DeleteMemoryInput{ID: r.Id, IdempotencyKey: idemKey(r.Params.IdempotencyKey)})
 	if err != nil {
 		return nil, err
 	}

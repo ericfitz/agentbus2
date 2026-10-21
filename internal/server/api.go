@@ -25,8 +25,8 @@ type api struct {
 	delivery  delivery.Service
 	messaging messaging.Service
 	search    search.Service
-	memories  memories.Service //nolint:unused // Task 8
-	tasks     tasks.Service    //nolint:unused // Task 8
+	memories  memories.Service
+	tasks     tasks.Service
 }
 
 var _ gen.StrictServerInterface = (*api)(nil)
