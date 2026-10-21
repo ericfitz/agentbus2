@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"time"
 
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -92,7 +93,10 @@ func (s *Store) Unlock(ctx context.Context, name, owner string) error {
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if cur, ok := s.held[name]; ok && cur != owner {
+	// Only what this handle holds is released: the leases row names an
+	// owner, not a handle, so without this a handle that holds nothing
+	// would release another handle's lease under the same owner.
+	if cur, ok := s.held[name]; !ok || cur != owner {
 		return nil
 	}
 	return s.unlockLocked(ctx, name, owner)
@@ -133,12 +137,21 @@ func discard(conn *sql.Conn) {
 	_ = conn.Close()
 }
 
-// releaseAll unlocks everything this Store holds (Close).
+// releaseTimeout bounds releaseAll (a variable for tests).
+var releaseTimeout = 5 * time.Second
+
+// releaseAll unlocks everything this Store holds (Close), within
+// releaseTimeout: an unreachable server must not hang Close. A Postgres
+// unlock cut short discards its connection, which ends the session and so
+// the lock; a SQLite lease cut short expires at its until.
 func (s *Store) releaseAll() {
+	ctx, cancel := context.WithTimeout(context.Background(), releaseTimeout)
+	defer cancel()
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for name, owner := range s.held {
-		_ = s.unlockLocked(context.Background(), name, owner)
+		_ = s.unlockLocked(ctx, name, owner)
+		delete(s.held, name) // released or not, this Store is closing
 	}
 	for name, c := range s.conns {
 		discard(c)

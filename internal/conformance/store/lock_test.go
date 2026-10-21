@@ -101,6 +101,19 @@ func TestLockUnlockByOtherOwnerIsNoop(t *testing.T) {
 	})
 }
 
+// TestLockUnlockFromNonHoldingHandleIsNoop: a handle that holds nothing
+// releases nothing, even when it names the holder's owner (a Core reopening
+// its Store keeps its Owner); the lease stays the holding handle's.
+func TestLockUnlockFromNonHoldingHandleIsNoop(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s1, s2, _ := twoHandles(t, e)
+		mustTryLock(t, s1, "maintenance", "a", 100, 1000, true)
+		mustUnlock(t, s2, "maintenance", "a")
+		mustTryLock(t, s2, "maintenance", "b", 110, 1000, false)
+		mustTryLock(t, s1, "maintenance", "a", 120, 1000, true)
+	})
+}
+
 func TestLockSameHandleTwoOwners(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		s, _, rawDSN := openStore(t, e, sqlstore.Options{})
