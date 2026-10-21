@@ -70,9 +70,10 @@ func (t *tx) Identity(ctx context.Context, name string) (store.Identity, error) 
 
 func (t *tx) ListIdentities(ctx context.Context) ([]store.Identity, error) {
 	var rows []identityRow
-	if err := t.sel(ctx, &rows, "SELECT "+identityCols+" FROM identities ORDER BY name"); err != nil {
+	if err := t.sel(ctx, &rows, "SELECT "+identityCols+" FROM identities"); err != nil {
 		return nil, err
 	}
+	sortByBytes(rows, func(r identityRow) string { return r.Name })
 	out := make([]store.Identity, len(rows))
 	for i, r := range rows {
 		out[i] = r.identity()
@@ -92,11 +93,18 @@ func (t *tx) AdvanceTagAckedMark(ctx context.Context, name string, seq int64) er
 	return identityUpdated(res, err, name)
 }
 
-// PutPublicKey validates Algorithm (Decision 55: EdDSA or ES256) before the
-// upsert; the foreign key maps an unknown identity to ErrNotFound.
+// PutPublicKey validates the key before the upsert: Algorithm (Decision 55:
+// EdDSA or ES256), a non-empty KID and a non-empty Key (PKIX DER); the
+// foreign key maps an unknown identity to ErrNotFound.
 func (t *tx) PutPublicKey(ctx context.Context, k store.PublicKey) error {
 	if k.Algorithm != "EdDSA" && k.Algorithm != "ES256" {
 		return fmt.Errorf("%w: unknown public key algorithm %q (want EdDSA or ES256)", store.ErrInvalid, k.Algorithm)
+	}
+	if k.KID == "" {
+		return fmt.Errorf("%w: public key kid must not be empty", store.ErrInvalid)
+	}
+	if len(k.Key) == 0 {
+		return fmt.Errorf("%w: public key %q has no key bytes (want PKIX DER)", store.ErrInvalid, k.KID)
 	}
 	_, err := t.execW(ctx, `INSERT INTO identity_keys (identity, kid, algorithm, public_key, created_at) VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (identity, kid) DO UPDATE SET algorithm = excluded.algorithm, public_key = excluded.public_key, created_at = excluded.created_at`,
@@ -117,9 +125,10 @@ type identityKeyRow struct {
 
 func (t *tx) PublicKeys(ctx context.Context, name string) ([]store.PublicKey, error) {
 	var rows []identityKeyRow
-	if err := t.sel(ctx, &rows, "SELECT identity, kid, algorithm, public_key, created_at FROM identity_keys WHERE identity = ? ORDER BY kid", name); err != nil {
+	if err := t.sel(ctx, &rows, "SELECT identity, kid, algorithm, public_key, created_at FROM identity_keys WHERE identity = ?", name); err != nil {
 		return nil, err
 	}
+	sortByBytes(rows, func(r identityKeyRow) string { return r.KID })
 	out := make([]store.PublicKey, len(rows))
 	for i, r := range rows {
 		out[i] = store.PublicKey{Identity: r.Identity, KID: r.KID, Algorithm: r.Algorithm, Key: r.Key, CreatedAt: r.CreatedAt}

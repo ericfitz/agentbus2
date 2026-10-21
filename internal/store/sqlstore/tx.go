@@ -73,13 +73,24 @@ func (t *tx) selW(ctx context.Context, dest any, q string, args ...any) error {
 func constraintErr(err error, sqliteExt []int, sqliteText, pgState string) bool {
 	var se *sqlitedrv.Error
 	if errors.As(err, &se) {
-		if slices.Contains(sqliteExt, se.Code()) {
-			return true
-		}
-		return se.Code()&0xff == 19 && strings.Contains(se.Error(), sqliteText)
+		return sqliteConstraint(se.Code(), se.Error(), sqliteExt, sqliteText)
 	}
 	var pe *pgconn.PgError
 	return errors.As(err, &pe) && pe.Code == pgState
+}
+
+// sqliteConstraint is the SQLite half of constraintErr over the error's code
+// and text, so tests can feed it both shapes (*sqlitedrv.Error has no
+// exported constructor). On modernc.org/sqlite v1.60.1 Exec returns the
+// extended code (probed: 1555, 2067 and 787, also through ON CONFLICT DO
+// UPDATE), so the primary-code fallback is not reached there; it is kept
+// (plan Milestone 2 Task 4, Step 3) for a driver or build that reports only
+// SQLITE_CONSTRAINT (19) and puts the detail in the message.
+func sqliteConstraint(code int, msg string, ext []int, text string) bool {
+	if slices.Contains(ext, code) {
+		return true
+	}
+	return code&0xff == 19 && strings.Contains(msg, text)
 }
 
 // isConflict reports a unique or primary-key violation

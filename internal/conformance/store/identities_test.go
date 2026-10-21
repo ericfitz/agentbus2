@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -174,14 +175,16 @@ func TestIdentityPublicKeys(t *testing.T) {
 		if string(got[0].Key) != string(k1.Key) || got[0].Algorithm != "EdDSA" || got[0].CreatedAt != fixedNow || got[0].Identity != "pat" {
 			t.Errorf("key a = %+v, want %+v", got[0], k1)
 		}
-		// Replace: same (identity, kid), new Key.
+		// Replace: same (identity, kid), new Key, Algorithm and CreatedAt.
 		k1.Key = []byte{9, 9}
+		k1.Algorithm = "ES256"
+		k1.CreatedAt = fixedNow + 50
 		if err := put(k1); err != nil {
 			t.Fatal(err)
 		}
 		got = keys("pat")
-		if len(got) != 2 || string(got[0].Key) != string([]byte{9, 9}) {
-			t.Errorf("after replace: %+v", got)
+		if len(got) != 2 || string(got[0].Key) != string([]byte{9, 9}) || got[0].Algorithm != "ES256" || got[0].CreatedAt != fixedNow+50 {
+			t.Errorf("after replace: %+v, want key {9 9}, ES256, CreatedAt %d", got, fixedNow+50)
 		}
 		// Other identity's keys are separate.
 		if n := len(keys("kim")); n != 0 {
@@ -194,6 +197,18 @@ func TestIdentityPublicKeys(t *testing.T) {
 		bad.Algorithm = ""
 		if err := put(bad); !errors.Is(err, ab2store.ErrInvalid) {
 			t.Errorf("empty algorithm err = %v, want ErrInvalid", err)
+		}
+		// The key is PKIX DER and the kid names it: neither may be empty. A nil Key
+		// used to leak the driver's NOT NULL error; an empty Key and an empty KID
+		// used to be stored silently.
+		for name, k := range map[string]ab2store.PublicKey{
+			"nil key":   {Identity: "pat", KID: "c", Algorithm: "EdDSA", Key: nil, CreatedAt: fixedNow},
+			"empty key": {Identity: "pat", KID: "c", Algorithm: "EdDSA", Key: []byte{}, CreatedAt: fixedNow},
+			"empty kid": {Identity: "pat", KID: "", Algorithm: "EdDSA", Key: []byte{1}, CreatedAt: fixedNow},
+		} {
+			if err := put(k); !errors.Is(err, ab2store.ErrInvalid) {
+				t.Errorf("%s: err = %v, want ErrInvalid", name, err)
+			}
 		}
 		ghost := ab2store.PublicKey{Identity: "ghost", KID: "a", Algorithm: "EdDSA", Key: []byte{1}, CreatedAt: fixedNow}
 		if err := put(ghost); !errors.Is(err, ab2store.ErrNotFound) {
@@ -219,5 +234,128 @@ func TestIdentityPublicKeys(t *testing.T) {
 		if n != 0 {
 			t.Errorf("second DeletePublicKeys = %d, want 0", n)
 		}
+	})
+}
+
+// byteOrderNames mix case, punctuation and a non-ASCII letter, so SQLite's
+// BINARY collation and Postgres's database collation (en_US.utf8) disagree
+// about their order; every list "by name" or "by kid" is in byte order on both
+// engines (Decision 54).
+var (
+	byteOrderNames = []string{"kim", "Pat", "\u00c9mile", "zed", "alpha-2", "alpha_1"}
+	byteOrderWant  = []string{"Pat", "alpha-2", "alpha_1", "kim", "zed", "\u00c9mile"}
+)
+
+func TestIdentityListIsByteOrder(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		for _, n := range byteOrderNames {
+			mustIdentity(t, s, n)
+		}
+		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			list, err := tx.ListIdentities(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := identityNames(list); !reflect.DeepEqual(got, byteOrderWant) {
+				t.Errorf("ListIdentities = %q, want byte order %q", got, byteOrderWant)
+			}
+			return nil
+		})
+	})
+}
+
+func TestIdentityPublicKeysAreByteOrdered(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		mustIdentity(t, s, "pat")
+		for _, kid := range byteOrderNames {
+			k := ab2store.PublicKey{Identity: "pat", KID: kid, Algorithm: "EdDSA", Key: []byte{1}, CreatedAt: fixedNow}
+			mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error { return tx.PutPublicKey(ctx, k) })
+		}
+		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			keys, err := tx.PublicKeys(ctx, "pat")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, k := range keys {
+				got = append(got, k.KID)
+			}
+			if !reflect.DeepEqual(got, byteOrderWant) {
+				t.Errorf("PublicKeys kids = %q, want byte order %q", got, byteOrderWant)
+			}
+			return nil
+		})
+	})
+}
+
+// An unknown identity has no keys: PublicKeys lists none and DeletePublicKeys
+// removes none, both without error, so reset-credential (Decision 73) is
+// idempotent. Writes that need the identity to exist (SetAdmin,
+// AdvanceTagAckedMark, PutPublicKey) return ErrNotFound instead.
+func TestIdentityKeysOfUnknownIdentity(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			keys, err := tx.PublicKeys(ctx, "ghost")
+			if err != nil || len(keys) != 0 {
+				t.Errorf("PublicKeys(ghost) = %v, %v; want none, nil", keys, err)
+			}
+			return nil
+		})
+		var n int
+		mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) (err error) {
+			n, err = tx.DeletePublicKeys(ctx, "ghost")
+			return err
+		})
+		if n != 0 {
+			t.Errorf("DeletePublicKeys(ghost) = %d, want 0", n)
+		}
+	})
+}
+
+// Every identity write fails with ErrReadOnly inside Store.Read, with valid
+// input so the guard (not validation) is what rejects it, and leaves no trace.
+func TestIdentityRejectsWritesInRead(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx := context.Background()
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		mustIdentity(t, s, "pat")
+		mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			return tx.PutPublicKey(ctx, ab2store.PublicKey{Identity: "pat", KID: "a", Algorithm: "EdDSA", Key: []byte{1}, CreatedAt: fixedNow})
+		})
+		for name, write := range map[string]func(context.Context, ab2store.Tx) error{
+			"CreateIdentity": func(ctx context.Context, tx ab2store.Tx) error {
+				return tx.CreateIdentity(ctx, "kim", fixedNow)
+			},
+			"SetAdmin": func(ctx context.Context, tx ab2store.Tx) error { return tx.SetAdmin(ctx, "pat", true) },
+			"AdvanceTagAckedMark": func(ctx context.Context, tx ab2store.Tx) error {
+				return tx.AdvanceTagAckedMark(ctx, "pat", 9)
+			},
+			"PutPublicKey": func(ctx context.Context, tx ab2store.Tx) error {
+				return tx.PutPublicKey(ctx, ab2store.PublicKey{Identity: "pat", KID: "b", Algorithm: "ES256", Key: []byte{2}, CreatedAt: fixedNow})
+			},
+			"DeletePublicKeys": func(ctx context.Context, tx ab2store.Tx) error {
+				_, err := tx.DeletePublicKeys(ctx, "pat")
+				return err
+			},
+		} {
+			err := s.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error { return write(ctx, tx) })
+			if !errors.Is(err, ab2store.ErrReadOnly) {
+				t.Errorf("%s inside Read: err = %v, want ErrReadOnly", name, err)
+			}
+		}
+		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			ids, err := tx.ListIdentities(ctx)
+			if err != nil || len(ids) != 1 || ids[0] != (ab2store.Identity{Name: "pat", CreatedAt: fixedNow}) {
+				t.Errorf("identities after rejected writes = %+v, %v; want only the untouched pat", ids, err)
+			}
+			keys, err := tx.PublicKeys(ctx, "pat")
+			if err != nil || len(keys) != 1 || keys[0].KID != "a" {
+				t.Errorf("keys after rejected writes = %+v, %v; want only kid a", keys, err)
+			}
+			return nil
+		})
 	})
 }

@@ -31,14 +31,19 @@ type Identities interface {
 	// Gate 0 item 1), ErrConflict.
 	CreateIdentity(ctx context.Context, name string, now int64) error
 	Identity(ctx context.Context, name string) (Identity, error) // ErrNotFound
-	ListIdentities(ctx context.Context) ([]Identity, error)      // by name
+	ListIdentities(ctx context.Context) ([]Identity, error)      // by name, in byte order
 	SetAdmin(ctx context.Context, name string, admin bool) error // ErrNotFound
 	// AdvanceTagAckedMark sets the mark to max(current, seq).
 	AdvanceTagAckedMark(ctx context.Context, name string, seq int64) error
 	// PutPublicKey upserts by (identity, kid); ErrInvalid on an unknown
-	// Algorithm; ErrNotFound on an unknown identity.
+	// Algorithm, an empty KID or an empty Key; ErrNotFound on an unknown
+	// identity.
 	PutPublicKey(ctx context.Context, k PublicKey) error
-	PublicKeys(ctx context.Context, name string) ([]PublicKey, error) // by kid
-	// DeletePublicKeys is reset-credential (Decision 73).
+	// PublicKeys lists by kid in byte order; an unknown identity has none (an
+	// empty list, no error).
+	PublicKeys(ctx context.Context, name string) ([]PublicKey, error)
+	// DeletePublicKeys is reset-credential (Decision 73): it returns how many
+	// keys it removed, 0 (no error) for an identity with none or an unknown one,
+	// so a repeated reset is harmless.
 	DeletePublicKeys(ctx context.Context, name string) (int, error)
 }

@@ -2,7 +2,9 @@ package store
 
 import "context"
 
-// Receipt is a stored idempotent-send result.
+// Receipt is a stored idempotent-send result. Identity and Key are non-empty;
+// Result is the JSON the core stores, so it must be valid UTF-8 (the column is
+// TEXT).
 type Receipt struct {
 	Identity, Key, Fingerprint string
 	Result                     []byte
@@ -12,6 +14,11 @@ type Receipt struct {
 type Receipts interface {
 	// Receipt returns an unexpired receipt only (expires_at > now).
 	Receipt(ctx context.Context, identity, key string, now int64) (Receipt, bool, error)
-	PutReceipt(ctx context.Context, r Receipt) error // replace
+	// PutReceipt replaces any receipt for (identity, key); ErrInvalid on an
+	// empty Identity or Key and on a Result that is not valid UTF-8.
+	PutReceipt(ctx context.Context, r Receipt) error
+	// DeleteExpiredReceipts deletes up to limit receipts with expires_at <= now
+	// and returns how many; ErrInvalid on a limit below 1. Any limit is safe:
+	// the deletes are chunked.
 	DeleteExpiredReceipts(ctx context.Context, now int64, limit int) (int, error)
 }
