@@ -185,41 +185,133 @@ func (t *tx) Message(ctx context.Context, seq int64) (store.Message, error) {
 	return ms[0], nil
 }
 
-func (t *tx) MessagesAfter(ctx context.Context, channelID, afterSeq int64, limit int) ([]store.Message, error) {
+// excludeSQL is v1 receive.go ownClause re-keyed to sender and session_id: an
+// AND clause per set field. A value failing TextRule matches no stored row,
+// so excluding it excludes nothing and adds no clause (Postgres would refuse
+// a NUL parameter).
+func excludeSQL(f store.MessageFilter) (string, []any) {
+	var q string
+	var args []any
+	if f.ExcludeSender != "" && !badText(f.ExcludeSender) {
+		q += " AND m.sender <> ?"
+		args = append(args, f.ExcludeSender)
+	}
+	if f.ExcludeSessionID != "" && !badText(f.ExcludeSessionID) {
+		q += " AND m.session_id <> ?"
+		args = append(args, f.ExcludeSessionID)
+	}
+	return q, args
+}
+
+// tagsFilterSQL is v1 tagsFilter: one EXISTS per pattern, ANDed. ok is false
+// when a pattern's range fails TextRule (it matches no stored tag).
+func tagsFilterSQL(patterns []store.TagPattern) (q string, args []any, ok bool) {
+	for _, p := range patterns {
+		if badText(p.Lo, p.Hi) {
+			return "", nil, false
+		}
+		q += " AND EXISTS (SELECT 1 FROM message_tags g WHERE g.seq = m.seq AND g.tag BETWEEN ? AND ?)"
+		args = append(args, p.Lo, p.Hi)
+	}
+	return q, args, true
+}
+
+// searchFilterSQL is v1 searchFilters over alias m without the DM branch.
+// ok is false when the filter can match nothing (a sender or pattern failing
+// TextRule).
+func searchFilterSQL(f store.SearchFilter) (q string, args []any, ok bool) {
+	if f.Sender != "" {
+		if badText(f.Sender) {
+			return "", nil, false
+		}
+		q += " AND m.sender = ?"
+		args = append(args, f.Sender)
+	}
+	if f.Since != nil {
+		q += " AND m.created_at >= ?"
+		args = append(args, *f.Since)
+	}
+	if f.Until != nil {
+		q += " AND m.created_at <= ?"
+		args = append(args, *f.Until)
+	}
+	if f.Thread != nil {
+		q += " AND (m.seq = ? OR m.reply_to = ?)"
+		args = append(args, *f.Thread, *f.Thread)
+	}
+	tq, targs, ok := tagsFilterSQL(f.Patterns)
+	if !ok {
+		return "", nil, false
+	}
+	return q + tq, append(args, targs...), true
+}
+
+func (t *tx) MessagesAfter(ctx context.Context, channelID, afterSeq int64, f store.MessageFilter, limit int) ([]store.Message, error) {
 	if err := checkLimit(limit); err != nil {
 		return nil, err
 	}
-	return scanMessages(ctx, t, "SELECT "+messageCols+" FROM messages m WHERE m.channel_id = ? AND m.seq > ? AND m.tombstone = FALSE ORDER BY m.seq LIMIT ?",
-		channelID, afterSeq, limit)
+	eq, eargs := excludeSQL(f)
+	args := append([]any{channelID, afterSeq}, eargs...)
+	return scanMessages(ctx, t, "SELECT "+messageCols+" FROM messages m WHERE m.channel_id = ? AND m.seq > ? AND m.tombstone = FALSE"+eq+" ORDER BY m.seq LIMIT ?",
+		append(args, limit)...)
+}
+
+// MessagesBySeqs loads live rows by seq in chunks, ascending.
+func (t *tx) MessagesBySeqs(ctx context.Context, seqs []int64) ([]store.Message, error) {
+	out := []store.Message{}
+	for chunk := range slices.Chunk(slices.Sorted(slices.Values(seqs)), idChunk) {
+		q, args, err := sqlx.In("SELECT "+messageCols+" FROM messages m WHERE m.seq IN (?) AND m.tombstone = FALSE ORDER BY m.seq", chunk)
+		if err != nil {
+			return nil, err
+		}
+		ms, err := scanMessages(ctx, t, q, args...)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, ms...)
+	}
+	return out, nil
+}
+
+// MessagesBefore is v1 History with before only: the newest limit live rows
+// below beforeSeq, newest first.
+func (t *tx) MessagesBefore(ctx context.Context, channelID, beforeSeq int64, patterns []store.TagPattern, f store.MessageFilter, limit int) ([]store.Message, error) {
+	if err := checkLimit(limit); err != nil {
+		return nil, err
+	}
+	tq, targs, ok := tagsFilterSQL(patterns)
+	if !ok {
+		return []store.Message{}, nil
+	}
+	eq, eargs := excludeSQL(f)
+	args := append([]any{channelID, beforeSeq}, targs...)
+	args = append(args, eargs...)
+	return scanMessages(ctx, t, "SELECT "+messageCols+" FROM messages m WHERE m.channel_id = ? AND m.seq < ? AND m.tombstone = FALSE"+tq+eq+" ORDER BY m.seq DESC LIMIT ?",
+		append(args, limit)...)
 }
 
 // MessagesInRange applies v1 tagsFilter: one EXISTS per pattern, ANDed. A
 // pattern whose range fails TextRule matches no stored tag, so the result is
 // empty without a query.
-func (t *tx) MessagesInRange(ctx context.Context, channelID, fromSeq, toSeq int64, patterns []store.TagPattern, limit int) ([]store.Message, error) {
+func (t *tx) MessagesInRange(ctx context.Context, channelID, fromSeq, toSeq int64, patterns []store.TagPattern, f store.MessageFilter, limit int) ([]store.Message, error) {
 	if err := checkLimit(limit); err != nil {
 		return nil, err
 	}
-	for _, p := range patterns {
-		if badText(p.Lo, p.Hi) {
-			return []store.Message{}, nil
-		}
+	tq, targs, ok := tagsFilterSQL(patterns)
+	if !ok {
+		return []store.Message{}, nil
 	}
-	q := "SELECT " + messageCols + " FROM messages m WHERE m.channel_id = ? AND m.seq >= ? AND m.seq <= ? AND m.tombstone = FALSE"
-	args := []any{channelID, fromSeq, toSeq}
-	for _, p := range patterns {
-		q += " AND EXISTS (SELECT 1 FROM message_tags g WHERE g.seq = m.seq AND g.tag BETWEEN ? AND ?)"
-		args = append(args, p.Lo, p.Hi)
-	}
-	q += " ORDER BY m.seq LIMIT ?"
-	args = append(args, limit)
-	return scanMessages(ctx, t, q, args...)
+	eq, eargs := excludeSQL(f)
+	args := append([]any{channelID, fromSeq, toSeq}, targs...)
+	args = append(args, eargs...)
+	return scanMessages(ctx, t, "SELECT "+messageCols+" FROM messages m WHERE m.channel_id = ? AND m.seq >= ? AND m.seq <= ? AND m.tombstone = FALSE"+tq+eq+" ORDER BY m.seq LIMIT ?",
+		append(args, limit)...)
 }
 
 // SearchText: the one query shape, engine-independent; the dialect supplies
 // the condition on alias m. A term failing TextRule is ErrInvalid (search.Parse
 // keeps a NUL inside a word).
-func (t *tx) SearchText(ctx context.Context, q search.Query, channelIDs []int64, limit int) ([]store.Message, error) {
+func (t *tx) SearchText(ctx context.Context, q search.Query, channelIDs []int64, f store.SearchFilter, limit int) ([]store.Message, error) {
 	if q.Empty() {
 		return nil, fmt.Errorf("%w: search query has no searchable terms", store.ErrInvalid)
 	}
@@ -234,14 +326,21 @@ func (t *tx) SearchText(ctx context.Context, q search.Query, channelIDs []int64,
 	if len(channelIDs) == 0 {
 		return []store.Message{}, nil
 	}
+	fq, fargs, ok := searchFilterSQL(f)
+	if !ok {
+		return []store.Message{}, nil
+	}
 	cond, condArgs, err := t.d.TextSearch(q)
 	if err != nil {
 		return nil, err
 	}
 	// sqlx.In expands the channel list; the condition's own placeholders come
 	// first in the argument order.
-	query, args, err := sqlx.In("SELECT "+messageCols+" FROM messages m WHERE ("+cond+") AND m.tombstone = FALSE AND m.channel_id IN (?) ORDER BY m.seq LIMIT ?",
-		append(slices.Clone(condArgs), channelIDs, limit)...)
+	// The filter's placeholders follow the channel list, in SQL order.
+	qargs := append(slices.Clone(condArgs), channelIDs)
+	qargs = append(append(qargs, fargs...), limit)
+	query, args, err := sqlx.In("SELECT "+messageCols+" FROM messages m WHERE ("+cond+") AND m.tombstone = FALSE AND m.channel_id IN (?)"+fq+" ORDER BY m.seq LIMIT ?",
+		qargs...)
 	if err != nil {
 		return nil, err
 	}

@@ -78,7 +78,7 @@ func TestSearchTextMatchesAgreeAcrossEngines(t *testing.T) {
 					ids = ids[:1]
 				}
 				mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
-					got, err := tx.SearchText(ctx, search.Parse(c.q), ids, c.limit)
+					got, err := tx.SearchText(ctx, search.Parse(c.q), ids, ab2store.SearchFilter{}, c.limit)
 					if err != nil || !reflect.DeepEqual(messageSeqs(got), c.want) {
 						t.Errorf("%q = %v, %v; want %v", c.q, messageSeqs(got), err, c.want)
 					}
@@ -87,7 +87,7 @@ func TestSearchTextMatchesAgreeAcrossEngines(t *testing.T) {
 			})
 		}
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
-			if _, err := tx.SearchText(ctx, search.Query{}, []int64{ch["a"].ID}, 10); !errors.Is(err, ab2store.ErrInvalid) {
+			if _, err := tx.SearchText(ctx, search.Query{}, []int64{ch["a"].ID}, ab2store.SearchFilter{}, 10); !errors.Is(err, ab2store.ErrInvalid) {
 				t.Errorf("empty query err = %v, want ErrInvalid", err)
 			}
 			return nil

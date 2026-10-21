@@ -38,7 +38,7 @@ func tagMatches(t *testing.T, s ab2store.Store, identity string, after int64, ch
 	t.Helper()
 	var out []ab2store.Message
 	mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) (err error) {
-		out, err = tx.TagMatchesAfter(ctx, identity, after, chans, limit)
+		out, err = tx.TagMatchesAfter(ctx, identity, after, 0, chans, ab2store.MessageFilter{}, limit)
 		return err
 	})
 	return out
@@ -136,7 +136,7 @@ func TestTagSubMatchesAfter(t *testing.T) {
 			t.Errorf("message tags not loaded: %+v", ms)
 		}
 		err := s.Read(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
-			_, err := tx.TagMatchesAfter(ctx, "kim", 0, chans, 0)
+			_, err := tx.TagMatchesAfter(ctx, "kim", 0, 0, chans, ab2store.MessageFilter{}, 0)
 			return err
 		})
 		if !errors.Is(err, ab2store.ErrInvalid) {

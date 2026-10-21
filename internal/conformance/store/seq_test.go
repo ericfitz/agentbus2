@@ -66,7 +66,7 @@ func TestSeqConcurrentWriters(t *testing.T) {
 						return err
 					}
 					for _, ch := range channels {
-						msgs, err := tx.MessagesAfter(ctx, ch, 0, 1000)
+						msgs, err := tx.MessagesAfter(ctx, ch, 0, ab2store.MessageFilter{}, 1000)
 						if err != nil {
 							return err
 						}

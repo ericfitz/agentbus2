@@ -29,6 +29,7 @@ type Subscriptions interface {
 	UnsubscribeTags(ctx context.Context, identity, tagsKey string) error
 	TagSubscriptions(ctx context.Context, identity string) ([]TagSubscription, error)
 	// TagMatchesAfter is v1 tagCond scoped to channelIDs (Decision 95): live
-	// messages only, ascending.
-	TagMatchesAfter(ctx context.Context, identity string, afterSeq int64, channelIDs []int64, limit int) ([]Message, error)
+	// messages only, ascending; upToSeq > 0 also requires seq <= upToSeq; f
+	// excludes the sender's or session's own messages.
+	TagMatchesAfter(ctx context.Context, identity string, afterSeq, upToSeq int64, channelIDs []int64, f MessageFilter, limit int) ([]Message, error)
 }

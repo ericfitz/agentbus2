@@ -93,13 +93,18 @@ func (t *tx) DeleteStaleModel(ctx context.Context, model string) error {
 	return err
 }
 
-func (t *tx) Embeddings(ctx context.Context, model string, channelIDs []int64) ([]store.Embedding, error) {
+func (t *tx) Embeddings(ctx context.Context, model string, channelIDs []int64, f store.SearchFilter) ([]store.Embedding, error) {
 	out := []store.Embedding{}
 	if len(channelIDs) == 0 || badText(model) {
 		return out, nil
 	}
+	fq, fargs, ok := searchFilterSQL(f)
+	if !ok {
+		return out, nil
+	}
 	q, args, err := sqlx.In(`SELECT e.seq, e.model, e.vector FROM embeddings e JOIN messages m ON m.seq = e.seq
-		WHERE e.model = ? AND m.memory_id IS NOT NULL AND m.tombstone = FALSE AND m.channel_id IN (?) ORDER BY e.seq`, model, channelIDs)
+		WHERE e.model = ? AND m.memory_id IS NOT NULL AND m.tombstone = FALSE AND m.channel_id IN (?)`+fq+` ORDER BY e.seq`,
+		append([]any{model, channelIDs}, fargs...)...)
 	if err != nil {
 		return nil, err
 	}
@@ -115,4 +120,31 @@ func (t *tx) Embeddings(ctx context.Context, model string, channelIDs []int64) (
 		out = append(out, store.Embedding{Seq: r.Seq, Model: r.Model, Vector: r.Vector})
 	}
 	return out, nil
+}
+
+// EmbedFailures is v1 admin.go StatusReport's two embed_failures queries: the
+// count joined to live messages, and the latest reason (failed_at DESC, seq
+// DESC). A model failing TextRule has no rows.
+func (t *tx) EmbedFailures(ctx context.Context, model string) (int, store.EmbedFailure, error) {
+	if badText(model) {
+		return 0, store.EmbedFailure{}, nil
+	}
+	var n int
+	if err := t.get(ctx, &n, "SELECT count(*) FROM embed_failures f JOIN messages m ON m.seq = f.seq WHERE f.model = ? AND m.tombstone = FALSE", model); err != nil {
+		return 0, store.EmbedFailure{}, err
+	}
+	var rows []struct {
+		Seq      int64  `db:"seq"`
+		Model    string `db:"model"`
+		Error    string `db:"error"`
+		FailedAt int64  `db:"failed_at"`
+	}
+	if err := t.sel(ctx, &rows, "SELECT f.seq, f.model, f.error, f.failed_at FROM embed_failures f JOIN messages m ON m.seq = f.seq WHERE f.model = ? AND m.tombstone = FALSE ORDER BY f.failed_at DESC, f.seq DESC LIMIT 1", model); err != nil {
+		return 0, store.EmbedFailure{}, err
+	}
+	if len(rows) == 0 {
+		return n, store.EmbedFailure{}, nil
+	}
+	r := rows[0]
+	return n, store.EmbedFailure{Seq: r.Seq, Model: r.Model, Error: r.Error, FailedAt: r.FailedAt}, nil
 }

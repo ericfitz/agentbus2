@@ -111,7 +111,7 @@ func TestMessagesRejectsNUL(t *testing.T) {
 			}
 			for _, p := range []string{bad, bad + "*"} {
 				wantIs(t, "MessagesInRange("+p+")", s.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
-					ms, err := tx.MessagesInRange(ctx, ch.ID, 0, 1000, []ab2store.TagPattern{ab2store.NewTagPattern(p)}, 10)
+					ms, err := tx.MessagesInRange(ctx, ch.ID, 0, 1000, []ab2store.TagPattern{ab2store.NewTagPattern(p)}, ab2store.MessageFilter{}, 10)
 					if len(ms) != 0 {
 						t.Errorf("MessagesInRange(%q) = %v, want none", p, messageSeqs(ms))
 					}
@@ -125,13 +125,13 @@ func TestMessagesRejectsNUL(t *testing.T) {
 				"constructed": {Terms: []search.Term{{Text: "hello" + bad}}},
 			} {
 				wantIs(t, "SearchText("+what+" "+bad+")", s.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
-					_, err := tx.SearchText(ctx, q, []int64{ch.ID}, 10)
+					_, err := tx.SearchText(ctx, q, []int64{ch.ID}, ab2store.SearchFilter{}, 10)
 					return err
 				}), ab2store.ErrInvalid)
 			}
 		}
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
-			ms, err := tx.MessagesAfter(ctx, ch.ID, 0, 100)
+			ms, err := tx.MessagesAfter(ctx, ch.ID, 0, ab2store.MessageFilter{}, 100)
 			if err != nil || !reflect.DeepEqual(messageSeqs(ms), []int64{good}) {
 				t.Errorf("messages after the rejected appends = %v, %v; want [%d]", messageSeqs(ms), err, good)
 			}
@@ -268,7 +268,7 @@ func TestSubscriptionsRejectsNUL(t *testing.T) {
 					return err
 				}, nil},
 				"TagMatchesAfter": {func(ctx context.Context, tx ab2store.Tx) error {
-					ms, err := tx.TagMatchesAfter(ctx, bad, 0, []int64{ch.ID}, 10)
+					ms, err := tx.TagMatchesAfter(ctx, bad, 0, 0, []int64{ch.ID}, ab2store.MessageFilter{}, 10)
 					if len(ms) != 0 {
 						t.Errorf("TagMatchesAfter(%q) = %v, want none", bad, messageSeqs(ms))
 					}
@@ -354,7 +354,7 @@ func TestEmbeddingsRejectsNUL(t *testing.T) {
 				}, ab2store.ErrInvalid},
 				"DeleteStaleModel": {func(ctx context.Context, tx ab2store.Tx) error { return tx.DeleteStaleModel(ctx, bad) }, ab2store.ErrInvalid},
 				"Embeddings": {func(ctx context.Context, tx ab2store.Tx) error {
-					es, err := tx.Embeddings(ctx, bad, []int64{ch.ID})
+					es, err := tx.Embeddings(ctx, bad, []int64{ch.ID}, ab2store.SearchFilter{})
 					if len(es) != 0 {
 						t.Errorf("Embeddings(%q) = %v, want none", bad, es)
 					}

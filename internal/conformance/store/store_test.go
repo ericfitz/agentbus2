@@ -37,7 +37,7 @@ func TestStoreImplementsEveryAggregate(t *testing.T) {
 				{"ListChannels", func() error { _, err := tx.ListChannels(ctx); return err }},
 				{"Subscriptions", func() error { _, err := tx.Subscriptions(ctx, "nobody"); return err }},
 				{"ListSessions", func() error { _, err := tx.ListSessions(ctx, "nobody"); return err }},
-				{"MessagesAfter", func() error { _, err := tx.MessagesAfter(ctx, 1, 0, 10); return err }},
+				{"MessagesAfter", func() error { _, err := tx.MessagesAfter(ctx, 1, 0, ab2store.MessageFilter{}, 10); return err }},
 				{"MemoryRevisions", func() error { _, err := tx.MemoryRevisions(ctx, 1); return err }},
 				{"LiveMemories", func() error { _, err := tx.LiveMemories(ctx, 1); return err }},
 			}

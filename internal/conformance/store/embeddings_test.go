@@ -49,7 +49,7 @@ func TestEmbeddingPutOnlyForLiveMemory(t *testing.T) {
 			t.Errorf("embed_failures rows = %d, want 1", n)
 		}
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
-			got, err := tx.Embeddings(ctx, "m2", []int64{a.ID})
+			got, err := tx.Embeddings(ctx, "m2", []int64{a.ID}, ab2store.SearchFilter{})
 			want := []ab2store.Embedding{{Seq: live, Model: "m2", Vector: []byte{9}}}
 			if err != nil || !reflect.DeepEqual(got, want) {
 				t.Errorf("Embeddings = %v, %v; want %v", got, err, want)
@@ -139,19 +139,19 @@ func TestEmbeddingByChannels(t *testing.T) {
 		})
 		mustTombstone(t, s, three)
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
-			got, err := tx.Embeddings(ctx, "m", []int64{a.ID})
+			got, err := tx.Embeddings(ctx, "m", []int64{a.ID}, ab2store.SearchFilter{})
 			if err != nil || len(got) != 1 || got[0].Seq != one {
 				t.Errorf("a = %v, %v; want only seq %d", got, err, one)
 			}
-			got, err = tx.Embeddings(ctx, "m", []int64{a.ID, b.ID})
+			got, err = tx.Embeddings(ctx, "m", []int64{a.ID, b.ID}, ab2store.SearchFilter{})
 			if err != nil || len(got) != 2 {
 				t.Errorf("a+b = %v, %v; want 2", got, err)
 			}
-			got, err = tx.Embeddings(ctx, "m", nil)
+			got, err = tx.Embeddings(ctx, "m", nil, ab2store.SearchFilter{})
 			if err != nil || len(got) != 0 {
 				t.Errorf("no channels = %v, %v; want empty", got, err)
 			}
-			got, err = tx.Embeddings(ctx, "other", []int64{a.ID, b.ID})
+			got, err = tx.Embeddings(ctx, "other", []int64{a.ID, b.ID}, ab2store.SearchFilter{})
 			if err != nil || len(got) != 0 {
 				t.Errorf("other model = %v, %v; want empty", got, err)
 			}

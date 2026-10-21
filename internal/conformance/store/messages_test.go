@@ -123,23 +123,23 @@ func TestMessagesAfter(t *testing.T) {
 		}
 		mustTombstone(t, s, 4)
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
-			got, err := tx.MessagesAfter(ctx, a.ID, 0, 10)
+			got, err := tx.MessagesAfter(ctx, a.ID, 0, ab2store.MessageFilter{}, 10)
 			if err != nil || !reflect.DeepEqual(messageSeqs(got), []int64{1, 2, 5}) {
 				t.Errorf("MessagesAfter(a,0) = %v, %v; want [1 2 5]", messageSeqs(got), err)
 			}
-			got, err = tx.MessagesAfter(ctx, a.ID, 1, 10)
+			got, err = tx.MessagesAfter(ctx, a.ID, 1, ab2store.MessageFilter{}, 10)
 			if err != nil || !reflect.DeepEqual(messageSeqs(got), []int64{2, 5}) {
 				t.Errorf("MessagesAfter(a,1) = %v, %v; want [2 5]", messageSeqs(got), err)
 			}
-			got, err = tx.MessagesAfter(ctx, a.ID, 0, 2)
+			got, err = tx.MessagesAfter(ctx, a.ID, 0, ab2store.MessageFilter{}, 2)
 			if err != nil || !reflect.DeepEqual(messageSeqs(got), []int64{1, 2}) {
 				t.Errorf("MessagesAfter(a,0,limit 2) = %v, %v; want [1 2]", messageSeqs(got), err)
 			}
-			got, err = tx.MessagesAfter(ctx, b.ID, 0, 10)
+			got, err = tx.MessagesAfter(ctx, b.ID, 0, ab2store.MessageFilter{}, 10)
 			if err != nil || !reflect.DeepEqual(messageSeqs(got), []int64{3, 6}) {
 				t.Errorf("MessagesAfter(b,0) = %v, %v; want [3 6]", messageSeqs(got), err)
 			}
-			if _, err := tx.MessagesAfter(ctx, a.ID, 0, 0); !errors.Is(err, ab2store.ErrInvalid) {
+			if _, err := tx.MessagesAfter(ctx, a.ID, 0, ab2store.MessageFilter{}, 0); !errors.Is(err, ab2store.ErrInvalid) {
 				t.Errorf("limit 0 err = %v, want ErrInvalid", err)
 			}
 			return nil
@@ -165,7 +165,7 @@ func TestMessagesInRangeWithTagFilter(t *testing.T) {
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 			check := func(name string, from, to int64, ps []ab2store.TagPattern, want []int64) {
 				t.Helper()
-				got, err := tx.MessagesInRange(ctx, a.ID, from, to, ps, 10)
+				got, err := tx.MessagesInRange(ctx, a.ID, from, to, ps, ab2store.MessageFilter{}, 10)
 				if err != nil || !reflect.DeepEqual(messageSeqs(got), want) {
 					t.Errorf("%s = %v, %v; want %v", name, messageSeqs(got), err, want)
 				}
@@ -303,7 +303,7 @@ func TestMessageSurvivesChannelRename(t *testing.T) {
 		mustAppend(t, s, ab2store.NewMessage{ChannelID: a.ID, Sender: "p", Content: "m"})
 		mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error { return tx.RenameChannel(ctx, a.ID, "renamed") })
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
-			got, err := tx.MessagesAfter(ctx, a.ID, 0, 10)
+			got, err := tx.MessagesAfter(ctx, a.ID, 0, ab2store.MessageFilter{}, 10)
 			if err != nil || !reflect.DeepEqual(messageSeqs(got), []int64{1}) {
 				t.Errorf("after rename = %v, %v; want [1]", messageSeqs(got), err)
 			}
@@ -342,25 +342,25 @@ func TestMessageSearchTextWiring(t *testing.T) {
 		gone := mustAppend(t, s, ab2store.NewMessage{ChannelID: a.ID, Sender: "p", Content: "hello tombstoned"})
 		mustTombstone(t, s, gone)
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
-			if _, err := tx.SearchText(ctx, search.Query{}, []int64{a.ID}, 10); !errors.Is(err, ab2store.ErrInvalid) {
+			if _, err := tx.SearchText(ctx, search.Query{}, []int64{a.ID}, ab2store.SearchFilter{}, 10); !errors.Is(err, ab2store.ErrInvalid) {
 				t.Errorf("empty query err = %v, want ErrInvalid", err)
 			}
-			if _, err := tx.SearchText(ctx, search.Query{}, nil, 10); !errors.Is(err, ab2store.ErrInvalid) {
+			if _, err := tx.SearchText(ctx, search.Query{}, nil, ab2store.SearchFilter{}, 10); !errors.Is(err, ab2store.ErrInvalid) {
 				t.Errorf("empty query, no channels err = %v, want ErrInvalid", err)
 			}
-			got, err := tx.SearchText(ctx, search.Parse("hello"), []int64{a.ID}, 10)
+			got, err := tx.SearchText(ctx, search.Parse("hello"), []int64{a.ID}, ab2store.SearchFilter{}, 10)
 			if err != nil || !reflect.DeepEqual(messageSeqs(got), []int64{hello}) {
 				t.Errorf("hello on a = %v, %v; want [%d]", messageSeqs(got), err, hello)
 			}
-			got, err = tx.SearchText(ctx, search.Parse("hello"), nil, 10)
+			got, err = tx.SearchText(ctx, search.Parse("hello"), nil, ab2store.SearchFilter{}, 10)
 			if err != nil || got == nil || len(got) != 0 {
 				t.Errorf("hello on no channels = %v, %v; want empty non-nil", got, err)
 			}
-			got, err = tx.SearchText(ctx, search.Parse("missing"), []int64{a.ID, b.ID}, 10)
+			got, err = tx.SearchText(ctx, search.Parse("missing"), []int64{a.ID, b.ID}, ab2store.SearchFilter{}, 10)
 			if err != nil || len(got) != 0 {
 				t.Errorf("missing = %v, %v; want empty", got, err)
 			}
-			got, err = tx.SearchText(ctx, search.Parse("hello"), []int64{a.ID, b.ID}, 1)
+			got, err = tx.SearchText(ctx, search.Parse("hello"), []int64{a.ID, b.ID}, ab2store.SearchFilter{}, 1)
 			if err != nil || len(got) != 1 || got[0].Seq != hello {
 				t.Errorf("limit 1 = %v, %v; want [%d]", messageSeqs(got), err, hello)
 			}

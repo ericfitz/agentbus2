@@ -128,8 +128,9 @@ func (t *tx) TagSubscriptions(ctx context.Context, identity string) ([]store.Tag
 // TagMatchesAfter returns the live messages on channelIDs with seq > afterSeq
 // that satisfy at least one of the identity's sets (every pattern of the set
 // matched by some tag, seq above max(afterSeq, set created_seq)), ascending,
-// at most limit.
-func (t *tx) TagMatchesAfter(ctx context.Context, identity string, afterSeq int64, channelIDs []int64, limit int) ([]store.Message, error) {
+// at most limit. upToSeq > 0 also bounds seq <= upToSeq; f excludes the
+// sender's or session's own messages.
+func (t *tx) TagMatchesAfter(ctx context.Context, identity string, afterSeq, upToSeq int64, channelIDs []int64, f store.MessageFilter, limit int) ([]store.Message, error) {
 	if err := checkLimit(limit); err != nil {
 		return nil, err
 	}
@@ -159,8 +160,14 @@ func (t *tx) TagMatchesAfter(ctx context.Context, identity string, afterSeq int6
 	}
 	args := []any{channelIDs, afterSeq}
 	args = append(args, branchArgs...)
-	args = append(args, limit)
-	q, args, err := sqlx.In("SELECT "+messageCols+" FROM messages m WHERE m.tombstone = FALSE AND m.channel_id IN (?) AND m.seq > ? AND ("+strings.Join(branches, " OR ")+") ORDER BY m.seq LIMIT ?", args...)
+	upTo := ""
+	if upToSeq > 0 {
+		upTo = " AND m.seq <= ?"
+		args = append(args, upToSeq)
+	}
+	eq, eargs := excludeSQL(f)
+	args = append(append(args, eargs...), limit)
+	q, args, err := sqlx.In("SELECT "+messageCols+" FROM messages m WHERE m.tombstone = FALSE AND m.channel_id IN (?) AND m.seq > ? AND ("+strings.Join(branches, " OR ")+")"+upTo+eq+" ORDER BY m.seq LIMIT ?", args...)
 	if err != nil {
 		return nil, err
 	}

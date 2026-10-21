@@ -49,18 +49,40 @@ type EmbedFailure struct {
 	FailedAt     int64
 }
 
+// MessageFilter excludes a sender's and a session's own messages in SQL
+// (Decision 45 include_own). "" means no exclusion; both set means AND.
+type MessageFilter struct{ ExcludeSender, ExcludeSessionID string }
+
+// SearchFilter narrows search and the semantic scan (Decisions 51, 95; v1
+// searchFilters without the DM branch). Since and Until bound created_at,
+// inclusive. Thread keeps seq == Thread or reply_to == Thread. Patterns: every
+// pattern matched by some tag (v1 tagsFilter).
+type SearchFilter struct {
+	Sender       string
+	Since, Until *int64
+	Thread       *int64
+	Patterns     []TagPattern
+}
+
 type Messages interface {
 	// AppendMessage: Append only; NextSeq, insert, tags, dialect NotifyAppend.
 	AppendMessage(ctx context.Context, m NewMessage) (int64, error)
-	Message(ctx context.Context, seq int64) (Message, error)                                    // tombstoned rows too; ErrNotFound
-	MessagesAfter(ctx context.Context, channelID, afterSeq int64, limit int) ([]Message, error) // live, ascending
+	Message(ctx context.Context, seq int64) (Message, error) // tombstoned rows too; ErrNotFound
+	// MessagesAfter: live, ascending, f applied before limit.
+	MessagesAfter(ctx context.Context, channelID, afterSeq int64, f MessageFilter, limit int) ([]Message, error)
 	// MessagesInRange: live, fromSeq <= seq <= toSeq, every pattern matched
 	// by some tag (v1 tagsFilter).
-	MessagesInRange(ctx context.Context, channelID, fromSeq, toSeq int64, patterns []TagPattern, limit int) ([]Message, error)
+	MessagesInRange(ctx context.Context, channelID, fromSeq, toSeq int64, patterns []TagPattern, f MessageFilter, limit int) ([]Message, error)
+	// MessagesBySeqs: live rows only, ascending seq; unknown seqs skipped;
+	// empty input gives an empty result without a query.
+	MessagesBySeqs(ctx context.Context, seqs []int64) ([]Message, error)
+	// MessagesBefore: live, seq < beforeSeq on the channel, every pattern
+	// matched by some tag, DESCENDING seq (v1 History with before only).
+	MessagesBefore(ctx context.Context, channelID, beforeSeq int64, patterns []TagPattern, f MessageFilter, limit int) ([]Message, error)
 	// SearchText: live, on channelIDs only; ErrInvalid on an empty query
 	// (checked before the dialect is asked) or a term failing TextRule;
 	// empty channelIDs: empty result, no query.
-	SearchText(ctx context.Context, q search.Query, channelIDs []int64, limit int) ([]Message, error)
+	SearchText(ctx context.Context, q search.Query, channelIDs []int64, f SearchFilter, limit int) ([]Message, error)
 	// TombstoneMessage returns false when already tombstoned or missing.
 	TombstoneMessage(ctx context.Context, seq, at int64) (bool, error)
 	DeleteMessages(ctx context.Context, seqs []int64) error
@@ -80,6 +102,10 @@ type Messages interface {
 	DeleteEmbedding(ctx context.Context, seq int64) error
 	// DeleteStaleModel deletes rows whose model <> model, in both tables.
 	DeleteStaleModel(ctx context.Context, model string) error
-	// Embeddings: live memories on channelIDs.
-	Embeddings(ctx context.Context, model string, channelIDs []int64) ([]Embedding, error)
+	// Embeddings: live memories on channelIDs matching f.
+	Embeddings(ctx context.Context, model string, channelIDs []int64, f SearchFilter) ([]Embedding, error)
+	// EmbedFailures (v1 admin.go StatusReport): the failures for model whose
+	// message is still a live memory, and the latest by failed_at DESC, seq
+	// DESC. None gives 0 and the zero EmbedFailure, not ErrNotFound.
+	EmbedFailures(ctx context.Context, model string) (count int, last EmbedFailure, err error)
 }
