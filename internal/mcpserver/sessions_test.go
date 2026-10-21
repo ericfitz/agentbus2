@@ -2,14 +2,21 @@ package mcpserver_test
 
 import (
 	"context"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"github.com/modelcontextprotocol/go-sdk/mcp"
+
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/core/maintenance"
+	"github.com/ericfitz/agentbus2/internal/filelock"
 	"github.com/ericfitz/agentbus2/internal/mcpserver"
+	"github.com/ericfitz/agentbus2/internal/procs"
 	"github.com/ericfitz/agentbus2/internal/sessionstate"
 )
 
@@ -280,5 +287,176 @@ func TestSessionOfAnEarlierServerIsFoundFromItsFile(t *testing.T) {
 	got := second.must(t, "receive", map[string]any{"session": sid})
 	if _, ok := got["messages"]; !ok {
 		t.Fatalf("receive: %v", got)
+	}
+}
+
+// A session swept past retention while its MCP server stays up: the bus
+// answers not_found (the row is gone), so the tool replaces the state file
+// with a fresh session that inherits primary and names it in the error; the
+// harness's hooks then find a live session, not the swept one.
+func TestSweptSessionIsReplacedOnUse(t *testing.T) {
+	for _, tool := range []string{"receive", "send"} {
+		t.Run(tool, func(t *testing.T) {
+			e := newTestEnv(t)
+			tbl := newFakeTable()
+			clk := &clock{t: time.Now()}
+			cfg := pinned()
+			cfg.SessionRetentionHours = 1
+			tune := func(o *client.Options) { o.Config = cfg; o.Now = clk.now }
+			r := startServer(t, e, tbl, "claude-code", func(o *mcpserver.Options) { tune(&o.Client) })
+			sid := str(r.must(t, "register", nil), "session")
+			clk.advance(2 * time.Hour)
+			c := e.conn(t, "pat", tune)
+			maintenance.New(c.Core).Tick(context.Background())
+
+			args := map[string]any{"session": sid}
+			if tool == "send" {
+				args["channel"], args["content"] = "general", "x"
+			}
+			be := r.failure(t, tool, args, bus.CodeSessionLapsed)
+			files, err := sessionstate.List(e.DataDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(files) != 1 || files[0].Session == sid || !files[0].Primary || files[0].MCPPID != 42 {
+				t.Fatalf("state files after the swept session was used: %+v", files)
+			}
+			nid := files[0].Session
+			if !strings.Contains(be.Message, nid) {
+				t.Errorf("error does not name the new session %s: %q", nid, be.Message)
+			}
+			f, found, err := sessionstate.ForHarness(e.DataDir, procs.Ref{Pid: 10, Start: 5})
+			if err != nil || !found || f.Session != nid {
+				t.Errorf("the harness resolves %+v, %v; want %s", f, err, nid)
+			}
+			r.must(t, "receive", map[string]any{"session": nid})
+			// An id the server holds no file for stays the bus's not_found.
+			r.mustFail(t, "receive", map[string]any{"session": "nosuchsession"}, bus.CodeNotFound)
+		})
+	}
+}
+
+// A not_found that is not about the session (a send to a missing channel)
+// leaves the session and its file alone.
+func TestNotFoundOnALiveSessionIsPassedThrough(t *testing.T) {
+	e := newTestEnv(t)
+	r := startServer(t, e, newFakeTable(), "claude-code")
+	sid := str(r.must(t, "register", nil), "session")
+	r.mustFail(t, "send", map[string]any{"session": sid, "channel": "nosuch", "content": "x"}, bus.CodeNotFound)
+	files, err := sessionstate.List(e.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(files) != 1 || files[0].Session != sid {
+		t.Fatalf("state files: %+v", files)
+	}
+}
+
+// close_session of the primary session frees the primary mark: the next
+// register without a hint is the harness's primary session again.
+func TestCloseSessionFreesPrimary(t *testing.T) {
+	e := newTestEnv(t)
+	r := startServer(t, e, newFakeTable(), "claude-code")
+	sid := str(r.must(t, "register", nil), "session")
+	r.must(t, "close_session", map[string]any{"session": sid})
+	nid := str(r.must(t, "register", nil), "session")
+	f, err := sessionstate.Read(e.DataDir, nid)
+	if err != nil || !f.Primary {
+		t.Fatalf("register after closing the primary: %+v, %v", f, err)
+	}
+}
+
+// Overlapping restarts: register runs under the sessions directory lock, so
+// a register waits while another process holds it.
+func TestRegisterWaitsForTheDirectoryLock(t *testing.T) {
+	e := newTestEnv(t)
+	r := startServer(t, e, newFakeTable(), "claude-code")
+	if err := os.MkdirAll(sessionstate.Dir(e.DataDir), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	lf, err := os.OpenFile(filepath.Join(sessionstate.Dir(e.DataDir), ".register.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := filelock.Lock(lf); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err := r.CS.CallTool(context.Background(), &mcp.CallToolParams{Name: "register", Arguments: map[string]any{}})
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		_ = lf.Close()
+		t.Fatalf("register returned while the lock was held (err %v)", err)
+	case <-time.After(300 * time.Millisecond):
+	}
+	_ = lf.Close()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("register did not finish after the lock was released")
+	}
+}
+
+// Two servers restarting at once under one harness: exactly one resumes the
+// dead primary session.
+func TestOverlappingRestartsResumeOnce(t *testing.T) {
+	e := newTestEnv(t)
+	tbl := newFakeTable()
+	first := startServer(t, e, tbl, "claude-code")
+	sid := str(first.must(t, "register", nil), "session")
+	tbl.kill(42)
+	a := startServer(t, e, tbl, "claude-code", func(o *mcpserver.Options) { o.Self = 43 })
+	b := startServer(t, e, tbl, "claude-code", func(o *mcpserver.Options) { o.Self = 44 })
+	var wg sync.WaitGroup
+	res := make([]string, 2)
+	for i, s := range []*running{a, b} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			out, err := s.CS.CallTool(context.Background(), &mcp.CallToolParams{Name: "register", Arguments: map[string]any{}})
+			if err != nil || out.IsError {
+				return
+			}
+			res[i] = out.Content[0].(*mcp.TextContent).Text
+		}()
+	}
+	wg.Wait()
+	n := 0
+	for _, text := range res {
+		if text == "" {
+			t.Fatalf("a register failed: %q", res)
+		}
+		if strings.HasPrefix(text, `{"session":"`+sid+`"`) {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("%d servers resumed %s: %q", n, sid, res)
+	}
+}
+
+// close_session of a session swept past retention removes its file and
+// opens nothing in its place.
+func TestCloseSweptSession(t *testing.T) {
+	e := newTestEnv(t)
+	clk := &clock{t: time.Now()}
+	cfg := pinned()
+	cfg.SessionRetentionHours = 1
+	tune := func(o *client.Options) { o.Config = cfg; o.Now = clk.now }
+	r := startServer(t, e, newFakeTable(), "claude-code", func(o *mcpserver.Options) { tune(&o.Client) })
+	sid := str(r.must(t, "register", nil), "session")
+	clk.advance(2 * time.Hour)
+	c := e.conn(t, "pat", tune)
+	maintenance.New(c.Core).Tick(context.Background())
+	r.mustFail(t, "close_session", map[string]any{"session": sid}, bus.CodeNotFound)
+	files, err := sessionstate.List(e.DataDir)
+	if err != nil || len(files) != 0 {
+		t.Fatalf("state files after closing a swept session: %+v, %v", files, err)
 	}
 }

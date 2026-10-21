@@ -43,11 +43,17 @@ type createChannelIn struct {
 	IdempotencyKey string       `json:"idempotency_key,omitempty" jsonschema:"makes a retry safe: the same key replays the first result"`
 }
 
-// channelIn is the input of delete_channel and get_acl.
+// channelIn is the input of delete_channel.
 type channelIn struct {
 	Session        string `json:"session,omitempty" jsonschema:"your session id as returned by register (optional)"`
 	Name           string `json:"name" jsonschema:"channel name"`
-	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"makes a retry safe: the same key replays the first result (delete_channel)"`
+	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"makes a retry safe: the same key replays the first result"`
+}
+
+// getACLIn is the input of get_acl, a read: it takes no idempotency key.
+type getACLIn struct {
+	Session string `json:"session,omitempty" jsonschema:"your session id as returned by register (optional)"`
+	Name    string `json:"name" jsonschema:"channel name"`
 }
 
 type renameIn struct {

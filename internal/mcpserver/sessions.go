@@ -27,7 +27,8 @@ import (
 //     second finds the file already carrying the first's live pid.
 //   - After a failed run: an exit, clean or not, leaves the files. A file whose
 //     session was closed elsewhere, or swept past retention, is replaced by a
-//     fresh session on the next register. Only close_session removes a file
+//     fresh session on the next register; a swept one is also replaced when a
+//     tool uses its id (the bus answers not_found), keeping its primary mark. Only close_session removes a file
 //     on purpose; Run's Sweep removes the files of dead servers and harnesses.
 
 // findResumable returns the primary state file a restarted server should
@@ -125,13 +126,16 @@ func (s *server) resumeLapsed(ctx context.Context, c *client.Conn, id string) (n
 		}
 		return id, true, nil
 	}
+	s.forgetLocked(dataDir, id)
 	_ = sessionstate.Remove(dataDir, id)
-	delete(s.files, id)
 	nf := f
 	nf.Session, nf.DisplayName, nf.ResumeToken = sess.ID, sess.DisplayName, sess.ResumeToken
-	nf.OpenedAt = s.nowMs()
+	nf.OpenedAt, nf.MCPPID = s.nowMs(), s.self
 	if err := s.putLocked(dataDir, nf); err != nil {
 		return "", false, bus.Internal(err)
+	}
+	if nf.Primary {
+		s.havePrimary = true
 	}
 	return sess.ID, true, nil
 }
@@ -145,17 +149,40 @@ func (s *server) putLocked(dataDir string, f sessionstate.File) error {
 	return nil
 }
 
-// dropFile removes the state file of id and forgets it.
+// dropFile removes the state file of id and forgets it. Dropping this
+// server's primary session frees the mark, so the next register without a
+// hint is the harness's primary session again.
 func (s *server) dropFile(dataDir, id string) error {
 	s.smu.Lock()
 	defer s.smu.Unlock()
-	delete(s.files, id)
+	s.forgetLocked(dataDir, id)
 	return sessionstate.Remove(dataDir, id)
+}
+
+// forgetLocked drops id from the registry and clears havePrimary when id was
+// this server's primary session; s.smu is held. The registry is checked first
+// and the file on disk second, for a session this server adopted by id.
+func (s *server) forgetLocked(dataDir, id string) {
+	f, ok := s.files[id]
+	if !ok {
+		var err error
+		if f, err = sessionstate.Read(dataDir, id); err != nil {
+			return
+		}
+	}
+	delete(s.files, id)
+	if f.Primary && f.MCPPID == s.self {
+		s.havePrimary = false
+	}
 }
 
 // withSession runs f against the session and, when the bus answers
 // session_lapsed, resumes it once with the stored token and runs f again
-// (choice 10). Any other error, and a second lapse, are returned as they are.
+// (choice 10). A not_found for a session this bus holds a state file for is
+// a session swept past retention (the row is gone): the stored token then
+// opens a fresh session that replaces the file, and the error names it. A
+// not_found about anything else (the session still resumes under its id) is
+// returned as it is, as is every other error and a second lapse.
 func withSession[T any](ctx context.Context, s *server, session string, f func(b bus.Bus, id string) (T, error)) (T, error) {
 	var zero T
 	c, err := s.getConn()
@@ -163,7 +190,8 @@ func withSession[T any](ctx context.Context, s *server, session string, f func(b
 		return zero, err
 	}
 	out, err := f(c.Bus, session)
-	if bus.CodeOf(err) != bus.CodeSessionLapsed {
+	code := bus.CodeOf(err)
+	if code != bus.CodeSessionLapsed && code != bus.CodeNotFound {
 		return out, err
 	}
 	id, ok, rerr := s.resumeLapsed(ctx, c, session)
@@ -176,6 +204,9 @@ func withSession[T any](ctx context.Context, s *server, session string, f func(b
 	if id != session {
 		return zero, bus.Errorf(bus.CodeSessionLapsed, false,
 			"session %s lapsed past retention and cannot resume; a new session %s was opened, pass it instead", session, id)
+	}
+	if code == bus.CodeNotFound {
+		return out, err
 	}
 	return f(c.Bus, id)
 }

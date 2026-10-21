@@ -315,15 +315,22 @@ func (s *server) addTools(srv *mcp.Server) {
 			if in.Session == "" {
 				return result(nil, validation("session is required"))
 			}
-			_, err := withSession(ctx, s, in.Session, func(b bus.Bus, id string) (struct{}, error) {
-				return struct{}{}, b.Close(ctx, bus.CloseSessionInput{Session: id})
-			})
-			if err == nil || bus.CodeOf(err) == bus.CodeSessionClosed {
-				// The session is over either way: its file must not be resumed.
-				if dir, derr := s.dataDir(); derr == nil {
-					if rerr := s.dropFile(dir, in.Session); rerr != nil && err == nil {
-						err = bus.Internal(rerr)
-					}
+			c, err := s.getConn()
+			if err != nil {
+				return result(nil, err)
+			}
+			dir, err := s.dataDir()
+			if err != nil {
+				return result(nil, err)
+			}
+			// Close takes a lapsed row as it is (no resume), and a session
+			// swept past retention answers not_found: over either way, so its
+			// file, when it is this bus's, must not be resumed.
+			err = c.Bus.Close(ctx, bus.CloseSessionInput{Session: in.Session})
+			_, mine := s.fileFor(dir, c.Resolved, in.Session)
+			if err == nil || bus.CodeOf(err) == bus.CodeSessionClosed || (mine && bus.CodeOf(err) == bus.CodeNotFound) {
+				if rerr := s.dropFile(dir, in.Session); rerr != nil && err == nil {
+					err = bus.Internal(rerr)
 				}
 			}
 			return result(map[string]any{"closed": in.Session}, err)
@@ -379,7 +386,7 @@ func (s *server) addTools(srv *mcp.Server) {
 			})
 		})
 	mcp.AddTool(srv, &mcp.Tool{Name: "get_acl", Description: "Agentbus2: read a channel's access list: which identities hold read, write and admin."},
-		func(ctx context.Context, req *mcp.CallToolRequest, in channelIn) (*mcp.CallToolResult, any, error) {
+		func(ctx context.Context, req *mcp.CallToolRequest, in getACLIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) {
 				es, err := b.ACL(ctx, in.Name)
 				if err != nil {
@@ -655,6 +662,7 @@ func (s *server) register(ctx context.Context, req *mcp.CallToolRequest, in regi
 	if err != nil && adopt != nil && (bus.CodeOf(err) == bus.CodeSessionClosed || bus.CodeOf(err) == bus.CodeNotFound) {
 		// The remembered session was closed elsewhere: its file is dead weight.
 		s.log.Warn("discarding the state file of a closed session", "session", adopt.Session, "err", err)
+		delete(s.files, adopt.Session)
 		_ = sessionstate.Remove(dataDir, adopt.Session)
 		adopt = nil
 		sess, err = conn.Bus.Open(ctx, bus.OpenSessionInput{Hint: in.Hint, Cursors: cursors})

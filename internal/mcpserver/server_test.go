@@ -551,6 +551,20 @@ func TestSchemaErrorsWrapped(t *testing.T) {
 		t.Errorf("envelope: %+v", be)
 	}
 	r.mustFail(t, "send", map[string]any{"channel": "general"}, bus.CodeValidation) // content missing
+	// An unknown argument is refused by the schema, in the same envelope;
+	// reads take no idempotency_key.
+	for name, args := range map[string]map[string]any{
+		"send":          {"channel": "general", "content": "x", "bogus": 1},
+		"register":      {"name": "v1-argument"},
+		"get_acl":       {"name": "general", "idempotency_key": "k"},
+		"history":       {"channel": "general", "idempotency_key": "k"},
+		"close_session": {"session": "s", "persistent": true},
+	} {
+		be := r.failure(t, name, args, bus.CodeValidation)
+		if !strings.Contains(be.Message, "additional properties") {
+			t.Errorf("%s: %q", name, be.Message)
+		}
+	}
 }
 
 func TestToolsReportUnresolvedIdentity(t *testing.T) {
