@@ -20,14 +20,6 @@ import (
 	"github.com/ericfitz/agentbus2/internal/gen/spec"
 )
 
-// errNotImplemented and notImplemented are the stubs' answer; Task 11 deletes
-// both with the stubs. The problem's detail names the stub that answered.
-var errNotImplemented = errors.New("server: not implemented in this milestone")
-
-func notImplemented(method string) error {
-	return fmt.Errorf("server.%s: %w", method, errNotImplemented)
-}
-
 // Options configure New.
 type Options struct {
 	Auth    Authenticator // nil: RefuseAll

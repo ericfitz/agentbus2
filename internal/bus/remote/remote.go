@@ -28,10 +28,6 @@ var _ ab2bus.Bus = (*Bus)(nil)
 // later task of Milestone 4; removed by Task 11.
 var ErrNotImplemented = errors.New("remote: not implemented in this milestone")
 
-func notImplemented(method string) error {
-	return fmt.Errorf("remote.%s: %w", method, ErrNotImplemented)
-}
-
 // maxBodyExcerpt bounds the body text quoted in an unparsable-response error.
 const maxBodyExcerpt = 200
 
