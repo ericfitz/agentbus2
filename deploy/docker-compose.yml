@@ -1,0 +1,39 @@
+# Two agentbus2 replicas over one Postgres. Copy example.env to .env first (docker compose reads deploy/.env).
+services:
+  postgres:
+    image: postgres:17 # the default initdb locale is UTF-8, which the server's Open requires
+    environment:
+      POSTGRES_DB: agentbus2
+      POSTGRES_USER: agentbus2
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U agentbus2 -d agentbus2"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  agentbus2-a: &agentbus2
+    image: agentbus2:local
+    build:
+      context: ..
+    environment:
+      AGENTBUS2_SERVER_LISTEN: 0.0.0.0:8420
+      AGENTBUS2_SERVER_POSTGRES: postgres://agentbus2:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deploy/.env}@postgres:5432/agentbus2?sslmode=disable
+      AGENTBUS2_SERVER_ISSUER: ${AGENTBUS2_ISSUER:-http://localhost:8420}
+    command: ["-registration", "enrollment"]
+    ports:
+      - "127.0.0.1:8420:8420"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  # Both replicas read the signing key row from the database: no keys volume.
+  agentbus2-b:
+    <<: *agentbus2
+    ports:
+      - "127.0.0.1:8421:8420"
+
+volumes:
+  pgdata:

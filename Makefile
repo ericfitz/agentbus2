@@ -1,4 +1,4 @@
-.PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates check-gates-selftest verify
+.PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates check-gates-selftest verify docker-image docker-smoke
 export CGO_ENABLED=0
 PKGS_UNIT = $$(go list ./... | grep -v '^github.com/ericfitz/agentbus2/internal/conformance')
 
@@ -31,6 +31,10 @@ check-gates:  ## Prove the negative halves: an unreachable Postgres fails the su
 	bash scripts/check-gates.sh
 check-gates-selftest:  ## Prove the gate scripts fire: one mutation per check in a throwaway worktree of HEAD (minutes; its own CI job, not part of verify)
 	bash scripts/check-gates-selftest.sh
+docker-image: ## Build the agentbus2:local Docker image (not part of verify)
+	docker build -t agentbus2:local .
+docker-smoke: ## Build the image and smoke-test it with Docker (not part of verify; its own CI job)
+	bash scripts/docker-smoke.sh
 verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, tidy go.mod, generated-code freshness, unit tests, conformance suites on both engines, gate checks
 	$(MAKE) build
 	$(MAKE) build-all

@@ -60,6 +60,11 @@ jobs:
       - run: bash scripts/m4-exit-checks.sh --deps-only
       - run: bash scripts/m5-exit-checks.sh --deps-only
       - run: make check-gates-selftest
+  docker-smoke: # the image builds, runs as nonroot and serves (not part of make verify)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: make docker-smoke
   gate-negative-no-docker: # variable unset and no Docker at all; verify must fail with the unset-and-could-not-start text
     runs-on: ubuntu-latest
     steps:
