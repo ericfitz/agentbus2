@@ -336,10 +336,29 @@ func TestHookLeavesTheUserFileAlone(t *testing.T) {
 		t.Fatalf("the user's command was escaped:\n%s", b)
 	}
 
+	// Numbers keep their text: a float64 round trip would rewrite them.
+	nums := filepath.Join(dir, "nums.json")
+	if err := os.WriteFile(nums, []byte(`{"big":12345678901234567891,"exp":1e3,"dec":1.10}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := in.hook(nums, "Stop", stopHookCommand, ""); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(nums)
+	for _, want := range []string{`"big": 12345678901234567891`, `"exp": 1e3`, `"dec": 1.10`} {
+		if !strings.Contains(string(b), want) {
+			t.Errorf("%s lost %s:\n%s", nums, want, b)
+		}
+	}
+
 	for name, body := range map[string]string{
 		"hooks-array.json":  `{"hooks":[]}`,
 		"hooks-string.json": `{"hooks":"x"}`,
 		"event-object.json": `{"hooks":{"Stop":{"command":"x"}}}`,
+		"null.json":         `null`,
+		"top-array.json":    `[]`,
+		"top-string.json":   `"x"`,
+		"trailing.json":     `{} {}`,
 	} {
 		path := filepath.Join(dir, name)
 		if err := os.WriteFile(path, []byte(body), 0o644); err != nil {

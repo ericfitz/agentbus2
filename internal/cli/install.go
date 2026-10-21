@@ -12,6 +12,7 @@ package cli
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -340,7 +341,8 @@ func (in *initer) hook(path, event, cmd, matcher string) error {
 
 // hooks merges event hooks running their commands into a Claude Code
 // settings.json, Codex hooks.json, or Grok hooks file, leaving everything else
-// in the file alone (Go's encoder re-sorts object keys, nothing more). A hook
+// in the file alone (Go's encoder re-sorts object keys and re-indents; numbers
+// keep their text through json.Number). A hook
 // already present is not added again; a file that already runs every hook is
 // not rewritten at all; otherwise the file is written once, so its .bak holds
 // the file as it was before init touched it. A "hooks" value, or an event's
@@ -348,7 +350,7 @@ func (in *initer) hook(path, event, cmd, matcher string) error {
 func (in *initer) hooks(path string, specs ...hookSpec) error {
 	doc := map[string]any{}
 	if body, err := os.ReadFile(path); err == nil {
-		if err := json.Unmarshal(body, &doc); err != nil {
+		if doc, err = decodeObject(body); err != nil {
 			return fmt.Errorf("%s: %w (fix or remove it, then rerun)", path, err)
 		}
 	} else if !os.IsNotExist(err) {
@@ -403,6 +405,26 @@ func (in *initer) hooks(path string, specs ...hookSpec) error {
 		return err
 	}
 	return in.write(path, buf.Bytes())
+}
+
+// decodeObject decodes one JSON object, numbers as json.Number so that a
+// rewrite keeps their text. Anything else at the top level (null, an array, a
+// scalar) or trailing data is refused.
+func decodeObject(body []byte) (map[string]any, error) {
+	dec := json.NewDecoder(bytes.NewReader(body))
+	dec.UseNumber()
+	var v any
+	if err := dec.Decode(&v); err != nil {
+		return nil, err
+	}
+	if _, err := dec.Token(); err != io.EOF {
+		return nil, errors.New("trailing data after the JSON object")
+	}
+	m, ok := v.(map[string]any)
+	if !ok {
+		return nil, errors.New("not a JSON object")
+	}
+	return m, nil
 }
 
 // hasHookCommand reports whether a hook entry already runs cmd (as the whole
