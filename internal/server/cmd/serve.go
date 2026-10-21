@@ -81,6 +81,11 @@ func httpServer(c Config, h http.Handler) *http.Server {
 // one SQLite file are unsupported (their notifiers cannot see each other); a
 // start after a crash finds the lease expired after twice the interval.
 func Serve(ctx context.Context, c Config) error {
+	if c.Listener != nil {
+		// http.Server.Serve closes it once serving; this covers the early
+		// returns before that, and a second Close is harmless.
+		defer func() { _ = c.Listener.Close() }()
+	}
 	if c.Store == nil {
 		return errors.New("server: a Store is required")
 	}

@@ -18,8 +18,8 @@ const usage = `usage: agentbus2 <command>
 commands:
   server        serve the API over SQLite or Postgres (-config, -listen, -sqlite or -postgres, -registration, -set)
   server admin  host commands against the store: make-admin, reset-credential, create-identity, enrollment
-  version  print the version
-  help      print this help`
+  version       print the version
+  help          print this help`
 
 func main() {
 	os.Exit(run(os.Args[1:], os.Environ(), os.Stdout, os.Stderr))

@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-jose/go-jose/v4"
+
 	"github.com/ericfitz/agentbus2/internal/auth/assertion"
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/bus"
@@ -491,7 +493,8 @@ func TestSigningKeyStoreLifecycle(t *testing.T) {
 }
 
 // A start that fails after the key row was committed leaves the row; the next
-// start loads it and generates nothing.
+// start loads it and generates nothing. The failure is the embedding key,
+// which Run reads after the signing key (the plan task 9 order).
 func TestSigningKeyAfterFailedStart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ab2.db")
 	args := []string{"-listen", "127.0.0.1:0", "-sqlite", path}
@@ -502,11 +505,12 @@ func TestSigningKeyAfterFailedStart(t *testing.T) {
 		t.Fatalf("missing embedding key file: exit %d, stderr %q", code, errs)
 	}
 	m := regexp.MustCompile(`generated signing key (\S+)`).FindStringSubmatch(out)
+	if m == nil {
+		t.Fatalf("the failed start created no key row before failing: stdout %q", out)
+	}
 	r := runServer(t, args...)
-	if m != nil {
-		if strings.Contains(r.stdout.String(), "generated signing key") || r.kid != m[1] {
-			t.Fatalf("the committed row was not reused: stdout %q, first kid %s", r.stdout.String(), m[1])
-		}
+	if strings.Contains(r.stdout.String(), "generated signing key") || r.kid != m[1] {
+		t.Fatalf("the committed row was not reused: stdout %q, first kid %s", r.stdout.String(), m[1])
 	}
 	if got := jwksKIDs(t, r.base()); len(got) != 1 || got[0] != r.kid {
 		t.Fatalf("jwks kids %v", got)
@@ -575,5 +579,27 @@ func TestRunOverUnixSocket(t *testing.T) {
 	}
 	if code != 200 || json.Unmarshal(body, &oc) != nil || oc.Issuer != base {
 		t.Fatalf("openid-configuration: %d %s", code, body)
+	}
+}
+
+// externalIssuers carries algorithms and jwks_refresh_seconds into
+// token.External; the 300 s default of both sides would hide a dropped TTL.
+func TestExternalIssuersMapping(t *testing.T) {
+	cfg := config.Default()
+	cfg.JWKSRefreshSeconds = 42
+	cfg.Issuers = []config.Issuer{
+		{Issuer: "https://a", JWKSURI: "https://a/jwks", Audience: "x", Algorithms: []string{"ES256", "RS256"}, Subjects: map[string]string{"s": "pat"}},
+		{Issuer: "https://b", JWKSURI: "https://b/jwks", Audience: "y", Subjects: map[string]string{"t": "kim"}},
+	}
+	got := externalIssuers(cfg)
+	if len(got) != 2 {
+		t.Fatalf("%d externals, want 2", len(got))
+	}
+	if a := got[0]; a.Issuer != "https://a" || a.JWKSURI != "https://a/jwks" || a.Audience != "x" || a.Subjects["s"] != "pat" ||
+		a.TTL != 42*time.Second || len(a.Algorithms) != 2 || a.Algorithms[0] != jose.ES256 || a.Algorithms[1] != jose.RS256 {
+		t.Fatalf("first external %+v", a)
+	}
+	if b := got[1]; b.Algorithms != nil || b.TTL != 42*time.Second {
+		t.Fatalf("second external %+v: want nil algorithms (the verifier's default) and the TTL", b)
 	}
 }

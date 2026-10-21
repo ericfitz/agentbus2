@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"errors"
 	"log/slog"
 	"net"
 	"path/filepath"
@@ -353,5 +354,30 @@ func TestServeUsesGivenListener(t *testing.T) {
 	cancel()
 	if err := <-errc; err != nil {
 		t.Fatalf("Serve: %v", err)
+	}
+}
+
+// A Serve that fails before serving still closes a given Listener, as the
+// Config field documents.
+func TestServeClosesGivenListenerOnEarlyError(t *testing.T) {
+	s := openSQLite(t, filepath.Join(t.TempDir(), "ab2.db"))
+	for _, c := range []Config{
+		{Registration: identities.ModeOpen}, // no Store
+		{Store: s, Registration: "tofu"},    // unknown mode
+		{Store: s, Registration: ""},        // missing mode
+	} {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.Listener = ln
+		if err := Serve(context.Background(), c); err == nil {
+			t.Fatalf("Serve(%+v) succeeded", c)
+		}
+		_ = ln.(*net.TCPListener).SetDeadline(time.Now().Add(100 * time.Millisecond))
+		if _, err := ln.Accept(); !errors.Is(err, net.ErrClosed) {
+			t.Errorf("registration %q: Accept after a failed Serve: %v, want net.ErrClosed", c.Registration, err)
+			_ = ln.Close()
+		}
 	}
 }
