@@ -8,6 +8,7 @@ import (
 
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/muesli/termenv"
 )
 
 func TestColorIndexForms(t *testing.T) {
@@ -156,7 +157,7 @@ func TestRailSelNeverWraps(t *testing.T) {
 }
 
 func TestChipTextContrastsWithTagColor(t *testing.T) {
-	for bg, want := range map[string]string{"7": "0", "11": "0", "15": "0", "3": "0", "4": "15", "8": "15", "1": "15"} {
+	for bg, want := range map[string]string{"3": "0", "6": "0", "7": "0", "10": "0", "11": "0", "14": "0", "15": "0", "0": "15", "1": "15", "2": "15", "4": "15", "5": "15", "8": "15", "9": "15", "12": "15", "13": "15"} {
 		if got := chipText(lipgloss.Color(bg)); got != lipgloss.Color(want) {
 			t.Errorf("tag %s: chip text %v, want %s", bg, got, want)
 		}
@@ -167,7 +168,7 @@ func TestChipTextContrastsWithTagColor(t *testing.T) {
 // color; unfocused keeps the original colors.
 func TestRailSelFocusedStripsColors(t *testing.T) {
 	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(2) // termenv.ANSI
+	lipgloss.SetColorProfile(termenv.ANSI)
 	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 	th := LoadTheme(Settings{}, io.Discard)
 	colored := th.Style(th.Agent).Render("name")

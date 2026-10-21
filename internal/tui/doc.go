@@ -8,7 +8,10 @@ package tui
 
 // The blank imports pin the Bubble Tea module graph in go.mod and go.sum from
 // Milestone 8 Task 1, so that the feature tasks that run in parallel after it
-// never edit those two files. Each is dropped when a real import replaces it.
+// never edit those two files (theme_test.go imports termenv, which v1's tests
+// use, for the same reason). They stay until the feature tasks have landed;
+// one later commit drops those a real import has made redundant, so no
+// parallel task edits this file.
 import (
 	_ "github.com/charmbracelet/bubbles/cursor"
 	_ "github.com/charmbracelet/bubbles/textarea"
