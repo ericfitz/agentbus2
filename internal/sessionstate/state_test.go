@@ -300,3 +300,21 @@ func TestWriteFailureLeavesPreviousFile(t *testing.T) {
 		t.Fatalf("entries = %v", ents)
 	}
 }
+
+// TestWriteAtomicRemovesTempOnFailure fails writeAtomic after the temp file
+// exists (the rename target is a non-empty directory) and checks that no temp
+// file is left behind.
+func TestWriteAtomicRemovesTempOnFailure(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(Dir(dir), "s.json")
+	if err := os.MkdirAll(filepath.Join(target, "child"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := Write(dir, sample("s")); err == nil {
+		t.Fatal("Write over a non-empty directory succeeded")
+	}
+	ents, _ := os.ReadDir(Dir(dir))
+	if len(ents) != 1 || ents[0].Name() != "s.json" || !ents[0].IsDir() {
+		t.Fatalf("entries = %v", ents)
+	}
+}

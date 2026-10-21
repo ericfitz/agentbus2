@@ -1,7 +1,7 @@
 // Package procs reads just enough of the process table to tell whether a
 // process is still the one we remember: its parent, command name, and start
-// time. the MCP server and the CLI use it to locate the harness that started them
-// (Decision 41) and to notice its exit, without ever acting on a process that
+// time. The MCP server and the CLI use it to locate the harness that started
+// them (Decision 41) and to notice its exit, without ever acting on a process that
 // merely reuses the old pid.
 package procs
 
