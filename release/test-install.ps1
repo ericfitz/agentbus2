@@ -646,8 +646,10 @@ function Invoke-Cases {
     Invoke-Case 'relative-dir' 1 'must be an absolute path' @{} 'bin' $null $null
     # Reinstalls and upgrades. $dir holds 9.0.1 here; the installer reports a
     # same-version reinstall, an upgrade from the version the old binary
-    # printed, or a plain upgrade when the old binary did not run.
-    Invoke-Case -Name 'reinstall-same-version' -WantExit 0 -WantOut 'reinstalled: agentbus2 9.0.1 was already installed' -Env @{} -InstallDir $dir -Before $null -After { (& (Join-Path $dir 'agentbus2.exe') version) -eq '9.0.1' } -WantNotOut 'upgraded'
+    # printed, or a plain upgrade when the old binary did not run. The
+    # reinstall also proves the PATH edit is idempotent: $dir, added by
+    # "valid", is still listed exactly once.
+    Invoke-Case -Name 'reinstall-same-version' -WantExit 0 -WantOut 'reinstalled: agentbus2 9.0.1 was already installed' -Env @{} -InstallDir $dir -Before $null -After { ((& (Join-Path $dir 'agentbus2.exe') version) -eq '9.0.1') -and (@(Get-UserPathEntries | Where-Object { $_ -eq $dir }).Count -eq 1) } -WantNotOut 'upgraded'
     Invoke-Case -Name 'pin-older-over-newer' -WantExit 0 -WantOut 'upgraded from 9.0.1: restart every harness session' -Env @{ 'AGENTBUS2_VERSION' = 'v9.0.0' } -InstallDir $dir -Before $null -After { (& (Join-Path $dir 'agentbus2.exe') version) -eq '9.0.0' } -WantNotOut 'reinstalled'
     $script:Running = $null
     Invoke-Case 'upgrade-while-running' 0 'upgraded from 9.0.0: restart' @{} $dir { $script:Running = Start-Process -FilePath (Join-Path $dir 'agentbus2.exe') -ArgumentList 'sleep' -PassThru @Hidden } {
