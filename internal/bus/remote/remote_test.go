@@ -277,3 +277,44 @@ func TestRemoteStubsNameTheirMethod(t *testing.T) {
 		})
 	}
 }
+
+// TestUnsubscribeTagsEmptyPathSegment pins the one client-side rule of the
+// remote Bus (pending Eric: Milestone 4 item 5, reopened for {patterns}): the
+// set travels as one path segment, and an empty segment is the router's 404
+// on the wire where the core answers validation. The guard fires for exactly
+// the inputs that would encode to an empty segment and sends no request; every
+// other input, bad or not, goes to the wire and is judged by the core.
+func TestUnsubscribeTagsEmptyPathSegment(t *testing.T) {
+	ctx := context.Background()
+	for name, patterns := range map[string][]string{
+		"nil":       nil,
+		"empty":     {},
+		"one empty": {""},
+	} {
+		t.Run("guarded/"+name, func(t *testing.T) {
+			c := &canned{status: 204}
+			err := newBus(t, c).UnsubscribeTags(ctx, ab2bus.TagSubscribeInput{Patterns: patterns})
+			if be := asBusError(t, err); be.Code != ab2bus.CodeValidation {
+				t.Fatalf("code = %q, want validation", be.Code)
+			}
+			if n := c.n.Load(); n != 0 {
+				t.Fatalf("the guard let %d requests through", n)
+			}
+		})
+	}
+	for name, patterns := range map[string][]string{
+		"one pattern":     {"a"},
+		"empty then name": {"", "a"},
+		"two empty":       {"", ""},
+	} {
+		t.Run("sent/"+name, func(t *testing.T) {
+			c := &canned{status: 204}
+			if err := newBus(t, c).UnsubscribeTags(ctx, ab2bus.TagSubscribeInput{Patterns: patterns}); err != nil {
+				t.Fatalf("err = %v", err)
+			}
+			if n := c.n.Load(); n != 1 {
+				t.Fatalf("%d requests, want exactly 1 (no rule beyond the empty segment)", n)
+			}
+		})
+	}
+}

@@ -143,11 +143,18 @@ func (b *Bus) SubscribeTags(ctx context.Context, in ab2bus.TagSubscribeInput) er
 }
 
 func (b *Bus) UnsubscribeTags(ctx context.Context, in ab2bus.TagSubscribeInput) error {
-	if len(in.Patterns) == 0 {
-		// An empty set has no path segment: the wire would answer the
-		// router's 404 for "/v1/tag-subscriptions/". Answer what the core
-		// answers (the one client-side rule here; no path-parameter rule
-		// is applied to any other input, choice 17).
+	// pending Eric: Milestone 4 item 5 (reopened for {patterns}: the empty set
+	// is validation in the core, a router 404 on the wire). The set is one
+	// path segment, so no pattern and one empty pattern both encode to the
+	// empty segment, which no route matches. This is the narrowest guard that
+	// makes the transports agree (a departure from Decision 80, reported to
+	// the integrator): it fires for exactly those two inputs, sends nothing,
+	// and answers what the core answers; every other input goes to the wire
+	// as given (choice 17). Open, not guarded: a comma inside one pattern
+	// splits the segment into two patterns on the wire (the core rejects the
+	// pattern); only a client-side pattern rule or a different encoding could
+	// close it, so it is reported to the integrator instead.
+	if len(in.Patterns) == 0 || (len(in.Patterns) == 1 && in.Patterns[0] == "") {
 		return &ab2bus.Error{Code: ab2bus.CodeValidation, Message: "a tag subscription needs at least one pattern"}
 	}
 	r, err := b.c.UnsubscribeTagsWithResponse(ctx, in.Patterns, &gen.UnsubscribeTagsParams{IdempotencyKey: key(in.IdempotencyKey)})

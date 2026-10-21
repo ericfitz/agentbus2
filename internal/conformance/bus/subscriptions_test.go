@@ -177,6 +177,12 @@ func TestSubscriptionTagsRoundTrip(t *testing.T) {
 		codeOf(t, pat.SubscribeTags(ctx, ab2bus.TagSubscribeInput{}), ab2bus.CodeValidation)
 		codeOf(t, pat.SubscribeTags(ctx, ab2bus.TagSubscribeInput{Patterns: []string{"has space"}}), ab2bus.CodeValidation)
 		codeOf(t, pat.UnsubscribeTags(ctx, ab2bus.TagSubscribeInput{}), ab2bus.CodeValidation)
+		// The set travels as one path segment on the wire, so an empty pattern
+		// alone is the empty segment (a router 404 unless the remote Bus
+		// answers for the core); beside another pattern it is a bad pattern.
+		codeOf(t, pat.UnsubscribeTags(ctx, ab2bus.TagSubscribeInput{Patterns: []string{""}}), ab2bus.CodeValidation)
+		codeOf(t, pat.UnsubscribeTags(ctx, ab2bus.TagSubscribeInput{Patterns: []string{"beta", ""}}), ab2bus.CodeValidation)
+		codeOf(t, pat.SubscribeTags(ctx, ab2bus.TagSubscribeInput{Patterns: []string{""}}), ab2bus.CodeValidation)
 
 		if err := pat.UnsubscribeTags(ctx, ab2bus.TagSubscribeInput{Patterns: []string{"ENV:*", "beta"}}); err != nil {
 			t.Fatal(err)

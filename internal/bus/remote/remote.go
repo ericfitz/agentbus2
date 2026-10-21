@@ -14,7 +14,9 @@ import (
 
 // Bus is the remote implementation of ab2bus.Bus over the generated client.
 // Names (channels, sessions) go to the generated client as given: there is
-// no client-side path-parameter rule (Decision 80).
+// no client-side path-parameter rule (Decision 80), with the one exception of
+// UnsubscribeTags for an empty {patterns} segment (channels.go; pending Eric:
+// Milestone 4 item 5).
 type Bus struct{ c *gen.ClientWithResponses }
 
 // New wraps a generated client.
