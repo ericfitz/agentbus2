@@ -314,3 +314,15 @@ func TestRunChannelCreationSwitch(t *testing.T) {
 func genBearer(token string) gen.ClientOption {
 	return gen.WithRequestEditorFn(remote.WithBearer(token))
 }
+
+// TestRunWarnsOnPlainHTTPJWKS: a plain-http jwks_uri on a non-loopback host
+// starts the server with a warning on stderr naming the entry and the URI.
+func TestRunWarnsOnPlainHTTPJWKS(t *testing.T) {
+	db := filepath.Join(t.TempDir(), "ab2.db")
+	uri := "http://idp.example/jwks"
+	issuers := `[{"issuer":"https://idp.example","jwks_uri":"` + uri + `","audience":"a","subjects":{"s":"pat"}}]`
+	r := runServer(t, "-listen", "127.0.0.1:0", "-sqlite", db, "-set", "issuers="+issuers)
+	if got := r.stderr.String(); !strings.Contains(got, "level=WARN") || !strings.Contains(got, "issuers: entry 0") || !strings.Contains(got, uri) {
+		t.Fatalf("stderr lacks the jwks_uri warning: %q", got)
+	}
+}

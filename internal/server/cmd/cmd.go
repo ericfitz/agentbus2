@@ -90,6 +90,9 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 	}
 
 	logger := newLogger(cfg, stderr)
+	for _, w := range cfg.Warnings() {
+		logger.Warn(w)
+	}
 
 	st, err := openStore(ctx, cfg, logger)
 	if err != nil {

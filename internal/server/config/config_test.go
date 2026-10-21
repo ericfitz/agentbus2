@@ -90,6 +90,15 @@ func TestValidateRejects(t *testing.T) {
 		}, "subjects"},
 		{"no subjects", func(c *Config) { i := goodIssuer(); i.Subjects = nil; c.Issuers = []Issuer{i} }, "subjects"},
 		{"jwks uri", func(c *Config) { i := goodIssuer(); i.JWKSURI = "jwks"; c.Issuers = []Issuer{i} }, "jwks_uri"},
+		{"duplicate issuer", func(c *Config) {
+			i, j := goodIssuer(), goodIssuer()
+			j.Audience = "other"
+			c.Issuers = []Issuer{i, j}
+		}, `issuers: entry 1: issuer "https://idp.example" repeats entry 0`},
+		{"own issuer", func(c *Config) {
+			c.Issuer = "https://idp.example"
+			c.Issuers = []Issuer{goodIssuer()}
+		}, `issuers: entry 0: issuer "https://idp.example" is the server's own issuer`},
 		{"channel creation", func(c *Config) { c.ChannelCreation = "closed" }, "channel_creation"},
 		{"log level", func(c *Config) { c.LogLevel = "trace" }, "log_level"},
 		{"embedding no model", func(c *Config) { c.EmbeddingEndpoint = "http://e" }, "embedding_model"},
@@ -119,6 +128,44 @@ func TestValidateRejects(t *testing.T) {
 	c.Registration = "enrollment"
 	if err := c.Validate(); err != nil {
 		t.Errorf("valid config rejected: %v", err)
+	}
+}
+
+// TestWarnings: a plain-http jwks_uri on a non-loopback host is a warning
+// (the spec states no transport rule for it, so it is not refused).
+func TestWarnings(t *testing.T) {
+	cases := []struct {
+		uri  string
+		warn bool
+	}{
+		{"https://idp.example/jwks", false},
+		{"http://idp.example/jwks", true},
+		{"HTTP://idp.example/jwks", true},
+		{"http://10.0.0.5:8080/jwks", true},
+		{"http://127.0.0.1:8080/jwks", false},
+		{"http://[::1]/jwks", false},
+		{"http://localhost/jwks", false},
+		{"http://LocalHost:9/jwks", false},
+	}
+	for _, tc := range cases {
+		c := valid()
+		i := goodIssuer()
+		i.JWKSURI = tc.uri
+		c.Issuers = []Issuer{goodIssuer(), i}
+		c.Issuers[0].Issuer = "https://first.example"
+		w := c.Warnings()
+		if !tc.warn {
+			if len(w) != 0 {
+				t.Errorf("%s: unexpected warnings %q", tc.uri, w)
+			}
+			continue
+		}
+		if len(w) != 1 || !strings.Contains(w[0], "issuers: entry 1") || !strings.Contains(w[0], tc.uri) {
+			t.Errorf("%s: warnings = %q, want one naming entry 1 and the URI", tc.uri, w)
+		}
+	}
+	if w := valid().Warnings(); len(w) != 0 {
+		t.Errorf("default config warns: %q", w)
 	}
 }
 

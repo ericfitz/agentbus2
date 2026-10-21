@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"reflect"
 	"slices"
@@ -178,10 +179,21 @@ func (c Config) Validate() error {
 	if c.JWKSRefreshSeconds < 10 || c.JWKSRefreshSeconds > 86400 {
 		return fmt.Errorf("jwks_refresh_seconds must be between 10 and 86400, got %d", c.JWKSRefreshSeconds)
 	}
+	// The Verifier routes a token by exact iss: the own issuer first, then
+	// the first matching entry, so an entry equal to either is never used.
+	// An unset Issuer is the bound address, known only at Run.
+	first := map[string]int{}
 	for i, is := range c.Issuers {
 		if err := validateIssuer(is); err != nil {
 			return fmt.Errorf("issuers: entry %d: %w", i, err)
 		}
+		if c.Issuer != "" && is.Issuer == c.Issuer {
+			return fmt.Errorf("issuers: entry %d: issuer %q is the server's own issuer", i, is.Issuer)
+		}
+		if j, ok := first[is.Issuer]; ok {
+			return fmt.Errorf("issuers: entry %d: issuer %q repeats entry %d", i, is.Issuer, j)
+		}
+		first[is.Issuer] = i
 	}
 	cc, err := c.Core()
 	if err != nil {
@@ -207,6 +219,30 @@ func (c Config) Validate() error {
 		return errors.New("at most one of embedding_api_key_file and embedding_api_key_env may be set")
 	}
 	return nil
+}
+
+// Warnings lists what Validate accepts but an operator should see: an
+// external issuer whose jwks_uri is plain http on a host other than loopback
+// (an on-path attacker can substitute the key set). The spec states no
+// transport rule for jwks_uri, so it is not refused.
+func (c Config) Warnings() []string {
+	var w []string
+	for i, is := range c.Issuers {
+		u, err := url.Parse(is.JWKSURI)
+		if err != nil || !strings.EqualFold(u.Scheme, "http") || loopbackHost(u.Hostname()) {
+			continue
+		}
+		w = append(w, fmt.Sprintf("issuers: entry %d: jwks_uri %q is plain http on a non-loopback host; anyone on the path can substitute the key set (use https)", i, is.JWKSURI))
+	}
+	return w
+}
+
+func loopbackHost(h string) bool {
+	if strings.EqualFold(h, "localhost") {
+		return true
+	}
+	ip := net.ParseIP(h)
+	return ip != nil && ip.IsLoopback()
 }
 
 func absoluteURL(s string) bool {
