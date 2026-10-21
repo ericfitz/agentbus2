@@ -337,3 +337,51 @@ func TestLocalSecondOpenAfterCrash(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = crashed.Close() })
 }
+
+// A local process that stops releases the maintenance lock, so the next
+// process takes it at once instead of waiting out the lease.
+func TestLocalMaintenanceReleasesLockOnClose(t *testing.T) {
+	ctx := context.Background()
+	e := localEnv(t)
+	cfg := core.Defaults()
+	cfg.WatchMergeSeconds = 0
+	cfg.MaintenanceIntervalSeconds = 1
+	a := e.openAs(t, "pat", func(o *Options) { o.Maintenance = true; o.Config = &cfg })
+	err := a.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		return tx.PutReceipt(ctx, store.Receipt{Identity: "pat", Key: "k", Fingerprint: "f", Result: []byte("{}"), ExpiresAt: 1})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var found bool
+		err := a.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+			var err error
+			_, found, err = tx.Receipt(ctx, "pat", "k", 0)
+			return err
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !found {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("maintenance did not tick within 3 s")
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if err := a.Close(); err != nil {
+		t.Fatal(err)
+	}
+	b := e.openAs(t, "sam")
+	now := time.Now().UnixMilli()
+	held, err := b.Core.Store.TryLock(ctx, "maintenance", "someone-else", now, now+60_000)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !held {
+		t.Fatal("the maintenance lock is still held after the holder closed")
+	}
+}
