@@ -133,7 +133,24 @@ func TestPgnotifyReconnects(t *testing.T) {
 	if seq2 <= seq {
 		t.Fatalf("seq %d not after %d", seq2, seq)
 	}
-	expectHint(t, hints, time.Second, notify.Hint{ChannelID: ch.ID, Seq: seq2})
+	// The outage append may commit after the new session's LISTEN (the
+	// backoff is 50 ms), and then its own hint follows the catch-up one; it
+	// is the only hint allowed before seq2's.
+	deadline := time.After(time.Second)
+	for {
+		select {
+		case got := <-hints:
+			switch got {
+			case notify.Hint{ChannelID: ch.ID, Seq: seq2}:
+				return
+			case notify.Hint{ChannelID: ch.ID, Seq: seq}, notify.Hint{}:
+				continue
+			}
+			t.Fatalf("got hint %v, want %v", got, notify.Hint{ChannelID: ch.ID, Seq: seq2})
+		case <-deadline:
+			t.Fatalf("no hint %v within 1s", notify.Hint{ChannelID: ch.ID, Seq: seq2})
+		}
+	}
 }
 
 func TestPgnotifyChannelMatchesDialect(t *testing.T) {
