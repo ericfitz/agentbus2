@@ -63,6 +63,13 @@ jobs:
       - run: bash scripts/m7-exit-checks.sh --deps-only
       - run: bash scripts/m8-exit-checks.sh --deps-only
       - run: make check-gates-selftest
+  m9-exit-selftest: # the release tooling's self-test: real-repo invariants plus four mutations in a throwaway worktree (minutes; builds Go; not part of verify)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - run: bash scripts/m9-exit-checks.sh
   docker-smoke: # the image builds, runs as nonroot and serves (not part of make verify)
     runs-on: ubuntu-latest
     steps:

@@ -129,8 +129,8 @@ check sign-sums-wrong-key 1 "SHA256SUMS.sig does not verify" -- sk_run "cp '$WOR
 check embedded-placeholder 1 "install.sh has no embedded release key" -- bash -c "source '$HERE/release.sh'; check_script_embedded '$WORK/unembedded.sh' install.sh"
 check embedded-placeholder-hint 1 "embed-key.sh" -- bash -c "source '$HERE/release.sh'; check_script_embedded '$WORK/unembedded.sh' install.sh"
 check embedded-ok 0 "" -- bash -c "source '$HERE/release.sh'; check_script_embedded '$WORK/embedded.sh' install.sh"
-check ps1-unembedded 1 "install.ps1 has no embedded release key" -- bash -c "source '$HERE/release.sh'; check_script_embedded '$WORK/unembedded.ps1' install.ps1"
-check ps1-embedded 0 "" -- bash -c "source '$HERE/release.sh'; check_script_embedded '$WORK/embedded.ps1' install.ps1"
+check ps1-synthetic-unembedded 1 "install.ps1 has no embedded release key" -- bash -c "source '$HERE/release.sh'; check_script_embedded '$WORK/unembedded.ps1' install.ps1"
+check ps1-synthetic-embedded 0 "" -- bash -c "source '$HERE/release.sh'; check_script_embedded '$WORK/embedded.ps1' install.ps1"
 commit_file() { # <src> <dest-in-repo> <message> <tag>
     cp "$1" "$WORK/repo/$2" && git -C "$WORK/repo" add "$2" && git -C "$WORK/repo" -c user.email=t@t -c user.name=t commit -q -m "$3" && git -C "$WORK/repo" tag "$4"
 }
