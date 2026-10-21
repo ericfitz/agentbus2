@@ -16,6 +16,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentbus2/internal/core/maintenance"
 	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/store/sqlite"
 )
@@ -235,7 +236,10 @@ func TestServeCrashLeftovers(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ab2.db")
 	clock := &fakeClock{t: time.UnixMilli(1_700_000_000_000)}
 
-	// A takes the lease, then is canceled (a crash leaves the same row).
+	// A takes the lease, then is canceled. A graceful stop now releases the
+	// lease (TestServeReleasesLockOnShutdown), so this no longer leaves a
+	// crashed holder's row; the expiry takeover itself is
+	// maintenance.TestTickLockHeldAcrossTicks.
 	sA := openSQLite(t, path)
 	db, err := sql.Open("sqlite", path)
 	if err != nil {
@@ -379,5 +383,52 @@ func TestServeClosesGivenListenerOnEarlyError(t *testing.T) {
 			t.Errorf("registration %q: Accept after a failed Serve: %v, want net.ErrClosed", c.Registration, err)
 			_ = ln.Close()
 		}
+	}
+}
+
+// A graceful stop releases the maintenance lock, so the next server takes it
+// on its first tick, with no clock advance (Milestone 7 Task 5: Release after
+// the maintenance goroutine returns).
+func TestServeReleasesLockOnShutdown(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ab2.db")
+	clock := &fakeClock{t: time.UnixMilli(1_700_000_000_000)}
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	firstRan := func() (func(bool, []maintenance.JobResult), <-chan struct{}) {
+		ch := make(chan struct{})
+		var once sync.Once
+		return func(ran bool, _ []maintenance.JobResult) {
+			if ran {
+				once.Do(func() { close(ch) })
+			}
+		}, ch
+	}
+	wait := func(name string, ch <-chan struct{}) {
+		t.Helper()
+		select {
+		case <-ch:
+		case <-time.After(5 * time.Second):
+			t.Fatalf("server %s never ran a maintenance tick", name)
+		}
+	}
+
+	onA, ranA := firstRan()
+	_, stopA := startServe(t, Config{Store: openSQLite(t, path), Cfg: oneSecond(), Now: clock.Now, OnTick: onA})
+	wait("A", ranA)
+	if err := stopA(); err != nil {
+		t.Fatal(err)
+	}
+	if l := readLease(t, db); l.owner == "" || l.expiresAt != 0 {
+		t.Fatalf("lease after a graceful stop %+v, want released (expires_at 0)", l)
+	}
+
+	onB, ranB := firstRan()
+	_, stopB := startServe(t, Config{Store: openSQLite(t, path), Cfg: oneSecond(), Now: clock.Now, OnTick: onB})
+	wait("B", ranB)
+	if err := stopB(); err != nil {
+		t.Fatal(err)
 	}
 }
