@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -236,6 +237,10 @@ func TestSearchSemanticAndBoth(t *testing.T) {
 		h.append(mem, "pat", "", "alpha bravo") // seq 1
 		h.append(mem, "pat", "", "gamma")       // seq 2
 		h.append(mem, "pat", "", "alpha")       // seq 3
+		// An ordinary message is never embedded: a text-only hit that RRF must
+		// merge in, and that semantic mode never sees.
+		ord := h.channel("ord", ab2store.KindOrdinary, "pat", nil)
+		h.append(ord, "pat", "", "alpha text only") // seq 4
 		if n, err := embed.EmbedBatch(context.Background(), h.core); err != nil || n != 3 {
 			t.Fatalf("EmbedBatch = %d, %v", n, err)
 		}
@@ -249,12 +254,17 @@ func TestSearchSemanticAndBoth(t *testing.T) {
 		if !(sem.Hits[0].Score > sem.Hits[1].Score && sem.Hits[1].Score > sem.Hits[2].Score) {
 			t.Fatalf("scores not descending: %+v", sem.Hits)
 		}
+		// RRF (k=60) over text [4 3 1] (newest first) and semantic [3 1 2]:
+		// 3 = 1/62+1/61, 1 = 1/63+1/62, 4 = 1/61, 2 = 1/63. Neither input's
+		// order alone: semantic lacks 4, text lacks 2 and ranks 4 first.
 		both, err := b.Search(ctx, ab2bus.SearchInput{Query: "alpha", Mode: "both"})
-		if err != nil || !reflect.DeepEqual(hitSeqs(both), []int64{3, 1, 2}) {
-			t.Fatalf("both = %v, %v; want RRF order [3 1 2]", hitSeqs(both), err)
+		if err != nil || !reflect.DeepEqual(hitSeqs(both), []int64{3, 1, 4, 2}) {
+			t.Fatalf("both = %v, %v; want RRF order [3 1 4 2]", hitSeqs(both), err)
 		}
-		if both.Hits[0].Score <= both.Hits[2].Score {
-			t.Fatalf("RRF scores: %+v", both.Hits)
+		for i := 1; i < len(both.Hits); i++ {
+			if both.Hits[i-1].Score <= both.Hits[i].Score {
+				t.Fatalf("RRF scores not descending: %+v", both.Hits)
+			}
 		}
 		def, err := b.Search(ctx, ab2bus.SearchInput{Query: "alpha"}) // default mode with an embedder is both
 		if err != nil || !reflect.DeepEqual(hitSeqs(def), hitSeqs(both)) {
@@ -264,8 +274,8 @@ func TestSearchSemanticAndBoth(t *testing.T) {
 		h.embedder.Fail = true
 		for _, mode := range []string{"semantic", "both"} {
 			res, err := b.Search(ctx, ab2bus.SearchInput{Query: "alpha", Mode: mode})
-			if err != nil || !res.SemanticUnavailable || !reflect.DeepEqual(hitSeqs(res), []int64{3, 1}) {
-				t.Errorf("Fail %s = %v, %v, unavailable=%v; want text fallback [3 1]", mode, hitSeqs(res), err, res.SemanticUnavailable)
+			if err != nil || !res.SemanticUnavailable || !reflect.DeepEqual(hitSeqs(res), []int64{4, 3, 1}) {
+				t.Errorf("Fail %s = %v, %v, unavailable=%v; want text fallback [4 3 1]", mode, hitSeqs(res), err, res.SemanticUnavailable)
 			}
 		}
 		h.embedder.Fail = false
@@ -351,6 +361,7 @@ func TestSearchPagingAndTrim(t *testing.T) {
 			"empty query":     {Query: "  "},
 			"star only":       {Query: "*"},
 			"bad tag":         {Query: "rate", Tags: []string{"No Good"}},
+			"negative count":  {Query: "rate", Count: -1},
 		} {
 			_, err := b2.Search(ctx, in)
 			if ab2bus.CodeOf(err) != ab2bus.CodeValidation {
@@ -360,9 +371,47 @@ func TestSearchPagingAndTrim(t *testing.T) {
 	})
 }
 
+// touchRecorder is a Store whose transactions record every id passed to
+// TouchMemoryAccess. A tasks-kind memory has no access row to observe through
+// the Store reads (ExpiredMemories skips task lists whatever the table holds),
+// so the calls themselves are what a test can check.
+type touchRecorder struct {
+	ab2store.Store
+	mu      sync.Mutex
+	touched map[int64]bool
+}
+
+func (r *touchRecorder) Tx(ctx context.Context, fn func(context.Context, ab2store.Tx) error) error {
+	return r.Store.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+		return fn(ctx, touchRecorderTx{Tx: tx, r: r})
+	})
+}
+
+type touchRecorderTx struct {
+	ab2store.Tx
+	r *touchRecorder
+}
+
+func (t touchRecorderTx) TouchMemoryAccess(ctx context.Context, ids []int64, at int64) error {
+	t.r.mu.Lock()
+	for _, id := range ids {
+		t.r.touched[id] = true
+	}
+	t.r.mu.Unlock()
+	return t.Tx.TouchMemoryAccess(ctx, ids, at)
+}
+
 func TestSearchTouchesHitsOnly(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
+		// Search runs through a Core over the recorder; the fixtures below
+		// write through h.raw, so only Search's touches are recorded.
+		rec := &touchRecorder{Store: h.raw, touched: map[int64]bool{}}
+		c, err := core.New(rec, h.cfg, core.Options{Now: h.clock.Now, Notifier: h.notifier})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.core = c
 		mem := h.channel("mem", ab2store.KindMemory, "pat", nil)
 		tasks := h.channel("tasks", ab2store.KindTasks, "pat", nil)
 		hitSeq := h.append(mem, "pat", "", "alpha")
@@ -386,8 +435,10 @@ func TestSearchTouchesHitsOnly(t *testing.T) {
 		if ids[hitSeq] || !ids[missSeq] {
 			t.Fatalf("stale access rows = %v; the hit must be touched, the miss not", ids)
 		}
-		if ids[taskSeq] {
-			t.Fatalf("a tasks-kind memory has no access row, yet ExpiredMemories lists it: %v", ids)
+		// A tasks-kind memory is a hit but is never touched (no access row, v1
+		// ADR 0013), and the miss is not touched either.
+		if !reflect.DeepEqual(rec.touched, map[int64]bool{hitSeq: true}) {
+			t.Fatalf("TouchMemoryAccess ids = %v, want only the memory hit %d (not the task %d or the miss %d)", rec.touched, hitSeq, taskSeq, missSeq)
 		}
 	})
 }

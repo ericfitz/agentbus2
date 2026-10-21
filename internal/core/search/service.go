@@ -163,7 +163,10 @@ func prepare(in bus.SearchInput, haveEmbedder bool) (prepared, error) {
 	default:
 		return prepared{}, core.E(bus.CodeValidation, "mode must be text, semantic, or both")
 	}
-	if p.count <= 0 {
+	if in.Count < 0 {
+		return prepared{}, core.E(bus.CodeValidation, "count must not be negative")
+	}
+	if p.count == 0 {
 		p.count = rules.SearchPageDefault
 	}
 	p.count = min(p.count, rules.SearchPageMax)

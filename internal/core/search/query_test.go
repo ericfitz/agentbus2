@@ -21,9 +21,11 @@ func TestPrepareValidation(t *testing.T) {
 		{"unknown mode", bus.SearchInput{Query: "a", Mode: "fuzzy"}, true, bus.CodeValidation, "", 0, 0},
 		{"negative cursor", bus.SearchInput{Query: "a", Cursor: "-1"}, false, bus.CodeValidation, "", 0, 0},
 		{"junk cursor", bus.SearchInput{Query: "a", Cursor: "x"}, false, bus.CodeValidation, "", 0, 0},
+		{"negative count", bus.SearchInput{Query: "a", Count: -1}, false, bus.CodeValidation, "", 0, 0},
 		{"bad tag pattern", bus.SearchInput{Query: "a", Tags: []string{"Bad Tag"}}, false, bus.CodeValidation, "", 0, 0},
 		{"default mode no embedder", bus.SearchInput{Query: "a"}, false, "", "text", 100, 0},
 		{"default mode embedder", bus.SearchInput{Query: "a"}, true, "", "both", 100, 0},
+		{"zero count defaults", bus.SearchInput{Query: "a", Count: 0}, false, "", "text", 100, 0},
 		{"count capped", bus.SearchInput{Query: "a", Count: 5000, Cursor: "7"}, false, "", "text", 1000, 7},
 		{"explicit semantic", bus.SearchInput{Query: "a", Mode: "semantic", Count: 3}, false, "", "semantic", 3, 0},
 	}
