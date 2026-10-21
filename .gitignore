@@ -6,3 +6,6 @@ HANDOFF.md
 
 # Agent worktrees created by Claude Code workflows
 /.claude/worktrees/
+
+# The operator's compose secrets (copied from deploy/example.env)
+.env

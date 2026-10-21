@@ -6,3 +6,5 @@ dist
 agentbus2
 HANDOFF.md
 **/*.test
+.env
+**/.env

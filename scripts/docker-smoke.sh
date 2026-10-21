@@ -18,8 +18,8 @@ expect_exit() {
   local name="$1" code="$2" text="$3"
   shift 3
   docker run -d --name "$name" "$@" >/dev/null
-  local status="" i
-  for i in $(seq 1 10); do
+  local status=""
+  for _ in $(seq 1 10); do
     sleep 1
     status="$(docker inspect --format '{{.State.Status}}' "$name")"
     if [ "$status" = exited ]; then break; fi
@@ -79,7 +79,7 @@ case "$hdr" in
   "HTTP/"*" 400"*) ;;
   *) fail "register with an empty body: want 400, got: $hdr" ;;
 esac
-case "$(printf '%s' "$hdr" | tr 'A-Z' 'a-z')" in
+case "$(printf '%s' "$hdr" | tr '[:upper:]' '[:lower:]')" in
   *'content-type: application/problem+json'*) ;;
   *) fail "register with an empty body: not problem+json: $hdr" ;;
 esac
@@ -99,7 +99,9 @@ case "$logs" in
 esac
 case "$logs" in *'generated signing key'*) ;; *) fail "log lacks 'generated signing key': $logs" ;; esac
 
-echo "step 9: compose example validates"
+echo "step 9: compose example validates; its .env is neither committed nor in the build context"
+git -C "$ROOT" check-ignore -q deploy/.env || fail "deploy/.env is not git-ignored"
+grep -qxF '**/.env' "$ROOT/.dockerignore" || fail ".dockerignore does not exclude **/.env"
 docker compose -f "$ROOT/deploy/docker-compose.yml" --env-file "$ROOT/deploy/example.env" config >/dev/null
 
 echo "docker-smoke: ok"
