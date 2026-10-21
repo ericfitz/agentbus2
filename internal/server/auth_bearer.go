@@ -102,7 +102,7 @@ func verifyReason(err error) string {
 		return "wrong audience"
 	case errors.Is(err, jose.ErrCryptoFailure):
 		return "bad signature"
-	case strings.Contains(err.Error(), "is not mapped"):
+	case errors.Is(err, token.ErrUnmappedSubject):
 		return "unmapped subject"
 	}
 	return "malformed"

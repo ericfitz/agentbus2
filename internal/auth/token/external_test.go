@@ -273,7 +273,7 @@ func TestExternalRefusesUnmappedAndWrongAudience(t *testing.T) {
 		if c.cause != nil && !errors.Is(err, c.cause) {
 			t.Errorf("%s: %v, want %v in the chain", name, err, c.cause)
 		}
-		if name == "unmapped" && (err == nil || !strings.Contains(err.Error(), `subject "stranger" is not mapped`)) {
+		if name == "unmapped" && (!errors.Is(err, ErrUnmappedSubject) || !strings.Contains(err.Error(), `subject "stranger" is not mapped`)) {
 			t.Errorf("unmapped text: %v", err)
 		}
 	}

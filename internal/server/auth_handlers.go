@@ -55,7 +55,10 @@ func (a *api) Token(ctx context.Context, req gen.TokenRequestObject) (gen.TokenR
 	if err := p.Verify(pub, iss.TokenEndpoint(), now, token.Leeway); err != nil {
 		return nil, core.E(bus.CodeUnauthenticated, "%s", err)
 	}
-	if a.replay.Seen(p.JTI, p.Expiry, now) {
+	// Verify accepts the assertion until exp plus the leeway, so its jti is
+	// remembered that long: remembering it only until exp would let a replay
+	// inside the leeway through.
+	if a.replay.Seen(p.JTI, p.Expiry.Add(token.Leeway), now) {
 		return nil, core.E(bus.CodeUnauthenticated, "assertion replayed")
 	}
 	raw, _, err := iss.Mint(p.Identity)

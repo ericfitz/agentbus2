@@ -251,7 +251,7 @@ func (e *External) Verify(ctx context.Context, raw string) (string, error) {
 	}
 	identity, ok := e.Subjects[c.Subject]
 	if !ok || identity == "" {
-		return "", invalid("subject %q is not mapped", c.Subject)
+		return "", fmt.Errorf("%w: %w: subject %q is not mapped", ErrInvalid, ErrUnmappedSubject, c.Subject)
 	}
 	return identity, nil
 }

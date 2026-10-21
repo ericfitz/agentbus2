@@ -259,7 +259,7 @@ func TestTokenRefusesForeignKeyAndReplay(t *testing.T) {
 	wantAuthProblem(t, e.exchange(a, ""), 401, "unauthenticated", "assertion replayed")
 
 	// Audience is the token endpoint, not the issuer.
-	wantAuthProblem(t, e.exchange(e.assertionFor("pat", pat, "http://inproc", 0), ""), 401, "unauthenticated", "")
+	wantAuthProblem(t, e.exchange(e.assertionFor("pat", pat, "http://inproc", 0), ""), 401, "unauthenticated", "audience")
 	// A signature by the right identity's key but a wrong kid.
 	wrongKID, err := assertion.Sign(assertion.Input{Identity: "pat", TokenEndpoint: aud, Key: pat, KID: "nope", Now: e.clock.Now()})
 	if err != nil {
@@ -293,6 +293,8 @@ func TestTokenRefusesForeignKeyAndReplay(t *testing.T) {
 	form := url.Values{"grant_type": {"password"}, "client_assertion_type": {assertion.Type}, "client_assertion": {a}}
 	wantAuthProblem(t, e.do("POST", "/v1/auth/token", "application/x-www-form-urlencoded", "", form.Encode()), 400, "validation", "")
 	wantAuthProblem(t, e.do("POST", "/v1/auth/token", "application/json", "", `{"client_assertion":"x"}`), 400, "validation", "")
+	form = url.Values{"grant_type": {"client_credentials"}, "client_assertion_type": {"urn:ietf:params:oauth:client-assertion-type:saml2-bearer"}, "client_assertion": {a}}
+	wantAuthProblem(t, e.do("POST", "/v1/auth/token", "application/x-www-form-urlencoded", "", form.Encode()), 400, "validation", "")
 }
 
 // forgedAssertion signs an assertion whose lifetime assertion.Sign would refuse.
@@ -552,4 +554,19 @@ func TestInProcessStillWorks(t *testing.T) {
 	if err != nil || r.StatusCode() != 200 {
 		t.Fatalf("%v %v", r, err)
 	}
+}
+
+// TestTokenReplayInsideLeeway: an assertion is accepted until exp plus
+// token.Leeway, so the replay set must remember its jti that long. A replay
+// after exp but inside the leeway is refused.
+func TestTokenReplayInsideLeeway(t *testing.T) {
+	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
+	pat := genKey(t, keys.EdDSA)
+	e.mustRegister("pat", pat)
+	a := e.assertionFor("pat", pat, "http://inproc/v1/auth/token", time.Minute)
+	if resp := e.exchange(a, ""); resp.StatusCode != 200 {
+		t.Fatalf("first use: %d %s", resp.StatusCode, readBody(t, resp))
+	}
+	e.clock.Advance(time.Minute + token.Leeway/2) // past exp, inside the leeway
+	wantAuthProblem(t, e.exchange(a, ""), 401, "unauthenticated", "assertion replayed")
 }

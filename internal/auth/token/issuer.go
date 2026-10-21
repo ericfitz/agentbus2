@@ -32,6 +32,9 @@ var (
 	ErrUnknownKey = errors.New("token: unknown key")
 	// ErrUnknownIssuer marks a bearer whose iss is neither the own issuer nor a configured one.
 	ErrUnknownIssuer = errors.New("token: unknown issuer")
+	// ErrUnmappedSubject marks an external bearer whose sub has no identity
+	// mapping; it is wrapped alongside ErrInvalid.
+	ErrUnmappedSubject = errors.New("token: unmapped subject")
 )
 
 var serverAlgorithms = []jose.SignatureAlgorithm{jose.EdDSA, jose.ES256}
