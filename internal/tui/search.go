@@ -1,3 +1,5 @@
+// Ported from v1 906dec8 internal/tui/search.go (over Messaging.Search; jumpTo selects channels only, ADR 0006).
+
 package tui
 
 import (

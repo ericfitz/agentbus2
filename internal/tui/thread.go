@@ -1,4 +1,4 @@
-// Ported from v1 906dec8 internal/tui/thread.go (paneMsgs without the inbox merge, ADR 0006).
+// Ported from v1 906dec8 internal/tui/thread.go (paneMsgs shows one channel only, ADR 0006).
 
 package tui
 
@@ -9,7 +9,7 @@ import (
 )
 
 // paneMsgs returns the messages a pane shows: a tag pane's matches, else the
-// channel's own. There is no inbox merge: the stream is the channel (ADR 0006).
+// channel's own. Nothing is merged in: the stream is the channel (ADR 0006).
 func (m *Model) paneMsgs(ch string) []bus.Message {
 	if isTagPane(ch) {
 		return m.tagPaneMsgs(ch)

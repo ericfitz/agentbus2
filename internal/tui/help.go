@@ -48,7 +48,7 @@ func (m Model) helpLines() []string {
 		{"r", "reply to the cursor message"},
 		{"c", "new channel: <name> [memory|tasks]"},
 		{"s", "subscribe / unsubscribe the channel (no-op on a heading)"},
-		{"t", "rail: follow a tag set: <tag>[,<tag>...] (AND); task list: take the unassigned cursor task"},
+		{"t", "rail: follow a tag set: <tag>[,<tag>...] (AND); task list: take the unassigned cursor task (claims it: yours, in progress)"},
 		{"u", "task list: unassign your not-started cursor task"},
 		{"a", "task list: assign the cursor task to an identity (unassigned tasks or yours)"},
 		{"d", "delete the channel and all its messages (asks first); on a tag set, unfollow it (no confirmation); no-op on a heading"},
