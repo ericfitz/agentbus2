@@ -169,7 +169,8 @@ func (c *client) ok() {
 // replacing c.session under mu. A second lapse before any successful call
 // does not resume again. The hint goes with the token: a row the retention
 // job swept makes Open start a fresh session (Decision 18), which must still
-// be <identity>/tui; a real resume ignores it and keeps the name.
+// be <identity>/tui; a real resume ignores it and keeps the name. The token
+// lives only in memory, never across restarts (pending Eric: Milestone 8 item 3).
 func (c *client) resumeLapsed() error {
 	c.mu.Lock()
 	if c.lapsedOnce {

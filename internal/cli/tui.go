@@ -65,7 +65,7 @@ func RunTUI(ctx context.Context, args []string, environ []string, stdin io.Reade
 		opts.Settings = tuiSettings(*cfg.TUI)
 		opts.Host.RailWidth = cfg.TUI.RailWidth
 	}
-	// Pending item 2 (Milestone 8): other live sessions of this identity share
+	// pending Eric: Milestone 8 item 2. Other live sessions of this identity share
 	// its subscriptions and acked mark. Listed before this TUI opens its own.
 	if ids, err := conn.Bus.Identities(ctx); err == nil {
 		for _, id := range ids {

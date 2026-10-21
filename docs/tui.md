@@ -77,7 +77,7 @@ The full map is the `?` overlay (`internal/tui/help.go`). The main keys:
 | `?` | help |
 | `q` | quit |
 
-In compose: `enter` sends (a memory channel creates a memory), `alt+enter` inserts a newline, `↑` recalls the last sent message, `ctrl+u` clears. `ctrl+c` quits from anywhere.
+In compose: `enter` sends (a memory channel creates a memory), `alt+enter` inserts a newline, `↑` recalls the last sent message, `↓` on the draft's last line clears it, `ctrl+u` clears. `ctrl+c` quits from anywhere.
 
 The channel create prompt takes a kind (`memory` or `tasks`) as its second word; anything else, or a third word, is a usage toast. The TUI has no ACL editor: a channel's ACL is set where the channel is created by an agent or the CLI.
 
@@ -97,7 +97,7 @@ A channel of kind `tasks` shows the task tree. A task is editable when it is una
 
 ## Settings
 
-The TUI's settings are the top-level `tui` object of `config.json` in the config directory (`$AGENTBUS2_CONFIG_DIR`, else `$XDG_CONFIG_HOME/agentbus2`, else `~/.config/agentbus2`), next to `profiles`:
+The TUI's settings are the top-level `tui` object of `config.json` in the config directory (`$AGENTBUS2_CONFIG_DIR`, else `$XDG_CONFIG_HOME/agentbus2`, else `~/.config/agentbus2`; on Windows `%APPDATA%\agentbus2` in place of the last two), next to `profiles`:
 
 ```json
 {
@@ -167,7 +167,7 @@ A value is one of the sixteen ANSI color names (`black`, `red`, `green`, `yellow
 | `error` | toast and overlay error prefix | U+F06A |
 | `arrow` | sender to channel | U+F061 |
 
-A JSON string has no `\U` escape, so a glyph beyond the Basic Multilingual Plane such as `idle`'s needs a surrogate pair (`"󰒲"` for U+F04B2) or the literal character. The health overlay names the active set on its `icons ·` line.
+A JSON string has no `\U` escape, so a glyph beyond the Basic Multilingual Plane such as `idle`'s needs a surrogate pair (`"\udb81\udcb2"` for U+F04B2) or the literal character. The health overlay names the active set on its `icons ·` line.
 
 ### Using a Nerd Font
 

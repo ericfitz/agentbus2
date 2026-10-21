@@ -107,7 +107,7 @@ type Config struct {
 	Path     string             `json:"-"`
 	Profiles map[string]Profile `json:"profiles"`
 	// TUI holds the terminal UI's settings; nil when config.json has no "tui".
-	TUI *TUISettings `json:"tui,omitempty"`
+	TUI *TUISettings `json:"tui,omitempty"` // pending Eric: Milestone 8 item 1
 }
 
 // Getenv looks name up in environ with os.Environ semantics (the last
