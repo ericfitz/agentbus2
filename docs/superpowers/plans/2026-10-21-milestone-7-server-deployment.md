@@ -1,0 +1,573 @@
+# Milestone 7: Server Deployment Implementation Plan
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Two `agentbus2 server` replicas over one Postgres deliver and wake correctly and only one of them runs each maintenance job: the Postgres notifier (`NOTIFY` inside the append transaction, a `LISTEN` on a native pgx connection feeding the Decision 52 notifier, hints only, reconnecting), `pg_try_advisory_lock`-guarded maintenance with the SQLite lease row kept for local multi-process mode (Decisions 49, 68), the three maintenance deliverables Milestone 3 deferred (budget eviction, capacity notices, admin usage; Milestone 3 pending item 3 on A), a Docker image with a compose example over Postgres, and the operations docs.
+
+**Architecture:** The Store contract grows two engine-neutral capabilities with engine-specific bodies behind the existing `Dialect` seam: `Locks` (`TryLock`/`Unlock`: the `leases` row on SQLite, a session advisory lock on a pinned connection on Postgres) and `Space` (`Usage`/`Reclaim`: `page_count` and `incremental_vacuum` on SQLite, `pg_total_relation_size` and a no-op on Postgres). The Postgres engine fills the `NotifyAppend` hook with `pg_notify` on a per-schema channel and gains a control hook on watch registration; the listener is a new package `internal/core/notify/pgnotify` that embeds `notify.Memory` for fan-out and owns one native `pgx.Conn`, wired by `agentbus2 server` when the store is Postgres. The core never names an engine: maintenance asks the Store for the lock and for usage, and the budget jobs act only where `Usage.Evictable` is true. The import direction stays store → nothing in core; core → store; the deps script of Task 6 enforces it.
+
+**Tech Stack:** Go 1.27, `CGO_ENABLED=0`; `pgx` v5.11.0 (`pgx.Connect`, `Conn.WaitForNotification`, already in `go.mod`; no new module dependencies); `modernc.org/sqlite`; Docker 29 (multi-stage build, `gcr.io/distroless/static-debian12:nonroot`), Docker Compose v2; testcontainers from Milestone 1.
+
+**Spec:** `docs/superpowers/specs/2026-10-19-agentbus2-design.md` sections 2.1, 2.2, 3.2 (admin row: usage), 4.2 (Decision 58's Docker override), 5.3 (Decision 50: the native pgx connection), 5.5 (Decision 52), 5.6 (Decisions 34, 53), 5.7 (Decisions 49, 68), 6.5 (Decision 85), 8, 9 (`maintenance.go`), 10 (Milestone 7); ADR 0001 (Decisions 10, 42, 45, 68), ADR 0002 (Decisions 58, 85), ADR 0004 (Decisions 25, 26, 49, 50, 52, 53, 68, 69 and the Milestone 2 addendum's "pg_notify and pg_try_advisory_lock are Milestone 7"), ADR 0005 (Decision 31). v1 at `/Users/efitz/Projects/agentbus` (`v1.15.0`, `33e8d34`): `internal/bus/maintenance.go` (`evictToBudget`, `capacityNotice`, `vacuumPages`, `checkCapacity`), `internal/bus/bus.go` (`Usage`, the `auto_vacuum` conversion at open, lines 175 to 200 and 241 to 253), `internal/bus/admin.go` (`Status.UsageBytes`, `BudgetBytes`, `Notice`), `internal/config/config.go` (`sqlite_budget_mib`, `cleanup_free_percent`), `internal/bus/wait.go` (`WaitPollInterval`, already ported). The Milestone 3, 4 and 5 plans for every name in "Names assumed".
+
+## Task dependencies and parallelism
+
+Tasks with no dependency between them run in parallel in separate worktrees and are cherry-picked onto `main`; every task's `Files:` list is disjoint from every task it can run beside. `Makefile` and `.github/workflows/ci.yml` are edited by Task 5 only; `go.mod` by nobody (pgx is already a direct dependency). Milestone 6 executes concurrently on the client packages (`internal/client*`, `internal/cli*`, `internal/mcp*`, `internal/hooks*`, `internal/profile*`, skill files): no task here touches them; the one file both milestones may want, `internal/bus/remote`, is touched here only by a new file (`usage.go`, Task 4), and Task 4's one-line edit to `internal/bus/admin.go` is reported to the integrator as a Milestone 6 touch point.
+
+| Task | Depends on | Wave |
+| --- | --- | --- |
+| 1 Store: `Locks` and `Space` on both engines, SQLite `auto_vacuum` | none | 1 |
+| 2a Postgres notify codec and the `pgnotify` listener (Docker-free) | none | 1 |
+| 5 Docker image, compose example, smoke script, CI job | none | 1 |
+| 2b `NOTIFY` inside append and watch registration, server wiring, cross-process notifier tests | 2a | 2 |
+| 3 Maintenance over `TryLock`, budget eviction and capacity notice, the two settings, `OnTick` | 1 | 2 |
+| 4 Admin usage on the wire | 1, 3 | 3 |
+| 6 Milestone exit: two replicas, exclusivity, negative halves, ADR addenda | 2b, 3, 4, 5 | 4 |
+| 7 Operations docs with the mechanical configuration check | 3, 4, 5 | 4 |
+
+Waves: 1 (three tasks in parallel), 2 (two), 3 (one), 4 (two; disjoint: Task 6 owns `README.md`, `CLAUDE.md`, `docs/adr`, `scripts`, the replicas test; Task 7 owns `docs/ops` and one test file under `internal/server/config`). Eight tasks: Task 2 is split because the listener's reconnect logic is testable Docker-free with a fake connection while the `NOTIFY` side and its proof need Postgres, and a reviewer can reject either half alone.
+
+**External gate:** Milestones 3, 4 and 5 must be on `main` before Wave 2 (Task 3 edits Milestone 3's maintenance service and Milestone 5's configuration; Task 2b edits Milestone 5's `cmd.Run`). Tasks 1, 2a and 5 import nothing from them and may start as soon as Milestone 2 is on `main` (it is). Before Wave 2 the integrator diffs every signature in "Names assumed" against `main` and reports drift.
+
+**Gate 0** (before Wave 1): the four items of "Claude proposal, pending Eric" go to Eric in one message with options, the recommendation (A) and the test that encodes each (`rg -n 'pending Eric: Milestone 7' internal/`); every wave proceeds on A.
+
+## Global Constraints
+
+- Module `github.com/ericfitz/agentbus2`, `go 1.27`, `CGO_ENABLED=0` (Decision 53); `database/sql` through the Store, `pgx` through its stdlib adapter except the one native connection for `LISTEN` (Decision 50); no new module dependencies. Every method takes a `context.Context` (Decision 6).
+- Decision 26 holds for every new write: `NotifyAppend` and the control hook run inside the transaction (a rolled-back attempt drops its own `NOTIFY`, which is the point of "inside the append transaction"); the listener's `Publish` and every log line run outside any transaction. Notifications are hints (Decision 52): every consumer re-checks the store; nothing in this milestone may treat a hint as a message.
+- Import direction: `internal/store/...` never imports `internal/core/...` (the codec the listener shares with the dialect lives in `internal/store/postgres`); `internal/core/notify` stays a leaf (no `internal/store`, no `pgx`); `internal/core/notify/pgnotify` may import `internal/core/notify`, `internal/store/postgres` and `pgx`, never `internal/server` or `internal/gen`. Task 6's `scripts/m7-exit-checks.sh --deps-only` enforces all three.
+- The core never names an engine: no `Engine()` switch in `internal/core`. Engine-specific behavior is behind `Dialect` (`Usage`, `Reclaim`, the optional `Locker` and `ControlNotifier` interfaces) and surfaces to the core as data (`store.Usage.Evictable`).
+- The Milestone 1 to 5 gate checks stay in force: no `.Skip(` under `internal/conformance` or `internal/dbtest`; `make test` is Docker-free (check 2 runs it against an unreachable DSN), so every test that needs Postgres lives under `internal/conformance/bus` or `internal/conformance/store`; a Postgres-only behavior (the `LISTEN` connection) is tested there by asking for the Postgres engine explicitly (`postgresEngine(t)`, Task 2b), never by skipping the SQLite half of a both-engine test. Check 5 runs the `store` and `bus` suite binaries in busybox: no new conformance package.
+- Unrecognized inputs are rejected with a test: a malformed `NOTIFY` payload degrades to `Hint{}` with a log line (never a panic, never dropped); `TryLock` and `Unlock` refuse a name or owner failing `TextRule` with `ErrInvalid`; `sqlite_budget_mib` and `cleanup_free_percent` keep v1's bounds; `RunJob("vacuum")` stays `validation`.
+- Decision 31: every porting task names its v1 source file in the commit. Work lands on `main`; nothing is pushed; Conventional Commits with the session's attribution trailer.
+- Definition of Done D applies to `TryLock`/`Unlock` (second call, overlap, a holder that died), the listener (reconnect, double `Close`), the budget job (second run, a budget below what memories occupy), `sqlite.Open`'s `auto_vacuum` conversion (second open, two openers), the smoke script (a killed run's container) and `TestReplicasMaintenanceExclusive`'s failover.
+- Pending decisions are visible in the code: the test that encodes an item carries `// pending Eric: Milestone 7 item N` on its first line.
+
+## Choices this milestone makes (delegated by the spec, recorded with rationale)
+
+1. **Lock shape** (Decisions 49, 68; ADR 0004 "dialect hooks only where the engines really differ"). `store.Store` embeds `Locks{TryLock, Unlock}` (Store level, not `Tx`: an advisory lock is session-scoped, so it must live on one pinned `*sql.Conn` across the many transactions of a tick, and `Meta.TryLease` inside a `Tx` cannot hold it). SQLite: `TryLease` on the `leases` row inside a `Tx` (v1 `takeLease`, ported in Milestone 3), expiry at `until`; `Unlock` sets `expires_at = 0` for the owner. Postgres: `pg_try_advisory_lock(hashtext(current_schema()), hashtext($1))` on a `*sql.Conn` the Store keeps per name (keyed per schema as Milestone 2's migration lock is, so per-test schemas never contend); `now` and `until` are ignored; `Unlock` runs `pg_advisory_unlock_all()` on that connection and returns it to the pool (an `sql.Conn.Close` alone would hand the lock-holding session back to the pool). **Lifetime: held across ticks.** `Tick` calls `TryLock` every interval (a renewal on SQLite, a re-entrant re-assert on the pinned connection on Postgres, which also detects a dead connection and re-acquires on a fresh one), and `Unlock` runs once at shutdown (`cmd.Serve`). Rationale: the holder keeps maintenance until it dies or stops, so two replicas never alternate and the exit proof is crisp; failover is immediate on Postgres when the holder's session ends (clean shutdown or a dropped connection) and after `2 * interval` on SQLite (v1's bound). A silently partitioned holder keeps the Postgres lock until the server's TCP keepalive ends the session (`tcp_keepalives_idle`, Linux default 2 h); the deploy doc says to set it (Task 7). `Meta.TryLease` stays on `Tx` unchanged (Milestone 3's tests use it).
+2. **`NOTIFY` channel and payload** (Decision 52). One channel per schema, `'agentbus2_' || left(encode(sha256(convert_to(current_schema(), 'UTF8')), 'hex'), 24)` (34 bytes, always under the 63-byte identifier limit; `sha256()` rather than `md5()` because `md5()` errors under FIPS-mode OpenSSL), computed in SQL by both the `pg_notify(<channel>, $1)` call and the listener's `SELECT` before `LISTEN`, so a replica on another schema of the same database hears nothing. Payload `<channelID>:<seq>` for an append and `0:0` for a control hint (watch registration, pending item 1); `postgres.ParsePayload` accepts exactly `^\d+:\d+$`. `pg_notify` takes the channel as text (no identifier quoting). A Decision 26 retry sends its `NOTIFY` only from the attempt that commits.
+3. **Listener** (`internal/core/notify/pgnotify`). `Listener` embeds `*notify.Memory`: `Publish` is the in-process fan-out the core already calls after commit (so the sending replica sees its own hint twice, which the one-slot coalescing absorbs) and the goroutine turns every notification into a `Publish`. One native `pgx.Conn` per listener (`pgx.ConnectConfig` with `application_name` `agentbus2-listen`, never the pool); on connect and on every reconnect it publishes `Hint{}` so armed watches re-check what they may have missed; reconnect with jittered exponential backoff from 100 ms to 5 s; `Close` is idempotent. Package location: under `internal/core/notify` because it implements that package's interface and the core's wiring lives in `cmd`; it imports `internal/store/postgres` for the codec (store never imports core).
+4. **Usage and reclaim** (Milestone 3 pending item 3's `Dialect.Usage`). `store.Usage{Bytes int64; Evictable bool}`: SQLite `(page_count - freelist_count) * page_size` (v1 `bus.go` `Usage`) with `Evictable true`; Postgres `sum(pg_total_relation_size(c.oid))` over `pg_class` rows of `current_schema()` with `relkind = 'r'` (tables with their indexes and TOAST; schema-scoped, unlike `pg_database_size`) with `Evictable false`, because relation size includes dead tuples until vacuum and deleting rows does not lower it promptly. `Reclaim`: SQLite `PRAGMA incremental_vacuum(256)` (v1 `vacuumPages`) outside any transaction; Postgres a no-op (autovacuum). `sqlite.Open` converts the file to `auto_vacuum = INCREMENTAL` once (v1 `bus.go:181-200`, the step Milestone 2 parked), after `sqlstore.Open` so the `VACUUM` that persists the mode runs on a file with tables.
+5. **Budget settings and jobs.** The v1 names stay: `sqlite_budget_mib` (2048, bounds 64..1048576) and `cleanup_free_percent` (25, bounds 5..90), as `core.Config.SQLiteBudgetMiB` and `CleanupFreePercent` and as `internal/server/config` settings. The name says what it governs (pending item 2: the budget applies where `Usage.Evictable`, which is SQLite). Two jobs after "memory expiry" and before "embeddings" (v1 order): "budget eviction" (v1 `evictToBudget`'s sweep: while usage exceeds `budget - budget*percent/100`, delete the oldest ordinary messages a chunk at a time through Milestone 3's retention chunk function, `Reclaim`, re-read usage; then `Reclaim` once more, which is v1's "vacuum" step folded in) and "capacity notice" (set `notices.capacity` when usage still exceeds the budget, clear it otherwise). v1's inline `checkCapacity` before writes is pending item 3.
+6. **Admin usage on the wire** (spec 3.2 admin row; Milestone 4 choice 1 deferred it here). `GET /v1/admin/usage` (`adminUsage`, tag `admin`, admin flag required) → `Usage{bytes, budget_bytes, evictable, notice?}`; `bus.Admin.Usage(ctx) (bus.Usage, error)`; the rule in `channels.Service.Usage` beside `Status`. `Status` is unchanged (Decision 48 names usage as its own operation).
+7. **Docker.** Multi-stage `Dockerfile`: `golang:1.27-alpine` builder pinned by digest, `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/ericfitz/agentbus2/internal/version.Version=${VERSION}"`, runtime `gcr.io/distroless/static-debian12:nonroot` pinned by digest, `ENTRYPOINT ["/agentbus2", "server"]` and an empty `CMD`, so `docker run <image> -registration enrollment` passes the Decision 58 override straight through and `docker exec <ctr> /agentbus2 server admin ...` bootstraps; `/data` (SQLite file, default `AGENTBUS2_SERVER_SQLITE` unset) and `/keys` (signing key) owned by `nonroot` so named volumes inherit a writable owner. Configuration by `AGENTBUS2_SERVER_*` variables or a mounted `-config` file (Decision 85). The compose example runs `postgres:17` and two replicas sharing a `keys` volume, the same `issuer` and the same `signing_key_file`, listening on `0.0.0.0:8420` inside the network; **8420 is the example's port only**: the spec decides no port and the server has no default (Milestone 4 choice 14). Image publishing is Milestone 9's.
+8. **Replica semantics the ops docs state** (no code): a watch is a plain long-poll any replica serves, so no session affinity is needed; replicas must share `issuer` and `signing_key_file` (a bearer minted by one carries that `iss` and `kid`); the `jti` replay set (pending item 4) and the rate-limit buckets (Milestone 2 Gate 0 item 5) are per process, so N replicas each accept one reuse of a still-valid assertion and each grant the full per-identity rate.
+9. **Exit test design.** `TestReplicasWake` starts two real `cmd.Run` commands over one database and proves the wake and the replaced answer across them; `TestReplicasMaintenanceExclusive` starts two `cmd.Serve` instances with a `Config.OnTick` observer (a report per tick is unreachable through `Run`) and proves one holder and failover. Both run under `dbtest.ForEachEngine`: the SQLite half pins the documented limitation of Milestone 4 choice 14 (two `agentbus2 server` processes over one SQLite file do not share hints; local multi-process mode is the Milestone 6 client's polling) and the SQLite lease, so neither engine's half is a skip.
+10. **Docs layout.** `docs/ops/{README,deploy,configuration,admin-bootstrap,backup,upgrade}.md`; the configuration reference is checked mechanically against `config.Settings()` and `config.Default()` by a unit test (Definition of Done E).
+
+## Claude proposal, pending Eric
+
+Four points the frozen design leaves open; each proceeds on recommendation (A) with a `// pending Eric: Milestone 7 item N` marker on the test that encodes it. Task 6 records the answers in the ADR addenda.
+
+1. **`NOTIFY` on watch registration.** Decision 52 puts `NOTIFY` inside the append transaction; Decision 68 says the newer watch marks the older one replaced through the shared database. Across two Postgres replicas, a watch on A replaced by a watch through B learns of it only at the next message hint or at its own timeout (up to 50 s; v1 issue #39's shape). A) `RegisterWatch` also notifies the schema channel with the control payload `0:0`, so the older watch answers `409 replaced` within the reconnect bound (recommended; one `pg_notify` per watch registration, hints only). B) No control notification; the ops doc states the bound. Encoded in Task 2b's `TestNotifierHintOnWatchRegistration` and Task 6's `watch-replaced-across-servers` leaf.
+2. **Budget eviction and capacity notices on SQLite only.** v1's budget protects a local file; on Postgres `pg_total_relation_size` includes dead tuples until vacuum, so an eviction loop that re-measures never sees the size fall and would delete ordinary messages tick after tick until none remain. A) The jobs act only where `Usage.Evictable` (SQLite); on Postgres `Usage` is reported for the admin operation and the notice is never set; the setting keeps its v1 name `sqlite_budget_mib` (recommended). B) Evict on Postgres too, bounded per tick by the estimated bytes of the deleted rows, accepting the runaway under bloat. C) Postgres eviction only when the `pgstattuple` extension is installed (an advertised capability). Encoded in Task 3's `TestMaintenanceBudgetEviction` (the Postgres half asserts nothing is deleted and no notice is set).
+3. **v1's `checkCapacity` before every write is not ported.** v1 evicted inline and refused the write with `capacity_exhausted` when still over budget; Milestone 3's code set has no such code and adding one touches the OpenAPI enum and the remote mapping. A) Tick-only eviction; writes are never refused; the notice reaches agents through `receive` (Milestone 3 Task 10) and operators through `admin usage`; a burst can exceed the budget by at most `send_kib_per_second * maintenance_interval_seconds` per identity (recommended). B) Port it with a new code `capacity_exhausted` (HTTP 507) in the schema. Encoded in Task 3's `TestMaintenanceCapacityNotice` (a `Send` while the notice is set succeeds).
+4. **The assertion `jti` replay set stays per process.** Milestone 5 choice 4 deferred a shared table to this milestone "if replicas need it". A) Keep it per process and document the bound: each replica accepts one reuse of an assertion still within `assertion.MaxLifetime` plus leeway (5 min + 60 s) (recommended; no version 3 migration, no write per token request). B) A `assertion_jti` table consulted and written in the token transaction. Encoded in Task 6's ADR 0002 addendum and `docs/ops/deploy.md`; no test marker (no code changes under A).
+
+## Not ported (Decision 31)
+
+v1 `maintenance.go` `checkCapacity` (pending item 3); the `capacity_exhausted` error code; v1 `capacityNotice`'s text naming the config path and `agentbus reset` (v2's reset is the admin API operation); `budgetOverride` as a `Bus` field (here a `maintenance.Service` field); v1's "vacuum" tick step as a separate job (folded into "budget eviction", choice 5); `release/` and the Homebrew, Scoop and winget tooling (Milestone 9). v1 has no Docker image, no Postgres and no replicas.
+
+## Names assumed (Milestones 3, 4 and 5 plans; diffed against `main` before Wave 2)
+
+From Milestone 3: `maintenance.Service{*core.Core; Tasks tasks.Service}` with `Tick(ctx) (ran bool, report []JobResult)`, `Jobs() []Job`, `RunJob(ctx, name) (int, error)`, `Job{Name, Run}`, `JobResult{Name, N, Err, Skipped}`, the job list in order "lapsed sessions", "abandoned tasks", "receipts", "message retention", "tombstone purge", "task expiry", "memory expiry", "embeddings", the retention chunk function (v1 `deleteOrdinaryChunk`: deletes up to 1000 ordinary messages matching a condition, oldest first, and raises `evicted_before_seq`), `TestMaintenanceRunJobRejectsUnknown` carrying `// pending Eric: Milestone 3 item 3`, `tick_test.go`'s two-core lease test; `channels.Service.Status` in `internal/core/channels/admin.go` (on `main`); `core.Config`, `Defaults`, `Validate`, `core.Options{Now, Notifier, Embedder, Logger}`, `Core.Owner`, `Core.Store`, `Core.Cfg`, `Core.RequireAdmin`, `Core.E`, `Core.FromStore`; `notify.Hint`, `Notifier`, `Memory`, `NewMemory`, `NewPolling`; `bus.Admin`, `bus.Status`, `bus.Code*`; `local.New`; the suite's `openStore(t, e) (store, reopen)`, `newHarness`, `harnessOptions{cfg, polling, embedder, fault}`, `harness{t, e, store/raw, core, clock, notifier, embedder, cfg}`, `h.sibling`, `h.as`, `h.admin`, `h.channel`, `h.append`, `h.session`, `codeOf`, `fixedNowMs`. From Milestone 4: `server.New`, `server.RefuseAll`, `server.InProcess`, `remote.New`, `gen.NewClientWithResponses`, `cmd.Serve(ctx, Config)`, `cmd.Config{Listen, Store, Auth, Notifier, Cfg, Now, ReadTimeout, Logger, Ready}`, `cmd_test.go`'s `TestRunRefusesEveryProtectedOperation` (32 protected, 6 open after Milestone 5), `scripts/m4-exit-checks.sh`'s `grep -F -x` and prefix matching, `scripts/check-gates-selftest.sh` blocks 1 to 15 with `begin`/`finish`/`problem`/`revert`/`run_gates`/`expect_checks` and the `CHECKS` array. From Milestone 5: `cmd.Run(ctx, args, environ, stdout, stderr) int` printing `agentbus2 server listening on <addr> (<engine>, registration <mode>, issuer <url|ephemeral key>)`, `cmd.Config` also `Registration, Issuer, External, Embedder, Listener`, `openFromConfig` in `internal/server/cmd/config.go`, `config.Config`, `Default`, `Settings`, `EnvName`, `Load`, `Validate`, `Core`, the `set` switch in `load.go`, `identities.ModeOpen`, `remote.Register`, `remote.Token`, `remote.WithBearer`, `assertion.Sign`, `keys.Generate`, `keys.EncodePrivatePEM`, `keys.WriteFile`, `token.NewIssuer`, `Issuer.TokenEndpoint`, `scripts/m5-exit-checks.sh`. From Milestone 2 (on `main`): `sqlstore.Dialect`, `Options`, `Store`, `tx` with `execW`/`getW`/`checkText`, `Meta.TryLease`, `SetNotice`, `ClearNotice`, `Notice`, `postgres.WithSearchPath`, `dialect` types in both engines, the `leases` row `('maintenance', '', 0)` seeded by both `0001_initial.sql`, `dbtest.Engines`, `ForEachEngine`, `Engine.DSN`, `Engine.Open`, the Store suite's `openStore`.
+
+## Review Focus
+
+1. The `LISTEN` connection drops while a watch is armed and a message is sent during the outage: after reconnect the watcher still wakes (the catch-up `Hint{}`), never waits for its full timeout. (Task 2b: `TestPgnotifyReconnects`.)
+2. Something else on the database `NOTIFY`s the agentbus2 channel with garbage, or a 0-byte payload: the listener publishes `Hint{}` and logs once per bad payload, never panics, never stops. (Task 2a: `TestListenerMalformedPayload`.)
+3. Two replicas start at the same moment over one database: the second start migrates nothing (the version is unchanged), `general` exists once, both serve, and exactly one holds the maintenance lock. (Task 6: `TestReplicasMaintenanceExclusive` setup assertions, both engines; the empty-database race of two openers is Milestone 2's.)
+4. The maintenance holder's Postgres session is terminated by the server (`pg_terminate_backend`): the holder's next `TryLock` sees the dead connection and re-acquires on a fresh one or loses to the other replica; no tick runs twice. (Task 3: `TestMaintenanceLockExclusiveAcrossCores`, Postgres step.)
+5. A budget below what live memories occupy with no ordinary message left: the eviction job terminates with count 0, the notice is set, `Send` still succeeds (pending item 3), the next tick with a raised budget clears it. (Task 3: `TestMaintenanceCapacityNotice`.)
+6. A container started with no configuration at all: `docker run <image>` exits 2 with the `listen is required` message within seconds instead of hanging or serving on a default. (Task 5: `scripts/docker-smoke.sh` step 2.)
+
+---
+
+### Task 1: Store: `Locks` and `Space` on both engines, SQLite `auto_vacuum`
+
+**Depends on:** none.
+
+**Files:**
+- Create: `internal/store/lock.go`, `internal/store/space.go`, `internal/store/sqlstore/lock.go`, `internal/store/sqlstore/space.go`, `internal/store/sqlite/space.go`, `internal/store/postgres/lock.go`, `internal/store/postgres/space.go`
+- Modify: `internal/store/store.go` (`Store` embeds `Locks` and `Space`), `internal/store/sqlstore/dialect.go` (`Dialect` gains `Usage` and `Reclaim`; the `Locker` optional interface), `internal/store/sqlite/sqlite.go` (`Open` calls `ensureIncrementalVacuum` after `sqlstore.Open`)
+- Test: `internal/conformance/store/lock_test.go`, `internal/conformance/store/space_test.go` (both engines); `internal/store/sqlite/open_test.go` (add `TestOpenSetsIncrementalAutoVacuum`, Docker-free)
+
+**Port from v1:** `internal/bus/bus.go` (`Usage`: `(page_count - freelist_count) * page_size`; lines 181 to 200: the `auto_vacuum` check, `PRAGMA auto_vacuum = INCREMENTAL` and the one-time `VACUUM`), `internal/bus/maintenance.go` (`vacuumPages` 256 and the `PRAGMA incremental_vacuum` call as `Reclaim`; `takeLease` is already `TryLease`).
+
+**Interfaces (produces):**
+
+```go
+package store
+// lock.go
+// Locks are exclusive, named, cross-process locks (Decisions 49, 68). SQLite: the leases row of v1 takeLease, held until `until` and renewed by its owner. Postgres: pg_try_advisory_lock(hashtext(current_schema()), hashtext(name)) on a connection the Store pins per name; now and until are ignored. Held across calls either way: TryLock by the holder renews (SQLite) or re-asserts (Postgres) and Unlock releases.
+type Locks interface {
+	TryLock(ctx context.Context, name, owner string, now, until int64) (held bool, err error) // ErrInvalid on a name or owner failing TextRule; false, nil when another owner holds it
+	Unlock(ctx context.Context, name, owner string) error                                      // a no-op (nil) when not held by owner
+}
+// space.go
+type Usage struct { Bytes int64; Evictable bool } // Evictable: deleting rows lowers Bytes promptly (SQLite); false on Postgres (relation size includes dead tuples until vacuum), so a budget is never enforced against it (Milestone 7 pending item 2)
+type Space interface {
+	Usage(ctx context.Context) (Usage, error)
+	Reclaim(ctx context.Context) error // SQLite: PRAGMA incremental_vacuum(256) outside any transaction; Postgres: nil
+}
+// store.go: Store interface gains `Locks` and `Space` embedded after Close (every method documented as above)
+```
+
+```go
+package sqlstore
+// dialect.go additions
+type Dialect interface { /* existing */; Usage(ctx context.Context, db *sqlx.DB) (store.Usage, error); Reclaim(ctx context.Context, db *sqlx.DB) error }
+// Locker is the optional Postgres form of Locks. A dialect that implements it holds the lock on conn; one that does not gets the leases row.
+type Locker interface { TryLock(ctx context.Context, conn *sql.Conn, name string) (bool, error); Unlock(ctx context.Context, conn *sql.Conn) error }
+// lock.go: (s *Store) TryLock / Unlock. Locker dialect: s.conns map[string]*sql.Conn under s.mu; an existing conn is re-asserted (error → close, delete, fall through); a fresh conn from s.db.DB.Conn(ctx); not held → conn.Close(). Unlock: d.Unlock(conn) (pg_advisory_unlock_all) then conn.Close(), delete. Non-Locker dialect: s.Tx with (*tx).ensureLease(name) (INSERT ... ON CONFLICT (name) DO NOTHING) then TryLease(name, owner, now, until); Unlock: s.Tx with UPDATE leases SET expires_at = 0 WHERE name = ? AND owner = ?. Close() unlocks and closes every pinned conn first.
+// space.go: (s *Store) Usage → s.d.Usage(ctx, s.db); Reclaim → s.d.Reclaim(ctx, s.db)
+```
+
+```go
+package sqlite // space.go
+func (dialect) Usage(ctx, db) (store.Usage, error) // the three PRAGMAs on one db.Conn; Evictable true
+func (dialect) Reclaim(ctx, db) error             // PRAGMA incremental_vacuum(256)
+func ensureIncrementalVacuum(ctx context.Context, db *sqlx.DB) error // on one *sql.Conn: PRAGMA auto_vacuum; when != 2: PRAGMA auto_vacuum = INCREMENTAL then VACUUM (v1 bus.go:181-200); called by Open after sqlstore.Open, before returning
+package postgres // lock.go, space.go
+const tryLockSQL = "SELECT pg_try_advisory_lock(hashtext(current_schema()), hashtext($1))" // verbatim on one line: Task 6's self-test mutates it
+func (dialect) TryLock(ctx, conn, name) (bool, error); func (dialect) Unlock(ctx, conn) error // SELECT pg_advisory_unlock_all()
+func (dialect) Usage(ctx, db) (store.Usage, error) // SELECT coalesce(sum(pg_total_relation_size(c.oid)), 0)::bigint FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace WHERE n.nspname = current_schema() AND c.relkind = 'r'; Evictable false
+func (dialect) Reclaim(context.Context, *sqlx.DB) error // nil
+```
+
+- [ ] **Step 1: Write the failing tests**
+
+`lock_test.go` (both engines; `openStore` and `reopen` give two handles = two processes): `TestLockExclusiveBetweenHandles` (`TryLock("maintenance", "a", 100, 200)` true on handle 1; `("maintenance", "b", 150, 300)` false on handle 2; `("maintenance", "a", 150, 300)` true again on handle 1 (renew or re-assert); `Unlock("maintenance", "a")` nil; `("maintenance", "b", ...)` true on handle 2 at once on both engines (Postgres: the session lock is gone; SQLite: `expires_at` is 0)), `TestLockExpiryIsSQLiteOnly` (handle 1 holds with `until 200`; handle 2 at `now 250` without an `Unlock`: true on sqlite (v1's expiry), false on postgres (a session lock has no clock); the test branches on `e.Name` and says why in a comment: this is the one documented engine difference of choice 1), `TestLockOtherNames` (`TryLock("embeddings", ...)` works on a name the schema never seeded; `Unlock` of a name nobody holds is nil; `TryLock("", "a", ...)` and a NUL in the owner are `ErrInvalid`), `TestLockReleasedOnClose` (handle 1 holds; `handle1.Close()`; handle 2 takes it at once on both engines), `TestLockUnlockByOtherOwnerIsNoop` (`Unlock("maintenance", "b")` while `a` holds: nil, and `b`'s `TryLock` is still false). `space_test.go`: `TestUsageGrowsWithData` (`Usage` before and after appending 200 messages of 1 KiB: `after.Bytes > before.Bytes` on both engines; `Evictable` true on sqlite and false on postgres, asserted by `e.Name`), `TestReclaimRunsOutsideTransactions` (`Reclaim` nil on both; on sqlite after deleting the 200 rows `Usage.Bytes` is below the peak, which the freelist subtraction gives even before pages are truncated). `open_test.go`: `TestOpenSetsIncrementalAutoVacuum` (a fresh file: `PRAGMA auto_vacuum` is 2 after `Open`; a file pre-created with `database/sql` holding one table and `auto_vacuum = 0` (asserted before): after `Open` it is 2, the table's rows survive, and `schema_meta` exists; a second `Open` leaves it 2 with no `VACUUM`, asserted by `PRAGMA data_version` or the file's mtime unchanged within the call).
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `go test ./internal/store/... && go test -count=1 -p 1 -run '^Test(Lock|Usage|Reclaim)' ./internal/conformance/store/`
+Expected: build failure (`Store has no method TryLock`, `undefined: ensureIncrementalVacuum`).
+
+- [ ] **Step 3: Implement** as in Interfaces. State (Definition of Done D): a second `TryLock` by the holder is a renewal or re-assert and never a second lock; two handles racing serialize on the row's `UPDATE` (SQLite, immediate transaction) or on the server's lock table (Postgres); a holder that died leaves an expired row (SQLite, taken after `until`) or a session the server ends (Postgres, taken when it does); `ensureIncrementalVacuum` on a file already in mode 2 runs one `PRAGMA` read and nothing else, and two openers converting the same new file both succeed (the second `VACUUM` is a no-op under the busy timeout).
+
+- [ ] **Step 4: Run the suites and the gate**
+
+Run: `make build-all vet fmt-check lint test`, then `env -u AGENTBUS2_TEST_POSTGRES_DSN go test -count=1 -p 1 -v ./internal/conformance/store/ 2>&1 | grep -E '^(--- FAIL|ok|FAIL)'`, then `make verify` (600000 ms).
+Expected: pass; no `--- FAIL`; `verify: OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/store internal/conformance/store
+git commit -m "feat(store): cross-process locks and space accounting on both engines, SQLite incremental auto_vacuum
+
+Locks: the v1 takeLease row (internal/bus/maintenance.go) on SQLite and a
+session advisory lock on a pinned connection on Postgres (Decisions 49, 68);
+Usage from v1 internal/bus/bus.go (page_count minus freelist) and
+pg_total_relation_size per schema; Reclaim as v1's incremental_vacuum step;
+the auto_vacuum conversion at open from v1 internal/bus/bus.go. Milestone 3
+pending item 3's Dialect.Usage hook."
+```
+
+---
+
+### Task 2a: Postgres notify codec and the `pgnotify` listener
+
+**Depends on:** none (imports `internal/core/notify` and `internal/store/postgres` from `main`; the codec file is new).
+
+**Files:**
+- Create: `internal/store/postgres/notify.go` (the channel expression, `EncodePayload`, `ParsePayload`, the `ChannelQuery` constant; no dialect methods yet: Task 2b adds them to this file), `internal/store/postgres/notify_test.go` (Docker-free)
+- Create: `internal/core/notify/pgnotify/doc.go`, `internal/core/notify/pgnotify/listener.go`, `internal/core/notify/pgnotify/conn.go` (the `connector`/`conn` seam and the pgx implementation), `internal/core/notify/pgnotify/listener_test.go` (Docker-free, a fake connector)
+
+**Port from v1:** none (v1 is SQLite only); the hint discipline is v1 `internal/bus/wait.go`'s "re-check the store", already Milestone 3's.
+
+**Interfaces (produces):**
+
+```go
+package postgres // notify.go
+const channelExpr = "'agentbus2_' || left(encode(sha256(convert_to(current_schema(), 'UTF8')), 'hex'), 24)"
+const ChannelQuery = "SELECT " + channelExpr        // the listener runs it on its own connection, then LISTEN <result>
+func EncodePayload(channelID, seq int64) string      // "<channelID>:<seq>"; (0, 0) is the control payload
+func ParsePayload(s string) (channelID, seq int64, ok bool) // ^[0-9]+:[0-9]+$ with both parts fitting int64; anything else false
+package pgnotify
+type Options struct { Logger *slog.Logger /* nil: discard */; MinBackoff, MaxBackoff time.Duration /* 0: 100 ms, 5 s */; Connector connector /* nil: pgx; tests pass a fake */ }
+type Listener struct { *notify.Memory; ... }  // notify.Notifier by embedding
+func New(ctx context.Context, dsn string, o Options) *Listener // starts the goroutine at once; a bad DSN or an unreachable server is logged and retried, never returned: the server must start and serve without the doorbell (hints only)
+func (l *Listener) Close()                                     // stops the goroutine, closes the connection, waits for the goroutine; idempotent
+func (l *Listener) Connected() bool                            // true between a successful LISTEN and the next error (tests and a log line)
+// conn.go
+type connector interface { Connect(ctx context.Context, dsn string) (conn, error) }
+type conn interface { Channel(ctx context.Context) (string, error) /* ChannelQuery */; Listen(ctx context.Context, channel string) error; Wait(ctx context.Context) (payload string, err error) /* WaitForNotification; its Channel is ignored: only ours is subscribed */; Close(ctx context.Context) error }
+// pgxConnector: pgx.ParseConfig(dsn), RuntimeParams["application_name"] = "agentbus2-listen", pgx.ConnectConfig; Listen runs `LISTEN ` + pgx.Identifier{channel}.Sanitize()
+// Loop: connect (backoff on error) → Channel → Listen → Publish(Hint{}) → Connected true → Wait loop: ParsePayload ok → Publish(Hint{ChannelID, Seq}); not ok → Publish(Hint{}) and Logger.Warn("pgnotify: malformed payload", "payload", s); Wait error → Connected false, close, backoff (reset to MinBackoff after a successful Listen), reconnect; ctx done or Close → return
+```
+
+- [ ] **Step 1: Write the failing tests**
+
+`notify_test.go`: `TestPayloadRoundTrip` (`EncodePayload(12, 34)` is `"12:34"`; `ParsePayload` of it is `(12, 34, true)`; `"0:0"` is `(0, 0, true)`), `TestParsePayloadRejects` (table: `""`, `"12"`, `"a:b"`, `"1:2:3"`, `"-1:2"`, `" 1:2"`, `"1:2\n"`, `"99999999999999999999:1"` → `ok false`), `TestChannelQueryIsBounded` (`ChannelQuery` contains `left(` and `24)`: the name is 34 bytes however long the schema is; a comment cites the 63-byte limit). `listener_test.go` (a `fakeConnector` whose `Connect` returns scripted `fakeConn`s: each with a channel name, a list of payloads to deliver, then an error; `Wait` blocks on a channel the test feeds): `TestListenerPublishesParsedHints` (connect, `Hint{}` first, then `"7:42"` → `Hint{7, 42}` on a subscriber within 1 s), `TestListenerMalformedPayload` (Review Focus 2: `"garbage"` and `""` → two `Hint{}` and two warn records in a captured `slog` handler; the loop keeps going: a following `"1:2"` arrives), `TestListenerReconnectsWithBackoffAndCatchUp` (`MinBackoff 1ms`: the first conn's `Wait` errors after one payload; `Connect` is called a second time; the subscriber sees `Hint{}`, `Hint{1,2}`, `Hint{}` (catch-up after reconnect), then the second conn's payloads; `Connected()` false between the error and the re-`Listen`), `TestListenerBackoffGrows` (a connector that fails `Connect` 4 times: the recorded sleeps double from `MinBackoff` and never exceed `MaxBackoff`, with jitter inside `[d/2, d]`; the sleeper is injected through an unexported field the test sets), `TestListenerCloseIsIdempotent` (`Close` twice returns; the goroutine has exited (a done channel closed); `Connect` is not called again after `Close`), `TestListenerStartsWithoutServer` (a connector that always fails: `New` returns at once, `Connected()` false, `Publish` and `Subscribe` still work in process (the `Memory` half), `Close` returns within 100 ms even mid-backoff).
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `go test ./internal/store/postgres/ ./internal/core/notify/pgnotify/`
+Expected: build failure (`undefined: EncodePayload`, `undefined: New`).
+
+- [ ] **Step 3: Implement** as in Interfaces. State (Definition of Done D): a second `New` over the same DSN is a second independent listener (two replicas in one process, the exit test's shape); overlapping `Close` and a reconnect race end in a closed connection and a returned goroutine; a listener whose process dies leaves nothing in the database (`LISTEN` is session state).
+
+- [ ] **Step 4: Run the tests and the gate**
+
+Run: `go test -race ./internal/core/notify/... ./internal/store/postgres/`, then `make build-all vet fmt-check lint test`, then `make verify` (600000 ms).
+Expected: pass; `verify: OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/store/postgres/notify.go internal/store/postgres/notify_test.go internal/core/notify/pgnotify
+git commit -m "feat(notify): the Postgres LISTEN listener on a native pgx connection with reconnect and catch-up hints, and the per-schema channel codec
+
+Decisions 50 (the one native pgx connection) and 52 (hints only: a lost
+notification costs latency, never a message); the channel is derived from
+current_schema() so replicas on other schemas hear nothing."
+```
+
+---
+
+### Task 5: Docker image, compose example, smoke script, CI job
+
+**Depends on:** none (builds whatever `main` holds; `-registration` and `AGENTBUS2_SERVER_*` are Milestone 5's and on `main` before the smoke script's assertions matter; the task's acceptance runs after Milestone 5 lands, which the external gate guarantees for Wave 2 and the integrator checks here).
+
+**Files:**
+- Create: `Dockerfile`, `.dockerignore`, `deploy/docker-compose.yml`, `deploy/example.env`, `deploy/config.example.json`, `scripts/docker-smoke.sh`
+- Modify: `Makefile` (targets `docker-image`, `docker-smoke`; not part of `verify`), `.github/workflows/ci.yml` (job `docker-smoke`)
+
+**Port from v1:** none (v1 ships no container); the smoke script follows `scripts/ci-sim.sh`'s container hygiene (fixed name, `docker rm -f` in the trap).
+
+**Interfaces (produces):**
+
+```text
+Dockerfile: FROM golang:1.27-alpine@sha256:<digest> AS build (the implementer resolves the digest with `docker buildx imagetools inspect golang:1.27-alpine --format '{{.Manifest.Digest}}'` and records the tag and date in a comment); WORKDIR /src; COPY go.mod go.sum; RUN go mod download; COPY . .; ARG VERSION=dev; RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/ericfitz/agentbus2/internal/version.Version=${VERSION}" -o /out/agentbus2 . && mkdir -p /out/data /out/keys
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:<digest>; COPY --from=build /out/agentbus2 /agentbus2; COPY --from=build --chown=nonroot:nonroot /out/data /data; COPY --from=build --chown=nonroot:nonroot /out/keys /keys; VOLUME ["/data", "/keys"]; USER nonroot; ENTRYPOINT ["/agentbus2", "server"]; CMD []
+.dockerignore: .git, .worktrees, .claude, .local, dist, agentbus2, HANDOFF.md, docs/superpowers/specs/2026-10-19-codegen-spike/logs, **/*.test
+deploy/docker-compose.yml (choice 7): services postgres (postgres:17, POSTGRES_DB/USER agentbus2, POSTGRES_PASSWORD from .env, volume pgdata, healthcheck pg_isready), agentbus2-a and agentbus2-b (image agentbus2:local, build: context .., environment AGENTBUS2_SERVER_LISTEN=0.0.0.0:8420, AGENTBUS2_SERVER_POSTGRES=postgres://agentbus2:${POSTGRES_PASSWORD}@postgres:5432/agentbus2?sslmode=disable, AGENTBUS2_SERVER_ISSUER=${AGENTBUS2_ISSUER:-http://localhost:8420}, AGENTBUS2_SERVER_SIGNING_KEY_FILE=/keys/signing-key.pem, command: ["-registration", "enrollment"], volumes keys:/keys, ports 127.0.0.1:8420:8420 and 127.0.0.1:8421:8420, depends_on postgres condition service_healthy); volumes pgdata, keys
+deploy/example.env: POSTGRES_PASSWORD=change-me, AGENTBUS2_ISSUER=http://localhost:8420 (copied to deploy/.env by the operator; .env is never committed)
+deploy/config.example.json: a complete file for the single-container SQLite case: listen 0.0.0.0:8420, sqlite /data/agentbus2.db, signing_key_file /keys/signing-key.pem, registration enrollment, every other setting omitted (defaults), with a comment-free layout (JSON) and a sibling explanation in docs/ops/deploy.md (Task 7)
+scripts/docker-smoke.sh (set -euo pipefail; NAME=agentbus2-smoke; trap docker rm -f): (1) docker build -t agentbus2:smoke --build-arg VERSION=smoke .; (2) Review Focus 6: `docker run --rm agentbus2:smoke` (no config) exits 2 within 10 s and prints `listen is required`; (3) `docker run --rm --entrypoint /agentbus2 agentbus2:smoke version` prints `smoke`; (4) `docker inspect --format '{{.Config.User}}' agentbus2:smoke` is `nonroot`; (5) start `docker run -d --name $NAME -p 127.0.0.1::8420 -e AGENTBUS2_SERVER_LISTEN=0.0.0.0:8420 -e AGENTBUS2_SERVER_SQLITE=/data/agentbus2.db -e AGENTBUS2_SERVER_SIGNING_KEY_FILE=/keys/signing-key.pem agentbus2:smoke -registration closed`; wait up to 20 s for `curl -fsS http://127.0.0.1:<port>/v1/discover` (the port from `docker port`); assert the JSON has `"long_poll"`; (6) `POST /v1/auth/register` with a syntactically valid body answers 403 (the flag reached the server: closed); (7) `docker exec $NAME /agentbus2 server admin -sqlite /data/agentbus2.db create-identity pat` prints `pat created` and `... make-admin pat` prints `pat is now an administrator` (the bootstrap path runs inside the image against the volume as nonroot); (8) `docker logs $NAME` contains `listening on 0.0.0.0:8420 (sqlite, registration closed`; (9) `docker compose -f deploy/docker-compose.yml --env-file deploy/example.env config >/dev/null` validates the example without starting it. Prints `docker-smoke: ok` last.
+Makefile: docker-image (docker build -t agentbus2:local .), docker-smoke (bash scripts/docker-smoke.sh); .PHONY updated; the help comments say neither is part of verify
+ci.yml: job docker-smoke (ubuntu-latest, checkout pinned as the other jobs, `run: make docker-smoke`)
+```
+
+- [ ] **Step 1: Write the smoke script first and run it to see it fail**
+
+Run: `bash scripts/docker-smoke.sh`
+Expected: fails at step 1 (no `Dockerfile`).
+
+- [ ] **Step 2: Write the Dockerfile, `.dockerignore`, the compose and example files, the Makefile targets and the CI job** as in Interfaces.
+
+- [ ] **Step 3: Run the smoke script to verify it passes, and prove it can fail**
+
+Run: `make docker-smoke 2>&1 | tail -12` (600000 ms). Expected: every step's line and `docker-smoke: ok`. Then prove the script can fail: copy it to a temp file with step 5's flag changed to `-registration open` and run the copy; step 6 must fail (201 instead of 403) and the trap must remove the container (`docker ps -a --filter name=agentbus2-smoke` empty afterwards). Quote both outputs. State (Definition of Done D): a killed run leaves at most the named container, which the next run's `docker rm -f` at start removes before building.
+
+- [ ] **Step 4: Check the image's claims**
+
+Run: `docker run --rm --entrypoint /agentbus2 agentbus2:smoke version; docker image inspect agentbus2:smoke --format '{{.Size}}'` and `make build-all vet fmt-check lint test`.
+Expected: `smoke`; a size under 40 MB; the Go gate unchanged (no Go files in this task).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add Dockerfile .dockerignore deploy scripts/docker-smoke.sh Makefile .github/workflows/ci.yml
+git commit -m "feat(deploy): multi-stage non-root Docker image with -registration pass-through, a compose example with Postgres and two replicas, and the smoke test
+
+Decision 58's explicit -registration override for Docker (ADR 0002),
+Decision 85 configuration by AGENTBUS2_SERVER_* or a mounted file,
+CGO_ENABLED=0 static build (Decision 53); the example port 8420 is the
+example's, the server has no default (Milestone 4 choice 14)."
+```
+
+---
+
+### Task 2b: `NOTIFY` inside append and watch registration, server wiring, cross-process notifier tests
+
+**Depends on:** 2a (the codec and the listener). External gate: Milestone 5 on `main` (`cmd.Run` and `openFromConfig`).
+
+**Files:**
+- Modify: `internal/store/postgres/postgres.go` (delete the no-op `NotifyAppend`), `internal/store/postgres/notify.go` (add the `dialect` methods `NotifyAppend` and `NotifyControl`), `internal/store/sqlstore/sessions.go` (`RegisterWatch` calls the control hook), `internal/server/cmd/cmd.go` (`Run` builds the listener for a Postgres store and closes it on return), `internal/conformance/bus/helpers_test.go` (`openStoreDSN`)
+- Create: `internal/store/sqlstore/notify.go` (`ControlNotifier`), `internal/conformance/bus/notifier_test.go` (the `crossProcessNotifier` helper and the both-engine tests), `internal/conformance/bus/pgnotify_test.go` (`postgresEngine` and the Postgres-only tests)
+
+**Port from v1:** none; Decision 52's Postgres form.
+
+**Interfaces (produces):**
+
+```go
+package postgres // notify.go additions
+const notifySQL = "SELECT pg_notify(" + channelExpr + ", $1)" // verbatim on one line: Task 6's self-test mutates it
+func (dialect) NotifyAppend(ctx, tx *sqlx.Tx, channelID, seq int64) error // tx.ExecContext(ctx, notifySQL, EncodePayload(channelID, seq))
+func (dialect) NotifyControl(ctx, tx *sqlx.Tx) error                        // the same with EncodePayload(0, 0); pending item 1
+package sqlstore // notify.go
+type ControlNotifier interface { NotifyControl(ctx context.Context, tx *sqlx.Tx) error } // optional: RegisterWatch calls it after its UPDATE when the dialect implements it (Postgres); SQLite does not
+package cmd // cmd.go: in Run, after openFromConfig and before Serve: when cfg.Postgres != "", l := pgnotify.New(ctx, cfg.Postgres, pgnotify.Options{Logger: logger}); defer l.Close(); Config.Notifier = l; else nil (Serve's notify.NewMemory()). The listening line is unchanged.
+```
+
+```go
+package bus // internal/conformance/bus
+func openStoreDSN(t *testing.T, e dbtest.Engine) (s ab2store.Store, reopen func() (ab2store.Store, error), dsn string) // openStore's body, returning the DSN it opened (the schema-scoped one on postgres, the file path on sqlite); openStore becomes a wrapper. If Milestone 5 already added such an accessor, reuse it and change nothing.
+func crossProcessNotifier(t *testing.T, e dbtest.Engine, dsn string) notify.Notifier // sqlite: notify.NewPolling(100 * time.Millisecond) (Decision 68); postgres: pgnotify.New(ctx, dsn, Options{MinBackoff: 50ms}) closed in t.Cleanup (Decision 52). Task 6 reuses it.
+func postgresEngine(t *testing.T) dbtest.Engine // the entry of dbtest.Engines() named "postgres"; t.Fatal when absent. For tests of the LISTEN connection, which the polling form has no analogue of; a test built on it runs under `go test` like any other and fails, never skips, when Postgres is unreachable.
+func drain(hints <-chan notify.Hint, d time.Duration) // discards hints for d (the connect Hint{} and polling ticks)
+```
+
+- [ ] **Step 1: Write the failing tests**
+
+`notifier_test.go` (both engines through `dbtest.ForEachEngine`; `openStoreDSN`, `crossProcessNotifier`, `Subscribe()`): `TestNotifierHintOnAppend` (drain 300 ms; `h.append` through a second handle (`reopen`) on channel `dev`; a hint within 1 s; on postgres it equals `Hint{ch.ID, seq}`, on sqlite any hint), `TestNotifierHintOnWatchRegistration` (`// pending Eric: Milestone 7 item 1`; a session row through `h.session`; drain; `Store.Tx` → `RegisterWatch(id, "w1", until)` on the second handle; a hint within 1 s; on postgres exactly `Hint{}`), `TestNotifierNoMessageHintFromAnotherDatabase` (a second `openStoreDSN` on the same engine (a second schema, a second file); drain; `h.append` on the second database; within 500 ms no hint with `Seq > 0` arrives on the first's notifier: on postgres because the channel is per schema, on sqlite because polling hints carry no `Seq`; the sentence in a comment), `TestNotifierPublishStillFansOutInProcess` (`Publish(Hint{5, 6})` on the cross-process notifier reaches a subscriber: the `Memory` half works on both forms). `pgnotify_test.go` (`postgresEngine(t)`): `TestPgnotifyReconnects` (Review Focus 1: a listener; wait for `Connected()`; `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE application_name = 'agentbus2-listen' AND datname = current_database() AND pid <> pg_backend_pid()` through `e.Open(t)` (same role, so no superuser is needed); `Connected()` false within 1 s, then true within 3 s (the backoff bound); the subscriber saw a `Hint{}` after the reconnect; an append after that produces its `Hint{ch, seq}` within 1 s), `TestPgnotifyChannelMatchesDialect` (`ChannelQuery` on `e.Open(t)` with the schema's `search_path` equals the channel the listener reports (`Listener.channel()` exported for tests as `Channel() string`), and an append's `NOTIFY` arrives on it: the two sides of choice 2 agree), `TestPgnotifyRolledBackAppendDoesNotNotify` (Decision 26: `Store.Append` whose `fn` returns an error after `AppendMessage`: no hint with `Seq > 0` within 500 ms).
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `go test -count=1 -p 1 -run '^Test(Notifier|Pgnotify)' ./internal/conformance/bus/`
+Expected: `TestNotifierHintOnAppend/postgres` fails (no `NOTIFY` yet), the sqlite halves pass (polling), `TestPgnotify*` fail.
+
+- [ ] **Step 3: Implement** as in Interfaces. `Run` keeps `Config.Notifier` nil for SQLite (Milestone 4 choice 14 stands: two `agentbus2 server` processes over one SQLite file do not share hints). State (Definition of Done D): a `NOTIFY` is transactional, so a retried append notifies once; a watch registration notifies once per registration; the listener's lifetime is `Run`'s.
+
+- [ ] **Step 4: Run the suites and the gate**
+
+Run: `go test -race -count=1 -p 1 -run '^Test(Notifier|Pgnotify)' ./internal/conformance/bus/`, then `make verify` (600000 ms).
+Expected: `ok`; `verify: OK` (both transports of the bus suite).
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/store/postgres internal/store/sqlstore/notify.go internal/store/sqlstore/sessions.go internal/server/cmd/cmd.go internal/conformance/bus
+git commit -m "feat(store): NOTIFY inside the append transaction and on watch registration on Postgres; agentbus2 server listens on it
+
+Decision 52 (Postgres: NOTIFY inside the append transaction, delivered on
+commit) through the Milestone 2 NotifyAppend hook; the control hint on
+RegisterWatch for Decision 68 across replicas (pending item 1); the
+listener wired by the server command when the store is Postgres."
+```
+
+---
+
+### Task 3: Maintenance over `TryLock`, budget eviction and capacity notice, the two settings, `OnTick`
+
+**Depends on:** 1. External gate: Milestones 3 and 5 on `main`.
+
+**Files:**
+- Modify: `internal/core/config.go` (`SQLiteBudgetMiB`, `CleanupFreePercent`, defaults, bounds), `internal/core/config_test.go`, `internal/core/maintenance/service.go` (`Tick` over `TryLock`; `Release`; `BudgetOverride`), `internal/core/maintenance/jobs.go` (the two jobs in the list), `internal/core/maintenance/tick_test.go`, `internal/conformance/bus/maintenance_test.go` (new cases; `TestMaintenanceRunJobRejectsUnknown` updated), `internal/server/config/config.go` (two fields, `Default`, `Core`), `internal/server/config/load.go` (the `set` switch), `internal/server/config/config_test.go`, `internal/server/cmd/serve.go` (`Config.OnTick`; `Release` after the maintenance goroutine returns)
+- Create: `internal/core/maintenance/budget.go`
+
+**Port from v1:** `internal/bus/maintenance.go` (`evictToBudget`: budget, target from `cleanup_free_percent`, the oldest-first sweep through `deleteOrdinaryChunk` with the vacuum between chunks, the notice set or cleared; `capacityNotice`'s shape), `internal/config/config.go` (`sqlite_budget_mib` 2048 in 64..1048576, `cleanup_free_percent` 25 in 5..90). Not ported: `checkCapacity` (pending item 3), `budgetOverride` on the `Bus` (a `Service` field here).
+
+**Interfaces (produces):**
+
+```go
+package core // config.go
+// SQLiteBudgetMiB bounds the SQLite file; eviction and the capacity notice act only where Store.Usage reports Evictable (Milestone 7 pending item 2). CleanupFreePercent is how far below the budget eviction sweeps.
+type Config struct { /* existing */; SQLiteBudgetMiB int; CleanupFreePercent int }
+// Defaults: 2048, 25; Validate: "sqlite_budget_mib" 64..1048576, "cleanup_free_percent" 5..90
+package maintenance
+type Service struct { *core.Core; Tasks tasks.Service; BudgetOverride int64 /* tests only: bytes; 0 means Cfg.SQLiteBudgetMiB << 20 */ }
+func (s Service) Tick(ctx) (ran bool, report []JobResult) // held, err := s.Store.TryLock(ctx, "maintenance", s.Owner, now, now + 2*interval) replaces the Tx TryLease; false → ran false; no Unlock per tick (choice 1: held across ticks)
+func (s Service) Release(ctx context.Context) error        // Store.Unlock(ctx, "maintenance", s.Owner); cmd.Serve calls it once at shutdown
+func (s Service) Jobs() []Job // ... "memory expiry", "budget eviction", "capacity notice", "embeddings"
+// budget.go
+func (s Service) budget() int64                                   // BudgetOverride or the setting
+func (s Service) evictToBudget(ctx, now int64) (int, error)        // u := Store.Usage; !u.Evictable → 0; target := budget - budget*CleanupFreePercent/100; while u.Bytes > target and the tick deadline has not passed: n := the retention chunk with no age bound; n == 0 → break; Reclaim; u = Usage; then Reclaim once more; returns the rows deleted
+func (s Service) capacityNotice(ctx, now int64) (int, error)       // u := Usage; !u.Evictable → ClearNotice is NOT called and 0 is returned (nothing of ours is set on that engine); u.Bytes > budget → SetNotice{Kind: "capacity", Message: capacityText(budget), SetAt: now}, 1; else ClearNotice("capacity"), 0
+func capacityText(budgetBytes int64) string // "agentbus2 capacity exhausted: sqlite_budget_mib=%d is filled by live memories and protected tombstones, which are never evicted automatically; raise sqlite_budget_mib and restart the server, or have an administrator reset the bus to discard all data"
+package config // internal/server/config: Config gains SQLiteBudgetMiB `json:"sqlite_budget_mib"` and CleanupFreePercent `json:"cleanup_free_percent"` after ResultDefaultKiB; Default() from core.Defaults(); Core() maps both; set() parses both as int
+package cmd // serve.go: Config gains OnTick func(ran bool, report []maintenance.JobResult) (nil: ignored; called after every Tick from the maintenance goroutine, which also logs one Debug line per tick: "maintenance tick", "ran", "jobs", "counts"); after that goroutine returns, Serve calls maintenance.Service.Release with a 5 s context and logs an error without failing the shutdown
+```
+
+- [ ] **Step 1: Write the failing tests**
+
+`config_test.go` (core): extend `TestConfigRejectsOutOfRange` with `SQLiteBudgetMiB: 63` and `CleanupFreePercent: 91`, and `TestDefaultsValidate` still passes. `tick_test.go` (SQLite, two cores over one file as the Milestone 3 test does): `TestTickLockHeldAcrossTicks` (first core's `Tick` ran; second core's `Tick` is `ran false` at once and still false after one more first-core `Tick` (renewal); after `2*interval` on the shared fake clock without a first-core tick the second takes it; separately, after the first core's `Release` the second takes it at once), `TestTickRunsBudgetJobsInOrder` (the report names "memory expiry", "budget eviction", "capacity notice", "embeddings" consecutively). `maintenance_test.go` (both engines; prefix `TestMaintenance`): `TestMaintenanceBudgetEviction` (`// pending Eric: Milestone 7 item 2`; `BudgetOverride` 256 KiB; 300 ordinary messages of 1 KiB through `h.append` on `dev` and 5 memories on a memory-kind channel; `RunJob("budget eviction")`: sqlite: count > 0, `Usage.Bytes <= target` afterwards, the 5 memories still live, the lowest remaining ordinary seq is above the lowest deleted one and `Channel(dev).EvictedBeforeSeq` is raised; postgres: count 0, all 300 rows remain, no notice; a second run on sqlite returns 0), `TestMaintenanceCapacityNotice` (`// pending Eric: Milestone 7 item 3`; Review Focus 5: `BudgetOverride` 4 KiB with only memories (nothing evictable): `RunJob("budget eviction")` returns 0 and terminates; `RunJob("capacity notice")` sets `notices.capacity` on sqlite with a message containing `sqlite_budget_mib=` (`Store.Notice("capacity")`), and `Send` on `dev` still succeeds; `BudgetOverride` 1 GiB then the job: cleared; postgres: never set, and `Send` succeeds), `TestMaintenanceLockExclusiveAcrossCores` (`h` and `h.sibling`: `h`'s `Tick` ran, the sibling's `ran false` on both engines; `maintenance.Service{h.core}.Release`; the sibling's next `Tick` ran; then Review Focus 4 on postgres only (`if h.e.Name == "postgres"`, in a comment: the SQLite row has no session to terminate): the sibling holds; terminate its lock session through `e.Open(t)` with `SELECT pg_terminate_backend(l.pid) FROM pg_locks l WHERE l.locktype = 'advisory' AND l.classid = hashtext(current_schema())::oid AND l.objid = hashtext('maintenance')::oid AND l.pid <> pg_backend_pid()` (the same role, so no superuser is needed; the test's own connection runs under the schema's `search_path`); `h`'s `Tick` ran (took it on a fresh connection); the sibling's next `Tick` is `ran false` (its re-assert on the dead connection fails, the fresh attempt loses)), update `TestMaintenanceRunJobRejectsUnknown` (drop the Milestone 3 item 3 marker; `RunJob("vacuum")` is still `validation`; `RunJob("budget eviction")` and `RunJob("capacity notice")` are nil errors). `internal/server/config/config_test.go`: `TestValidateRejects` gains `sqlite_budget_mib: 1` and `cleanup_free_percent: 95`; `TestDefaultMatchesCore` and `TestSettingsListsEveryJSONName` pass unchanged (they are reflective). `internal/server/cmd/cmd_test.go` is not edited: `TestServeStartsGeneralAndMaintenance` keeps passing; the `OnTick` hook is exercised by Task 6.
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `go test ./internal/core/... ./internal/server/config/ && go test -count=1 -p 1 -run '^TestMaintenance' ./internal/conformance/bus/`
+Expected: build failure (`Config has no field SQLiteBudgetMiB`, `undefined: Release`), then `RunJob("budget eviction")` `validation`.
+
+- [ ] **Step 3: Implement** as in Interfaces. State (Definition of Done D): both jobs are idempotent (a second run deletes nothing and leaves the notice as it is); a tick killed mid-sweep leaves committed chunks and the lock, released at `until` (SQLite) or when the session ends (Postgres); `Release` on a lock not held is nil.
+
+- [ ] **Step 4: Run the suites and the gate**
+
+Run: `go test -race ./internal/core/maintenance/`, `go test -count=1 -p 1 -race -run '^TestMaintenance' ./internal/conformance/bus/`, then `make verify` (600000 ms).
+Expected: pass; `verify: OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add internal/core internal/conformance/bus/maintenance_test.go internal/server/config internal/server/cmd/serve.go
+git commit -m "feat(core): maintenance under the cross-engine lock, budget eviction and the capacity notice
+
+Ports evictToBudget and capacityNotice from v1 internal/bus/maintenance.go
+and sqlite_budget_mib and cleanup_free_percent from v1
+internal/config/config.go; the tick lock is Store.TryLock (the leases row
+on SQLite, pg_try_advisory_lock on Postgres: Decisions 49, 68), held across
+ticks and released at shutdown. Closes Milestone 3 pending item 3 on A;
+budget and notice act only where usage is evictable (pending item 2);
+checkCapacity is not ported (pending item 3)."
+```
+
+---
+
+### Task 4: Admin usage on the wire
+
+**Depends on:** 1 (`Store.Usage`), 3 (`SQLiteBudgetMiB`). External gate: Milestones 4 and 5 on `main`.
+
+**Files:**
+- Modify: `api/openapi.yaml` (`adminUsage`, the `Usage` schema), `internal/gen/gen.go` and `internal/gen/spec` (regenerated by `make generate`, never edited), `internal/bus/admin.go` (`Usage` type; `Admin` gains `Usage`), `internal/server/cmd/cmd_test.go` (`TestRunRefusesEveryProtectedOperation`: 33 protected, 6 open)
+- Create: `internal/core/channels/usage.go`, `internal/server/admin_usage.go`, `internal/bus/local/usage.go`, `internal/bus/remote/usage.go`, `internal/conformance/bus/usage_test.go`
+
+**Port from v1:** `internal/bus/admin.go` (`Status.UsageBytes`, `BudgetBytes`, `Notice`: the three members, as their own operation), `internal/cli/status.go` (the "usage: x MiB of y MiB budget" reading is Milestone 6's CLI; the numbers come from here).
+
+**Interfaces (produces):**
+
+```go
+package bus // admin.go
+type Usage struct { Bytes, BudgetBytes int64; Evictable bool; Notice string } // Notice: the capacity notice text when set
+type Admin interface { /* existing */; Usage(ctx context.Context) (Usage, error) }
+package channels // usage.go
+func (s Service) Usage(ctx, identity string) (bus.Usage, error) // Store.Read: RequireAdmin (forbidden otherwise), Notice("capacity"); then Store.Usage outside the transaction (a PRAGMA on SQLite); BudgetBytes = Cfg.SQLiteBudgetMiB << 20
+// openapi.yaml: GET /v1/admin/usage, operationId adminUsage, tags [admin], 200 Usage{bytes: integer int64, budget_bytes: integer int64, evictable: boolean, notice?: string}, default Problem; the Milestone 4 security requirement
+// server/admin_usage.go: the strict handler calling channels.Service{core}.Usage(ctx, IdentityFrom(ctx)); local/usage.go and remote/usage.go: the two Bus implementations (the remote maps the generated response by struct literal, as the other admin methods do)
+```
+
+- [ ] **Step 1: Write the failing tests**
+
+`usage_test.go` (both engines, both transports through `newBus`): `TestUsageAdminOnly` (`h.as("kim").Usage` is `forbidden`; `h.admin("root").Usage` returns `Bytes > 0`, `BudgetBytes == int64(h.cfg.SQLiteBudgetMiB) << 20`, `Evictable` true on sqlite and false on postgres, `Notice` empty; after `Store.SetNotice{Kind: "capacity", Message: "full"}` it reads `full`), `TestUsageGrowsWithData` (100 messages of 1 KiB through `Send`: `Bytes` after ≥ before, strictly greater on sqlite). `cmd_test.go`: the literal counts become 33 protected and 6 open, and `adminUsage` appears in the protected set.
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `go test -count=1 -p 1 -run '^TestUsage' ./internal/conformance/bus/`
+Expected: build failure (`Usage` not in `ab2bus.Admin`).
+
+- [ ] **Step 3: Implement**: the schema, `make generate`, the rule, the handler, both `Bus` implementations. Report to the integrator that `internal/bus/admin.go` gained one method (Milestone 6's remote and MCP code, if it enumerates `Admin`, sees it).
+
+- [ ] **Step 4: Run the suites and the gate**
+
+Run: `make generate-check && go test ./internal/server/... ./internal/bus/... && make verify` (600000 ms).
+Expected: `internal/gen` fresh; `verify: OK`.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add api/openapi.yaml internal/gen internal/bus/admin.go internal/bus/local/usage.go internal/bus/remote/usage.go internal/core/channels/usage.go internal/server/admin_usage.go internal/server/cmd/cmd_test.go internal/conformance/bus/usage_test.go
+git commit -m "feat(server): admin usage operation with bytes, budget and the capacity notice
+
+Spec 3.2's admin usage (Decision 48) over Store.Usage; the three members of
+v1 internal/bus/admin.go Status (UsageBytes, BudgetBytes, Notice) as their
+own operation. Closes the usage half of Milestone 3 pending item 3."
+```
+
+---
+
+### Task 6: Milestone exit: two replicas, exclusivity, negative halves, ADR addenda
+
+**Depends on:** 2b, 3, 4, 5.
+
+**Files:**
+- Create: `internal/conformance/bus/replicas_test.go`, `scripts/m7-exit-checks.sh`
+- Modify: `scripts/check-gates-selftest.sh` (blocks 16, 17, 18 and the `CHECKS` array unchanged), `CLAUDE.md`, `README.md`, `docs/adr/0001-transport-and-api.md`, `docs/adr/0002-authentication-and-credentials.md`, `docs/adr/0004-store-contract-and-storage.md` (Milestone 7 addenda), `HANDOFF.md` (untracked)
+
+**Interfaces:** consumes Task 2b's `openStoreDSN`, `crossProcessNotifier`; Task 3's `cmd.Config.OnTick`, `maintenance.JobResult`; Milestone 5's `cmd.Run`, `remote.Register`, `remote.Token`, `remote.WithBearer`, `assertion.Sign`, `keys.*`, `token.NewIssuer`; the generated client.
+
+- [ ] **Step 1: The exit tests**
+
+`replicas_test.go`, `TestReplicasWake` under `dbtest.ForEachEngine`: setup starts two `cmd.Run`s in goroutines over one database (`-listen 127.0.0.1:0`, `-sqlite <path>` or `-postgres <schema DSN from openStoreDSN>`, `-registration open`, `-set issuer=http://agentbus2.test`, `-set signing_key_file=<tmp>/key.pem`, `-set watch_merge_seconds=1`, `-set watch_max_seconds=5`; a `nil` environ; synchronized stdout writers the test parses for `listening on`), asserts both lines name `registration open` and `issuer http://agentbus2.test`, then subtests in order: (1) `shared-key-and-issuer`: `pat` registers through A, signs an assertion for `http://agentbus2.test/v1/auth/token`, mints a token through A, and `ListChannels` through B with that bearer is 200 (choice 8: same key file, same issuer); (2) `subscribe-through-b`: `pat` creates `dev` and subscribes through B, opens a session through A; (3) the wake leaf, named per engine: `wake-crosses-servers` on postgres (arm `watch` on A with `timeout=3` in a goroutine, after 300 ms `send` on `dev` through B as a second identity `sam` registered through B; A's watch returns 200 `count 1` `channels ["dev"]` within `watch_merge_seconds + 1 s` of the send, which is the exit criterion's "within the merge window"); `wake-stays-in-process` on sqlite (the same calls; A's watch returns 204 at its 3 s timeout: Milestone 4 choice 14's limitation, pinned, with the sentence in a comment that local multi-process mode is the client's polling); (4) `watch-replaced-across-servers` on postgres (`// pending Eric: Milestone 7 item 1`; arm a watch on A with `timeout=5`; after 300 ms arm one on B on the same session with `timeout=1`; A's returns 409 `replaced` within 1.5 s of B's registration) and `watch-replaced-stays-in-process` on sqlite (A's returns 204 at its timeout, B's 204 at its own). Cancel both contexts; both `Run`s return 0 within 5 s. Three leaves per engine.
+
+`TestReplicasMaintenanceExclusive` under `dbtest.ForEachEngine`: two `cmd.Serve` instances over `openStoreDSN`'s two handles (`reopen` for the second), each with `Cfg` `core.Defaults()` plus `MaintenanceIntervalSeconds: 1`, `Auth: server.RefuseAll{}`, `Registration: identities.ModeOpen`, `Notifier: crossProcessNotifier(...)`, an `OnTick` appending `(replica, ran, report)` to a mutex-guarded log, `Listen "127.0.0.1:0"`, started at the same moment (a start channel both goroutines wait on; Review Focus 3: afterwards the schema version through `schema_meta` is unchanged by the second start and `ListChannels` through the Store shows one `general`); subtests: (1) `one-holder`: after 4 s of real time, exactly one replica has any `ran true` entry, it has at least 3, every job name of `Jobs()` appears in its reports, and the other replica's entries are all `ran false` (the exit criterion's "only one runs each maintenance job", by job log across replicas, on both engines); (2) `failover`: cancel the holder's context and wait for its `Serve` to return (shutdown runs `Release`); within 3 s the other replica logs a `ran true` entry (Postgres: the session lock was released; SQLite: `Unlock` expired the row). Two leaves per engine.
+
+- [ ] **Step 2: The exit script**
+
+`scripts/m7-exit-checks.sh` (`#!/usr/bin/env bash`, `set -euo pipefail`): usage `m7-exit-checks.sh <replicas.log>` or `--deps-only`. The log form refuses a missing or empty log (exit 2 naming the path), prints `fail=<n>` (`^\s+--- FAIL`), `wake_sqlite=<n>`, `wake_postgres=<n>` (`^\s+--- PASS: TestReplicasWake/<engine>/` leaves), `maint_sqlite=<n>`, `maint_postgres=<n>` (likewise for `TestReplicasMaintenanceExclusive`), and exits 1 unless `fail=0`, both `wake_*` are exactly 3 and both `maint_*` exactly 2; then the import check. `--deps-only` (the pattern of `scripts/m4-exit-checks.sh`: `go list -deps` without `-test`, `grep -F -x` for in-module packages, `grep -F '<module>/'` beside `-x` for third-party): `./internal/store/...` must not import `github.com/ericfitz/agentbus2/internal/core` or any `.../internal/core/` package; `./internal/core/notify` must not import `.../internal/store`, `.../internal/store/` or `github.com/jackc/pgx`; `./internal/core/notify/pgnotify` must not import `.../internal/server`, `.../internal/server/` or `.../internal/gen`; prints `deps_ok=1` or `deps_violation=<package> imports <forbidden>` and exits 1.
+
+- [ ] **Step 3: The milestone exit, positive**
+
+Run (600000 ms or in the background): `env -u AGENTBUS2_TEST_POSTGRES_DSN make verify 2>&1 | tee /tmp/agentbus2-m7-verify.log | tail -3`; `env -u AGENTBUS2_TEST_POSTGRES_DSN make test-race 2>&1 | tail -4`; `env -u AGENTBUS2_TEST_POSTGRES_DSN go test -count=1 -p 1 -v -run '^TestReplicas' ./internal/conformance/bus/ > /tmp/agentbus2-m7-replicas.log 2>&1; bash scripts/m7-exit-checks.sh /tmp/agentbus2-m7-replicas.log`; `bash scripts/m4-exit-checks.sh --deps-only; bash scripts/m5-exit-checks.sh --deps-only`; `make docker-smoke 2>&1 | tail -3`.
+Expected, quoted verbatim in the report: `verify: OK`; `test-race` `ok` everywhere; `fail=0`, `wake_sqlite=3`, `wake_postgres=3`, `maint_sqlite=2`, `maint_postgres=2`, `deps_ok=1`, exit 0; the two earlier deps scripts `deps_ok=1`; `docker-smoke: ok`.
+
+- [ ] **Step 4a: Prove the exit script can fail** (Definition of Done C)
+
+In a throwaway worktree of `HEAD`: (1) `internal/store/sqlstore/probe_m7.go` with `import _ "github.com/ericfitz/agentbus2/internal/core/notify"` → `--deps-only` exits 1 with `deps_violation=github.com/ericfitz/agentbus2/internal/store/sqlstore imports github.com/ericfitz/agentbus2/internal/core/notify`; remove. (2) `internal/core/notify/probe_m7.go` importing `github.com/jackc/pgx/v5` → exit 1 naming it (the prefix match); remove. (3) the script on `/tmp/does-not-exist.log` and on an empty file → exit 2 naming the path. (4) a copy of the real log with one `--- PASS: TestReplicasWake/postgres/wake-crosses-servers` line deleted → `wake_postgres=2`, exit 1. Quote the four outputs.
+
+- [ ] **Step 4b: The milestone exit, negative halves** (three blocks of `scripts/check-gates-selftest.sh` after Milestone 5's block 15; Docker, because the Postgres halves run under testcontainers, which the self-test job already has)
+
+Block 16 `notify-append-removed`: in the worktree replace the line `const notifySQL = "SELECT pg_notify(" + channelExpr + ", $1)"` in `internal/store/postgres/notify.go` with `const notifySQL = "SELECT $1::text"` through a temp file and `cp` (`problem` if `grep -c 'SELECT \$1::text'` is not 1); run `go test -count=1 -p 1 -v -run '^TestReplicasWake$/postgres' ./internal/conformance/bus/`; expect `--- FAIL: TestReplicasWake/postgres/wake-crosses-servers` (the watch times out at 3 s: a timeout is distinguishable from a `NOTIFY` wake because the test's bound is `watch_merge_seconds + 1 s`); revert. Block 17 `advisory-lock-ignored`: replace `const tryLockSQL = "SELECT pg_try_advisory_lock(hashtext(current_schema()), hashtext($1))"` in `internal/store/postgres/lock.go` with `const tryLockSQL = "SELECT true OR $1::text IS NULL"`; run `-run '^TestReplicasMaintenanceExclusive$/postgres'`; expect `--- FAIL: TestReplicasMaintenanceExclusive/postgres/one-holder`; revert. Block 18 `sqlite-lease-ignored`: replace, in `internal/store/sqlstore/lock.go`, the line `held, err := t.TryLease(ctx, name, owner, now, until)` (the implementer keeps it verbatim on one line) with `held, err := true, error(nil)`; run `-run '^TestReplicasMaintenanceExclusive$/sqlite'`; expect `--- FAIL: TestReplicasMaintenanceExclusive/sqlite/one-holder`; revert. Run after Step 6's commit: `make check-gates-selftest 2>&1 | tail -26`. Expected: `selftest: ok notify-append-removed`, `selftest: ok advisory-lock-ignored`, `selftest: ok sqlite-lease-ignored`, every earlier block `ok`.
+
+- [ ] **Step 5: Docs**
+
+- `CLAUDE.md` Commands: `make docker-image`, `make docker-smoke` (not part of `verify`), `scripts/m7-exit-checks.sh`; Design: one line each for `internal/core/notify/pgnotify` (the Postgres doorbell; hints only; wired by `cmd.Run` for a Postgres store), `Store.Locks` and `Store.Space` (the two engine forms), the import rule (store never imports core; `notify` is a leaf), and `docs/ops/` as the operator's entry point. Facts only, checked against the tree.
+- `README.md`: `Status: Milestone 7 (server deployment) done; a server runs from the Docker image over SQLite or Postgres, and replicas over one Postgres share wakes and maintenance; the CLI and MCP server are Milestone 6.` plus a three-line Docker quickstart pointing at `docs/ops/deploy.md`.
+- ADR 0004 addendum `## Milestone 7 addendum (date)`: choices 1 (lock shape, lifetime, the keepalive bound), 2 (channel and payload), 4 (usage per engine, `Evictable`, `Reclaim`, the `auto_vacuum` conversion), 5 (the two jobs, the folded vacuum), the `ControlNotifier` hook, pending items 1, 2 and 3 with their test markers, and the closure of Milestone 3 pending item 3 on A. ADR 0001 addendum: choice 8 (replicas: any replica serves a watch; the wake and replaced bounds; the SQLite two-server limitation re-stated with its test), choice 9. ADR 0002 addendum: pending item 4 (the per-process `jti` set across replicas, closing Milestone 5's "if replicas need it"), the Docker `-registration` pass-through (Decision 58) and the shared `issuer` and `signing_key_file` requirement.
+- `HANDOFF.md` via `/session:handoff`: Milestone 7 done at the Step 6 commit, unpushed; the Step 3, 4a and 4b outputs; the pending items; Milestones 6 (if still running) and 8 next.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add internal/conformance/bus/replicas_test.go scripts/m7-exit-checks.sh scripts/check-gates-selftest.sh CLAUDE.md README.md docs/adr/0001-transport-and-api.md docs/adr/0002-authentication-and-credentials.md docs/adr/0004-store-contract-and-storage.md
+git commit -m "feat(server): Milestone 7 exit: two replicas over one database wake and replace across servers and one runs each maintenance job, on both engines; the NOTIFY and lock mutation proofs; docs"
+```
+
+- [ ] **Step 7: Report**
+
+End with the Step 3 outputs (verify, race, the five counts, `deps_ok`, the smoke line), the Step 4a and 4b outputs quoted verbatim, and the pending items still open. No push: the next push is Eric's (`Approve: push main to origin (git push origin main)`).
+
+---
+
+### Task 7: Operations docs with the mechanical configuration check
+
+**Depends on:** 3 (the two settings), 4 (admin usage), 5 (the image and compose example).
+
+**Files:**
+- Create: `docs/ops/README.md`, `docs/ops/deploy.md`, `docs/ops/configuration.md`, `docs/ops/admin-bootstrap.md`, `docs/ops/backup.md`, `docs/ops/upgrade.md`
+- Create: `internal/server/config/docs_test.go` (Docker-free)
+
+**Port from v1:** none (v1's operator docs cover a local file; nothing applies). Every claim below is checked against the tree or live output before it is written (Definition of Done E); the implementer runs each command it documents once and keeps the output in the task report.
+
+**Interfaces:**
+
+```go
+package config // docs_test.go
+func TestConfigurationReferenceCoversEverySetting(t *testing.T) // reads ../../../docs/ops/configuration.md; for every name in Settings() exactly one table row `| \`<name>\` | \`<EnvName>\` | <type> | <default> | ...` exists; the default column equals Default()'s value formatted as the doc states (ints and floats as decimals, strings quoted, empty as `(unset)`, issuers and default_acl as `(see below)`); every backticked AGENTBUS2_SERVER_* token in the file is EnvName of a known setting (an unknown one fails naming it); a row whose name is not a setting fails
+func TestComposeExampleUsesKnownSettings(t *testing.T) // reads ../../../deploy/docker-compose.yml and deploy/config.example.json: every AGENTBUS2_SERVER_* key is a known EnvName; every key of the JSON file is a known setting and the file loads through Load(path, nil, nil) with Validate passing when `listen` is given (it is)
+```
+
+Contents, section by section (each a fact of the tree, with the source named here so the implementer checks it):
+
+- `README.md`: the index, the one-paragraph model (one binary, `server` and `server admin`, SQLite for one host, Postgres for several replicas), links.
+- `deploy.md`: (1) single host over SQLite: `agentbus2 server -listen 127.0.0.1:<port> -sqlite <path>` (Milestone 4 choice 14: no default port), registration `open` on loopback (Decision 20); (2) the Docker image: build (`make docker-image`), run with `AGENTBUS2_SERVER_*` and `-registration` (Decision 58: a container listens on `0.0.0.0`, so the default is `enrollment`; the flag is the override), volumes `/data` and `/keys`, `nonroot` (uid 65532; a bind-mounted key directory must be writable by it or pre-generated with `server admin signing-key create`, choice 6 of Milestone 5); (3) compose with Postgres and two replicas (`deploy/docker-compose.yml`): `cp deploy/example.env deploy/.env`, edit, `docker compose -f deploy/docker-compose.yml up -d`; what replicas must share (`issuer`, `signing_key_file` on one volume; choice 8) and what they do not (no session affinity); the per-process caveats (`jti` replay, rate-limit buckets; pending item 4); maintenance runs on one replica at a time (choice 1) and the recommended Postgres `tcp_keepalives_idle = 60`, `tcp_keepalives_interval = 10`, `tcp_keepalives_count = 3` so a partitioned holder's lock is released within minutes; the `LISTEN` connection per replica (one extra connection; hints only); a reverse proxy must pass long-polls of up to `watch_max_seconds` (default 50) without buffering (`proxy_read_timeout` above it); (4) the SQLite two-server limitation (Milestone 4 choice 14; the exit test pins it); (5) health: `GET /v1/discover` is unauthenticated (Decision 43) and the probe to use.
+- `configuration.md`: Decision 85's precedence (defaults, file, `AGENTBUS2_SERVER_*`, flags: `-config`, `-listen`, `-registration`, `-sqlite`, `-postgres`, `-set name=value`); one table row per `config.Settings()` name in struct order with the environment name, type, default, bounds and the decision or v1 field it comes from (the test pins names and defaults; bounds are copied from `config.Validate` and `core.Validate`); `issuers` and `default_acl` as JSON text in the environment with one example each; the `<creator>` placeholder (Milestone 5 choice 14); which settings replicas must share.
+- `admin-bootstrap.md`: `agentbus2 server admin` against the store without a credential (Decision 73): `make-admin NAME [-off]`, `reset-credential NAME`, `create-identity NAME` (with the keyless-row warning of Milestone 5 item 7), `enrollment create [-identity NAME] [-expires 24h] [-uses 1]`, `enrollment list`, `enrollment revoke ID`, `signing-key create PATH`; the first-admin sequence on a non-loopback server (enrollment token → the agent registers → `make-admin`), in the container as `docker exec <ctr> /agentbus2 server admin -sqlite /data/agentbus2.db ...` or `docker compose exec agentbus2-a /agentbus2 server admin ...` (the environment's `AGENTBUS2_SERVER_POSTGRES` reaches `server admin`, Milestone 5 Task 8); the admin API section (`status`, `usage`, `reset`, `reset-credential`, delete and rename) needs the flag (Decision 48).
+- `backup.md`: what to back up (the database, `signing_key_file`, the configuration file); SQLite: stop the server or use SQLite's online backup (`sqlite3 <path> ".backup <dest>"`; the file is in WAL mode, so copying `<path>` alone while the server runs is not a consistent backup); Postgres: `pg_dump --schema=public` (the schema the DSN's `search_path` selects) and the key file; restore order (database, key, config, start); what a restore loses (sessions lapse and resume with their tokens within `session_retention_hours`; nothing else).
+- `upgrade.md`: Decision 34's rules as the operator sees them (a newer database refuses with "upgrade agentbus2"; an older one migrates at start under the lock, Decision 53; a foreign database is refused); migrations are per version and resumable (spec 5.6); for a release whose notes say the schema version changes, stop every replica before starting the new version (an old replica keeps running against a migrated schema until it exits, which nothing checks); `agentbus2 version` and the `server_version` member of `GET /v1/discover`; the Docker image tag as the version.
+
+- [ ] **Step 1: Write the failing test**
+
+`docs_test.go` as in Interfaces. Run: `go test -run 'TestConfigurationReference|TestComposeExample' ./internal/server/config/`. Expected: FAIL (`docs/ops/configuration.md` missing).
+
+- [ ] **Step 2: Write the six documents**, checking each claim: every command in `admin-bootstrap.md` is run once against a scratch SQLite file and its output pasted; every setting row is generated from `config.Settings()` and `config.Default()` (a throwaway `go run` or the test's own formatting), never typed by hand; the compose and Docker commands are the ones `scripts/docker-smoke.sh` and Task 5's Step 3 ran.
+
+- [ ] **Step 3: Run the test and the private-name check**
+
+Run: `go test -run 'TestConfigurationReference|TestComposeExample' ./internal/server/config/`, then `rg -n -i 'efitz\.net|/Users/|192\.168\.|10\.0\.|\.local/' docs/ops deploy` (Definition of Done E: private hostnames, paths and names; the public module path `github.com/ericfitz/agentbus2` is allowed), then `make build-all vet fmt-check lint test`.
+Expected: PASS; the `rg` prints nothing; the gate passes.
+
+- [ ] **Step 4: Prove the docs test can fail**
+
+In a throwaway worktree: delete the `sqlite_budget_mib` row from `configuration.md` → the test fails naming it; change `token_lifetime_seconds`'s default cell to `7200` → fails naming the setting and both values; add a row `| \`colour\` |` → fails. Quote the three outputs.
+
+- [ ] **Step 5: Commit**
+
+```bash
+git add docs/ops internal/server/config/docs_test.go
+git commit -m "docs(ops): deploy, configuration reference, admin bootstrap, backup and upgrade for agentbus2 server, with the reference checked against config.Settings()"
+```
+
+---
+
+## Self-review notes
+
+- Spec coverage, section 10 Milestone 7: the Postgres notifier (Tasks 2a, 2b: `NOTIFY` inside the append transaction, the native pgx `LISTEN` connection, hints and the re-check, reconnect; Decisions 50, 52), advisory-locked maintenance with the SQLite lease row kept (Tasks 1, 3; Decisions 49, 68), the deferred jobs budget eviction and capacity notices and the usage number (Tasks 1, 3, 4; spec 5.7 and 3.2, Milestone 3 pending item 3 on A), the Docker image with `-registration` (Task 5; Decision 58, ADR 0002), the compose example with Postgres (Task 5), the operations docs for deploy, every spec 6.5 setting, admin bootstrap with `agentbus2 server admin`, backup and upgrade/migrations (Task 7; Decisions 34, 53, 73, 85). Exit criterion: Task 6's `TestReplicasWake` (deliver and wake across two server replicas over one Postgres, within the merge window) and `TestReplicasMaintenanceExclusive` (only one runs each maintenance job, by job log across replicas), both under `make verify` through `dbtest`, with the SQLite halves pinning the lease and the documented limitation; the negative halves are self-test blocks 16 to 18 and `scripts/m7-exit-checks.sh`'s own proof; the Docker smoke test is a CI job (Task 5).
+- Decisions traced: 25, 26, 49, 50, 52, 53, 68, 69 (ADR 0004); 10, 42, 45, 68 (ADR 0001); 58, 85 (ADR 0002); 48 (ADR 0004, the admin section); 34, 53 (upgrade docs); 20, 43, 73 (docs); 31 (v1 sources named in Tasks 1, 3, 4).
+- Names used across tasks: `store.Locks`, `Space`, `Usage{Bytes, Evictable}`, `Store.TryLock`, `Unlock`, `Usage`, `Reclaim` (Task 1); `sqlstore.Locker`, `ControlNotifier`, `Dialect.Usage`, `Reclaim`; `postgres.ChannelQuery`, `EncodePayload`, `ParsePayload`, `notifySQL`, `tryLockSQL` (Tasks 1, 2a, 2b); `pgnotify.New`, `Options`, `Listener`, `Close`, `Connected`, `Channel` (Task 2a); `openStoreDSN`, `crossProcessNotifier`, `postgresEngine`, `drain` (Task 2b); `core.Config.SQLiteBudgetMiB`, `CleanupFreePercent`, `maintenance.Service.Release`, `BudgetOverride`, the jobs "budget eviction" and "capacity notice", `cmd.Config.OnTick` (Task 3); `bus.Usage`, `Admin.Usage`, `channels.Service.Usage`, `adminUsage` (Task 4); `scripts/docker-smoke.sh`, `make docker-image`, `make docker-smoke` (Task 5); `scripts/m7-exit-checks.sh` (Task 6).
+- Type consistency: `TryLock` takes `(name, owner string, now, until int64)` on the Store and `(conn, name)` on the Postgres dialect; `Usage` is `store.Usage` in the Store and `bus.Usage` on the seam with the same `Bytes` and `Evictable` members plus `BudgetBytes` and `Notice`; the payload is `string` on both sides of the codec and `notify.Hint{ChannelID, Seq int64}` after parsing; `OnTick` receives `[]maintenance.JobResult`, the type `Tick` returns.
+- Review Focus: 1 in Task 2b, 2 in Task 2a, 3 in Task 6, 4 in Task 3, 5 in Task 3, 6 in Task 5.
+- Parallelism: Wave 1 holds Tasks 1, 2a and 5 with disjoint trees (`internal/store/{lock,space}.go`, `sqlstore/{lock,space}.go`, `sqlite/{space.go,sqlite.go,open_test.go}`, `postgres/{lock,space}.go`, `conformance/store` against `postgres/notify.go`, `core/notify/pgnotify` against `Dockerfile`, `deploy`, `scripts/docker-smoke.sh`, `Makefile`, `ci.yml`); Wave 2 holds 2b (`postgres/{postgres,notify}.go`, `sqlstore/{notify,sessions}.go`, `cmd/cmd.go`, the suite's `helpers_test.go`, `notifier_test.go`, `pgnotify_test.go`) beside 3 (`core/config*.go`, `core/maintenance`, the suite's `maintenance_test.go`, `server/config`, `cmd/serve.go`); Wave 4 holds 6 (`replicas_test.go`, `scripts`, `README.md`, `CLAUDE.md`, `docs/adr`) beside 7 (`docs/ops`, `server/config/docs_test.go`). `Makefile` and `ci.yml` are Task 5's alone; `go.mod` is untouched.
+- Proportion: the plan fixes the Store additions, the channel and payload, the listener's loop and options, the job order and the notice text, the operation shape, the Dockerfile's structure, the exit tests' leaves and the mutation anchors; bodies are the implementer's except the three anchor lines Task 6 mutates.
+- Checked against the tree on 2026-10-21: `internal/store/store.go` (`Store` with `Engine`, `Tx`, `Append`, `Read`, `Close`), `internal/store/meta.go` (`TryLease`, notices), `internal/store/sqlstore/dialect.go` (`NotifyAppend` "a no-op now", `Backoffer` as the optional-interface precedent), `internal/store/sqlstore/sessions.go:207` (`RegisterWatch`), `internal/store/postgres/postgres.go` (the no-op `NotifyAppend`, `LockMigrations` with `pg_advisory_xact_lock(hashtext(current_schema()))`), `internal/store/sqlite/sqlite.go` (`Open`, `pingBusy`), both `0001_initial.sql` (`leases ('maintenance', '', 0)`), `internal/dbtest` (`Engines`, `ForEachEngine`, `Engine.DSN`, `Engine.Open`), `internal/conformance/bus/helpers_test.go` (`openStore` with the schema-scoped DSN built inside; no accessor yet), `fixtures_test.go` (`harness.notifier`, `sibling`), `internal/core/core.go` (`Options`, `Owner`), `internal/core/config.go` (`Defaults`, `Validate` bounds table), `internal/core/channels/admin.go` (`Status` with the pending item 3 note), `scripts/check-gates.sh` (checks 1 to 5; check 5 runs the `store` and `bus` suite binaries), `scripts/check-gates-selftest.sh` (helpers and blocks 1 to 8; Milestones 3 to 5 add 9 to 15), `.github/workflows/ci.yml` (five jobs, actions pinned by SHA), `Makefile`, `go.mod` (`pgx` v5.11.0 direct), `internal/version/version.go` (`Version` for `-ldflags`), v1 `internal/bus/maintenance.go`, `bus.go`, `admin.go`, `internal/config/config.go`. Milestones 3 (in flight), 4 and 5 are not fully on `main`: `internal/core/maintenance`, `internal/server`, `internal/bus/remote`, `internal/server/config` and `cmd` are assumed from their plans and diffed before Wave 2.
