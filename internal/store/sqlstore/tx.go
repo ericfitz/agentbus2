@@ -3,8 +3,13 @@ package sqlstore
 import (
 	"context"
 	"database/sql"
+	"errors"
+	"slices"
+	"strings"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jmoiron/sqlx"
+	sqlitedrv "modernc.org/sqlite"
 
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -36,7 +41,6 @@ func (t *tx) get(ctx context.Context, dest any, q string, args ...any) error {
 	return t.tx.GetContext(ctx, dest, t.rebind(q), args...)
 }
 
-//nolint:unused // used by the aggregate tasks (4 to 11)
 func (t *tx) sel(ctx context.Context, dest any, q string, args ...any) error {
 	return t.tx.SelectContext(ctx, dest, t.rebind(q), args...)
 }
@@ -61,4 +65,31 @@ func (t *tx) selW(ctx context.Context, dest any, q string, args ...any) error {
 		return err
 	}
 	return t.tx.SelectContext(ctx, dest, t.rebind(q), args...)
+}
+
+// constraintErr classifies a constraint violation from either engine: SQLite
+// by extended result code (falling back on the primary code 19 with the
+// message text), Postgres by SQLSTATE.
+func constraintErr(err error, sqliteExt []int, sqliteText, pgState string) bool {
+	var se *sqlitedrv.Error
+	if errors.As(err, &se) {
+		if slices.Contains(sqliteExt, se.Code()) {
+			return true
+		}
+		return se.Code()&0xff == 19 && strings.Contains(se.Error(), sqliteText)
+	}
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.Code == pgState
+}
+
+// isConflict reports a unique or primary-key violation
+// (SQLITE_CONSTRAINT_PRIMARYKEY 1555 / _UNIQUE 2067; Postgres 23505).
+func isConflict(err error) bool {
+	return constraintErr(err, []int{1555, 2067}, "UNIQUE constraint failed", "23505")
+}
+
+// isForeignKey reports a foreign-key violation (SQLITE_CONSTRAINT_FOREIGNKEY
+// 787; Postgres 23503).
+func isForeignKey(err error) bool {
+	return constraintErr(err, []int{787}, "FOREIGN KEY constraint failed", "23503")
 }
