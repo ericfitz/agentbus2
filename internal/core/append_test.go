@@ -44,21 +44,44 @@ func TestAppendMemoryKindSetsMemoryAndAccess(t *testing.T) {
 	})
 }
 
+// ExpiredMemories filters tasks-kind channels in SQL, so a tasks-kind channel
+// cannot show whether Append wrote a memory_access row. TaskRow is orthogonal
+// to Kind in Append, so the flag is probed on a memory-kind channel, next to
+// the same append without it.
 func TestAppendTaskRowSkipsAccess(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		taskRow bool
+		want    int
+	}{
+		{"task row gets no access row", true, 0},
+		{"plain memory row gets one", false, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := newTestCore(t, nil)
+			mustIdentity(t, c, "pat", false)
+			ch := mustChannel(t, c, store.ChannelCreate{Name: "mem", Kind: store.KindMemory, Creator: "pat"})
+			seq, memID, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: store.KindMemory, Sender: "pat", Content: "{}", TaskRow: tc.taskRow})
+			if err != nil || memID == nil || *memID != seq {
+				t.Fatalf("Append = %d, %v, %v; want memory_id == seq either way", seq, memID, err)
+			}
+			mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
+				refs, err := tx.ExpiredMemories(ctx, startMs+1, 10)
+				if err != nil || len(refs) != tc.want {
+					t.Errorf("ExpiredMemories = %v, %v; want %d access row(s)", refs, err, tc.want)
+				}
+				return nil
+			})
+		})
+	}
+	// On a real tasks-kind channel the task row is still revision 1 of itself.
 	c, _ := newTestCore(t, nil)
 	mustIdentity(t, c, "pat", false)
 	ch := mustChannel(t, c, store.ChannelCreate{Name: "todo", Kind: store.KindTasks, Creator: "pat"})
 	seq, memID, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "{}", TaskRow: true})
 	if err != nil || memID == nil || *memID != seq {
-		t.Fatalf("Append = %d, %v, %v", seq, memID, err)
+		t.Fatalf("tasks-kind Append = %d, %v, %v", seq, memID, err)
 	}
-	mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
-		refs, err := tx.ExpiredMemories(ctx, startMs+1, 10)
-		if err != nil || len(refs) != 0 {
-			t.Errorf("ExpiredMemories = %v, %v; want none for a task row", refs, err)
-		}
-		return nil
-	})
 }
 
 func TestAppendOrdinaryHasNoMemory(t *testing.T) {
@@ -73,6 +96,30 @@ func TestAppendOrdinaryHasNoMemory(t *testing.T) {
 		// An unknown kind is a programming error; it must not append silently as ordinary.
 		t.Errorf("unknown kind = %v, want internal", err)
 	}
+}
+
+// The kind is checked before the row is written: a caller that swallows the
+// error and commits must not leave a message behind.
+func TestAppendUnknownKindWritesNothing(t *testing.T) {
+	c, _ := newTestCore(t, nil)
+	mustIdentity(t, c, "pat", false)
+	ch := mustChannel(t, c, store.ChannelCreate{Name: "chat", Kind: store.KindOrdinary, Creator: "pat"})
+	err := c.Store.Append(context.Background(), func(ctx context.Context, tx store.Tx) error {
+		if _, _, e := c.Append(ctx, tx, AppendInput{ChannelID: ch.ID, Kind: store.Kind("dm"), Sender: "pat", Content: "x"}); bus.CodeOf(e) != bus.CodeInternal {
+			t.Errorf("unknown kind = %v, want internal", e)
+		}
+		return nil // commit anyway
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
+		ms, err := tx.MessagesAfter(ctx, ch.ID, 0, store.MessageFilter{}, 10)
+		if err != nil || len(ms) != 0 {
+			t.Errorf("MessagesAfter = %v, %v; want nothing written for an unknown kind", ms, err)
+		}
+		return nil
+	})
 }
 
 func TestAppendRejectsOversizedEnvelope(t *testing.T) {
@@ -92,6 +139,34 @@ func TestAppendRejectsOversizedEnvelope(t *testing.T) {
 	m, _ := c.EnvelopeSize(in, "pat")
 	if m <= n {
 		t.Errorf("memory-kind size %d not above ordinary %d", m, n)
+	}
+}
+
+// A display name is <identity>/<hint>-N, longer than the sender: the bound
+// sizes the real Display, and falls back to the sender when none is given
+// (an unresolved display falls back to the sender on the wire).
+func TestEnvelopeSizeCountsDisplay(t *testing.T) {
+	c, _ := newTestCore(t, func(cfg *Config) { cfg.MaxMessageKiB = 1 })
+	in := AppendInput{Channel: "chat", Kind: store.KindOrdinary, Sender: "pat", Content: strings.Repeat("x", 600)}
+	base, err := c.EnvelopeSize(in, "pat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	in.Display = "pat"
+	if n, _ := c.EnvelopeSize(in, "pat"); n != base {
+		t.Errorf("Display == sender: size %d, want the fallback size %d", n, base)
+	}
+	in.Display = "pat/" + strings.Repeat("h", 128) + "-12"
+	n, err := c.EnvelopeSize(in, "pat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := base + len(in.Display) - len("pat"); n != want {
+		t.Errorf("size with a long display = %d, want %d", n, want)
+	}
+	in.Content = strings.Repeat("x", 900)
+	if _, err := c.EnvelopeSize(in, "pat"); bus.CodeOf(err) != bus.CodeValidation {
+		t.Errorf("a long display pushing the envelope over max_message_kib = %v, want validation", err)
 	}
 }
 
@@ -208,8 +283,43 @@ func TestMemoryHelpers(t *testing.T) {
 		if _, _, err := c.LiveRevision(ctx, tx, seq); bus.CodeOf(err) != bus.CodeNotFound {
 			t.Errorf("LiveRevision after tombstone = %v", err)
 		}
-		if refs, _ := tx.ExpiredMemories(ctx, startMs+1, 10); len(refs) != 0 {
-			t.Errorf("access row survived the tombstone: %v", refs)
+		return nil
+	})
+}
+
+// TombstoneMemory drops the memory's access row. The row is only observable
+// through ExpiredMemories, which lists live revisions: a live revision 2
+// sharing the memory id shows whether the access row survived tombstoning
+// revision 1.
+func TestTombstoneMemoryDropsAccessRow(t *testing.T) {
+	c, _ := newTestCore(t, nil)
+	mustIdentity(t, c, "pat", false)
+	ch := mustChannel(t, c, store.ChannelCreate{Name: "mem", Kind: store.KindMemory, Creator: "pat"})
+	seq1, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "x"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seq2 int64
+	err = c.Store.Append(context.Background(), func(ctx context.Context, tx store.Tx) error {
+		var e error
+		if seq2, e = tx.AppendMessage(ctx, store.NewMessage{ChannelID: ch.ID, Sender: "pat", CreatedAt: c.NowMs(), Content: "y"}); e != nil {
+			return e
+		}
+		return tx.SetMemory(ctx, seq2, seq1, 2)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
+		refs, err := tx.ExpiredMemories(ctx, startMs+1, 10)
+		if err != nil || len(refs) == 0 {
+			t.Fatalf("ExpiredMemories before = %v, %v; want the memory listed through its access row", refs, err)
+		}
+		if ok, err := c.TombstoneMemory(ctx, tx, seq1, seq1, startMs); err != nil || !ok {
+			t.Fatalf("TombstoneMemory = %v, %v", ok, err)
+		}
+		if refs, err := tx.ExpiredMemories(ctx, startMs+1, 10); err != nil || len(refs) != 0 {
+			t.Errorf("access row survived the tombstone: %v, %v", refs, err)
 		}
 		return nil
 	})

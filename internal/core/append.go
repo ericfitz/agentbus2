@@ -13,7 +13,11 @@ import (
 type AppendInput struct {
 	ChannelID int64
 	// Channel is the channel's name, used only to size the envelope.
-	Channel                string
+	Channel string
+	// Display is the sender's session display name (<identity>/<hint>-N),
+	// used only to size the envelope. Empty means no session resolves, and
+	// the wire display falls back to the sender, which EnvelopeSize sizes.
+	Display                string
 	Kind                   store.Kind
 	Sender, SessionID      string
 	Type, Subject, Content string
@@ -27,10 +31,15 @@ type AppendInput struct {
 
 // EnvelopeSize is the worst-case wire size of the message (v1
 // sendEnvelope's size gate) and fails with validation when it exceeds
-// max_message_kib. The display name is sized as the sender's name.
+// max_message_kib. The display name is sized as in.Display, or as the sender
+// when none is given.
 func (c *Core) EnvelopeSize(in AppendInput, sender string) (int, error) {
+	display := in.Display
+	if display == "" {
+		display = sender
+	}
 	m := bus.Message{
-		Channel: in.Channel, Sender: sender, Session: in.SessionID, Display: sender,
+		Channel: in.Channel, Sender: sender, Session: in.SessionID, Display: display,
 		Type: in.Type, Subject: in.Subject, Content: in.Content, ReplyTo: in.ReplyTo,
 		Metadata: in.Metadata, Tags: in.Tags,
 	}
@@ -46,6 +55,12 @@ func (c *Core) EnvelopeSize(in AppendInput, sender string) (int, error) {
 // itself and, unless TaskRow, gets its memory_access row (v1 insertMessage).
 // A reply_to must name an existing message.
 func (c *Core) Append(ctx context.Context, tx store.Tx, in AppendInput) (int64, *int64, error) {
+	switch in.Kind {
+	case store.KindOrdinary, store.KindMemory, store.KindTasks:
+	default:
+		// A programming error; checked before the write so nothing is left behind.
+		return 0, nil, E(bus.CodeInternal, "append on unknown channel kind %q", in.Kind)
+	}
 	if in.ReplyTo != nil {
 		if _, err := tx.Message(ctx, *in.ReplyTo); err != nil {
 			if errors.Is(err, store.ErrNotFound) {
@@ -63,12 +78,8 @@ func (c *Core) Append(ctx context.Context, tx store.Tx, in AppendInput) (int64, 
 	if err != nil {
 		return 0, nil, FromStore(err)
 	}
-	switch in.Kind {
-	case store.KindOrdinary:
+	if in.Kind == store.KindOrdinary {
 		return seq, nil, nil
-	case store.KindMemory, store.KindTasks:
-	default:
-		return 0, nil, E(bus.CodeInternal, "append on unknown channel kind %q", in.Kind)
 	}
 	if err := tx.SetMemory(ctx, seq, seq, 1); err != nil {
 		return 0, nil, FromStore(err)

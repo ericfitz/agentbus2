@@ -48,6 +48,45 @@ func TestAuthorizeUsesImplicitEntries(t *testing.T) {
 	}
 }
 
+// Authorize evaluates the literal name it is given, so it refuses "" and the
+// reserved names itself: the default ACL gives everyone read, which must not
+// make "everyone" (or an unauthenticated "") a reader.
+func TestAuthorizeRefusesReservedNames(t *testing.T) {
+	c, _ := newTestCore(t, nil)
+	mustIdentity(t, c, "pat", false)
+	ch := mustChannel(t, c, store.ChannelCreate{Name: "work", Kind: store.KindOrdinary, Creator: "pat"})
+	for _, name := range []string{"", store.Everyone, store.Admins} {
+		for _, p := range []store.Permission{store.PermRead, store.PermWrite, store.PermAdmin} {
+			var err error
+			mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
+				err = c.Authorize(ctx, tx, name, ch.ID, p)
+				return nil
+			})
+			if bus.CodeOf(err) != bus.CodeNotRegistered {
+				t.Errorf("Authorize(%q, %s) = %v, want not_registered", name, p, err)
+			}
+		}
+	}
+}
+
+// ReadableChannelIDs takes the same precondition as Authorize.
+func TestReadableChannelIDsRefusesReservedNames(t *testing.T) {
+	c, _ := newTestCore(t, nil)
+	mustIdentity(t, c, "pat", false)
+	mustChannel(t, c, store.ChannelCreate{Name: "work", Kind: store.KindOrdinary, Creator: "pat"})
+	for _, name := range []string{"", store.Everyone, store.Admins} {
+		var ids []int64
+		var err error
+		mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
+			ids, err = c.ReadableChannelIDs(ctx, tx, name)
+			return nil
+		})
+		if bus.CodeOf(err) != bus.CodeNotRegistered || len(ids) != 0 {
+			t.Errorf("ReadableChannelIDs(%q) = %v, %v; want not_registered", name, ids, err)
+		}
+	}
+}
+
 func TestAuthorizeUnknownPermissionPanics(t *testing.T) {
 	c, _ := newTestCore(t, nil)
 	defer func() {

@@ -11,9 +11,16 @@ import (
 // Authorize is the only ACL check (Decision 80, spec section 4.6): it reads
 // the identity's effective permissions on the channel inside tx and refuses
 // with forbidden when p is missing. An unknown p is a programming error.
+// identity must be a registered name: "" and the reserved names everyone and
+// admins are refused with not_registered, since EffectivePermissions would
+// evaluate them literally (everyone and admins hold ACL rows of their own).
+// Registration is not checked here; callers run RequireIdentity first.
 func (c *Core) Authorize(ctx context.Context, tx store.Tx, identity string, channelID int64, p store.Permission) error {
 	if !store.ValidPermission(p) {
 		panic("core: Authorize with unknown permission " + string(p))
+	}
+	if reservedIdentity(identity) {
+		return notRegistered(identity)
 	}
 	perms, err := tx.EffectivePermissions(ctx, channelID, identity)
 	if err != nil {
@@ -38,15 +45,25 @@ func (c *Core) Authorize(ctx context.Context, tx store.Tx, identity string, chan
 	return E(bus.CodeForbidden, "%s needs %s on channel %q", identity, p, name)
 }
 
+// reservedIdentity reports "" and the ACL group names everyone and admins,
+// none of which is an identity that can act.
+func reservedIdentity(name string) bool {
+	return name == "" || name == store.Everyone || name == store.Admins
+}
+
+func notRegistered(name string) error {
+	return E(bus.CodeNotRegistered, "%q is not a registered identity", name)
+}
+
 // RequireIdentity returns the registered identity, refusing "" and the
 // reserved names everyone and admins (not_registered).
 func (c *Core) RequireIdentity(ctx context.Context, tx store.Tx, identity string) (store.Identity, error) {
-	if identity == "" || identity == store.Everyone || identity == store.Admins {
-		return store.Identity{}, E(bus.CodeNotRegistered, "%q is not a registered identity", identity)
+	if reservedIdentity(identity) {
+		return store.Identity{}, notRegistered(identity)
 	}
 	id, err := tx.Identity(ctx, identity)
 	if errors.Is(err, store.ErrNotFound) {
-		return store.Identity{}, E(bus.CodeNotRegistered, "%q is not a registered identity", identity)
+		return store.Identity{}, notRegistered(identity)
 	}
 	if err != nil {
 		return store.Identity{}, FromStore(err)
@@ -78,8 +95,12 @@ func (c *Core) ChannelByName(ctx context.Context, tx store.Tx, name string) (sto
 	return ch, nil
 }
 
-// ReadableChannelIDs lists the ids of the channels identity may read.
+// ReadableChannelIDs lists the ids of the channels identity may read. Like
+// Authorize, it refuses "" and the reserved names with not_registered.
 func (c *Core) ReadableChannelIDs(ctx context.Context, tx store.Tx, identity string) ([]int64, error) {
+	if reservedIdentity(identity) {
+		return nil, notRegistered(identity)
+	}
 	ids, err := tx.ReadableChannels(ctx, identity)
 	return ids, FromStore(err)
 }

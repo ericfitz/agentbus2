@@ -15,36 +15,70 @@ func TestDefaultsValidate(t *testing.T) {
 	}
 }
 
-func TestConfigRejectsOutOfRange(t *testing.T) {
-	cases := map[string]func(*Config){
-		"session_lease_seconds":        func(c *Config) { c.SessionLeaseSeconds = 0 },
-		"lease_skew_seconds":           func(c *Config) { c.LeaseSkewSeconds = -1 },
-		"session_retention_hours":      func(c *Config) { c.SessionRetentionHours = 0 },
-		"watch_max_seconds":            func(c *Config) { c.WatchMaxSeconds = 0 },
-		"watch_merge_seconds":          func(c *Config) { c.WatchMergeSeconds = 61 },
-		"maintenance_interval_seconds": func(c *Config) { c.MaintenanceIntervalSeconds = 0 },
-		"message_retention_hours":      func(c *Config) { c.MessageRetentionHours = 8761 },
-		"tombstone_min_hours":          func(c *Config) { c.TombstoneMinHours = 71 },
-		"receipt_retention_minutes":    func(c *Config) { c.ReceiptRetentionMinutes = 1441 },
-		"max_message_kib":              func(c *Config) { c.MaxMessageKiB = 0 },
-		"send_messages_per_second":     func(c *Config) { c.SendMessagesPerSecond = 10001 },
-		"send_kib_per_second":          func(c *Config) { c.SendKiBPerSecond = 63 },
-		"receive_default_count":        func(c *Config) { c.ReceiveDefaultCount = 0 },
-		"receive_max_count":            func(c *Config) { c.ReceiveMaxCount = 10001 },
-		"result_default_kib":           func(c *Config) { c.ResultDefaultKiB = 4097 },
-		"task_expiry_hours":            func(c *Config) { c.TaskExpiryHours = -1 },
-		"memory_expiry_hours":          func(c *Config) { c.MemoryExpiryHours = 87601 },
-		"embedding_query_timeout":      func(c *Config) { c.EmbeddingQueryTimeoutSeconds = 0.01 },
+// TestConfigBounds checks both sides of every bound against literals that do
+// not come from Validate: min-1 and max+1 are refused with the setting's name,
+// min and max are accepted.
+func TestConfigBounds(t *testing.T) {
+	cases := []struct {
+		name     string
+		min, max int
+		set      func(*Config, int)
+	}{
+		{"session_lease_seconds", 1, 86400, func(c *Config, v int) { c.SessionLeaseSeconds = v }},
+		{"lease_skew_seconds", 0, 300, func(c *Config, v int) { c.LeaseSkewSeconds = v }},
+		{"session_retention_hours", 1, 8760, func(c *Config, v int) { c.SessionRetentionHours = v }},
+		{"watch_max_seconds", 1, 240, func(c *Config, v int) { c.WatchMaxSeconds = v }},
+		{"watch_merge_seconds", 0, 60, func(c *Config, v int) { c.WatchMergeSeconds = v }},
+		{"maintenance_interval_seconds", 1, 3600, func(c *Config, v int) { c.MaintenanceIntervalSeconds = v }},
+		{"message_retention_hours", 1, 8760, func(c *Config, v int) { c.MessageRetentionHours = v }},
+		{"tombstone_min_hours", 72, 720, func(c *Config, v int) { c.TombstoneMinHours = v }},
+		{"receipt_retention_minutes", 1, 1440, func(c *Config, v int) { c.ReceiptRetentionMinutes = v }},
+		{"max_message_kib", 1, 1024, func(c *Config, v int) { c.MaxMessageKiB = v }},
+		{"send_messages_per_second", 1, 10000, func(c *Config, v int) { c.SendMessagesPerSecond = v }},
+		{"send_kib_per_second", 64, 65536, func(c *Config, v int) { c.SendKiBPerSecond = v }},
+		// The default count must not exceed the max count, so each of the two
+		// is moved clear of the other when it is set at its own bound.
+		{"receive_default_count", 1, 1000, func(c *Config, v int) { c.ReceiveDefaultCount, c.ReceiveMaxCount = v, 10000 }},
+		{"receive_max_count", 1, 10000, func(c *Config, v int) { c.ReceiveDefaultCount, c.ReceiveMaxCount = 1, v }},
+		{"result_default_kib", 1, 4096, func(c *Config, v int) { c.ResultDefaultKiB = v }},
+		{"task_expiry_hours", 0, 87600, func(c *Config, v int) { c.TaskExpiryHours = v }},
+		{"memory_expiry_hours", 0, 87600, func(c *Config, v int) { c.MemoryExpiryHours = v }},
 	}
-	for name, mod := range cases {
-		t.Run(name, func(t *testing.T) {
-			c := Defaults()
-			mod(&c)
-			if err := c.Validate(); err == nil {
-				t.Fatalf("Validate accepted %s out of range", name)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, ok := range []int{tc.min, tc.max} {
+				c := Defaults()
+				tc.set(&c, ok)
+				if err := c.Validate(); err != nil {
+					t.Errorf("%s = %d rejected: %v", tc.name, ok, err)
+				}
+			}
+			for _, bad := range []int{tc.min - 1, tc.max + 1} {
+				c := Defaults()
+				tc.set(&c, bad)
+				err := c.Validate()
+				if err == nil || !strings.Contains(err.Error(), tc.name) {
+					t.Errorf("%s = %d: err = %v, want one naming the setting", tc.name, bad, err)
+				}
 			}
 		})
 	}
+	t.Run("embedding_query_timeout_seconds", func(t *testing.T) {
+		for _, ok := range []float64{0.1, 120} {
+			c := Defaults()
+			c.EmbeddingQueryTimeoutSeconds = ok
+			if err := c.Validate(); err != nil {
+				t.Errorf("embedding_query_timeout_seconds = %v rejected: %v", ok, err)
+			}
+		}
+		for _, bad := range []float64{0.09, 120.1, 0, -1} {
+			c := Defaults()
+			c.EmbeddingQueryTimeoutSeconds = bad
+			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "embedding_query_timeout_seconds") {
+				t.Errorf("embedding_query_timeout_seconds = %v: err = %v, want one naming the setting", bad, err)
+			}
+		}
+	})
 	t.Run("default above max count", func(t *testing.T) {
 		c := Defaults()
 		c.ReceiveDefaultCount, c.ReceiveMaxCount = 50, 10
