@@ -215,5 +215,11 @@ func (t *tx) RegisterWatch(ctx context.Context, id, watchID string, leaseUntil i
 		return err
 	}
 	res, err := t.execW(ctx, "UPDATE sessions SET watch_id = ?, lease_expires_at = ? WHERE id = ?", watchID, leaseUntil, id)
-	return sessionUpdated(res, err, id)
+	if err := sessionUpdated(res, err, id); err != nil {
+		return err
+	}
+	if n, ok := t.d.(ControlNotifier); ok {
+		return n.NotifyControl(ctx, t.tx)
+	}
+	return nil
 }

@@ -37,6 +37,7 @@ type Listener struct {
 	conn      connector
 	min, max  time.Duration
 	connected atomic.Bool
+	channel   atomic.Pointer[string] // the LISTENed channel of the latest session
 	cancel    context.CancelFunc
 	done      chan struct{}
 	closeOnce sync.Once
@@ -109,6 +110,15 @@ func (l *Listener) Close() {
 // Connected is true between a successful LISTEN and the next error.
 func (l *Listener) Connected() bool { return l.connected.Load() }
 
+// Channel is the channel the latest session LISTENed on ("" before the first).
+// It exists for tests that compare it with the dialect's channel expression.
+func (l *Listener) Channel() string {
+	if p := l.channel.Load(); p != nil {
+		return *p
+	}
+	return ""
+}
+
 func (l *Listener) run(ctx context.Context) {
 	defer close(l.done)
 	backoff := l.min
@@ -152,6 +162,7 @@ func (l *Listener) session(ctx context.Context) (listened bool) {
 		}
 		return false
 	}
+	l.channel.Store(&channel)
 	// Catch up on anything missed while not listening.
 	l.Publish(notify.Hint{})
 	l.connected.Store(true)

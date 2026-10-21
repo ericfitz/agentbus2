@@ -1,8 +1,11 @@
 package postgres
 
 import (
+	"context"
 	"strconv"
 	"strings"
+
+	"github.com/jmoiron/sqlx"
 )
 
 // channelExpr names the LISTEN/NOTIFY channel of the current schema. A
@@ -49,4 +52,22 @@ func digits(s string) bool {
 		}
 	}
 	return true
+}
+
+// notifySQL sends one payload on the current schema's channel. pg_notify is
+// transactional: the notification is delivered when the transaction commits
+// and dropped when it rolls back (Decision 52).
+const notifySQL = "SELECT pg_notify(" + channelExpr + ", $1)"
+
+// NotifyAppend queues the append hint inside the append transaction.
+func (dialect) NotifyAppend(ctx context.Context, tx *sqlx.Tx, channelID, seq int64) error {
+	_, err := tx.ExecContext(ctx, notifySQL, EncodePayload(channelID, seq))
+	return err
+}
+
+// NotifyControl queues the control hint (0, 0) that a watch registration
+// sends, so an armed watch on another replica re-checks the Store.
+func (dialect) NotifyControl(ctx context.Context, tx *sqlx.Tx) error {
+	_, err := tx.ExecContext(ctx, notifySQL, EncodePayload(0, 0))
+	return err
 }

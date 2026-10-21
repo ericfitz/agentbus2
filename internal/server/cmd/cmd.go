@@ -17,6 +17,8 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/embed"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentbus2/internal/core/notify"
+	"github.com/ericfitz/agentbus2/internal/core/notify/pgnotify"
 	"github.com/ericfitz/agentbus2/internal/server"
 	"github.com/ericfitz/agentbus2/internal/server/config"
 )
@@ -151,6 +153,15 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		}
 	}
 
+	// A Postgres store shares hints across replicas through LISTEN/NOTIFY
+	// (Decision 52); SQLite keeps the in-process Memory (Serve's default).
+	var notifier notify.Notifier
+	if cfg.Postgres != "" {
+		l := pgnotify.New(ctx, cfg.Postgres, pgnotify.Options{Logger: logger})
+		defer l.Close()
+		notifier = l
+	}
+
 	engine := "postgres"
 	if cfg.SQLite != "" {
 		engine = "sqlite"
@@ -159,6 +170,7 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		Listen:       cfg.Listen,
 		Listener:     ln,
 		Store:        st,
+		Notifier:     notifier,
 		Auth:         server.Bearer{Verifier: token.Verifier{Own: issuer, External: ext}, AutoCreate: autoCreate, Logger: logger},
 		Cfg:          &cc,
 		Logger:       logger,

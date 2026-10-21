@@ -262,6 +262,3 @@ func (dialect) TextSearch(q search.Query) (string, []any, error) {
 	}
 	return strings.Join(conds, " AND "), args, nil
 }
-
-// NotifyAppend is the Milestone 7 hook.
-func (dialect) NotifyAppend(context.Context, *sqlx.Tx, int64, int64) error { return nil }
