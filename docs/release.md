@@ -81,7 +81,7 @@ The Docker image is separate: `.github/workflows/publish-image.yml` builds and p
 - **Rerun after a failure** (before publishing): `release.sh` reuses the draft, redispatches the workflow, which re-uploads with `--clobber`, and repeats the attestation checks, signing, upload and rendering. The notes line follows the current `--windows-signing` value.
 - **Rerun on a published release:** allowed after a warning that it replaces public assets; the publish step is skipped, the tap and bucket are updated (a stranded commit from an earlier failed push is pushed by the rerun) and winget is not resubmitted while its pull request is open.
 - **Overlapping dispatches** for one tag queue on the workflow's concurrency group (`release-<tag>`, `cancel-in-progress: false`). `release.sh` is run by one person at a time. It excludes earlier runs of the tag when it looks for its own.
-- **Leftovers of a killed run:** a `git worktree` registration under `$TMPDIR`, pruned by the next run's `checkout_tag`, and a partial `dist/`, recreated by the next run. A leftover draft is what a rerun resumes.
+- **Leftovers of a killed run:** a `git worktree` of the tag in a temp directory under `$TMPDIR` (it does not block a rerun, which adds its own; `git worktree prune`, which `checkout_tag` runs first, drops the registration once that directory is gone, or remove it with `git worktree remove -f <path>` from `git worktree list`), and a partial `dist/`, recreated by the next run. A leftover draft is what a rerun resumes.
 - **A `komac` failure** leaves the release standing and prints the rerun command.
 
 ## What the automated checks cover

@@ -13,9 +13,9 @@
 # It tests HEAD for part 2: commit changes to release/, install.sh and the
 # workflows before running it. State: a second run starts clean (the worktree
 # and the temp dir are removed on exit); overlapping runs use separate temp
-# dirs and worktree paths; a killed run leaves a registered worktree and a temp
-# dir under $TMPDIR, and `git worktree prune` (run before adding ours) clears
-# the registration.
+# dirs and worktree paths; a killed run leaves a registered worktree inside a
+# temp dir under $TMPDIR, which does not block the next run; `git worktree
+# prune` (run before adding ours) drops the registration once that dir is gone.
 # SC2031: shellcheck follows the sourced release.sh into a $( ) and sees its
 # own tmp there; ours is never modified in a subshell. SC2016: the anchors and
 # the planted lines are literal text.

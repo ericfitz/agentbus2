@@ -62,7 +62,7 @@ The release zips also carry a `README.txt`, but unzipping one does not install a
 | `AGENTBUS2_BASE_URL` | A mirror of `https://github.com/ericfitz/agentbus2`. |
 | `AGENTBUS2_SKIP_SIGNATURE` | `1` skips only the signature check; the hash is still verified. Unset is the default; any other value is rejected. |
 
-As on Linux, the script stops with a message instead of guessing when it is given positional arguments, an `AGENTBUS2_VERSION` that is not exactly `vX.Y.Z`, a relative `AGENTBUS2_INSTALL_DIR`, no `LocalAppData` and no `AGENTBUS2_INSTALL_DIR`, a copy without an embedded release key, or when `<dir>\agentbus2.exe` is a directory. It also stops when the target directory is not writable, and it fails after installing if the installed binary does not run `agentbus2 version`. A refusal throws, so a piped `iex` leaves your session open.
+As on Linux, the script stops with a message instead of guessing when it is given positional arguments, an `AGENTBUS2_VERSION` that is not exactly `vX.Y.Z`, a relative `AGENTBUS2_INSTALL_DIR`, no `LocalAppData` and no `AGENTBUS2_INSTALL_DIR`, a copy without an embedded release key, or when `<dir>\agentbus2.exe` is a directory. It also stops when the target directory is not writable, and it runs the downloaded `agentbus2.exe version` before replacing anything, so a binary that does not run never replaces a working install. A refusal throws, so a piped `iex` leaves your session open.
 
 Package managers:
 
