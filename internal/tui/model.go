@@ -136,9 +136,9 @@ type Model struct {
 
 	toast      string
 	toastSeq   int
-	toastHint  bool         // the toast is a hint (text color, no error prefix), not an error
-	draft      taskDraft    // the one unsaved task state change; id 0 for none
-	assign     assignPicker //nolint:unused // stub; Task 5 reads it
+	toastHint  bool      // the toast is a hint (text color, no error prefix), not an error
+	draft      taskDraft // the one unsaved task state change; id 0 for none
+	assign     assignPicker
 	lastNotice string
 
 	search     searchState
@@ -1319,7 +1319,7 @@ func (m *Model) showToast(s string) tea.Cmd {
 }
 
 // showHint is showToast in the hint style: the text color, no prefix.
-func (m *Model) showHint(s string) tea.Cmd { //nolint:unused // Task 5 shows task-draft hints with it
+func (m *Model) showHint(s string) tea.Cmd {
 	cmd := m.showToast(s)
 	m.toastHint = true
 	return cmd
