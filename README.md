@@ -4,7 +4,7 @@ A message bus, shared memory and shared task queue that let multiple agents work
 
 agentbus2 is the successor to [agentbus](https://github.com/ericfitz/agentbus). It is a breaking redesign, not an upgrade: it uses its own binary, data directory, configuration and MCP server name, so it can be installed next to agentbus 1.x without touching 1.x data.
 
-Status: Milestone 8 (TUI) done; `agentbus2 tui` runs over the Bus in local and server mode; release tooling is Milestone 9. Milestones 6 (client side) and 7 (server deployment) are done: `agentbus2 init`, `register`, `mcp`, `watch` and the CLI work against a local profile and a server, a server runs from the Docker image over SQLite or Postgres, and replicas over one Postgres share wakes, maintenance and the assertion replay set.
+Status: Milestone 8 (TUI) done; `agentbus2 tui` runs over the Bus in local and server mode; release tooling in place; 2.0.0 is cut by `docs/release.md`. Milestones 6 (client side) and 7 (server deployment) are done: `agentbus2 init`, `register`, `mcp`, `watch` and the CLI work against a local profile and a server, a server runs from the Docker image over SQLite or Postgres, and replicas over one Postgres share wakes, maintenance and the assertion replay set.
 
 Docker quickstart (details in `docs/ops/deploy.md`):
 
@@ -44,6 +44,10 @@ agentbus2 send -profile lab -identity pat general "hello"
 ## Terminal UI
 
 `agentbus2 tui [-profile P] [-identity I]` opens a dashboard for a human: channels in five rail sections, messages with threads, memories, task lists, search and a health overlay. It runs in local and server mode alike and has no inbox view. Keys, settings (themes, icons, rail width) and the differences from v1 are in `docs/tui.md`; press `?` inside for the keymap.
+
+## Install
+
+macOS: `brew install ericfitz/tap/agentbus2`. Linux: `curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh`. Windows: `irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1 | iex`, or Scoop (`scoop bucket add ericfitz https://github.com/ericfitz/scoop-bucket`, `scoop install agentbus2`). These work from the first published release (2.0.0); until then build from source with `make build`. agentbus2 installs beside agentbus 1.x and touches nothing of it. Details, verification and the environment variables are in `docs/install.md`; cutting a release is `docs/release.md`.
 
 ## Development
 

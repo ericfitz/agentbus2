@@ -29,6 +29,8 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 - `make docker-image` builds `agentbus2:local`; `make docker-smoke` builds it and smoke-tests it (both need Docker and are not part of `verify`; CI runs the smoke as its own job).
 - `scripts/m7-exit-checks.sh <replicas.log>` checks the `TestReplicas*` counts (`TestReplicasWake` 4 leaves on SQLite and 6 on Postgres, `TestReplicasMaintenanceExclusive` 2 per engine) and the Milestone 7 import rule; `--deps-only` runs the import rule alone.
 - `make check-gates-selftest` tests the gate scripts themselves (minutes; CI runs it as its own job).
+- `make release-check` is part of `verify` (the release harnesses, the local dry run and `vet-cross`); `make release-lint` (`actionlint`, `shellcheck`) and `make release-install-check` (the installer matrix in Docker) are not, and run as their own CI jobs. `release/release.sh <tag> --windows-signing=on|off [--no-publish]` is Eric's: it signs, notarizes and publishes (`docs/release.md`).
+- `scripts/m9-exit-checks.sh [--real-only]` checks the release tooling's invariants and, without `--real-only`, four mutations in a throwaway worktree (CI job `m9-exit-selftest`).
 
 ## Design
 
@@ -58,6 +60,7 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 - `internal/mcpserver` has hand-written tool schemas and never imports `internal/gen`. The Stop hook counts through the read-only `peek` operation, so it never re-blocks for a batch the agent already holds.
 - `internal/tui` runs over `bus.Bus` only, the entry (`run.go`) included: of this module it imports `internal/bus` and `internal/version` and nothing else (allowlist in `scripts/m8-exit-checks.sh`); `internal/cli/tui.go` opens the `Bus` through `client.Open` and passes it in. Its settings are the `tui` object of `config.json` (`profile.Config.TUI`). Rail sections come from channel `Kind`; `tags:` is the one synthetic rail prefix and never reaches the bus. The stub-then-replace file layout of the port is history, not a rule.
 - Milestone 6 import rule (checked by `scripts/m6-exit-checks.sh`, direct imports of non-test code): `internal/profile`, `repoconfig`, `credential`, `procs` and `sessionstate` do not import `internal/core`, `internal/server`, `internal/bus/local` or `internal/store/{sqlite,postgres,sqlstore}`; `internal/mcpserver` and `internal/cli` do not import `internal/gen` or `internal/store`.
+- `release/` is the release tooling, ported from v1 `release/`; `release/build-archive.sh` is the one command that builds a release archive (the workflow, `release.sh` and the dry run all call it). Docs: `docs/install.md`, `docs/release.md`, `docs/release-signing.md`.
 - v1 code is ported deliberately: the commit message names the v1 source file. Do not port artifacts of decisions v2 changed (DMs, identity derived from the harness, `-filter`).
 
 ## Git
