@@ -14,7 +14,7 @@ import (
 // TokenInput describes an enrollment token to create.
 type TokenInput struct {
 	Identity string        // "" any free name
-	Expires  time.Duration // 0: 24 h
+	Expires  time.Duration // 0: 24 h; otherwise at least one millisecond
 	Uses     int           // 0: 1
 }
 
@@ -29,6 +29,11 @@ func HashToken(token string) string {
 func (s Service) CreateEnrollmentToken(ctx context.Context, in TokenInput) (string, store.EnrollmentToken, error) {
 	if in.Expires < 0 {
 		return "", store.EnrollmentToken{}, core.E(bus.CodeValidation, "expires must not be negative")
+	}
+	// The Store keeps milliseconds: a shorter positive Expires would truncate
+	// to a token that expired when it was minted.
+	if in.Expires > 0 && in.Expires < time.Millisecond {
+		return "", store.EnrollmentToken{}, core.E(bus.CodeValidation, "expires must be at least one millisecond")
 	}
 	if in.Uses < 0 {
 		return "", store.EnrollmentToken{}, core.E(bus.CodeValidation, "uses must not be negative")

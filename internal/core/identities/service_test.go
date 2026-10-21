@@ -804,3 +804,323 @@ func TestSigningKeyLifecycle(t *testing.T) {
 	_, _, _, err = s3.LoadOrCreateSigningKey(ctx)
 	wantCode(t, err, bus.CodeInternal)
 }
+
+func TestEnrollmentTokenExpiresResolution(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	// The Store keeps milliseconds, so a positive Expires under one
+	// millisecond would truncate to a token that expired when it was minted.
+	for _, d := range []time.Duration{time.Nanosecond, 500 * time.Microsecond, time.Millisecond - 1} {
+		tok, row, err := s.CreateEnrollmentToken(ctx, TokenInput{Expires: d})
+		if bus.CodeOf(err) != bus.CodeValidation {
+			t.Errorf("Expires %v: code %q (err %v, row %+v), want validation", d, bus.CodeOf(err), err, row)
+			continue
+		}
+		wantDetail(t, err, "at least one millisecond")
+		if tok != "" {
+			t.Errorf("Expires %v: a token came back with the error", d)
+		}
+	}
+	if rows, err := s.ListEnrollmentTokens(ctx); err != nil || len(rows) != 0 {
+		t.Fatalf("a refused token was stored: %+v, %v", rows, err)
+	}
+	tok, row := newToken(t, s, TokenInput{Expires: time.Millisecond})
+	if row.ExpiresAt != startMs+1 {
+		t.Fatalf("ExpiresAt = %d, want %d", row.ExpiresAt, startMs+1)
+	}
+	if _, err := s.Register(ctx, ModeEnrollment, RegisterInput{Identity: "pat", Key: genKey(t), EnrollmentToken: tok}); err != nil {
+		t.Fatalf("a token of 1 ms is valid at the instant it is minted: %v", err)
+	}
+}
+
+func TestMakeAdminAndResetCredentialRefuseUnregistered(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	// "" and the ACL group names are not identities that can act (core's
+	// rule); a name with no row is not registered either.
+	for _, name := range []string{"", store.Everyone, store.Admins, "ghost"} {
+		err := s.MakeAdmin(ctx, name, true)
+		wantCode(t, err, bus.CodeNotRegistered)
+		wantDetail(t, err, "register it first")
+		_, err = s.ResetCredential(ctx, name)
+		wantCode(t, err, bus.CodeNotRegistered)
+		wantDetail(t, err, "register it first")
+	}
+}
+
+// conflictStore wraps a Store to end chosen transactions in store.ErrConflict
+// after their function ran and before they commit: a concurrent writer's
+// unique insert beating this one, which the goroutine races of the
+// conformance tests never reach (a rolled-back attempt is invisible to them).
+// ErrConflict is not retryable in the Store, so it surfaces to the service's
+// own rerun loop. The first `skip` transactions after arm pass through (the
+// EnsureGeneral that Register and CreateIdentity run first, which would
+// swallow the fault); the next `limit` (all when limit < 0) are faulted.
+// after runs once, outside any transaction, after the first faulted
+// transaction returned: that is where the winner's rows are written, since on
+// SQLite a write inside the attempt would wait on its immediate lock.
+type conflictStore struct {
+	store.Store
+
+	mu    sync.Mutex
+	armed bool
+	skip  int
+	limit int
+	calls int
+	after func()
+}
+
+func (c *conflictStore) arm(skip, limit int, after func()) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.armed, c.skip, c.limit, c.calls, c.after = true, skip, limit, 0, after
+}
+
+// txCalls is the number of transactions begun since arm.
+func (c *conflictStore) txCalls() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls
+}
+
+func (c *conflictStore) Tx(ctx context.Context, fn func(context.Context, store.Tx) error) error {
+	c.mu.Lock()
+	fault, first := false, false
+	var after func()
+	if c.armed {
+		c.calls++
+		n := c.calls - c.skip
+		fault = n >= 1 && (c.limit < 0 || n <= c.limit)
+		first = n == 1
+		after = c.after
+	}
+	c.mu.Unlock()
+	if !fault {
+		return c.Store.Tx(ctx, fn)
+	}
+	err := c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		if err := fn(ctx, tx); err != nil {
+			return err
+		}
+		return fmt.Errorf("%w: injected by the test", store.ErrConflict)
+	})
+	if first && after != nil {
+		after()
+	}
+	return err
+}
+
+// newConflictSvc is two Cores over one SQLite file: loser runs over the
+// conflictStore, winner over the raw Store (its writes are not counted and
+// never faulted).
+func newConflictSvc(t *testing.T) (loser, winner Service, cs *conflictStore) {
+	t.Helper()
+	raw, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "agentbus2.db"), sqlite.Options{})
+	if err != nil {
+		t.Fatalf("sqlite.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = raw.Close() })
+	clk := &clock{t: time.UnixMilli(startMs)}
+	mk := func(st store.Store) Service {
+		c, err := core.New(st, core.Defaults(), core.Options{Now: clk.now})
+		if err != nil {
+			t.Fatalf("core.New: %v", err)
+		}
+		return Service{c}
+	}
+	cs = &conflictStore{Store: raw}
+	return mk(cs), mk(raw), cs
+}
+
+func kidOf(t *testing.T, pub crypto.PublicKey) string {
+	t.Helper()
+	kid, err := keys.KID(pub)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return kid
+}
+
+// generalSubscriptions counts the subscriptions to general held by name.
+func generalSubscriptions(t *testing.T, s Service, name string) int {
+	t.Helper()
+	n := 0
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		gen, err := tx.ChannelByName(ctx, "general")
+		if err != nil {
+			return err
+		}
+		subs, err := tx.Subscriptions(ctx, name)
+		if err != nil {
+			return err
+		}
+		for _, x := range subs {
+			if x.ChannelID == gen.ID {
+				n++
+			}
+		}
+		return nil
+	})
+	return n
+}
+
+// Review Focus 3: the loser's first attempt dies on the unique insert and the
+// rerun re-reads what the winner committed. Each case fails without the loop
+// (the Store's conflict text answers instead) and the first also without the
+// reset of res at the top of every attempt (Created would stay true from the
+// rolled-back attempt).
+func TestRegisterRerunsAfterConflict(t *testing.T) {
+	ctx := context.Background()
+	const name = "pat"
+
+	t.Run("the same key answers success and did not create the row", func(t *testing.T) {
+		loser, winner, cs := newConflictSvc(t)
+		key := genKey(t)
+		cs.arm(1, 1, func() {
+			if _, err := winner.Register(ctx, ModeOpen, RegisterInput{Identity: name, Key: key}); err != nil {
+				t.Errorf("the winner's Register: %v", err)
+			}
+		})
+		res, err := loser.Register(ctx, ModeOpen, RegisterInput{Identity: name, Key: key})
+		if err != nil {
+			t.Fatalf("Register = %v, want success for the key that won", err)
+		}
+		if res.Created || res.Identity != name || res.KID != kidOf(t, key) || res.Algorithm != keys.EdDSA {
+			t.Fatalf("result = %+v: the winner created the row, not this call", res)
+		}
+		if got := cs.txCalls(); got != 3 {
+			t.Fatalf("%d transactions, want 3 (EnsureGeneral, the conflicted attempt, the rerun)", got)
+		}
+		if ks := keysOf(t, winner, name); len(ks) != 1 || ks[0].KID != kidOf(t, key) {
+			t.Fatalf("keys = %+v", ks)
+		}
+		if n := generalSubscriptions(t, winner, name); n != 1 {
+			t.Fatalf("%d general subscriptions, want 1", n)
+		}
+	})
+
+	t.Run("another key learns of the credential that won", func(t *testing.T) {
+		loser, winner, cs := newConflictSvc(t)
+		winning, losing := genKey(t), genKey(t)
+		cs.arm(1, 1, func() {
+			if _, err := winner.Register(ctx, ModeOpen, RegisterInput{Identity: name, Key: winning}); err != nil {
+				t.Errorf("the winner's Register: %v", err)
+			}
+		})
+		res, err := loser.Register(ctx, ModeOpen, RegisterInput{Identity: name, Key: losing})
+		wantCode(t, err, bus.CodeConflict)
+		wantDetail(t, err, `identity "pat" already has a credential`)
+		if res != (RegisterResult{}) {
+			t.Fatalf("result = %+v with an error", res)
+		}
+		if ks := keysOf(t, winner, name); len(ks) != 1 || ks[0].KID != kidOf(t, winning) {
+			t.Fatalf("keys = %+v, want only the winner's", ks)
+		}
+	})
+
+	t.Run("the rerun is bounded at three attempts", func(t *testing.T) {
+		loser, winner, cs := newConflictSvc(t)
+		cs.arm(1, -1, nil)
+		res, err := loser.Register(ctx, ModeOpen, RegisterInput{Identity: name, Key: genKey(t)})
+		wantCode(t, err, bus.CodeConflict)
+		wantDetail(t, err, "injected by the test")
+		if res != (RegisterResult{}) {
+			t.Fatalf("result = %+v with an error", res)
+		}
+		if got := cs.txCalls(); got != 4 {
+			t.Fatalf("%d transactions, want 4 (EnsureGeneral and three attempts)", got)
+		}
+		if _, found := identityRow(t, winner, name); found {
+			t.Fatal("a faulted attempt left an identity row")
+		}
+	})
+}
+
+func TestCreateIdentityRerunsAfterConflict(t *testing.T) {
+	ctx := context.Background()
+	const name = "pat"
+
+	t.Run("the winner created the row", func(t *testing.T) {
+		loser, winner, cs := newConflictSvc(t)
+		cs.arm(1, 1, func() {
+			if created, err := winner.CreateIdentity(ctx, name); err != nil || !created {
+				t.Errorf("the winner's CreateIdentity = %v, %v", created, err)
+			}
+		})
+		created, err := loser.CreateIdentity(ctx, name)
+		if err != nil || created {
+			t.Fatalf("CreateIdentity = %v, %v, want false, nil", created, err)
+		}
+		if got := cs.txCalls(); got != 3 {
+			t.Fatalf("%d transactions, want 3", got)
+		}
+		if n := generalSubscriptions(t, winner, name); n != 1 {
+			t.Fatalf("%d general subscriptions, want 1", n)
+		}
+	})
+
+	t.Run("the rerun is bounded at three attempts", func(t *testing.T) {
+		loser, winner, cs := newConflictSvc(t)
+		cs.arm(1, -1, nil)
+		created, err := loser.CreateIdentity(ctx, name)
+		wantCode(t, err, bus.CodeConflict)
+		wantDetail(t, err, "injected by the test")
+		if created {
+			t.Fatal("created with an error")
+		}
+		if got := cs.txCalls(); got != 4 {
+			t.Fatalf("%d transactions, want 4 (EnsureGeneral and three attempts)", got)
+		}
+		if _, found := identityRow(t, winner, name); found {
+			t.Fatal("a faulted attempt left an identity row")
+		}
+	})
+}
+
+func TestLoadOrCreateSigningKeyRerunsAfterConflict(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("a second replica loads the winner's key", func(t *testing.T) {
+		loser, winner, cs := newConflictSvc(t)
+		var winnerKID string
+		cs.arm(0, 1, func() {
+			signer, _, created, err := winner.LoadOrCreateSigningKey(ctx)
+			if err != nil || !created {
+				t.Errorf("the winner's LoadOrCreateSigningKey = %v, %v", created, err)
+				return
+			}
+			winnerKID = kidOf(t, signer.Public())
+		})
+		signer, alg, created, err := loser.LoadOrCreateSigningKey(ctx)
+		if err != nil || created || alg != keys.EdDSA {
+			t.Fatalf("LoadOrCreateSigningKey = %v, %v, %v, want a load of the winner's key", alg, created, err)
+		}
+		if got := kidOf(t, signer.Public()); got != winnerKID || winnerKID == "" {
+			t.Fatalf("kid = %q, want the winner's %q", got, winnerKID)
+		}
+		if got := cs.txCalls(); got != 2 {
+			t.Fatalf("%d transactions, want 2 (the conflicted attempt and the rerun)", got)
+		}
+	})
+
+	t.Run("the rerun is bounded at one", func(t *testing.T) {
+		loser, winner, cs := newConflictSvc(t)
+		cs.arm(0, -1, nil)
+		signer, _, created, err := loser.LoadOrCreateSigningKey(ctx)
+		wantCode(t, err, bus.CodeConflict)
+		wantDetail(t, err, "injected by the test")
+		if signer != nil || created {
+			t.Fatalf("signer %v, created %v with an error", signer, created)
+		}
+		if got := cs.txCalls(); got != 2 {
+			t.Fatalf("%d transactions, want 2", got)
+		}
+		err = winner.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+			_, err := tx.SigningKey(ctx)
+			return err
+		})
+		if !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("a faulted attempt left a signing key row: %v", err)
+		}
+	})
+}

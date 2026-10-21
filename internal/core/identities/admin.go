@@ -13,7 +13,13 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
-// requireRegistered is not_registered with a hint for the host commands.
+// requireRegistered is not_registered with a hint for the host commands (the
+// plan's text: "identity %q is not registered; register it first"). It
+// applies core.RequireIdentity's rule (not "", everyone or admins, and a row
+// exists) but does not call it: RequireIdentity maps every store error
+// through core.FromStore, which would turn a retryable engine error inside
+// this transaction into a final bus error before the Store's retry loop saw
+// it, so any other store error is returned as it came.
 func requireRegistered(ctx context.Context, tx store.Tx, name string) error {
 	if name != "" && name != store.Everyone && name != store.Admins {
 		_, err := tx.Identity(ctx, name)
