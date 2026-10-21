@@ -16,7 +16,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SIM_NAME=agentbus2-ci-sim-selftest
 SIM_PORT=5434
 BAD_DSN='postgres://agentbus2:agentbus2@127.0.0.1:1/agentbus2?sslmode=disable&connect_timeout=2'
-CHECKS=(postgres-unreachable-fails unit-tests-exclude-conformance no-skip-in-test-wiring generator-reacts-to-schema postgres-no-docker-fails)
+CHECKS=(postgres-unreachable-fails unit-tests-exclude-conformance no-skip-in-test-wiring generator-reacts-to-schema postgres-no-docker-fails transport-env-rejects-unknown)
 
 tmp="$(mktemp -d)"
 wt="$tmp/wt"

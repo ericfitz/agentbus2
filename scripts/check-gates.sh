@@ -6,8 +6,9 @@
 # The script never reads the ambient AGENTBUS2_TEST_POSTGRES_DSN: checks 1 and
 # 2 set their own value, checks 3 and 4 touch no database, check 5 runs in a
 # container that inherits no host environment. Only check 5 needs Docker on the
-# host. All scratch files live in a temp dir removed on exit; nothing is
-# written under the repository.
+# host (checks 3 and 4 need none, nor does check 6: the bus suite exits on an
+# unknown AGENTBUS2_BUS_TRANSPORT before dbtest.Run starts anything). All scratch files
+# live in a temp dir removed on exit; nothing is written under the repository.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -131,10 +132,23 @@ check_no_docker() {
 	pass "$name"
 }
 
+# --- 6. transport-env-rejects-unknown ------------------------------------
+# Docker-free: the suite's TestMain refuses an unknown value before dbtest.Run.
+check_transport_env() {
+	local name=transport-env-rejects-unknown log="$tmp/transport.log"
+	if AGENTBUS2_BUS_TRANSPORT=bogus go test -count=1 -run '^TestScaffold$' ./internal/conformance/bus/ >"$log" 2>&1; then
+		fail "$name" "the bus suite passed with AGENTBUS2_BUS_TRANSPORT=bogus"
+		return
+	fi
+	has "$log" 'AGENTBUS2_BUS_TRANSPORT must be local or inproc' || { fail "$name" "log lacks 'AGENTBUS2_BUS_TRANSPORT must be local or inproc'; tail: $(tail -n 3 "$log" | tr '\n' ' ')"; return; }
+	pass "$name"
+}
+
 check_unreachable
 check_unit_excludes
 check_no_skip
 check_generator
 check_no_docker
+check_transport_env
 
 exit "$failed"
