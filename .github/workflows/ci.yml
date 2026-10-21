@@ -49,6 +49,15 @@ jobs:
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with: { version: v2.14.0, install-only: true }
       - run: bash scripts/ci-gate-negative.sh 'postgres from AGENTBUS2_TEST_POSTGRES_DSN is unreachable'
+  gates-selftest: # the harness test: one mutation per gate check in a throwaway worktree (minutes; not part of verify)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with: { version: v2.14.0, install-only: true }
+      - run: make check-gates-selftest
   gate-negative-no-docker: # variable unset and no Docker at all; verify must fail with the unset-and-could-not-start text
     runs-on: ubuntu-latest
     steps:

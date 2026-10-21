@@ -1,0 +1,178 @@
+#!/usr/bin/env bash
+# Self-test of the gate harness (Definition of Done C): one real mutation per
+# check, applied in a throwaway worktree of HEAD, with the exact expected
+# FAIL/ok vector asserted for scripts/check-gates.sh, plus proofs that
+# scripts/ci-gate-negative.sh and scripts/ci-sim.sh fire.
+#
+# It tests HEAD, not the working tree: commit changes to scripts/, the Makefile
+# or internal/dbtest before running it. The main tree is never written. Every
+# block runs even after a failure so one run reports every broken check.
+# Overlapping runs are unsupported (fixed container name and port in block 6);
+# a killed run leaves a worktree under $TMPDIR and maybe one container:
+# `git worktree prune` and `docker rm -f agentbus2-ci-sim-selftest` clear them.
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+SIM_NAME=agentbus2-ci-sim-selftest
+SIM_PORT=5434
+BAD_DSN='postgres://agentbus2:agentbus2@127.0.0.1:1/agentbus2?sslmode=disable&connect_timeout=2'
+CHECKS=(postgres-unreachable-fails unit-tests-exclude-conformance no-skip-in-test-wiring generator-reacts-to-schema postgres-no-docker-fails)
+
+tmp="$(mktemp -d)"
+wt="$tmp/wt"
+cleanup() {
+	git -C "$ROOT" worktree remove --force "$wt" >/dev/null 2>&1 || true
+	git -C "$ROOT" worktree prune
+	docker rm -f "$SIM_NAME" >/dev/null 2>&1 || true
+	rm -rf "$tmp"
+}
+trap cleanup EXIT
+
+git -C "$ROOT" worktree add --detach "$wt" HEAD >/dev/null
+
+bad=0
+block_ok=1
+status=0
+
+# problem LABEL MESSAGE: record a failure of the current block.
+problem() {
+	echo "selftest: FAIL $1: $2"
+	bad=1
+	block_ok=0
+}
+
+begin() { block_ok=1; }
+finish() { if [ "$block_ok" -eq 1 ]; then echo "selftest: ok $1"; fi; }
+
+# revert: undo every mutation in the throwaway worktree.
+revert() {
+	git -C "$wt" checkout -- .
+	git -C "$wt" clean -fd -- internal >/dev/null
+}
+
+# run_gates LOG [make args...]: run make check-gates in the worktree; sets $status.
+run_gates() {
+	local log="$1"
+	shift
+	if make -C "$wt" check-gates "$@" >"$log" 2>&1; then status=0; else status=$?; fi
+}
+
+# expect_checks LABEL LOG FAIL_NAMES...: every check named must have FAILed,
+# every other check must be ok, and make check-gates must have exited non-zero.
+expect_checks() {
+	local label="$1" log="$2" name want f
+	shift 2
+	local -a fails=("$@")
+	if [ "$status" -eq 0 ]; then problem "$label" "make check-gates exited 0, expected non-zero"; fi
+	for name in "${CHECKS[@]}"; do
+		want=ok
+		for f in "${fails[@]}"; do
+			if [ "$f" = "$name" ]; then want=FAIL; fi
+		done
+		if [ "$want" = FAIL ]; then
+			grep -q "^FAIL $name" "$log" || problem "$label" "$name expected FAIL, log has: $(grep "$name" "$log" | head -n 1)"
+		else
+			grep -q "^ok  $name" "$log" || problem "$label" "$name expected ok, log has: $(grep "$name" "$log" | head -n 1)"
+		fi
+	done
+}
+
+# --- 1. skip-in-wiring ---------------------------------------------------------
+block_skip_in_wiring() {
+	local label=skip-in-wiring log="$tmp/b1.log" f="$wt/internal/dbtest/dbtest.go"
+	begin
+	sed 's/t.Fatalf("%v", err)/t.Skipf("%v", err)/' "$f" >"$tmp/x" && cp "$tmp/x" "$f"
+	if ! grep -q 'Skipf' "$f"; then
+		problem "$label" "mutation changed nothing (no t.Fatalf(\"%v\", err) line in dbtest.go)"
+	else
+		run_gates "$log"
+		expect_checks "$label" "$log" postgres-unreachable-fails no-skip-in-test-wiring postgres-no-docker-fails
+	fi
+	finish "$label"
+	revert
+}
+
+# --- 2. unit-set-leaks-conformance -----------------------------------------------
+# GNU make exports command-line variable overrides through MAKEFLAGS, so the
+# inner `make test` run by check-gates.sh inherits PKGS_UNIT=./...
+block_unit_leak() {
+	local label=unit-set-leaks-conformance log="$tmp/b2.log"
+	begin
+	run_gates "$log" 'PKGS_UNIT=./...'
+	expect_checks "$label" "$log" unit-tests-exclude-conformance
+	finish "$label"
+	revert
+}
+
+# --- 3. gen-hand-edited ------------------------------------------------------------
+block_gen_edited() {
+	local label=gen-hand-edited log="$tmp/b3.log"
+	begin
+	printf '\n' >>"$wt/internal/gen/gen.go"
+	run_gates "$log"
+	expect_checks "$label" "$log" generator-reacts-to-schema
+	finish "$label"
+	revert
+}
+
+# --- 4. gen-stray-file -------------------------------------------------------------
+block_gen_stray() {
+	local label=gen-stray-file log="$tmp/b4.log"
+	begin
+	touch "$wt/internal/gen/stray.go"
+	if make -C "$wt" generate-check >"$log" 2>&1; then
+		problem "$label" "make generate-check passed with an untracked file in internal/gen"
+	elif ! grep -qF '?? internal/gen/stray.go' "$log"; then
+		problem "$label" "log lacks '?? internal/gen/stray.go': $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	finish "$label"
+	revert
+}
+
+# --- 5. ci-gate-negative-fires ---------------------------------------------------------
+block_ci_gate_negative() {
+	local label=ci-gate-negative-fires log="$tmp/b5a.log" rc
+	begin
+	if AGENTBUS2_TEST_POSTGRES_DSN="$BAD_DSN" bash "$wt/scripts/ci-gate-negative.sh" 'postgres from AGENTBUS2_TEST_POSTGRES_DSN is unreachable' >"$log" 2>&1; then
+		grep -qF 'gate-negative: ok' "$log" || problem "$label" "matching run exited 0 but did not print 'gate-negative: ok'"
+	else
+		problem "$label" "matching run should exit 0: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	log="$tmp/b5b.log"
+	if AGENTBUS2_TEST_POSTGRES_DSN="$BAD_DSN" bash "$wt/scripts/ci-gate-negative.sh" 'selftest: text that never appears' >"$log" 2>&1; then
+		problem "$label" "non-matching run exited 0, expected 1"
+	else
+		rc=$?
+		[ "$rc" -eq 1 ] || problem "$label" "non-matching run exited $rc, expected 1"
+		grep -qF 'gate-negative: FAIL: log lacks the expected text' "$log" || problem "$label" "non-matching run did not print 'gate-negative: FAIL: log lacks the expected text'"
+	fi
+	finish "$label"
+	revert
+}
+
+# --- 6. ci-sim-fails-and-cleans-up ---------------------------------------------------------
+block_ci_sim() {
+	local label=ci-sim-fails-and-cleans-up log="$tmp/b6.log" left
+	begin
+	touch "$wt/internal/gen/stray.go" # empty .go file: compile error, verify fails at build-all
+	if CI_SIM_NAME="$SIM_NAME" CI_SIM_PORT="$SIM_PORT" bash "$wt/scripts/ci-sim.sh" >"$log" 2>&1; then
+		problem "$label" "ci-sim.sh exited 0 on a tree that cannot build"
+	fi
+	left="$(docker ps -a --filter "name=$SIM_NAME" --format '{{.Names}}')"
+	[ -z "$left" ] || problem "$label" "container left behind: $left"
+	finish "$label"
+	revert
+}
+
+block_skip_in_wiring
+block_unit_leak
+block_gen_edited
+block_gen_stray
+block_ci_gate_negative
+block_ci_sim
+
+if [ "$bad" -ne 0 ]; then
+	echo "check-gates-selftest: FAILED"
+	exit 1
+fi
+echo "check-gates-selftest: OK"

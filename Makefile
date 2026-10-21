@@ -1,4 +1,4 @@
-.PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates verify
+.PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates check-gates-selftest verify
 export CGO_ENABLED=0
 PKGS_UNIT = $$(go list ./... | grep -v '/internal/conformance')
 
@@ -26,6 +26,8 @@ test-conformance:  ## Store and Bus conformance suites on SQLite and Postgres; -
 	go test -count=1 -p 1 ./internal/conformance/...
 check-gates:  ## Prove the negative halves: an unreachable Postgres fails the suites, unit tests exclude the suites, nothing skips, the generator reacts to the schema, the suites fail with no Docker and no variable (needs Docker for the busybox run)
 	bash scripts/check-gates.sh
+check-gates-selftest:  ## Prove the gate scripts fire: one mutation per check in a throwaway worktree of HEAD (minutes; its own CI job, not part of verify)
+	bash scripts/check-gates-selftest.sh
 verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, generated-code freshness, unit tests, conformance suites on both engines, gate checks
 	$(MAKE) build
 	$(MAKE) build-all
