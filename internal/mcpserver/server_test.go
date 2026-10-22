@@ -738,3 +738,32 @@ func (r *running) mustFail(t *testing.T, name string, args map[string]any, code 
 	t.Helper()
 	_ = r.failure(t, name, args, code)
 }
+
+// Post-build decision 10 over the MCP JSON input: an omitted type or metadata
+// is kept, an explicit "" or {} clears, if_revision guards.
+func TestEditMemoryOmitKeepsEmptyClears(t *testing.T) {
+	e := newTestEnv(t)
+	r := startServer(t, e, newFakeTable(), "test-client")
+	sid := str(r.must(t, "register", nil), "session")
+	r.must(t, "create_channel", map[string]any{"name": "mem", "kind": "memory"})
+	sent := r.must(t, "send", map[string]any{"session": sid, "channel": "mem", "content": "alpha",
+		"type": "note", "metadata": map[string]any{"k": "v"}})
+	mid := sent["memory_id"]
+	get := func() map[string]any { return r.must(t, "get_memory", map[string]any{"id": mid}) }
+
+	r.must(t, "edit_memory", map[string]any{"id": mid, "content": "beta"})
+	if g := get(); str(g, "type") != "note" || g["metadata"] == nil || str(g, "content") != "beta" {
+		t.Fatalf("omitted type/metadata were not kept: %v", g)
+	}
+	r.must(t, "edit_memory", map[string]any{"id": mid, "type": ""})
+	if g := get(); g["type"] != nil && str(g, "type") != "" || g["metadata"] == nil || str(g, "content") != "beta" {
+		t.Fatalf(`"type": "" did not clear only the type: %v`, g)
+	}
+	r.must(t, "edit_memory", map[string]any{"id": mid, "metadata": map[string]any{}})
+	if g := get(); g["metadata"] != nil && len(g["metadata"].(map[string]any)) != 0 || str(g, "content") != "beta" {
+		t.Fatalf("metadata {} did not clear: %v", g)
+	}
+	g := get()
+	stale := g["revision"].(float64) - 1
+	r.mustFail(t, "edit_memory", map[string]any{"id": mid, "content": "x", "if_revision": stale}, bus.CodeConflict)
+}

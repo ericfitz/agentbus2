@@ -135,14 +135,15 @@ type memoryIn struct {
 }
 
 type editIn struct {
-	Session        string            `json:"session,omitempty" jsonschema:"your session id as returned by register (optional)"`
-	ID             int64             `json:"id" jsonschema:"the memory_id of the memory to edit"`
-	Subject        *string           `json:"subject,omitempty" jsonschema:"new subject; omit to keep it, pass an empty string to clear it"`
-	Content        string            `json:"content" jsonschema:"the new content"`
-	Type           string            `json:"type,omitempty" jsonschema:"optional message type label"`
-	Metadata       map[string]string `json:"metadata,omitempty" jsonschema:"optional string key-value pairs"`
-	Tags           []string          `json:"tags,omitempty" jsonschema:"new tags; omit to keep them, pass [] to clear them"`
-	IdempotencyKey string            `json:"idempotency_key,omitempty" jsonschema:"makes a retry safe: the same key replays the first result"`
+	Session        string             `json:"session,omitempty" jsonschema:"your session id as returned by register (optional)"`
+	ID             int64              `json:"id" jsonschema:"the memory_id of the memory to edit"`
+	Subject        *string            `json:"subject,omitempty" jsonschema:"new subject; omit to keep it, pass an empty string to clear it"`
+	Content        *string            `json:"content,omitempty" jsonschema:"the new content; omit to keep it (it cannot be empty: delete the memory instead)"`
+	Type           *string            `json:"type,omitempty" jsonschema:"message type label; omit to keep it, pass an empty string to clear it"`
+	Metadata       *map[string]string `json:"metadata,omitempty" jsonschema:"string key-value pairs; omit to keep them, pass {} to clear them"`
+	Tags           []string           `json:"tags,omitempty" jsonschema:"new tags; omit to keep them, pass [] to clear them"`
+	IfRevision     int64              `json:"if_revision,omitempty" jsonschema:"the revision you read; the edit fails with conflict if the memory changed since"`
+	IdempotencyKey string             `json:"idempotency_key,omitempty" jsonschema:"makes a retry safe: the same key replays the first result"`
 }
 
 type deleteIn struct {

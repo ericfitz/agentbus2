@@ -78,8 +78,8 @@ func TestCutFirstLineOpensAsBody(t *testing.T) {
 func TestBodyStaysOpenAcrossMemoryVersions(t *testing.T) {
 	f := newFixture(t)
 	first := f.samSendSubject("dev-notes", "Release v1", "notes one")
-	v2 := "Release v2"
-	if _, err := f.sam.Edit(context.Background(), bus.EditMemoryInput{ID: *first.MemoryID, Subject: &v2, Content: "notes two"}); err != nil {
+	v2, n2 := "Release v2", "notes two"
+	if _, err := f.sam.Edit(context.Background(), bus.EditMemoryInput{ID: *first.MemoryID, Subject: &v2, Content: &n2}); err != nil {
 		t.Fatal(err)
 	}
 	f.key("esc")

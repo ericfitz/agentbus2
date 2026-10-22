@@ -356,13 +356,16 @@ type Discovery struct {
 	ServerVersion       string       `json:"server_version"`
 }
 
-// EditMemoryRequest defines model for EditMemoryRequest.
+// EditMemoryRequest Every field is optional and an omitted field keeps the live revision's value; a present empty subject, type, metadata or tags clears it. Content cannot be cleared (an empty content is a validation error). A request with no field is a validation error.
 type EditMemoryRequest struct {
-	Content  string             `json:"content"`
-	Metadata *map[string]string `json:"metadata,omitempty"`
-	Subject  *string            `json:"subject,omitempty"`
-	Tags     *[]string          `json:"tags,omitempty"`
-	Type     *string            `json:"type,omitempty"`
+	Content *string `json:"content,omitempty"`
+
+	// IfRevision The revision the caller read; the edit fails with conflict if the live revision differs.
+	IfRevision *int64             `json:"if_revision,omitempty"`
+	Metadata   *map[string]string `json:"metadata,omitempty"`
+	Subject    *string            `json:"subject,omitempty"`
+	Tags       *[]string          `json:"tags,omitempty"`
+	Type       *string            `json:"type,omitempty"`
 }
 
 // EditResult defines model for EditResult.

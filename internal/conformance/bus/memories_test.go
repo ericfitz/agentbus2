@@ -2,6 +2,7 @@ package bus
 
 import (
 	"context"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -80,7 +81,7 @@ func TestMemoryEditNeedsWrite(t *testing.T) {
 		ctx := context.Background()
 		ch := h.channel("mem", ab2store.KindMemory, "owner", memoryACL(h))
 		seq := h.append(ch, "owner", "", "v1")
-		in := ab2bus.EditMemoryInput{ID: seq, Content: "v2"}
+		in := ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v2")}
 
 		_, err := h.as("reader").Edit(ctx, in)
 		codeOf(t, err, ab2bus.CodeForbidden)
@@ -109,7 +110,7 @@ func TestMemoryEditKeepsSubjectAndTags(t *testing.T) {
 		seq := h.append(ch, "owner", "", "v1", "red", "blue")
 		b := h.as("owner")
 
-		r, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Subject: memStrp("  Title  "), Content: "v2"})
+		r, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Subject: memStrp("  Title  "), Content: memStrp("v2")})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -121,7 +122,7 @@ func TestMemoryEditKeepsSubjectAndTags(t *testing.T) {
 			t.Fatalf("after edit 1: %+v", m)
 		}
 		// Omitted subject and nil tags are carried.
-		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: "v3"}); err != nil {
+		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v3")}); err != nil {
 			t.Fatal(err)
 		}
 		m, _ = b.GetMemory(ctx, seq)
@@ -129,7 +130,7 @@ func TestMemoryEditKeepsSubjectAndTags(t *testing.T) {
 			t.Fatalf("after edit 2: %+v", m)
 		}
 		// [] clears tags; the subject is still kept.
-		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: "v4", Tags: []string{}}); err != nil {
+		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v4"), Tags: []string{}}); err != nil {
 			t.Fatal(err)
 		}
 		m, _ = b.GetMemory(ctx, seq)
@@ -137,7 +138,7 @@ func TestMemoryEditKeepsSubjectAndTags(t *testing.T) {
 			t.Fatalf("after edit 3: %+v", m)
 		}
 		// New tags are normalized; a pointer to "" clears the subject.
-		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: "v5", Subject: memStrp(""), Tags: []string{"Green"}}); err != nil {
+		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v5"), Subject: memStrp(""), Tags: []string{"Green"}}); err != nil {
 			t.Fatal(err)
 		}
 		m, _ = b.GetMemory(ctx, seq)
@@ -170,7 +171,7 @@ func TestMemoryEditRevisionChain(t *testing.T) {
 			t.Fatal("fixture embedding missing")
 		}
 
-		res, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: "v2"})
+		res, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v2")})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -190,7 +191,7 @@ func TestMemoryEditRevisionChain(t *testing.T) {
 			t.Fatalf("revisions = %+v", revs)
 		}
 		// Edits chain by memory id: a second edit replaces the revision-2 row.
-		res2, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: "v3"})
+		res2, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v3")})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -215,22 +216,22 @@ func TestMemoryEditRejects(t *testing.T) {
 		taskSeq := h.append(tasks, "owner", "", "a task")
 		b := h.as("owner")
 
-		_, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq + 1000, Content: "x"})
+		_, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq + 1000, Content: memStrp("x")})
 		codeOf(t, err, ab2bus.CodeNotFound)
-		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: taskSeq, Content: "x"})
+		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: taskSeq, Content: memStrp("x")})
 		codeOf(t, err, ab2bus.CodeValidation)
 		codeOf(t, b.Delete(ctx, ab2bus.DeleteMemoryInput{ID: taskSeq}), ab2bus.CodeValidation)
-		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: ""})
+		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("")})
 		codeOf(t, err, ab2bus.CodeValidation)
 		eleven := strings.Split("a b c d e f g h i j k", " ")
-		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: "x", Tags: eleven})
+		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("x"), Tags: eleven})
 		codeOf(t, err, ab2bus.CodeValidation)
-		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: "x", Tags: []string{"bad tag!"}})
+		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("x"), Tags: []string{"bad tag!"}})
 		codeOf(t, err, ab2bus.CodeValidation)
-		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: "x", Subject: memStrp("two\nlines")})
+		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("x"), Subject: memStrp("two\nlines")})
 		codeOf(t, err, ab2bus.CodeValidation)
 		big := strings.Repeat("x", (h.cfg.MaxMessageKiB+1)*1024)
-		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: big})
+		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp(big)})
 		codeOf(t, err, ab2bus.CodeValidation)
 		// Nothing above changed the memory.
 		revs, err := b.Revisions(ctx, seq)
@@ -252,10 +253,10 @@ func TestMemoryEditRateLimited(t *testing.T) {
 		ch := h.channel("mem", ab2store.KindMemory, "owner", memoryACL(h))
 		seq := h.append(ch, "owner", "", "v1")
 		b := h.as("owner")
-		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: "v2"}); err != nil {
+		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v2")}); err != nil {
 			t.Fatal(err)
 		}
-		_, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: "v3"})
+		_, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v3")})
 		codeOf(t, err, ab2bus.CodeRateLimited)
 		// The refused edit left the memory at revision 2.
 		revs, _ := b.Revisions(ctx, seq)
@@ -305,7 +306,7 @@ func TestMemoryEditIdempotent(t *testing.T) {
 		ch := h.channel("mem", ab2store.KindMemory, "owner", memoryACL(h))
 		seq := h.append(ch, "owner", "", "v1")
 		b := h.as("owner")
-		in := ab2bus.EditMemoryInput{ID: seq, Content: "v2", IdempotencyKey: "k"}
+		in := ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v2"), IdempotencyKey: "k"}
 
 		first, err := b.Edit(ctx, in)
 		if err != nil {
@@ -322,8 +323,114 @@ func TestMemoryEditIdempotent(t *testing.T) {
 		if len(revs) != 2 {
 			t.Fatalf("revisions = %d, want 2", len(revs))
 		}
-		in.Content = "other"
+		in.Content = memStrp("other")
 		_, err = b.Edit(ctx, in)
 		codeOf(t, err, ab2bus.CodeConflict)
+	})
+}
+
+// Post-build decision 10: an omitted field is kept, an explicitly empty one
+// clears, content cannot be cleared, and IfRevision guards the live revision.
+func TestMemoryEditMerge(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		ch := h.channel("mem", ab2store.KindMemory, "owner", memoryACL(h))
+		seq := h.append(ch, "owner", "", "v1", "red")
+		b := h.as("owner")
+		meta := map[string]string{"k": "v"}
+		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Subject: memStrp("s"), Type: memStrp("note"), Metadata: &meta}); err != nil {
+			t.Fatalf("setup edit (no content): %v", err)
+		}
+		get := func() ab2bus.Message {
+			t.Helper()
+			m, err := b.GetMemory(ctx, seq)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return m
+		}
+		m := get()
+		if m.Content != "v1" || m.Type != "note" || m.Subject != "s" || !reflect.DeepEqual(m.Metadata, meta) || !reflect.DeepEqual(m.Tags, []string{"red"}) {
+			t.Fatalf("after setup: %+v", m)
+		}
+
+		// Content only: everything else is kept.
+		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v2")}); err != nil {
+			t.Fatal(err)
+		}
+		m = get()
+		if m.Content != "v2" || m.Type != "note" || m.Subject != "s" || !reflect.DeepEqual(m.Metadata, meta) || !reflect.DeepEqual(m.Tags, []string{"red"}) {
+			t.Fatalf("content-only edit: %+v", m)
+		}
+
+		// Type "" clears type only.
+		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Type: memStrp("")}); err != nil {
+			t.Fatal(err)
+		}
+		m = get()
+		if m.Content != "v2" || m.Type != "" || m.Subject != "s" || !reflect.DeepEqual(m.Metadata, meta) {
+			t.Fatalf("type clear: %+v", m)
+		}
+
+		// Empty metadata clears metadata only.
+		empty := map[string]string{}
+		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Metadata: &empty}); err != nil {
+			t.Fatal(err)
+		}
+		m = get()
+		if m.Content != "v2" || len(m.Metadata) != 0 || m.Subject != "s" {
+			t.Fatalf("metadata clear: %+v", m)
+		}
+
+		// Metadata only keeps the content.
+		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Metadata: &meta}); err != nil {
+			t.Fatal(err)
+		}
+		m = get()
+		if m.Content != "v2" || !reflect.DeepEqual(m.Metadata, meta) {
+			t.Fatalf("metadata only: %+v", m)
+		}
+
+		// Empty content and an empty request are validation errors.
+		_, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("")})
+		codeOf(t, err, ab2bus.CodeValidation)
+		if !strings.Contains(err.Error(), "delete the memory instead") {
+			t.Fatalf("empty content message: %v", err)
+		}
+		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq})
+		codeOf(t, err, ab2bus.CodeValidation)
+
+		// IfRevision: equal succeeds, stale conflicts and writes nothing.
+		live := get()
+		rev := *live.Revision
+		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v3"), IfRevision: rev}); err != nil {
+			t.Fatalf("matching if_revision: %v", err)
+		}
+		before, _ := b.Revisions(ctx, seq)
+		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v4"), IfRevision: rev})
+		codeOf(t, err, ab2bus.CodeConflict)
+		want := fmt.Sprintf("memory %d is at revision %d, not %d", seq, rev+1, rev)
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("conflict message %q lacks %q", err.Error(), want)
+		}
+		after, _ := b.Revisions(ctx, seq)
+		if len(after) != len(before) || get().Content != "v3" {
+			t.Fatalf("stale edit wrote: %d -> %d revisions, content %q", len(before), len(after), get().Content)
+		}
+
+		// A keyed replay returns the first result even after the memory moved on.
+		in := ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v5"), IdempotencyKey: "merge-k"}
+		first, err := b.Edit(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: seq, Content: memStrp("v6")}); err != nil {
+			t.Fatal(err)
+		}
+		second, err := b.Edit(ctx, in)
+		if err != nil || second != first {
+			t.Fatalf("replay = %+v, %v; first = %+v", second, err, first)
+		}
 	})
 }

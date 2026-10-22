@@ -33,6 +33,8 @@ func runMemories(ctx context.Context, sub string, args []string, environ []strin
 	var (
 		subject, mtype, key     string
 		clearSubject, clearTags bool
+		clearMeta               bool
+		ifRevision              int64
 		tags                    opList
 		meta                    opMeta
 	)
@@ -40,10 +42,12 @@ func runMemories(ctx context.Context, sub string, args []string, environ []strin
 	case "edit":
 		fs.StringVar(&subject, "subject", "", "new subject (absent keeps it)")
 		fs.BoolVar(&clearSubject, "clear-subject", false, "clear the subject")
-		fs.StringVar(&mtype, "type", "", "message type")
+		fs.StringVar(&mtype, "type", "", "message type (absent keeps it; -type '' clears it)")
 		fs.Var(&tags, "tag", "tag (repeatable; absent keeps the tags)")
 		fs.BoolVar(&clearTags, "clear-tags", false, "remove every tag")
-		fs.Var(&meta, "metadata", "metadata k=v (repeatable)")
+		fs.Var(&meta, "metadata", "metadata k=v (repeatable; absent keeps the metadata)")
+		fs.BoolVar(&clearMeta, "clear-metadata", false, "remove all metadata")
+		fs.Int64Var(&ifRevision, "if-revision", 0, "fail with conflict unless the memory is at this revision (0: no check)")
 		fs.StringVar(&key, "key", "", "idempotency key")
 	case "delete":
 		fs.StringVar(&key, "key", "", "idempotency key")
@@ -62,7 +66,6 @@ func runMemories(ctx context.Context, sub string, args []string, environ []strin
 	}
 
 	var in bus.EditMemoryInput
-	var content *string
 	if sub == "edit" {
 		if c.seen("subject") && clearSubject {
 			return c.usageErr("-subject and -clear-subject are mutually exclusive")
@@ -70,7 +73,24 @@ func runMemories(ctx context.Context, sub string, args []string, environ []strin
 		if len(tags) > 0 && clearTags {
 			return c.usageErr("-tag and -clear-tags are mutually exclusive")
 		}
-		in = bus.EditMemoryInput{ID: id, Type: mtype, Metadata: meta, IdempotencyKey: key}
+		if len(meta) > 0 && clearMeta {
+			return c.usageErr("-metadata and -clear-metadata are mutually exclusive")
+		}
+		if ifRevision < 0 {
+			return c.usageErr("-if-revision must not be negative")
+		}
+		in = bus.EditMemoryInput{ID: id, IfRevision: ifRevision, IdempotencyKey: key}
+		if c.seen("type") {
+			in.Type = &mtype
+		}
+		switch {
+		case clearMeta:
+			empty := map[string]string{}
+			in.Metadata = &empty
+		case len(meta) > 0:
+			m := map[string]string(meta)
+			in.Metadata = &m
+		}
 		switch {
 		case clearSubject:
 			empty := ""
@@ -93,7 +113,7 @@ func runMemories(ctx context.Context, sub string, args []string, environ []strin
 				}
 				text = string(b)
 			}
-			content = &text
+			in.Content = &text
 		}
 	}
 
@@ -126,16 +146,6 @@ func runMemories(ctx context.Context, sub string, args []string, environ []strin
 		return opPrint(stdout, stderr, map[string]int64{"deleted": id})
 	}
 	// edit
-	if content != nil {
-		in.Content = *content
-	} else {
-		// A metadata-only edit keeps the current content.
-		cur, err := conn.Bus.GetMemory(ctx, id)
-		if err != nil {
-			return fail(stderr, err)
-		}
-		in.Content = cur.Content
-	}
 	r, err := conn.Bus.Edit(ctx, in)
 	if err != nil {
 		return fail(stderr, err)

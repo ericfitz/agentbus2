@@ -414,9 +414,13 @@ path (absolute, or relative to the repository with the repository named), a
 URL as-is, a commit as `owner/repo@sha`, an issue or PR as `owner/repo#N`.
 To find a commit, search its short hash with a trailing `*` (`e159e8c*`);
 that also matches the full hash. Edit a memory with `edit_memory` when the
-fact changes; delete it when it is wrong. An edit replaces the whole
-content, so keep a `Refs:` block an older memory ends with unless you fold
-those references into the text.
+fact changes; delete it when it is wrong. An edit keeps every field you
+omit (content, subject, type, metadata, tags) and clears one you pass empty
+(`""`, `{}`, `[]`); content cannot be empty, so delete the memory instead.
+When you give new content it replaces the whole content, so keep a `Refs:`
+block an older memory ends with unless you fold those references into the
+text. Pass `if_revision` (the revision you read) so an edit fails with
+`conflict` instead of overwriting a change made since.
 
 ## Subagents
 

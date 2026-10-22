@@ -27,7 +27,7 @@ func onMemory(t *testing.T) (f *fixture, id int64) {
 	first := f.samSend("dev-notes", "Release v1")
 	f.samSend("dev-notes", "Reviewer checklist")
 	for _, c := range []string{"Release v2", "Release v3"} {
-		if _, err := f.sam.Edit(context.Background(), bus.EditMemoryInput{ID: *first.MemoryID, Content: c}); err != nil {
+		if _, err := f.sam.Edit(context.Background(), bus.EditMemoryInput{ID: *first.MemoryID, Content: &c}); err != nil {
 			t.Fatal(err)
 		}
 	}

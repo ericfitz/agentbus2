@@ -533,12 +533,12 @@ func (s *server) addTools(srv *mcp.Server) {
 		func(ctx context.Context, req *mcp.CallToolRequest, in memoryIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) { return b.GetMemory(ctx, in.ID) })
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "edit_memory", Description: "Agentbus2: replace a memory's content as a new revision. Last committed write wins; the result names the revision you replaced. tags replaces the memory's tags (same rule as send); omit it to keep them, pass [] to clear them. subject replaces the memory's subject; omit it to keep it, pass an empty string to clear it. Use idempotency_key to make retries safe."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "edit_memory", Description: "Agentbus2: write a new revision of a memory. Every field you omit is kept (content, subject, type, metadata, tags); a field you pass empty is cleared, except content, which cannot be empty (delete the memory instead). Pass if_revision (the revision you read) to fail with conflict if the memory changed since; without it the last committed write wins. The result names the revision you replaced. tags replaces the memory's tags (same rule as send); omit it to keep them, pass [] to clear them. subject replaces the memory's subject; omit it to keep it, pass an empty string to clear it. Use idempotency_key to make retries safe."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in editIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) {
 				return b.Edit(ctx, bus.EditMemoryInput{
 					ID: in.ID, Subject: in.Subject, Content: in.Content, Type: in.Type, Metadata: in.Metadata,
-					Tags: in.Tags, IdempotencyKey: in.IdempotencyKey,
+					Tags: in.Tags, IfRevision: in.IfRevision, IdempotencyKey: in.IdempotencyKey,
 				})
 			})
 		})

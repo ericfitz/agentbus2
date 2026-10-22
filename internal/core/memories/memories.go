@@ -77,13 +77,22 @@ func (s Service) Revisions(ctx context.Context, identity string, id int64) ([]bu
 }
 
 // Edit tombstones the live revision of memory in.ID and inserts the next one
-// (v1 EditMemory). A nil Subject or nil Tags keeps the live revision's; a
-// pointer to "" or an empty list clears. It needs write on the memory's
+// (v1 EditMemory). A nil Subject, Content, Type, Metadata or Tags keeps the
+// live revision's; a pointer to "", an empty map or an empty list clears,
+// except Content, which cannot be cleared (post-build decision 10). A nonzero
+// IfRevision must equal the live revision, checked in the same transaction
+// before the tombstone. It needs write on the memory's
 // channel and refuses a tasks-kind channel. The idempotency key replays the
 // stored result (Decision 46); a replay charges nothing and publishes nothing.
 func (s Service) Edit(ctx context.Context, identity string, in bus.EditMemoryInput) (bus.EditResult, error) {
-	if in.Content == "" {
-		return bus.EditResult{}, core.E(bus.CodeValidation, "content is required")
+	if in.Content != nil && *in.Content == "" {
+		return bus.EditResult{}, core.E(bus.CodeValidation, "content must not be empty; delete the memory instead")
+	}
+	if in.IfRevision < 0 {
+		return bus.EditResult{}, core.E(bus.CodeValidation, "if_revision must be positive")
+	}
+	if in.Subject == nil && in.Content == nil && in.Type == nil && in.Metadata == nil && in.Tags == nil {
+		return bus.EditResult{}, core.E(bus.CodeValidation, "nothing to change: give at least one of subject, content, type, metadata or tags")
 	}
 	if in.Subject != nil {
 		sub, err := rules.NormalizeSubject(*in.Subject)
@@ -128,9 +137,25 @@ func (s Service) Edit(ctx context.Context, identity string, in bus.EditMemoryInp
 			if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermWrite); err != nil {
 				return err
 			}
-			subject := old.Subject
+			live := int64(1)
+			if old.Revision != nil {
+				live = *old.Revision
+			}
+			if in.IfRevision != 0 && in.IfRevision != live {
+				return core.E(bus.CodeConflict, "memory %d is at revision %d, not %d", in.ID, live, in.IfRevision)
+			}
+			subject, content, mtype, meta := old.Subject, old.Content, old.Type, old.Metadata
 			if in.Subject != nil {
 				subject = *in.Subject
+			}
+			if in.Content != nil {
+				content = *in.Content
+			}
+			if in.Type != nil {
+				mtype = *in.Type
+			}
+			if in.Metadata != nil {
+				meta = *in.Metadata
 			}
 			tags := old.Tags
 			if in.Tags != nil {
@@ -138,7 +163,7 @@ func (s Service) Edit(ctx context.Context, identity string, in bus.EditMemoryInp
 			}
 			ai := core.AppendInput{
 				ChannelID: ch.ID, Channel: ch.Name, Kind: store.KindMemory, Sender: identity,
-				Type: in.Type, Subject: subject, Content: in.Content, Metadata: in.Metadata, Tags: tags,
+				Type: mtype, Subject: subject, Content: content, Metadata: meta, Tags: tags,
 			}
 			size, err = s.EnvelopeSize(ai, identity)
 			if err != nil {
@@ -160,10 +185,7 @@ func (s Service) Edit(ctx context.Context, identity string, in bus.EditMemoryInp
 			if err != nil {
 				return err
 			}
-			rev := int64(1)
-			if old.Revision != nil {
-				rev = *old.Revision + 1
-			}
+			rev := live + 1
 			if err := tx.SetMemory(ctx, seq, in.ID, rev); err != nil {
 				return core.FromStore(err)
 			}

@@ -427,11 +427,11 @@ func matrixRows() []aclRow {
 		{row: "memory edit, memory delete", perm: ab2bus.PermWrite, kind: ab2store.KindMemory, subs: []subcase{
 			{name: "memory edit",
 				refuse: func(t *testing.T, h *harness, b ab2bus.Bus, ch string) {
-					_, err := b.Edit(ctx(), ab2bus.EditMemoryInput{ID: fixOf(h, ch).seq, Content: "edited"})
+					_, err := b.Edit(ctx(), ab2bus.EditMemoryInput{ID: fixOf(h, ch).seq, Content: memStrp("edited")})
 					forb(t, err)
 				},
 				allow: func(t *testing.T, h *harness, b ab2bus.Bus, ch string) {
-					res, err := b.Edit(ctx(), ab2bus.EditMemoryInput{ID: fixOf(h, ch).seq, Content: "edited"})
+					res, err := b.Edit(ctx(), ab2bus.EditMemoryInput{ID: fixOf(h, ch).seq, Content: memStrp("edited")})
 					must(t, err)
 					if res.MemoryID != fixOf(h, ch).seq || res.Revision != 2 {
 						t.Fatalf("edit = %+v", res)

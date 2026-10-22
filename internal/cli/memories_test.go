@@ -85,6 +85,40 @@ func TestMemoriesLifecycle(t *testing.T) {
 		t.Fatalf("content %q", m.Content)
 	}
 
+	// Omitted -type/-metadata keep; -type '' and -clear-metadata clear; the
+	// content is never re-read for them; -if-revision guards.
+	if code, _, errs = run("edit", "-type", "note", "-metadata", "k=v", id); code != 0 {
+		t.Fatalf("edit -type -metadata: %d %q", code, errs)
+	}
+	if code, _, errs = run("edit", "-subject", "again", id); code != 0 {
+		t.Fatalf("edit -subject: %d %q", code, errs)
+	}
+	if m, _ = pat.Bus.GetMemory(ctx, *sent.MemoryID); m.Type != "note" || m.Metadata["k"] != "v" || m.Content != "from stdin\n" {
+		t.Fatalf("omitted -type/-metadata did not keep: %+v", m)
+	}
+	if code, _, errs = run("edit", "-type", "", id); code != 0 {
+		t.Fatalf("edit -type '': %d %q", code, errs)
+	}
+	if m, _ = pat.Bus.GetMemory(ctx, *sent.MemoryID); m.Type != "" || m.Metadata["k"] != "v" {
+		t.Fatalf("-type '' did not clear only the type: %+v", m)
+	}
+	if code, _, errs = run("edit", "-clear-metadata", id); code != 0 {
+		t.Fatalf("edit -clear-metadata: %d %q", code, errs)
+	}
+	if m, _ = pat.Bus.GetMemory(ctx, *sent.MemoryID); len(m.Metadata) != 0 || m.Content != "from stdin\n" {
+		t.Fatalf("-clear-metadata: %+v", m)
+	}
+	if code, _, errs = run("edit", "-if-revision", "1", id, "stale"); code != 1 || !strings.Contains(errs, "conflict") {
+		t.Fatalf("stale -if-revision: %d %q", code, errs)
+	}
+	m, _ = pat.Bus.GetMemory(ctx, *sent.MemoryID)
+	if code, _, errs = run("edit", "-if-revision", strconv.FormatInt(*m.Revision, 10), id, "fresh"); code != 0 {
+		t.Fatalf("matching -if-revision: %d %q", code, errs)
+	}
+	if code, _, errs = run("edit", id); code != 1 || !strings.Contains(errs, "validation") {
+		t.Fatalf("edit with nothing to change: %d %q", code, errs)
+	}
+
 	if code, _, errs = run("delete", id); code != 0 {
 		t.Fatalf("delete: %d %q", code, errs)
 	}
@@ -110,6 +144,8 @@ func TestMemoriesRejectsBadInput(t *testing.T) {
 		{"edit", "-tag", "a", "-clear-tags", "1", "x"},
 		{"edit", "-metadata", "novalue", "1", "x"},
 		{"edit", "-metadata", "a=1", "-metadata", "a=2", "1", "x"},
+		{"edit", "-metadata", "a=1", "-clear-metadata", "1", "x"},
+		{"edit", "-if-revision", "-3", "1", "x"},
 		{"delete", "-tag", "x", "1"},
 	} {
 		var out, errb bytes.Buffer

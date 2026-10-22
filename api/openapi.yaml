@@ -1303,8 +1303,17 @@ components:
           type: boolean
     EditMemoryRequest:
       type: object
-      required: [content]
+      description: >-
+        Every field is optional and an omitted field keeps the live revision's
+        value; a present empty subject, type, metadata or tags clears it.
+        Content cannot be cleared (an empty content is a validation error).
+        A request with no field is a validation error.
       properties:
+        if_revision:
+          type: integer
+          format: int64
+          minimum: 1
+          description: The revision the caller read; the edit fails with conflict if the live revision differs.
         subject:
           type: string
         content:

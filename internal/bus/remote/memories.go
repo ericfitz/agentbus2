@@ -40,8 +40,8 @@ func (b *Bus) GetMemory(ctx context.Context, id int64) (ab2bus.Message, error) {
 
 func (b *Bus) Edit(ctx context.Context, in ab2bus.EditMemoryInput) (ab2bus.EditResult, error) {
 	body := gen.EditMemoryRequest{
-		Content: in.Content, Subject: in.Subject, Type: strPtr(in.Type),
-		Metadata: mapPtr(in.Metadata), Tags: slicePtr(in.Tags),
+		Content: in.Content, Subject: in.Subject, Type: in.Type,
+		Metadata: in.Metadata, Tags: slicePtr(in.Tags), IfRevision: int64Ptr(in.IfRevision),
 	}
 	r, err := b.c.EditMemoryWithResponse(ctx, in.ID, &gen.EditMemoryParams{IdempotencyKey: key(in.IdempotencyKey)}, body)
 	if err := mtCheck(ctx, r, err, func(r *gen.EditMemoryResponse) bool { return r.JSON201 != nil }); err != nil {

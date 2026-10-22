@@ -21,13 +21,11 @@ func (a *api) EditMemory(ctx context.Context, r gen.EditMemoryRequestObject) (ge
 	}
 	b := r.Body
 	in := ab2bus.EditMemoryInput{
-		ID: r.Id, Subject: b.Subject, Content: b.Content, IdempotencyKey: idemKey(r.Params.IdempotencyKey),
+		ID: r.Id, Subject: b.Subject, Content: b.Content, Type: b.Type, Metadata: b.Metadata,
+		IdempotencyKey: idemKey(r.Params.IdempotencyKey),
 	}
-	if b.Type != nil {
-		in.Type = *b.Type
-	}
-	if b.Metadata != nil {
-		in.Metadata = *b.Metadata
+	if b.IfRevision != nil {
+		in.IfRevision = *b.IfRevision
 	}
 	if b.Tags != nil {
 		// A present empty list stays non-nil: it clears; absent keeps.

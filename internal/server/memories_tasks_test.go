@@ -118,7 +118,8 @@ func TestMemoryRoutesWire(t *testing.T) {
 	if err != nil || g.JSON200 == nil || g.JSON200.Content != "v1" {
 		t.Fatalf("get: %+v, %v", g, err)
 	}
-	e, err := f.c.EditMemoryWithResponse(ctx, f.memoryID, &gen.EditMemoryParams{}, gen.EditMemoryRequest{Content: "v2"})
+	v2 := "v2"
+	e, err := f.c.EditMemoryWithResponse(ctx, f.memoryID, &gen.EditMemoryParams{}, gen.EditMemoryRequest{Content: &v2})
 	if err != nil || e.JSON201 == nil || e.JSON201.Revision != 2 || e.JSON201.MemoryId != f.memoryID {
 		t.Fatalf("edit: %+v, %v", e, err)
 	}

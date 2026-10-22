@@ -2,16 +2,21 @@ package bus
 
 import "context"
 
-// EditMemoryInput writes a new revision of a memory. Subject nil keeps the
-// current one and a pointer to "" clears it; Tags nil keeps the current tags
-// and an empty list clears them.
+// EditMemoryInput writes a new revision of a memory. A nil pointer or slice
+// keeps the live revision's value and an explicitly empty one clears it
+// (post-build decision 10): Subject and Type "", Metadata an empty map, Tags an
+// empty list. Content cannot be cleared: a pointer to "" is a validation
+// error, since the memory is deleted instead. IfRevision 0 skips the check;
+// otherwise the edit fails with CodeConflict unless the live revision is
+// IfRevision.
 type EditMemoryInput struct {
 	ID             int64
 	Subject        *string
-	Content        string
-	Type           string
-	Metadata       map[string]string
+	Content        *string
+	Type           *string
+	Metadata       *map[string]string
 	Tags           []string
+	IfRevision     int64
 	IdempotencyKey string
 }
 
