@@ -403,6 +403,29 @@ func TestRegisterModes(t *testing.T) {
 	})
 }
 
+// TestRegisterUnboundTokenKeylessAdmin is post-build decision 1 on the wire:
+// an unbound token for a keyless administrator row answers 403 forbidden and
+// is not consumed, so it still enrolls a fresh name afterwards.
+func TestRegisterUnboundTokenKeylessAdmin(t *testing.T) {
+	ctx := context.Background()
+	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeEnrollment})
+	svc := identities.Service{Core: e.core}
+	if err := svc.RegisterLocal(ctx, "root"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.MakeAdmin(ctx, "root", true); err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := svc.CreateEnrollmentToken(ctx, identities.TokenInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantAuthProblem(t, e.register("root", genKey(t, keys.EdDSA), tok), 403, "forbidden", `identity "root" requires an enrollment token bound to it`)
+	if resp := e.register("pat", genKey(t, keys.EdDSA), tok); resp.StatusCode != 201 {
+		t.Fatalf("the unconsumed token on a fresh name: %d %s", resp.StatusCode, readBody(t, resp))
+	}
+}
+
 func TestIssuerIsConfiguredNotRequestHost(t *testing.T) {
 	e := newEnv(t, envOptions{issuer: true})
 	req := newReq(t, "GET", "/.well-known/openid-configuration", nil)

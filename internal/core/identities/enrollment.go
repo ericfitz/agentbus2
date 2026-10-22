@@ -13,7 +13,7 @@ import (
 
 // TokenInput describes an enrollment token to create.
 type TokenInput struct {
-	Identity string        // "" any free name
+	Identity string        // "" any free name or keyless non-admin row
 	Expires  time.Duration // 0: 24 h; otherwise at least one millisecond
 	Uses     int           // 0: 1
 }

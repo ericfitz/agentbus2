@@ -122,6 +122,12 @@ func (s Service) registerTx(ctx context.Context, tx store.Tx, mode Mode, in Regi
 		if tok.ExpiresAt <= now || tok.UsesLeft <= 0 || (tok.Identity != "" && tok.Identity != in.Identity) {
 			return core.E(bus.CodeForbidden, "%s", errInvalidToken)
 		}
+		// (c2) an unbound token claims free names only: a keyless
+		// administrator row (for example after reset-credential) needs a
+		// token bound to it (post-build decision 1). Nothing is consumed.
+		if exists && id.Admin && len(existing) == 0 && tok.Identity != in.Identity {
+			return core.E(bus.CodeForbidden, "identity %q requires an enrollment token bound to it", in.Identity)
+		}
 	}
 	// (d)
 	if !exists {

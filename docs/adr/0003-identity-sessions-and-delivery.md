@@ -295,7 +295,9 @@ issuer's subject gets its row from `server admin create-identity` or, in
   the host by `create-identity` or registered locally and then given the
   flag by `make-admin`, is never claimed by trust-on-first-use: `Register`
   without an enrollment token is `forbidden` ("identity %q requires an
-  enrollment token"), while a valid token binds the key. A keyless row
+  enrollment token"), while a valid token bound to the name binds the key
+  (post-build decision 1: an unbound token is refused `forbidden` and not
+  consumed; see ADR 0002). A keyless row
   without the flag is claimable in `open` mode. The `create-identity` usage
   text says so.
 

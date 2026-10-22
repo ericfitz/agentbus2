@@ -33,9 +33,9 @@ agentbus2 server admin make-admin: {"code":"not_registered","message":"identity 
 ## Commands
 
 - `make-admin NAME [-off]`: set or clear the administrator flag. The identity must exist (registered, or created with `create-identity`).
-- `reset-credential NAME`: remove every registered key of the identity so the name can be registered again. A bearer token already issued stays valid until it expires.
-- `create-identity NAME`: create a keyless row for an identity whose credential is an external issuer. In `open` registration the server also creates such a row on the first valid external token. In `open` mode any registrant may bind a key to a keyless name that is not an administrator; a keyless administrator can only be claimed with an enrollment token.
-- `enrollment create [-identity NAME] [-expires 24h] [-uses 1]`: print a token and its row. Without `-identity` the token binds a key to any free name. `-expires` and `-uses` must be positive.
+- `reset-credential NAME`: remove every registered key of the identity so the name can be registered again. A bearer token already issued stays valid until it expires. For an administrator, the new key needs a token bound to `NAME` (`enrollment create -identity NAME`).
+- `create-identity NAME`: create a keyless row for an identity whose credential is an external issuer. In `open` registration the server also creates such a row on the first valid external token. In `open` mode any registrant may bind a key to a keyless name that is not an administrator; a keyless administrator can only be claimed with an enrollment token bound to its name.
+- `enrollment create [-identity NAME] [-expires 24h] [-uses 1]`: print a token and its row. Without `-identity` the token binds a key to a free name or to a keyless row that is not an administrator; presented for a keyless administrator it is refused `forbidden` (`identity "NAME" requires an enrollment token bound to it`) and not consumed. `-expires` and `-uses` must be positive.
 - `enrollment list`, `enrollment revoke ID`.
 
 ## First administrator on a non-loopback server

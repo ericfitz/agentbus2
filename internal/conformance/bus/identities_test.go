@@ -200,6 +200,68 @@ func TestIdentitiesRegisterConcurrent(t *testing.T) {
 	})
 }
 
+// TestIdentitiesUnboundTokenKeylessAdmin is post-build decision 1 on both
+// engines: an unbound token presented for a keyless administrator row is
+// refused forbidden, binds no key and is not consumed; a token bound to the
+// name claims the row.
+func TestIdentitiesUnboundTokenKeylessAdmin(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		svc := identities.Service{Core: h.core}
+		ctx := context.Background()
+		if err := svc.RegisterLocal(ctx, "root"); err != nil {
+			t.Fatal(err)
+		}
+		if err := svc.MakeAdmin(ctx, "root", true); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.ResetCredential(ctx, "root"); err != nil {
+			t.Fatal(err)
+		}
+		usesLeft := func(id string) int {
+			rows, err := svc.ListEnrollmentTokens(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, r := range rows {
+				if r.ID == id {
+					return r.UsesLeft
+				}
+			}
+			t.Fatalf("token %s not listed", id)
+			return 0
+		}
+		keyCount := func() int {
+			var c int
+			h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+				ks, err := tx.PublicKeys(ctx, "root")
+				c = len(ks)
+				return err
+			})
+			return c
+		}
+		unbound, row, err := svc.CreateEnrollmentToken(ctx, identities.TokenInput{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = svc.Register(ctx, identities.ModeEnrollment, identities.RegisterInput{Identity: "root", Key: idKey(t), EnrollmentToken: unbound})
+		codeOf(t, err, ab2bus.CodeForbidden)
+		if keyCount() != 0 || usesLeft(row.ID) != 1 {
+			t.Fatalf("refused register: keys = %d, UsesLeft = %d", keyCount(), usesLeft(row.ID))
+		}
+		bound, brow, err := svc.CreateEnrollmentToken(ctx, identities.TokenInput{Identity: "root"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := svc.Register(ctx, identities.ModeEnrollment, identities.RegisterInput{Identity: "root", Key: idKey(t), EnrollmentToken: bound}); err != nil {
+			t.Fatalf("bound token: %v", err)
+		}
+		if keyCount() != 1 || usesLeft(brow.ID) != 0 || usesLeft(row.ID) != 1 {
+			t.Fatalf("bound register: keys = %d, bound UsesLeft = %d, unbound UsesLeft = %d", keyCount(), usesLeft(brow.ID), usesLeft(row.ID))
+		}
+	})
+}
+
 func TestIdentitiesRegisterThenBus(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})

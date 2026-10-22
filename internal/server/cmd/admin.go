@@ -21,7 +21,8 @@ Creates a keyless row for an identity whose credential is an external issuer
 (in open registration mode the server also creates such a row on the first
 valid external token); in open mode any registrant may bind a key to a keyless
 name that is not an administrator, while a keyless administrator can only be
-claimed with an enrollment token.
+claimed with an enrollment token bound to its name (enrollment create
+-identity NAME).
 `
 
 type adminAction func(context.Context, identities.Service, io.Writer) error
@@ -178,7 +179,7 @@ func enrollmentCommand(args []string, stdout, stderr io.Writer) (adminAction, in
 	switch action {
 	case "create":
 		fs, buf := subFlags("enrollment create")
-		identity := fs.String("identity", "", "bind the token to this name (default: any free name)")
+		identity := fs.String("identity", "", "bind the token to this name (default: any free name or keyless non-administrator row)")
 		expires := fs.Duration("expires", 24*time.Hour, "token lifetime")
 		uses := fs.Int("uses", 1, "number of registrations the token allows")
 		pos, code, done := parseInterleaved(fs, buf, rest, stdout, stderr)

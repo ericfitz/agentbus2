@@ -210,6 +210,15 @@ addendum restates the item with its test when it lands.
   enrollment token) on a keyless identity row whose admin flag is set:
   `forbidden` "identity %q requires an enrollment token". A non-admin
   keyless row can still be claimed in `open` mode.
+- **Post-build decision 1 (Eric, 2026-10-21), extending Milestone 5 item
+  7.** An enrollment token claims a keyless administrator row only when it
+  is bound to that name. An unbound token presented for such a row is
+  refused `forbidden` "identity %q requires an enrollment token bound to
+  it" and is not consumed, so a token issued for new agents cannot take
+  over `root` after `reset-credential`. An unbound token still claims a
+  free name or a keyless non-admin row. Tests:
+  `TestRegisterUnboundTokenKeylessAdmin` (core and server),
+  `TestIdentitiesUnboundTokenKeylessAdmin` (both engines).
 - **Milestone 6 items 1, 3, 5, 6 and 7.** As planned: the state file holds
   the full planned shape, the resume token included, mode 0600; `receive`
   keeps `wait_seconds`, documented as replacing an armed watch; `init` in a
@@ -284,7 +293,8 @@ the choice numbers below are its.
    item 6: `register` takes no `Idempotency-Key`.
 9. **Enrollment tokens.** `abe_` plus 32 random bytes, shown once, stored as
    SHA-256 hex; optional bound identity, expiry (default 24 h), uses
-   (default 1).
+   (default 1). An unbound token claims a free name or a keyless non-admin
+   row, never a keyless administrator row (post-build decision 1).
 10. **Registration mode is decided once at start.** `-registration` (or the
     setting), else `open` on a local listener and `enrollment` on any other
     (Decision 72). `agentbus2 server admin` never consults `listen` or

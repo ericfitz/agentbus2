@@ -338,6 +338,71 @@ func TestRegisterOpenValidatesSuppliedToken(t *testing.T) {
 	}
 }
 
+// TestRegisterUnboundTokenKeylessAdmin pins post-build decision 1: only a
+// token bound to the name claims a keyless administrator row; an unbound one
+// is refused forbidden and not consumed, in both modes that take tokens. An
+// unbound token still claims a keyless plain row and a free name.
+func TestRegisterUnboundTokenKeylessAdmin(t *testing.T) {
+	ctx := context.Background()
+	for _, mode := range []Mode{ModeOpen, ModeEnrollment} {
+		t.Run(string(mode), func(t *testing.T) {
+			s, _ := newSvc(t, nil)
+			if err := s.RegisterLocal(ctx, "root"); err != nil {
+				t.Fatal(err)
+			}
+			if err := s.MakeAdmin(ctx, "root", true); err != nil {
+				t.Fatal(err)
+			}
+			// root registered once, then the recovery flow made it keyless.
+			first, _ := newToken(t, s, TokenInput{Identity: "root"})
+			if _, err := s.Register(ctx, ModeOpen, RegisterInput{Identity: "root", Key: genKey(t), EnrollmentToken: first}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.ResetCredential(ctx, "root"); err != nil {
+				t.Fatal(err)
+			}
+			unbound, row := newToken(t, s, TokenInput{Uses: 3})
+			for i := 0; i < 2; i++ { // a second run refuses the same way
+				_, err := s.Register(ctx, mode, RegisterInput{Identity: "root", Key: genKey(t), EnrollmentToken: unbound})
+				wantCode(t, err, bus.CodeForbidden)
+				wantDetail(t, err, `identity "root" requires an enrollment token bound to it`)
+			}
+			if len(keysOf(t, s, "root")) != 0 {
+				t.Fatal("a key was bound to root")
+			}
+			if got := tokenRow(t, s, row.ID).UsesLeft; got != 3 {
+				t.Fatalf("UsesLeft = %d after refusals, want 3", got)
+			}
+			if id, _ := identityRow(t, s, "root"); !id.Admin {
+				t.Fatal("admin flag lost")
+			}
+
+			// The unbound token still claims a keyless plain row and a free name.
+			if err := s.RegisterLocal(ctx, "pat"); err != nil {
+				t.Fatal(err)
+			}
+			if res, err := s.Register(ctx, mode, RegisterInput{Identity: "pat", Key: genKey(t), EnrollmentToken: unbound}); err != nil || res.Created {
+				t.Fatalf("keyless plain row = %+v, %v", res, err)
+			}
+			if res, err := s.Register(ctx, mode, RegisterInput{Identity: "kim", Key: genKey(t), EnrollmentToken: unbound}); err != nil || !res.Created {
+				t.Fatalf("free name = %+v, %v", res, err)
+			}
+			if got := tokenRow(t, s, row.ID).UsesLeft; got != 1 {
+				t.Fatalf("UsesLeft = %d, want 1", got)
+			}
+
+			// A token bound to root claims it.
+			bound, brow := newToken(t, s, TokenInput{Identity: "root"})
+			if res, err := s.Register(ctx, mode, RegisterInput{Identity: "root", Key: genKey(t), EnrollmentToken: bound}); err != nil || res.Created {
+				t.Fatalf("bound token = %+v, %v", res, err)
+			}
+			if len(keysOf(t, s, "root")) != 1 || tokenRow(t, s, brow.ID).UsesLeft != 0 {
+				t.Fatal("bound token did not bind and consume")
+			}
+		})
+	}
+}
+
 func TestRegisterRejects(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newSvc(t, nil)
