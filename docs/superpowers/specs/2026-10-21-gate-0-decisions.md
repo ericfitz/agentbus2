@@ -186,3 +186,20 @@ reviews.
     name (domain stripped on Windows), as v1 did. Every other command keeps
     requiring an explicit identity on a local profile, so an agent never runs
     as the human by accident.
+
+## TUI decisions (Eric, 2026-10-22)
+
+Made after Eric ran the post-build TUI.
+
+12. **Changed**: the TUI opens its session with the host's short name as the
+    hint (the hostname up to the first `.`), so the same human on two hosts
+    shows as `efitz/macmini` and `efitz/laptop` and a second TUI on one host
+    as `efitz/macmini-2`. A hostname that is empty or fails the name rule
+    falls back to the hint `tui`. The status bar says `as <identity>`; the
+    health overlay keeps the session's display name.
+13. **Changed**: the status bar no longer shows the mode line (`local ·
+    <sqlite path>` or `server · <url>`); the health overlay already shows it.
+14. **Changed**: the rail's sessions rows are selectable. Selecting one shows
+    that session's details in the main pane (display name, identity, session
+    id, live or idle with the last time it was seen). There is still no inbox
+    view and no messaging from a session row, and nothing new on the wire.
