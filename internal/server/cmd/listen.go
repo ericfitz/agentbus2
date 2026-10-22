@@ -57,10 +57,11 @@ func ClassifyListen(listen string) (bool, error) {
 
 // Listen opens the listener. A "unix:<path>" address first removes a stale
 // socket file nothing answers on, then listens and sets the file's mode to
-// 0600, and on Windows its DACL to the current user alone (Decision 58: the socket file, not the umask, decides who may
-// self-register on a multi-user host; the window between net.Listen and
-// the Chmod and ACL calls is bounded by the umask and accepted; a lock file at
-// path+".lock" serializes concurrent starts).
+// 0600, and on Windows its DACL to the current user alone (Decision 58: the
+// socket file, not the umask, decides who may self-register on a multi-user
+// host; the window between net.Listen and the Chmod and ACL calls is bounded
+// by the umask (on Windows, the directory's inherited ACL) and accepted; a
+// lock file at path+".lock" serializes concurrent starts).
 func Listen(listen string) (net.Listener, error) {
 	path, ok := strings.CutPrefix(listen, "unix:")
 	if !ok {

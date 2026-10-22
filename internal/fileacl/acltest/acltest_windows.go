@@ -1,6 +1,7 @@
 //go:build windows
 
 // Package acltest is the Windows DACL assertion the owner-only tests share.
+// It is test-only: never import it from non-test code.
 package acltest
 
 import (
@@ -14,7 +15,21 @@ import (
 // entry, which allows the current user.
 func AssertOwnerOnly(t testing.TB, path string) {
 	t.Helper()
-	sd, err := windows.GetNamedSecurityInfo(path, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
+	// Open the file itself: a Windows unix socket is a reparse point that a
+	// path-based lookup cannot open.
+	p, err := windows.UTF16PtrFromString(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, err := windows.CreateFile(p, windows.READ_CONTROL,
+		windows.FILE_SHARE_READ|windows.FILE_SHARE_WRITE|windows.FILE_SHARE_DELETE,
+		nil, windows.OPEN_EXISTING,
+		windows.FILE_FLAG_OPEN_REPARSE_POINT|windows.FILE_FLAG_BACKUP_SEMANTICS, 0)
+	if err != nil {
+		t.Fatalf("opening %s: %v", path, err)
+	}
+	defer func() { _ = windows.CloseHandle(h) }()
+	sd, err := windows.GetSecurityInfo(h, windows.SE_FILE_OBJECT, windows.DACL_SECURITY_INFORMATION)
 	if err != nil {
 		t.Fatalf("reading the security of %s: %v", path, err)
 	}

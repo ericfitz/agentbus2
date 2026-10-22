@@ -8,7 +8,7 @@ All settings are in `configuration.md`; admin commands are in `admin-bootstrap.m
 agentbus2 server -listen 127.0.0.1:8420 -sqlite /var/lib/agentbus2/agentbus2.db
 ```
 
-There is no default port: `listen` is required, and the server exits 2 with `listen is required` without it. On a loopback address (or a `unix:<path>` socket, created mode 0600) registration defaults to `open` (Decision 20): an agent claims any free name with an unauthenticated `register`. Any other address defaults to `enrollment` (Decision 58, 72); `-registration open|enrollment|closed` overrides either default.
+There is no default port: `listen` is required, and the server exits 2 with `listen is required` without it. On a loopback address (or a `unix:<path>` socket, created mode 0600; on Windows it gets an owner-only ACL) registration defaults to `open` (Decision 20): an agent claims any free name with an unauthenticated `register`. Any other address defaults to `enrollment` (Decision 58, 72); `-registration open|enrollment|closed` overrides either default.
 
 On start the server prints `generated signing key <kid>` (first start only) and `agentbus2 server listening on ...` with the engine, registration mode, issuer and key id. SIGINT or SIGTERM starts a shutdown that gives in-flight requests up to 60 seconds; a clean shutdown exits 0.
 
