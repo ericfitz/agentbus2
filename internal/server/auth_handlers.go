@@ -67,7 +67,7 @@ func (a *api) Token(ctx context.Context, req gen.TokenRequestObject) (gen.TokenR
 	// 2026-10-21), Milestone 7 item 4).
 	keepUntil := p.Expiry.Add(token.Leeway + time.Second).UnixMilli()
 	err = a.core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-		return tx.PutAssertionJTI(ctx, p.JTI, keepUntil)
+		return tx.PutAssertionJTI(ctx, p.Identity, p.JTI, keepUntil)
 	})
 	if errors.Is(err, store.ErrConflict) {
 		return nil, core.E(bus.CodeUnauthenticated, "assertion replayed")

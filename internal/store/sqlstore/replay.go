@@ -10,9 +10,12 @@ import (
 // The assertion_jti table is new in v2 (Decision (Eric, 2026-10-21),
 // Milestone 7 item 4); no v1 source.
 
-func (t *tx) PutAssertionJTI(ctx context.Context, jti string, expiresAt int64) error {
+func (t *tx) PutAssertionJTI(ctx context.Context, identity, jti string, expiresAt int64) error {
 	if err := t.writable(); err != nil {
 		return err
+	}
+	if err := store.NameRule(identity); err != nil {
+		return fmt.Errorf("%w: assertion identity %v", store.ErrInvalid, err)
 	}
 	if jti == "" {
 		return fmt.Errorf("%w: assertion jti must not be empty", store.ErrInvalid)
@@ -26,7 +29,7 @@ func (t *tx) PutAssertionJTI(ctx context.Context, jti string, expiresAt int64) e
 	if expiresAt <= 0 {
 		return fmt.Errorf("%w: assertion expires_at must be positive", store.ErrInvalid)
 	}
-	_, err := t.execW(ctx, "INSERT INTO assertion_jti (jti, expires_at) VALUES (?, ?)", jti, expiresAt)
+	_, err := t.execW(ctx, "INSERT INTO assertion_jti (identity, jti, expires_at) VALUES (?, ?, ?)", identity, jti, expiresAt)
 	if isConflict(err) {
 		return fmt.Errorf("%w: assertion jti already used", store.ErrConflict)
 	}

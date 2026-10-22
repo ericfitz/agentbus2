@@ -26,8 +26,12 @@ func randomJTI(t *testing.T, n int) string {
 }
 
 func putJTI(s ab2store.Store, jti string, exp int64) error {
+	return putJTIFor(s, "alice", jti, exp)
+}
+
+func putJTIFor(s ab2store.Store, identity, jti string, exp int64) error {
 	return s.Tx(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
-		return tx.PutAssertionJTI(ctx, jti, exp)
+		return tx.PutAssertionJTI(ctx, identity, jti, exp)
 	})
 }
 
@@ -79,7 +83,7 @@ func TestReplayPutAndConflict(t *testing.T) {
 			}
 		}
 		err := s.Read(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
-			return tx.PutAssertionJTI(ctx, "r", 1000)
+			return tx.PutAssertionJTI(ctx, "alice", "r", 1000)
 		})
 		if !errors.Is(err, ab2store.ErrReadOnly) {
 			t.Errorf("Read put: %v, want ErrReadOnly", err)
@@ -171,6 +175,82 @@ func TestReplayExpiry(t *testing.T) {
 		// state (a replay after expiry plus leeway).
 		if err := putJTI(s, "x100", 400); err != nil {
 			t.Errorf("put after expiry: %v", err)
+		}
+	})
+}
+
+// TestReplayPerIdentity: the key is (identity, jti), so one identity cannot
+// consume another's jti, while the same pair twice is a replay.
+func TestReplayPerIdentity(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		if err := putJTIFor(s, "a", "same", 1000); err != nil {
+			t.Fatalf("a: %v", err)
+		}
+		if err := putJTIFor(s, "b", "same", 1000); err != nil {
+			t.Fatalf("b, same jti: %v", err)
+		}
+		if err := putJTIFor(s, "a", "same", 1000); !errors.Is(err, ab2store.ErrConflict) {
+			t.Errorf("a again: %v, want ErrConflict", err)
+		}
+		if err := putJTIFor(s, "b", "same", 9000); !errors.Is(err, ab2store.ErrConflict) {
+			t.Errorf("b again: %v, want ErrConflict", err)
+		}
+		for name, id := range map[string]string{
+			"empty identity": "",
+			"NUL":            "a\x00b",
+			"invalid UTF-8":  "\xff",
+			"slash":          "a/b",
+			"control":        "a\nb",
+			"too long":       strings.Repeat("i", 129),
+		} {
+			if err := putJTIFor(s, id, "x", 1000); !errors.Is(err, ab2store.ErrInvalid) {
+				t.Errorf("%s: %v, want ErrInvalid", name, err)
+			}
+		}
+		if err := putJTIFor(s, strings.Repeat("i", 128), strings.Repeat("k", ab2store.MaxJTIBytes), 1000); err != nil {
+			t.Errorf("longest identity and jti: %v", err)
+		}
+	})
+}
+
+// TestOpenMigratesVersion3AssertionJTI opens a version 3 database (jti alone
+// is the key) holding a row, then reopens with the full set: version 4, the
+// (identity, jti) key works and expiry still deletes.
+func TestOpenMigratesVersion3AssertionJTI(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		full := migrationsFor(e)
+		if len(full) < 4 {
+			t.Fatalf("%d migrations, want at least 4", len(full))
+		}
+		s, reopen, rawDSN := openStore(t, e, sqlstore.Options{Migrations: full[:3]})
+		if got := schemaVersion(t, s); got != 3 {
+			t.Fatalf("SchemaVersion = %d, want 3", got)
+		}
+		db := rawDB(t, e, rawDSN)
+		ins := "INSERT INTO assertion_jti (jti, expires_at) VALUES ('old', 100)"
+		if _, err := db.Exec(ins); err != nil {
+			t.Fatalf("version 3 insert: %v", err)
+		}
+		_ = s.Close()
+		s2, err := reopen(sqlstore.Options{})
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		if got := schemaVersion(t, s2); got != len(full) {
+			t.Fatalf("SchemaVersion = %d, want %d", got, len(full))
+		}
+		if err := putJTIFor(s2, "a", "old", 100); err != nil {
+			t.Errorf("put after migration: %v", err)
+		}
+		if err := putJTIFor(s2, "a", "old", 100); !errors.Is(err, ab2store.ErrConflict) {
+			t.Errorf("replay after migration: %v, want ErrConflict", err)
+		}
+		if n := deleteJTIBefore(t, s2, 1000); n < 1 {
+			t.Errorf("delete before 1000 = %d, want at least 1", n)
+		}
+		if got := scalar[int](t, db, "SELECT count(*) FROM assertion_jti"); got != 0 {
+			t.Errorf("rows after delete = %d, want 0", got)
 		}
 	})
 }

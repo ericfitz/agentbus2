@@ -15,10 +15,10 @@ func TestMaintenanceAssertionReplayExpiry(t *testing.T) {
 		h := newHarness(t, e, harnessOptions{})
 		now := h.core.NowMs()
 		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
-			if err := tx.PutAssertionJTI(ctx, "past", now-1); err != nil {
+			if err := tx.PutAssertionJTI(ctx, "alice", "past", now-1); err != nil {
 				return err
 			}
-			return tx.PutAssertionJTI(ctx, "future", now+60_000)
+			return tx.PutAssertionJTI(ctx, "alice", "future", now+60_000)
 		})
 		if n := h.runJob("assertion replay expiry"); n != 1 {
 			t.Fatalf("job deleted %d, want 1", n)
@@ -27,7 +27,7 @@ func TestMaintenanceAssertionReplayExpiry(t *testing.T) {
 			t.Fatalf("second run deleted %d, want 0", n)
 		}
 		err := h.raw.Tx(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
-			return tx.PutAssertionJTI(ctx, "future", now+60_000)
+			return tx.PutAssertionJTI(ctx, "alice", "future", now+60_000)
 		})
 		if !errors.Is(err, ab2store.ErrConflict) {
 			t.Errorf("future row after the job: %v, want ErrConflict", err)
