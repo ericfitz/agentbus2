@@ -1044,9 +1044,12 @@ func TestNoInboxView(t *testing.T) {
 			sessionStops[f.m.sessSel] = true
 			// Every key a channel row would act on does nothing on a session row.
 			before := counts()
-			for _, k := range []string{"enter", "esc", "right", "left", "g", "G", "pgup", "s", "d", "r", "tab", "esc"} {
+			for _, k := range []string{"enter", "esc", "right", "left", "g", "G", "pgup", "s", "d", "r", "i", "tab", "esc"} {
 				f.key(k)
 				validMode()
+				if f.m.mode == modeInsert {
+					t.Fatalf("key %q on session row %q entered insert mode", k, f.m.sessSel)
+				}
 			}
 			f.key("esc")
 			if got := counts(); got != before {

@@ -516,6 +516,9 @@ func (m *Model) updateNormal(msg tea.Msg) tea.Cmd {
 	case "q":
 		return tea.Quit
 	case "i":
+		if m.sessSel != "" {
+			return nil // no messaging from a session row
+		}
 		if m.isTasks(m.selName()) {
 			return nil // no compose in a task list
 		}
@@ -531,6 +534,9 @@ func (m *Model) updateNormal(msg tea.Msg) tea.Cmd {
 		if m.headSel >= 0 && m.pane() == paneChannels {
 			m.toggleSection(m.headSel, !m.collapsed[m.headSel])
 			return nil
+		}
+		if m.sessSel != "" {
+			return nil // no messaging from a session row
 		}
 		if m.isTasks(m.selName()) {
 			if m.draft.id != 0 {
@@ -610,6 +616,9 @@ func (m *Model) updateNormal(msg tea.Msg) tea.Cmd {
 			return m.cycleTaskState()
 		}
 	case "r":
+		if m.sessSel != "" {
+			return nil // no messaging from a session row
+		}
 		if m.isTasks(m.selName()) {
 			return nil // no compose in a task list
 		}
@@ -1329,7 +1338,14 @@ func (m *Model) setChannels(chans []bus.Channel, tags [][]string, from string) t
 	}
 	// Only auto-select a first channel while nothing has picked one yet.
 	if m.sel < 0 && len(m.channels) > 0 {
+		// A selected session row stays selected: the channel only becomes
+		// the one the stream shows once the selection leaves the row.
+		sess := m.sessSel
 		cmds = append(cmds, m.selectChannel(0))
+		if sess != "" {
+			m.sessSel, m.headSel = sess, -1
+			m.refreshStream()
+		}
 	}
 	return tea.Batch(cmds...)
 }

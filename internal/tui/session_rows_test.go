@@ -134,3 +134,21 @@ func TestCollapsingSessionsMovesSelectionToHeading(t *testing.T) {
 		t.Fatalf("at %+v sessSel %q, want the sessions heading and the stream's channel", p, f.m.sessSel)
 	}
 }
+
+// TestRefreshRemovingShownChannelKeepsSessionSelection: the channel the
+// stream shows goes away while a session row is selected; the row stays
+// selected and the stream falls back to a channel only after leaving it.
+func TestRefreshRemovingShownChannelKeepsSessionSelection(t *testing.T) {
+	f := sessionFixture(t)
+	f.key("down")
+	want := f.m.sessSel
+	f.m.setChannels([]bus.Channel{{Name: "other"}}, nil, "oldest")
+	if f.m.sessSel != want || f.m.headSel >= 0 || f.m.selected() != nil {
+		t.Fatalf("sessSel %q headSel %d, want %q kept with no channel selected", f.m.sessSel, f.m.headSel, want)
+	}
+	f.key("up")
+	f.key("up")
+	if f.m.sessSel != "" || len(f.m.channels) != 1 || f.m.sel != 0 {
+		t.Fatalf("after leaving: sessSel %q sel %d", f.m.sessSel, f.m.sel)
+	}
+}
