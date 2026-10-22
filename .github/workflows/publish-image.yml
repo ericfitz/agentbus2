@@ -1,6 +1,6 @@
 # Builds the container image for a release tag and pushes it to ghcr.io.
 # Gated off: the job does nothing unless the repository variable
-# IMAGE_REPOSITORY is set (for example ghcr.io/ericfitz/agentbus). It is
+# IMAGE_REPOSITORY is set (its value: docs/release.md). It is
 # ghcr-only by construction (it logs in with GITHUB_TOKEN); another registry
 # needs its own credential secret and an explicit decision. Publishing a
 # release fires it: release.sh's `gh release edit --draft=false` (run with the
