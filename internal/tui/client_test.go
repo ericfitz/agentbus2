@@ -757,3 +757,99 @@ func TestReceiveLoopResumesLapsedSessionOnRealCore(t *testing.T) {
 		t.Fatalf("display name after the resume = %q", got)
 	}
 }
+
+// TestSweptSessionResumes: a session row the retention sweep deleted answers
+// not_found; the loop resumes it like a lapse (Open with the old token starts
+// a fresh session, Decision 18) instead of retrying forever (post-build
+// decision 7). Watch and Receive are both session-scoped.
+func TestSweptSessionResumes(t *testing.T) {
+	for _, where := range []string{"watch", "receive"} {
+		t.Run(where, func(t *testing.T) {
+			setBackoff(t, 10*time.Millisecond)
+			var (
+				mu      sync.Mutex
+				opens   []bus.OpenSessionInput
+				watches atomic.Int32
+				recvs   atomic.Int32
+			)
+			sb := &stubBus{}
+			sb.open = func(_ context.Context, in bus.OpenSessionInput) (bus.Session, error) {
+				mu.Lock()
+				opens = append(opens, in)
+				mu.Unlock()
+				return bus.Session{ID: "s2", Identity: "eric", DisplayName: "eric/tui", ResumeToken: "t2"}, nil
+			}
+			notFound := bus.Errorf(bus.CodeNotFound, false, "session not found")
+			sb.watch = func(ctx context.Context, _ bus.WatchInput) (bus.WatchResult, error) {
+				n := watches.Add(1)
+				if where == "watch" && n == 1 {
+					return bus.WatchResult{}, notFound
+				}
+				if n <= 2 {
+					return bus.WatchResult{Woke: true, Seq: 1}, nil
+				}
+				return blockUntilDone(ctx)
+			}
+			sb.receive = func(_ context.Context, _ bus.ReceiveInput) (bus.ReceiveResult, error) {
+				n := recvs.Add(1)
+				if where == "receive" && n == 1 {
+					return bus.ReceiveResult{}, notFound
+				}
+				if n <= 2 {
+					return bus.ReceiveResult{Messages: []bus.Message{{Seq: 1}}, Batch: "b1"}, nil
+				}
+				return bus.ReceiveResult{}, nil
+			}
+			c := newStubClient(t, sb, bus.Session{ID: "s1", Identity: "eric", DisplayName: "eric/tui", ResumeToken: "t1"})
+			msgs, done := loopRun(t, c, nil)
+			if _, ok := nextMsg(t, msgs, 5*time.Second).(batchMsg); !ok {
+				t.Fatal("first message after the resume is not a batch (a receiveErrMsg means no resume)")
+			}
+			waitFor(t, 5*time.Second, func() bool { return c.sessionID() == "s2" })
+			stopLoop(t, c, done)
+			mu.Lock()
+			defer mu.Unlock()
+			if len(opens) != 1 || opens[0].ResumeToken != "t1" || opens[0].Hint != sessionHint {
+				t.Fatalf("Open calls = %+v, want one with ResumeToken t1 and hint %q", opens, sessionHint)
+			}
+		})
+	}
+}
+
+// TestSweptSessionNotFoundTwiceIsReported: not_found again after the resume,
+// with no successful call between, is reported (the lapsedOnce guard), not an
+// endless resume loop.
+func TestSweptSessionNotFoundTwiceIsReported(t *testing.T) {
+	for _, where := range []string{"watch", "receive"} {
+		t.Run(where, func(t *testing.T) {
+			setBackoff(t, 10*time.Millisecond)
+			var opens atomic.Int32
+			sb := &stubBus{}
+			sb.open = func(context.Context, bus.OpenSessionInput) (bus.Session, error) {
+				opens.Add(1)
+				return bus.Session{ID: "s2", Identity: "eric", ResumeToken: "t2"}, nil
+			}
+			notFound := bus.Errorf(bus.CodeNotFound, false, "session not found")
+			sb.watch = func(context.Context, bus.WatchInput) (bus.WatchResult, error) {
+				if where == "watch" {
+					return bus.WatchResult{}, notFound
+				}
+				return bus.WatchResult{Woke: true, Seq: 1}, nil
+			}
+			sb.receive = func(context.Context, bus.ReceiveInput) (bus.ReceiveResult, error) {
+				return bus.ReceiveResult{}, notFound
+			}
+			c := newStubClient(t, sb, bus.Session{ID: "s1", Identity: "eric", ResumeToken: "t1"})
+			msgs, done := loopRun(t, c, nil)
+			for range 2 {
+				if _, ok := nextMsg(t, msgs, 5*time.Second).(receiveErrMsg); !ok {
+					t.Fatal("want receiveErrMsg for the second not_found")
+				}
+			}
+			if got := opens.Load(); got != 1 {
+				t.Fatalf("Open called %d times without a success between, want 1", got)
+			}
+			stopLoop(t, c, done)
+		})
+	}
+}

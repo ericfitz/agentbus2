@@ -165,7 +165,8 @@ func (c *client) ok() {
 	c.mu.Unlock()
 }
 
-// resumeLapsed resumes the lapsed session once with its token (Decision 79),
+// resumeLapsed resumes the lapsed (or swept, not_found) session once with its
+// token (Decision 79),
 // replacing c.session under mu. A second lapse before any successful call
 // does not resume again. The hint goes with the token: a row the retention
 // job swept makes Open start a fresh session (Decision 18), which must still
@@ -218,7 +219,9 @@ func (c *client) fail(err error, send func(any), prev *string) bool {
 	case bus.CodeReplaced, bus.CodeSessionClosed:
 		send(sessionLostMsg{err: fmt.Errorf("%w: %w", errSessionLost, err)})
 		return false
-	case bus.CodeSessionLapsed:
+	case bus.CodeSessionLapsed, bus.CodeNotFound:
+		// not_found is a session row the retention sweep deleted: both
+		// callers of fail are session-scoped, so nothing else reaches here.
 		rerr := c.resumeLapsed()
 		if rerr == nil {
 			*prev = ""
