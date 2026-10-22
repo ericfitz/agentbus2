@@ -60,10 +60,14 @@ func selectProfile(o client.Options) (selectedProfile, error) {
 
 // RunRegister is `agentbus2 register [-profile P] [-identity I] [-server URL]
 // [-enrollment-token T] [-algorithm EdDSA|ES256]` (Milestone 6 choice 14;
-// Decision (Eric, 2026-10-21), item 6): generate a key, register its public
-// half, and save the credential only after the server answered 201. A second
-// run reuses the saved key and registers it again, which the server answers
-// idempotently (Milestone 5 choice 8).
+// Decision (Eric, 2026-10-21), item 6): generate a key, write it to the
+// pending file (credential.Store.PendingPath), register its public half and,
+// once the server answered 201, move the pending file to the credential. A
+// failed run leaves the pending file and the next run reuses that key. A run
+// after success reuses the saved key and registers it again, which the server
+// answers idempotently (Milestone 5 choice 8). Overlapping runs for one
+// identity race on the pending file: the last write wins and the loser's key
+// is no longer the pending one.
 func RunRegister(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	_ = stdin
 	fs := newFlagSet("register", stderr)
@@ -129,9 +133,13 @@ func RunRegister(ctx context.Context, args []string, environ []string, stdin io.
 		return usage(err)
 	}
 
-	// Reuse the saved key, else generate one. Nothing is written until the
-	// server answers 201.
+	// Key choice: the saved credential, else the pending key a failed run left,
+	// else a new one written to the pending file before the request. A crash or
+	// a lost 201 after the server committed then keeps the key, and the retry
+	// registers the same key, which the server answers idempotently without
+	// consulting the (now used) enrollment token.
 	var signer crypto.Signer
+	fromPending := false
 	if cs.Exists(identity) {
 		k, have, err := cs.Load(identity)
 		if err != nil {
@@ -141,10 +149,21 @@ func RunRegister(ctx context.Context, args []string, environ []string, stdin io.
 			return usage(fmt.Errorf("the saved credential for %q is %s, not %s; remove %s to register a new key", identity, have, alg, cs.Path(identity)))
 		}
 		signer = k
+	} else if k, have, ok, err := cs.LoadPending(identity); err != nil {
+		return usage(err)
+	} else if ok {
+		if algExplicit && have != alg {
+			return usage(fmt.Errorf("the pending key for %q is %s, not %s; remove %s to register a new key", identity, have, alg, cs.PendingPath(identity)))
+		}
+		signer, fromPending = k, true
 	} else {
 		if signer, err = keys.Generate(alg); err != nil {
 			return fail(stderr, err)
 		}
+		if err := cs.SavePending(identity, signer); err != nil {
+			return fail(stderr, err)
+		}
+		fromPending = true
 	}
 	res, err := client.Register(ctx, nil, p.Server, identity, signer.Public(), token)
 	if err != nil {
@@ -154,8 +173,10 @@ func RunRegister(ctx context.Context, args []string, environ []string, stdin io.
 		}
 		return fail(stderr, err)
 	}
-	if err := cs.Save(identity, signer); err != nil {
-		return fail(stderr, err)
+	if fromPending {
+		if err := cs.CommitPending(identity); err != nil {
+			return fail(stderr, err)
+		}
 	}
 	if creating {
 		sel.Config.Profiles[p.Name] = profile.Profile{Name: p.Name, Mode: profile.ModeServer, Server: p.Server, Identity: identity}

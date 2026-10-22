@@ -30,7 +30,7 @@ To use a server, a profile in `~/.config/agentbus2/config.json` (or `$AGENTBUS2_
 {"profiles": {"lab": {"mode": "server", "server": "https://bus.example.com", "identity": "pat"}}}
 ```
 
-`register` creates that profile when it does not exist yet, generates a key, registers its public half and saves the credential (mode 0600) only after the server accepts it. A server that listens beyond loopback needs an enrollment token from its operator (`agentbus2 server admin enrollment create`):
+`register` creates that profile when it does not exist yet, generates a key, writes it to a pending file (mode 0600, `credentials/<profile>/.pending/<identity>`), registers its public half and moves the file to the credential once the server accepts it; a run that fails leaves the pending file and the next run registers the same key. A server that listens beyond loopback needs an enrollment token from its operator (`agentbus2 server admin enrollment create`):
 
 ```sh
 agentbus2 register -profile lab -server https://bus.example.com -identity pat -enrollment-token abe_...

@@ -153,3 +153,87 @@ func TestListSorted(t *testing.T) {
 		t.Errorf("List = %v, want %v", got, want)
 	}
 }
+
+func TestPendingLifecycle(t *testing.T) {
+	s := Store{Dir: filepath.Join(t.TempDir(), "credentials", "lab")}
+	if k, alg, ok, err := s.LoadPending("pat"); k != nil || alg != "" || ok || err != nil {
+		t.Fatalf("absent pending = %v %q %v %v", k, alg, ok, err)
+	}
+	k, _ := keys.Generate(keys.ES256)
+	if err := s.SavePending("pat", k); err != nil {
+		t.Fatal(err)
+	}
+	if want := filepath.Join(s.Dir, ".pending", "pat"); s.PendingPath("pat") != want {
+		t.Fatalf("PendingPath = %s", s.PendingPath("pat"))
+	}
+	got, alg, ok, err := s.LoadPending("pat")
+	if err != nil || !ok || alg != keys.ES256 {
+		t.Fatalf("LoadPending: %v %v %s", err, ok, alg)
+	}
+	if a, b := mustKID(t, k), mustKID(t, got); a != b {
+		t.Fatal("loaded a different key")
+	}
+	if runtime.GOOS != "windows" {
+		fi, _ := os.Stat(s.PendingPath("pat"))
+		if fi.Mode().Perm() != 0o600 {
+			t.Errorf("file mode %v", fi.Mode().Perm())
+		}
+		di, _ := os.Stat(filepath.Dir(s.PendingPath("pat")))
+		if di.Mode().Perm() != 0o700 {
+			t.Errorf("dir mode %v", di.Mode().Perm())
+		}
+	}
+	if ids, _ := s.List(); len(ids) != 0 || s.Exists("pat") {
+		t.Fatalf("pending is visible: %v", ids)
+	}
+	if err := s.SavePending("kim", k); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CommitPending("pat"); err != nil {
+		t.Fatal(err)
+	}
+	if !s.Exists("pat") {
+		t.Fatal("Exists is false after CommitPending")
+	}
+	if _, _, ok, _ := s.LoadPending("pat"); ok {
+		t.Fatal("pending remains after CommitPending")
+	}
+	// kim's pending key keeps the directory; committing it removes the directory.
+	if _, err := os.Stat(filepath.Join(s.Dir, ".pending")); err != nil {
+		t.Fatalf("pending dir removed while in use: %v", err)
+	}
+	if err := s.CommitPending("kim"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(s.Dir, ".pending")); !os.IsNotExist(err) {
+		t.Fatalf("empty pending dir remains: %v", err)
+	}
+	if err := s.CommitPending("zed"); err == nil {
+		t.Fatal("CommitPending of nothing succeeded")
+	}
+	for _, bad := range []string{"", "..", "a/b"} {
+		if s.SavePending(bad, k) == nil {
+			t.Errorf("SavePending accepted %q", bad)
+		}
+		if _, _, _, err := s.LoadPending(bad); err == nil {
+			t.Errorf("LoadPending accepted %q", bad)
+		}
+	}
+}
+
+func TestLoadPendingRefusesWideMode(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("modes are Unix only")
+	}
+	s := Store{Dir: t.TempDir()}
+	k, _ := keys.Generate(keys.EdDSA)
+	if err := s.SavePending("pat", k); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(s.PendingPath("pat"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, _, err := s.LoadPending("pat"); err == nil {
+		t.Fatal("a wide-mode pending file was accepted")
+	}
+}

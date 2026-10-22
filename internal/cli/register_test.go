@@ -2,6 +2,9 @@ package cli
 
 import (
 	"context"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -23,37 +26,9 @@ func TestRegisterCreatesServerProfile(t *testing.T) {
 	ctx := context.Background()
 	e := newTestEnv(t)
 
-	// start runs `agentbus2 server` on a loopback port over db and returns its
-	// base URL.
 	start := func(t *testing.T, db string, extra ...string) string {
 		t.Helper()
-		sctx, cancel := context.WithCancel(ctx)
-		out, errb := &syncBuf{}, &syncBuf{}
-		done := make(chan int, 1)
-		args := append([]string{"-listen", "127.0.0.1:0", "-sqlite", db}, extra...)
-		go func() { done <- cmd.Run(sctx, args, nil, out, errb) }()
-		t.Cleanup(func() {
-			cancel()
-			select {
-			case <-done:
-			case <-time.After(15 * time.Second):
-				t.Error("server did not stop")
-			}
-		})
-		re := regexp.MustCompile(`listening on (\S+) `)
-		deadline := time.Now().Add(10 * time.Second)
-		for time.Now().Before(deadline) {
-			if m := re.FindStringSubmatch(out.String()); m != nil {
-				return "http://" + m[1]
-			}
-			select {
-			case code := <-done:
-				t.Fatalf("server exited %d: %s %s", code, out.String(), errb.String())
-			case <-time.After(10 * time.Millisecond):
-			}
-		}
-		t.Fatalf("no listening line: %s %s", out.String(), errb.String())
-		return ""
+		return startServer(t, db, extra...)
 	}
 	// service opens a second handle on the server's SQLite file.
 	service := func(t *testing.T, db string) identities.Service {
@@ -178,8 +153,8 @@ func TestRegisterCreatesServerProfile(t *testing.T) {
 	if code, _, errs = register("-profile", "down", "-server", "http://127.0.0.1:1", "-identity", "pat"); code != 1 {
 		t.Fatalf("unreachable: code %d %q", code, errs)
 	}
-	if _, err := os.Stat(profile.CredentialDir(e.ConfigDir, "down")); !os.IsNotExist(err) {
-		t.Fatalf("a failed registration left a credential directory: %v", err)
+	if ids, _ := (credential.Store{Dir: profile.CredentialDir(e.ConfigDir, "down")}).List(); len(ids) != 0 {
+		t.Fatalf("a failed registration left a credential: %v", ids)
 	}
 	cfg, _ = profile.Load(filepath.Join(e.ConfigDir, "config.json"))
 	if _, ok := cfg.Profiles["down"]; ok {
@@ -194,8 +169,8 @@ func TestRegisterCreatesServerProfile(t *testing.T) {
 	if code != 1 || !strings.Contains(errs, "forbidden") {
 		t.Fatalf("no token: code %d %q", code, errs)
 	}
-	if _, err := os.Stat(profile.CredentialDir(e.ConfigDir, "corp")); !os.IsNotExist(err) {
-		t.Fatalf("a refused registration left a credential directory: %v", err)
+	if ids, _ := (credential.Store{Dir: profile.CredentialDir(e.ConfigDir, "corp")}).List(); len(ids) != 0 {
+		t.Fatalf("a refused registration left a credential: %v", ids)
 	}
 	cfg, _ = profile.Load(filepath.Join(e.ConfigDir, "config.json"))
 	if _, ok := cfg.Profiles["corp"]; ok {
@@ -213,5 +188,147 @@ func TestRegisterCreatesServerProfile(t *testing.T) {
 	}
 	if !(credential.Store{Dir: profile.CredentialDir(e.ConfigDir, "corp")}).Exists("pat") {
 		t.Fatal("no credential after a successful enrollment")
+	}
+}
+
+// startServer runs `agentbus2 server` on a loopback port over db and returns
+// its base URL.
+func startServer(t *testing.T, db string, extra ...string) string {
+	t.Helper()
+	ctx := context.Background()
+	sctx, cancel := context.WithCancel(ctx)
+	out, errb := &syncBuf{}, &syncBuf{}
+	done := make(chan int, 1)
+	args := append([]string{"-listen", "127.0.0.1:0", "-sqlite", db}, extra...)
+	go func() { done <- cmd.Run(sctx, args, nil, out, errb) }()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(15 * time.Second):
+			t.Error("server did not stop")
+		}
+	})
+	re := regexp.MustCompile(`listening on (\S+) `)
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		if m := re.FindStringSubmatch(out.String()); m != nil {
+			return "http://" + m[1]
+		}
+		select {
+		case code := <-done:
+			t.Fatalf("server exited %d: %s %s", code, out.String(), errb.String())
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	t.Fatalf("no listening line: %s %s", out.String(), errb.String())
+	return ""
+}
+
+// TestRegisterPendingKeyReuse: the server commits the registration but the
+// response is lost; the key survives as a pending file and the retry, with the
+// same (now consumed) enrollment token, registers the same key.
+func TestRegisterPendingKeyReuse(t *testing.T) {
+	ctx := context.Background()
+	e := newTestEnv(t)
+	db := filepath.Join(t.TempDir(), "enroll.sqlite")
+	base := startServer(t, db, "-registration", "enrollment")
+	st, err := sqlite.Open(ctx, db, sqlite.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	c, err := core.New(st, core.Defaults(), core.Options{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := (identities.Service{Core: c}).CreateEnrollmentToken(ctx, identities.TokenInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// A proxy that forwards to the server and, on its first request, drops the
+	// connection instead of relaying the answer. It records each request body.
+	var bodies []string
+	var dropped bool
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		bodies = append(bodies, string(b))
+		req, _ := http.NewRequestWithContext(r.Context(), r.Method, base+r.URL.RequestURI(), strings.NewReader(string(b)))
+		req.Header = r.Header.Clone()
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if !dropped {
+			dropped = true
+			conn, _, err := w.(http.Hijacker).Hijack()
+			if err == nil {
+				_ = conn.Close()
+			}
+			return
+		}
+		for k, v := range resp.Header {
+			w.Header()[k] = v
+		}
+		w.WriteHeader(resp.StatusCode)
+		_, _ = io.Copy(w, resp.Body)
+	}))
+	t.Cleanup(proxy.Close)
+
+	register := func(args ...string) (int, string, string) {
+		var out, errb syncBuf
+		code := RunRegister(ctx, append([]string{"-profile", "lab", "-server", proxy.URL, "-identity", "pat", "-enrollment-token", tok}, args...), e.Environ, nil, &out, &errb)
+		return code, out.String(), errb.String()
+	}
+	cs := credential.Store{Dir: profile.CredentialDir(e.ConfigDir, "lab")}
+
+	code, _, errs := register()
+	if code != 1 {
+		t.Fatalf("lost response: code %d %q", code, errs)
+	}
+	if cs.Exists("pat") {
+		t.Fatal("a failed run left a credential")
+	}
+	pk, _, ok, err := cs.LoadPending("pat")
+	if err != nil || !ok {
+		t.Fatalf("no pending key after a failed run: %v %v", ok, err)
+	}
+	if ids, _ := cs.List(); len(ids) != 0 {
+		t.Fatalf("List shows the pending key: %v", ids)
+	}
+
+	// An algorithm that disagrees with the pending key is a usage error that
+	// names the pending file.
+	if code, _, errs = register("-algorithm", "ES256"); code != 2 || !strings.Contains(errs, cs.PendingPath("pat")) {
+		t.Fatalf("algorithm clash: code %d %q", code, errs)
+	}
+	if len(bodies) != 1 {
+		t.Fatalf("the refused run reached the server: %d requests", len(bodies))
+	}
+
+	code, out, errs := register()
+	if code != 0 {
+		t.Fatalf("retry: code %d %q %q", code, out, errs)
+	}
+	if len(bodies) != 2 || bodies[0] != bodies[1] {
+		t.Fatalf("the retry sent a different request:\n%v", bodies)
+	}
+	if !cs.Exists("pat") {
+		t.Fatal("no credential after the retry")
+	}
+	if _, err := os.Stat(cs.PendingPath("pat")); !os.IsNotExist(err) {
+		t.Fatalf("the pending file remains: %v", err)
+	}
+	got, _, err := cs.Load("pat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, _ := keys.KID(pk.Public())
+	b, _ := keys.KID(got.Public())
+	if a != b {
+		t.Fatal("the credential is not the pending key")
 	}
 }
