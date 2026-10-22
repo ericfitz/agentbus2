@@ -275,7 +275,7 @@ func (in *initer) codex(dir string) error {
 	if err := in.write(filepath.Join(in.Home, ".agents", skillPath), SkillMD); err != nil {
 		return err
 	}
-	in.say("  Codex asks you to trust the Stop hook the first time it runs; accept it")
+	in.say("  Codex asks you to trust the Stop and UserPromptSubmit hooks the first time they run; accept it")
 	return nil
 }
 

@@ -56,6 +56,35 @@ func TestToolCallsUnparkButReceiveDoesNot(t *testing.T) {
 	}
 }
 
+func TestToolCallUnparksAfterServerRestartWithoutRegister(t *testing.T) {
+	e := newTestEnv(t)
+	tbl := newFakeTable()
+	first := startServer(t, e, tbl, "claude-code")
+	sid := str(first.must(t, "register", nil), "session")
+	if err := sessionstate.SetParked(e.DataDir, sid, true); err != nil {
+		t.Fatal(err)
+	}
+	tbl.kill(42)
+	second := startServer(t, e, tbl, "claude-code", func(o *mcpserver.Options) { o.Self = 43 })
+	second.must(t, "list_channels", nil)
+	if parkedOf(t, e, sid) {
+		t.Fatal("a tool call on a restarted server left the session parked")
+	}
+}
+
+func TestHintedRegisterUnparksThePrimary(t *testing.T) {
+	e := newTestEnv(t)
+	r := startServer(t, e, newFakeTable(), "claude-code")
+	sid := str(r.must(t, "register", nil), "session")
+	if err := sessionstate.SetParked(e.DataDir, sid, true); err != nil {
+		t.Fatal(err)
+	}
+	r.must(t, "register", map[string]any{"hint": "other"})
+	if parkedOf(t, e, sid) {
+		t.Fatal("a hinted register left the primary parked")
+	}
+}
+
 func TestRegisterClearsAParkLeftByADeadSession(t *testing.T) {
 	e := newTestEnv(t)
 	tbl := newFakeTable()

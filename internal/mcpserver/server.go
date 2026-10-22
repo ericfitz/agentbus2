@@ -726,6 +726,8 @@ func (s *server) register(ctx context.Context, req *mcp.CallToolRequest, in regi
 	if primary {
 		s.havePrimary = true
 	}
+	// Any register unparks this harness's sessions, a hinted one included.
+	s.unparkSessions(dataDir, s.registryIDsLocked())
 
 	out := registerOut{
 		Session: sess.ID, Identity: sess.Identity, DisplayName: sess.DisplayName, ResumeToken: sess.ResumeToken,

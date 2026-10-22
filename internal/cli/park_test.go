@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -91,7 +92,14 @@ func TestUnparkIsSilentAndExits0Always(t *testing.T) {
 			t.Fatalf("%s: exit %d stdout %q stderr %q", label, code, so.String(), se.String())
 		}
 	}
+	logLines := func() string {
+		b, _ := os.ReadFile(filepath.Join(e.DataDir, "logs", "hook.log"))
+		return string(b)
+	}
 	run("no state file")
+	if l := logLines(); l != "" {
+		t.Fatalf("no session for the harness is not a failure, but hook.log has %q", l)
+	}
 	run("-session without a file", "-session", "nope")
 	run("a bad flag", "-nope")
 	if err := os.MkdirAll(sessionstate.Dir(e.DataDir), 0o700); err != nil {
@@ -101,8 +109,17 @@ func TestUnparkIsSilentAndExits0Always(t *testing.T) {
 		t.Fatal(err)
 	}
 	run("an unreadable file", "-session", "bad")
-	processTable = newFakeTable() // no harness found
+	if logLines() == "" {
+		t.Fatal("a real failure left no line in hook.log")
+	}
+	if err := os.Remove(filepath.Join(e.DataDir, "logs", "hook.log")); err != nil {
+		t.Fatal(err)
+	}
+	processTable = newFakeTable() // no harness found: errHarnessGone
 	run("no harness")
+	if l := logLines(); l != "" {
+		t.Fatalf("a gone harness is not a failure, but hook.log has %q", l)
+	}
 }
 
 func TestWaitStartedBeforeParkDoesNotWake(t *testing.T) {
@@ -167,4 +184,34 @@ func TestInitListsUnparkHookForEveryHarness(t *testing.T) {
 			t.Errorf("%s dry run lacks the UserPromptSubmit hook:\n%s", h, out.String())
 		}
 	}
+}
+
+func TestUnparkDrainsLargeStdin(t *testing.T) {
+	e := newTestEnv(t)
+	sess := parkSession(t, e)
+	if err := sessionstate.SetParked(e.DataDir, sess.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	r := &countReader{n: 200 << 10}
+	var so, se syncBuf
+	if code := RunUnpark(context.Background(), nil, e.Environ, r, &so, &se); code != 0 {
+		t.Fatalf("exit %d", code)
+	}
+	if r.n != 0 {
+		t.Fatalf("%d bytes of stdin left unread", r.n)
+	}
+	if f, _ := sessionstate.Read(e.DataDir, sess.ID); f.Parked {
+		t.Fatal("still parked")
+	}
+}
+
+type countReader struct{ n int }
+
+func (c *countReader) Read(p []byte) (int, error) {
+	if c.n == 0 {
+		return 0, io.EOF
+	}
+	k := min(len(p), c.n)
+	c.n -= k
+	return k, nil
 }

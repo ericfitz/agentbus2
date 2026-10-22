@@ -368,6 +368,10 @@ tool call other than `receive`, or an explicit `agentbus2 unpark`. A `receive`
 alone does not unpark you, and your next `receive` catches up on everything
 that arrived meanwhile.
 
+`park` and `unpark` act on the harness's primary session (the first one you
+registered without a hint), not on a second session registered with a hint.
+A `register` with a hint still unparks the primary one.
+
 ## Idempotency
 
 Every mutating tool (`send`, `create_channel`, `delete_channel`,

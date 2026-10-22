@@ -56,7 +56,7 @@ func TestStateFileHoldsResumeToken(t *testing.T) {
 			t.Fatalf("dir mode = %v, %v", di.Mode(), err)
 		}
 	}
-	ents, _ := os.ReadDir(Dir(dir))
+	ents := entries(dir)
 	if len(ents) != 1 || ents[0].Name() != "s1.json" {
 		t.Fatalf("entries = %v", ents)
 	}
@@ -277,7 +277,7 @@ func TestWriteAtomicReplacesWhole(t *testing.T) {
 			t.Fatalf("old reader saw %q", buf[:n])
 		}
 	}
-	ents, _ := os.ReadDir(Dir(dir))
+	ents := entries(dir)
 	if len(ents) != 1 || ents[0].Name() != "s.json" {
 		t.Fatalf("entries = %v", ents)
 	}
@@ -305,7 +305,7 @@ func TestWriteFailureLeavesPreviousFile(t *testing.T) {
 	if got, err := Read(dir, "s"); err != nil || got != first {
 		t.Fatalf("previous file changed: %+v, %v", got, err)
 	}
-	ents, _ := os.ReadDir(Dir(dir))
+	ents := entries(dir)
 	if len(ents) != 1 || ents[0].Name() != "s.json" {
 		t.Fatalf("entries = %v", ents)
 	}
@@ -323,7 +323,7 @@ func TestWriteAtomicRemovesTempOnFailure(t *testing.T) {
 	if err := Write(dir, sample("s")); err == nil {
 		t.Fatal("Write over a non-empty directory succeeded")
 	}
-	ents, _ := os.ReadDir(Dir(dir))
+	ents := entries(dir)
 	if len(ents) != 1 || ents[0].Name() != "s.json" || !ents[0].IsDir() {
 		t.Fatalf("entries = %v", ents)
 	}
@@ -364,5 +364,43 @@ func TestSetParkedKeepsEveryOtherField(t *testing.T) {
 	}
 	if err := SetParked(dir, "../x", true); err == nil {
 		t.Fatal("a path-like session id was accepted")
+	}
+}
+
+// entries lists Dir without the lock file every Write leaves.
+func entries(dir string) []os.DirEntry {
+	ents, _ := os.ReadDir(Dir(dir))
+	var out []os.DirEntry
+	for _, e := range ents {
+		if e.Name() != ".state.lock" {
+			out = append(out, e)
+		}
+	}
+	return out
+}
+
+func TestSetParkedDoesNotClobberConcurrentWrites(t *testing.T) {
+	dir := t.TempDir()
+	if err := Write(dir, sample("s")); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for i := 0; i < 200; i++ {
+			f, _ := Read(dir, "s")
+			f.ResumeToken = "tok-new"
+			f.Parked = false
+			_ = Write(dir, f)
+		}
+	}()
+	for i := 0; i < 200; i++ {
+		if err := SetParked(dir, "s", i%2 == 0); err != nil {
+			t.Fatal(err)
+		}
+	}
+	<-done
+	if f, err := Read(dir, "s"); err != nil || f.ResumeToken != "tok-new" {
+		t.Fatalf("after the race: %+v, %v", f, err)
 	}
 }

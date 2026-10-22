@@ -4,7 +4,7 @@
 // MCP server or a CLI invocation under the same harness finds its session
 // (Decision 41). The files are mode 0600 and replaced atomically.
 //
-// It imports internal/procs, the standard-library-only internal/strictjson
+// It imports internal/filelock, internal/procs, the standard-library-only internal/strictjson
 // and the standard library only.
 package sessionstate
 
@@ -21,6 +21,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ericfitz/agentbus2/internal/filelock"
 	"github.com/ericfitz/agentbus2/internal/procs"
 	"github.com/ericfitz/agentbus2/internal/strictjson"
 )
@@ -69,6 +70,33 @@ func Write(dataDir string, f File) error {
 	if err := checkSession(f.Session); err != nil {
 		return err
 	}
+	unlock, err := lockState(dataDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+	return writeLocked(dataDir, f)
+}
+
+// lockState takes the short-held exclusive lock of Dir/.state.lock that
+// serializes Write and SetParked, so a re-read-then-replace cannot clobber a
+// concurrent write. It is never held across a network call.
+func lockState(dataDir string) (func(), error) {
+	if err := os.MkdirAll(Dir(dataDir), 0o700); err != nil {
+		return nil, err
+	}
+	lf, err := os.OpenFile(filepath.Join(Dir(dataDir), ".state.lock"), os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	if err := filelock.Lock(lf); err != nil {
+		_ = lf.Close()
+		return nil, err
+	}
+	return func() { _ = lf.Close() }, nil
+}
+
+func writeLocked(dataDir string, f File) error {
 	data, err := json.MarshalIndent(f, "", "  ")
 	if err != nil {
 		return err
@@ -85,6 +113,14 @@ func Write(dataDir string, f File) error {
 // already holds is a successful no-op; a session with no file is
 // fs.ErrNotExist.
 func SetParked(dataDir, session string, parked bool) error {
+	if err := checkSession(session); err != nil {
+		return err
+	}
+	unlock, err := lockState(dataDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	f, err := Read(dataDir, session)
 	if err != nil {
 		return err
@@ -93,7 +129,7 @@ func SetParked(dataDir, session string, parked bool) error {
 		return nil
 	}
 	f.Parked = parked
-	return Write(dataDir, f)
+	return writeLocked(dataDir, f)
 }
 
 // writeAtomic writes data to path through a temp file created O_EXCL with mode

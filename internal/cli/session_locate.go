@@ -12,6 +12,9 @@ import (
 	"github.com/ericfitz/agentbus2/internal/sessionstate"
 )
 
+// errNoSession is locateSession's answer when the harness has no state file.
+var errNoSession = errors.New("no session for this harness; pass -session or start agentbus2 mcp")
+
 // located is the session a watch, a wait or a hook works on (choice 9).
 type located struct {
 	Session string
@@ -91,7 +94,7 @@ func locateSession(dataDir, flagSession string, t procs.Table, self int) (locate
 			return withFile(l, f), nil
 		}
 	}
-	return located{}, errors.New("no session for this harness; pass -session or start agentbus2 mcp")
+	return located{}, errNoSession
 }
 
 // displayNameFor is the display name for a session that came without a state

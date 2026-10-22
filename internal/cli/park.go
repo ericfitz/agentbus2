@@ -58,6 +58,13 @@ func RunPark(ctx context.Context, args []string, environ []string, stdin io.Read
 // failure. Unparking a session that is not parked succeeds.
 func RunUnpark(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return runHook(ctx, environ, stdout, func(context.Context) hookResult {
+		// The prompt arrives on stdin; read it all (bounded) so a large one
+		// never meets a closed pipe.
+		defer func() {
+			if stdin != nil {
+				_, _ = io.Copy(io.Discard, io.LimitReader(stdin, 4<<20))
+			}
+		}()
 		var session string
 		flags := newFlagSet("unpark", io.Discard)
 		flags.StringVar(&session, "session", "", "")
@@ -69,6 +76,9 @@ func RunUnpark(ctx context.Context, args []string, environ []string, stdin io.Re
 			return hookResult{stage: "locate", err: err}
 		}
 		l, err := locateSession(dataDir, session, processTable, selfPID())
+		if errors.Is(err, errNoSession) || errors.Is(err, errHarnessGone) {
+			return hookResult{} // not an agentbus2 session: nothing to unpark, nothing to log
+		}
 		if err != nil {
 			return hookResult{stage: "locate", err: err}
 		}

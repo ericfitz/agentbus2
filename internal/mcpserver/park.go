@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -24,24 +26,52 @@ func (s *server) unparkOnToolCall(next mcp.MethodHandler) mcp.MethodHandler {
 	}
 }
 
-// unparkAll clears Parked in the state file of each session of this server.
-// A failure is logged and ignored: it must not fail the tool call.
+// unparkAll clears Parked in the state file of each session of this server
+// and of this harness (see parkTargets). A failure is logged and ignored: it
+// must not fail the tool call.
 func (s *server) unparkAll() {
 	dataDir, err := s.dataDir()
 	if err != nil {
 		return
 	}
-	all, err := sessionstate.List(dataDir)
-	if err != nil {
-		s.log.Warn("listing session state files to unpark failed", "err", err)
-		return
+	s.smu.Lock()
+	ids := s.registryIDsLocked()
+	s.smu.Unlock()
+	s.unparkSessions(dataDir, ids)
+}
+
+// registryIDsLocked lists the sessions this server holds; s.smu is held.
+func (s *server) registryIDsLocked() []string {
+	ids := make([]string, 0, len(s.files))
+	for id := range s.files {
+		ids = append(ids, id)
 	}
-	for _, f := range all {
-		if !f.Parked || f.MCPPID != s.self {
-			continue
+	return ids
+}
+
+// unparkSessions clears Parked for ids and for every state file of this
+// server's harness: after an MCP server restart the files keep the dead
+// server's pid and are adopted by id only, and a hinted register must unpark
+// the harness's primary session too. Missing files are ignored.
+func (s *server) unparkSessions(dataDir string, ids []string) {
+	seen := map[string]bool{}
+	for _, id := range ids {
+		seen[id] = true
+	}
+	if s.harness.Pid > 0 {
+		all, err := sessionstate.List(dataDir)
+		if err != nil {
+			s.log.Warn("listing session state files to unpark failed", "err", err)
 		}
-		if err := sessionstate.SetParked(dataDir, f.Session, false); err != nil {
-			s.log.Warn("unparking a session failed", "session", f.Session, "err", err)
+		for _, f := range all {
+			if f.Parked && f.HarnessPID == s.harness.Pid && (s.harness.Start == 0 || f.HarnessStart == 0 || f.HarnessStart == s.harness.Start) {
+				seen[f.Session] = true
+			}
+		}
+	}
+	for id := range seen {
+		if err := sessionstate.SetParked(dataDir, id, false); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			s.log.Warn("unparking a session failed", "session", id, "err", err)
 		}
 	}
 }
