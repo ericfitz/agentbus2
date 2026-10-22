@@ -17,6 +17,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/auth/assertion"
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/bus/remote"
+	"github.com/ericfitz/agentbus2/internal/fileacl"
 	"github.com/ericfitz/agentbus2/internal/gen"
 )
 
@@ -81,7 +82,7 @@ func (c Cache) Save(identity string, e Entry) error {
 	if err := keys.WriteFile(path, b); err != nil {
 		return err
 	}
-	if err := ownerOnly(path); err != nil {
+	if err := fileacl.OwnerOnly(path); err != nil {
 		return fmt.Errorf("credential: restrict %s: %w", path, err)
 	}
 	return nil

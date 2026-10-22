@@ -283,7 +283,8 @@ the choice numbers below are its.
    authenticates: the issuer is a configured string. A `unix:` listener
    requires `issuer` (exit 2); a non-loopback listener with `issuer` unset
    starts with a warning that clients will see the bound address. A unix
-   socket file is mode 0600 (Decision 58).
+   socket file is mode 0600 (Decision 58); on Windows it also gets an
+   owner-only ACL (post-build decision 9).
 8. **Registration semantics.** The same `(identity, kid)` is checked first
    inside the transaction, so a retry answers `Created false` and consumes
    nothing; a different key for a name with a credential is `conflict`;

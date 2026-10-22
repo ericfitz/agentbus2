@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/ericfitz/agentbus2/internal/fileacl"
 	"github.com/ericfitz/agentbus2/internal/filelock"
 )
 
@@ -56,9 +57,9 @@ func ClassifyListen(listen string) (bool, error) {
 
 // Listen opens the listener. A "unix:<path>" address first removes a stale
 // socket file nothing answers on, then listens and sets the file's mode to
-// 0600 (Decision 58: the socket file, not the umask, decides who may
+// 0600, and on Windows its DACL to the current user alone (Decision 58: the socket file, not the umask, decides who may
 // self-register on a multi-user host; the window between net.Listen and
-// Chmod is bounded by the umask and accepted; a lock file at
+// the Chmod and ACL calls is bounded by the umask and accepted; a lock file at
 // path+".lock" serializes concurrent starts).
 func Listen(listen string) (net.Listener, error) {
 	path, ok := strings.CutPrefix(listen, "unix:")
@@ -91,6 +92,12 @@ func Listen(listen string) (net.Listener, error) {
 	if err := os.Chmod(path, 0o600); err != nil {
 		_ = l.Close()
 		return nil, fmt.Errorf("setting the mode of socket %s: %w", path, err)
+	}
+	// On Windows the mode above does not restrict access (os.Chmod only
+	// toggles the read-only attribute): the owner-only DACL does.
+	if err := fileacl.OwnerOnly(path); err != nil {
+		_ = l.Close()
+		return nil, fmt.Errorf("setting the ACL of socket %s: %w", path, err)
 	}
 	return l, nil
 }

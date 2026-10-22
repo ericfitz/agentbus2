@@ -1,14 +1,14 @@
 //go:build windows
 
-package credential
+package fileacl
 
 import "golang.org/x/sys/windows"
 
-// ownerOnly replaces path's DACL with one entry granting the current user
+// OwnerOnly replaces path's DACL with one entry granting the current user
 // full access, protected from inheritance (Decision 55: owner-only ACL on
-// Windows). TestSaveSetsOwnerOnlyACL and TestCacheSaveSetsOwnerOnlyACL check
-// it on the Windows CI.
-func ownerOnly(path string) error {
+// Windows). TestSaveSetsOwnerOnlyACL, TestCacheSaveSetsOwnerOnlyACL and
+// TestListenUnixSetsOwnerOnlyACL check it on the Windows CI.
+func OwnerOnly(path string) error {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {
 		return err
