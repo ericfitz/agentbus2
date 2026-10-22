@@ -56,6 +56,12 @@ func run(ctx context.Context, o Options) (Model, error) {
 	LoadIcons(o.Settings, stderr)
 	c, err := newClient(ctx, o.Bus, o.Identity, o.Hint)
 	if err != nil {
+		if ctx.Err() != nil {
+			// A cancel that lands inside a start-up bus call surfaces as
+			// that call's internal error; newClient already closed any
+			// session it opened. A canceled context is a clean quit.
+			return Model{}, nil
+		}
 		return Model{}, err
 	}
 	opts := []tea.ProgramOption{tea.WithContext(ctx)} // the alternate screen is View's AltScreen

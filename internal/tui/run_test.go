@@ -351,3 +351,33 @@ func TestRunHeadlessSizeRenders(t *testing.T) {
 		t.Fatalf("status bar drawn without a size: %q", rh.out.String())
 	}
 }
+
+// slowListBus parks ListChannels until the call's context ends and then
+// fails the way a canceled transport call does: a retryable internal error.
+type slowListBus struct {
+	bus.Bus
+	entered chan struct{}
+}
+
+func (s *slowListBus) ListChannels(ctx context.Context) ([]bus.Channel, error) {
+	close(s.entered)
+	<-ctx.Done()
+	return nil, bus.Internal(ctx.Err())
+}
+
+// A cancel that lands during start-up (after Open, inside a bus call) is a
+// clean quit, and the opened session is closed.
+func TestRunQuitsOnCancelDuringStartup(t *testing.T) {
+	c := newCore(t)
+	sam := identityBus(t, c, "sam")
+	ensureIdentity(t, c, "pat")
+	sb := &slowListBus{Bus: identityBus(t, c, "pat"), entered: make(chan struct{})}
+	rh := startRun(t, sb, 80, 24)
+	<-sb.entered
+	rh.cancel()
+	res := rh.wait(t, 2*time.Second)
+	if res.err != nil {
+		t.Fatalf("run after cancel: %v", res.err)
+	}
+	waitFor(t, time.Second, func() bool { return !lists(sam, "pat/tui") })
+}
