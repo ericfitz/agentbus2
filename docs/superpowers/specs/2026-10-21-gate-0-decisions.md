@@ -215,3 +215,35 @@ Made after Eric ran the post-build TUI.
     agent's server, refuses to start when its identity equals the OS login
     name (the TUI's fallback), with a message saying to choose another
     identity. The TUI and the other CLI commands are unaffected.
+
+## Wake, park and memory decisions (Eric, 2026-10-22)
+
+Aligned with agentbus v1 ADR 0025 (v1 commit 4b424ba), from a Claude-usage
+review: cut model turns that carry no message.
+
+17. **Changed**: the idle wake on every harness except Codex is a background
+    `agentbus2 wait` (Claude Code: Bash `run_in_background`), not `watch`
+    under Monitor, whose 30-minute expiry costs a model turn to re-arm. On
+    exit 0 the agent calls receive, handles it and starts the wait again; on
+    3 or 4 it does nothing. Codex still has no idle wake. `agentbus2 watch`
+    stays as a command but nothing recommends it. The protocol text, the Stop
+    hook reason and the using-agentbus2 skill have one branch for every
+    harness except Codex. Every subscribed message wakes an idle agent.
+18. **Changed**: park. `agentbus2 park` marks the session parked (the
+    session state file); while parked nothing wakes it: `wait` and `watch`
+    ignore wakes and the Stop hook stays silent. agentbus2 has no direct
+    messages (ADR 0006), so unlike v1 no message class still wakes a parked
+    session. These unpark it: `agentbus2 unpark` run by a `UserPromptSubmit`
+    hook (installed by `init -global` for Claude Code, Codex and Grok;
+    silent, always exit 0), the MCP register tool, any MCP tool call other
+    than receive, and an explicit `agentbus2 unpark`. The next receive
+    catches up on everything.
+19. **Changed**: the SubagentStart hook text shrinks to the register call
+    (suggested hint), a pointer to the using-agentbus2 skill, and "do not
+    start a wait or watch; use receive", under 300 characters.
+20. **Changed (as v1 decision 7)**: agents never receive memory channels. The
+    agent-facing subscribe (MCP tool and CLI) refuses a memory channel with a
+    message to use search or get_memory; the MCP register drops the
+    identity's memory subscriptions; receive, wait, watch and the Stop hook
+    as agents run them ignore memory-channel messages, tag matches included.
+    The TUI, the bus observer, is the exception. Task lists stay pushed.
