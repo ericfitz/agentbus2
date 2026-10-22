@@ -100,7 +100,7 @@ func RunInit(ctx context.Context, args []string, environ []string, stdin io.Read
 	fs.StringVar(&o.Harness, "harness", "", "configure only this harness: claude, codex or grok")
 	fs.BoolVar(&o.DryRun, "dry-run", false, "print the actions and write nothing")
 	fs.StringVar(&o.Profile, "profile", "", "profile for this repository (default: the repository name)")
-	fs.StringVar(&o.Identity, "identity", "", "identity of the repository's new profile (default: the repository name)")
+	fs.StringVar(&o.Identity, "identity", "", "identity of the repository's new profile (default: the repository name, <user>-home for the home directory)")
 	if err := fs.Parse(args); err != nil {
 		return parseExit(err)
 	}
@@ -172,6 +172,9 @@ func (in *initer) repo(root string) error {
 		id := in.Identity
 		if id == "" {
 			id = base
+			if h, ok := homeDerivedIdentity(root, func() (string, error) { return in.Home, nil }, osUserName); ok {
+				id = h
+			}
 			if err := validIdentity(id); err != nil {
 				return &initUsageError{fmt.Sprintf("repository name %q is not a valid identity (%v); pass -identity", id, err)}
 			}
@@ -196,6 +199,30 @@ func (in *initer) repo(root string) error {
 	}
 	in.nextStep(cfgDir, p)
 	return nil
+}
+
+// homeDerivedIdentity is Decision 15: a repository rooted at the home
+// directory (both resolved through symlinks) is named <user>-home, so a name
+// derived from the directory never equals the human's login name. ok is false
+// when dir is not the home directory or the login name is unknown.
+func homeDerivedIdentity(dir string, home func() (string, error), user func() string) (string, bool) {
+	u := user()
+	if u == "" {
+		return "", false
+	}
+	h, err := home()
+	if err != nil || h == "" {
+		return "", false
+	}
+	rd, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return "", false
+	}
+	rh, err := filepath.EvalSymlinks(h)
+	if err != nil || rd != rh {
+		return "", false
+	}
+	return u + "-home", true
 }
 
 // addProfile adds p to config.json, copying the file to config.json.bak first

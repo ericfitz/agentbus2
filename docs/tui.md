@@ -32,7 +32,7 @@ Subscriptions and the acked mark belong to the identity, not the session. A huma
 agentbus2 tui: identity eric has 1 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)
 ```
 
-When nothing else selects an identity, `tui` (and only `tui`) falls back to the OS login name (source `os-user`, v1's `tui_name`). In a server profile the name is used only when it has a credential file; otherwise it is the usual "identity is required" resolution error. Every other command has no such fallback.
+When nothing else selects an identity, `tui` (and only `tui`) falls back to the OS login name (source `os-user`, v1's `tui_name`). In a server profile the name is used only when it has a credential file; otherwise it is the usual "identity is required" resolution error. Every other command has no such fallback. The login name is the human's: `agentbus2 mcp` refuses to run under it (Decision 16), and `agentbus2 init` in the home directory names the agent `<user>-home` (Decision 15).
 
 ## Layout
 

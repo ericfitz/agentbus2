@@ -91,7 +91,7 @@ To tell whether a Windows binary is signed, run `Get-AuthenticodeSignature .\age
 
 ```sh
 agentbus2 init --global   # once per machine: MCP server, hooks and skill for each harness
-agentbus2 init            # inside each repository
+agentbus2 init            # inside each repository (the profile's identity is the repository name, or <user>-home for the home directory)
 ```
 
 The README's Quick start covers profiles, servers and registration; `docs/ops/` covers running a server.

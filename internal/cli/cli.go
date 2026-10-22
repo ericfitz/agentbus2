@@ -78,8 +78,28 @@ func runMCP(ctx context.Context, args []string, environ []string, _ io.Reader, _
 		_, _ = fmt.Fprintf(stderr, "agentbus2 mcp: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
+	if err := mcpIdentityGuard(o); err != nil {
+		_, _ = fmt.Fprintln(stderr, err)
+		return 1
+	}
 	if err := mcpserver.Run(ctx, mcpserver.Options{Client: o}); err != nil {
 		return fail(stderr, err)
 	}
 	return 0
+}
+
+// mcpIdentityGuard is Decision 16: the agent's server never runs as the OS
+// login name, which belongs to the human (the TUI's identity). A resolution
+// failure is left for mcpserver.Run to report; with no known login name there
+// is nothing to compare.
+func mcpIdentityGuard(o client.Options) error {
+	login := osUserName()
+	if login == "" {
+		return nil
+	}
+	r, err := client.Resolve(o)
+	if err != nil || r.Identity != login {
+		return nil
+	}
+	return fmt.Errorf("agentbus2 mcp: identity %q is the OS login name, which is the human's; choose another with -identity or the profile's identity (`agentbus2 init -identity NAME` for a repository)", login)
 }
