@@ -132,3 +132,23 @@ updated to cite this file.
    consulted and written in the token transaction, so an assertion is
    single-use across replicas. Work: a schema migration, a Store method,
    conformance tests, and the expiry of old rows in maintenance.
+
+## Post-build decisions (Eric, 2026-10-21)
+
+Made after the Milestone 5 to 9 build, on findings from the whole-milestone
+reviews.
+
+1. **Changed**: an enrollment token claims a keyless administrator row only
+   when the token is bound to that identity name. An unbound token (any free
+   name) presented for a keyless row whose admin flag is set is refused
+   `forbidden` and is not consumed, so a token issued for new agents cannot
+   take over `root` after `agentbus2 server admin reset-credential`. This
+   extends Milestone 5 item 7 (which refuses trust-on-first-use on such a
+   row) to unbound tokens.
+2. **Changed**: the TUI moves to Bubble Tea v2. Bubble Tea v1's package
+   `init` queries the terminal (background color and cursor position) in
+   every process that links it, which stalls every `agentbus2` command for up
+   to 5 s on a pty that never answers; v2 removes the init-time query.
+3. Milestone 9 Tasks 9 and 10 (the release key, signing, notarization,
+   publishing and the tagged 2.0.0 release) are deferred: a tested build
+   from source is the deliverable for now.
