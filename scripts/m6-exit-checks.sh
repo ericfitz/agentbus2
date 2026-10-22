@@ -126,8 +126,15 @@ for f in "${words[@]}"; do
 		rc=1
 		continue
 	fi
-	out="$(cd "$ROOT" && grep -n -E 'dm/|-filter|@<|memory/|tasks/|general/' "$f" || true)"
-	if [ -n "$out" ]; then
+	# 0 is a hit, 1 none; any other grep exit means the check could not run.
+	grc=0
+	out="$(grep -n -E 'dm/|-filter|@<|memory/|tasks/|general/' "$ROOT/$f" 2>&1)" || grc=$?
+	if [ "$grc" -gt 1 ]; then
+		echo "m6-exit-checks: grep failed on '$f' (exit $grc): $out" >&2
+		rc=2
+		continue
+	fi
+	if [ "$grc" -eq 0 ]; then
 		hits="$hits$(printf '%s\n' "$out" | sed "s|^|$f:|")"$'\n'
 	fi
 done

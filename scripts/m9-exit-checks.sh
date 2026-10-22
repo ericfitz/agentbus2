@@ -268,7 +268,7 @@ check_no_v1_names() {
 	local n=no-v1-names files=() f out="$tmp/v1.out" planted
 	for planted in 'url: https://github.com/ericfitz/agentbus' '"$env:LOCALAPPDATA\Programs\agentbus"'; do
 		printf '%s\n' "$planted" >"$tmp/planted.txt"
-		if ! rg -q -e "$V1_PATTERN" "$tmp/planted.txt"; then
+		if ! grep -qE -e "$V1_PATTERN" "$tmp/planted.txt"; then
 			fail "$n" "regex misses the planted v1 line"
 			return
 		fi
@@ -277,11 +277,15 @@ check_no_v1_names() {
 		.github/workflows/release-build.yml .github/workflows/windows.yml .github/workflows/publish-image.yml; do
 		if [ -e "$ROOT/$f" ]; then files+=("$ROOT/$f"); fi
 	done
-	if rg -n -e "$V1_PATTERN" "${files[@]}" >"$out" 2>&1; then
-		fail "$n" "v1 names found: $(squash "$out")"
-	else
-		pass "$n"
-	fi
+	# grep alone (CI runners have no rg): 0 is a match, 1 none, anything else
+	# means the check could not run and must not pass.
+	local rc=0
+	grep -nE -e "$V1_PATTERN" "${files[@]}" >"$out" 2>&1 || rc=$?
+	case "$rc" in
+	0) fail "$n" "v1 names found: $(squash "$out")" ;;
+	1) pass "$n" ;;
+	*) fail "$n" "grep could not run (exit $rc): $(squash "$out")" ;;
+	esac
 }
 
 check_version_var() {
@@ -297,7 +301,7 @@ check_version_var() {
 		fail "$n" "go list ./internal/version printed: $listed"
 		ok=0
 	fi
-	if ! rg -q -e '^var Version' "$ROOT/internal/version/version.go"; then
+	if ! grep -qE -e '^var Version' "$ROOT/internal/version/version.go"; then
 		fail "$n" "internal/version/version.go has no 'var Version'"
 		ok=0
 	fi
