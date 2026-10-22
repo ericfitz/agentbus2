@@ -33,6 +33,8 @@ func RunTUI(ctx context.Context, args []string, environ []string, stdin io.Reade
 		_, _ = fmt.Fprintf(stderr, "agentbus2 tui: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
+	// Decision 11: with no identity chosen, the TUI is the OS login name.
+	o.FallbackIdentity = osUserName()
 	conn, code := open(ctx, o, stderr)
 	if conn == nil {
 		return code

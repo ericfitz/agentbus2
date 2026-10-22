@@ -96,6 +96,13 @@ func TestResolveIdentityOrder(t *testing.T) {
 		{"colon env", server, IdentitySelection{Env: "a:b"}, "", "", "a:b"},
 		{"backslash flag", server, IdentitySelection{Flag: `a\b`}, "", "", `a\\b`},
 		{"reserved flag", server, IdentitySelection{Flag: "CON"}, "", "", "CON"},
+		{"fallback on local", local, IdentitySelection{Fallback: "efitz"}, "efitz", "os-user", ""},
+		{"flag beats fallback", local, IdentitySelection{Flag: "pat", Fallback: "efitz"}, "pat", "flag", ""},
+		{"profile identity beats fallback", server, IdentitySelection{Fallback: "efitz"}, "fromprofile", "profile", ""},
+		{"credential beats fallback", bare, IdentitySelection{Credentials: []string{"c"}, Fallback: "efitz"}, "c", "credential", ""},
+		{"fallback after two credentials", bare, IdentitySelection{Credentials: []string{"c", "d"}, Fallback: "efitz"}, "efitz", "os-user", ""},
+		{"invalid fallback", local, IdentitySelection{Fallback: "a:b"}, "", "", "(os-user)"},
+		{"empty fallback", local, IdentitySelection{Fallback: ""}, "", "", "identity is required: pass -identity"},
 		{"reserved profile identity", Profile{Name: "lab", Mode: ModeServer, Server: "https://h", Identity: "lpt1"}, IdentitySelection{}, "", "", "lpt1"},
 	}
 	for _, tc := range tests {

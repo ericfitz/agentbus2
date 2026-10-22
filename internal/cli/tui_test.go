@@ -2,8 +2,10 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"io"
 	"os"
+	"os/user"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -151,6 +153,33 @@ func TestRunTUILocalProfile(t *testing.T) {
 	sam := e.conn(t, "sam")
 	r := startTUI(t, e, "-identity", "eric")
 	driveSend(t, r, sam)
+}
+
+// TestRunTUIOSUserFallback: with no -identity and nothing in the environment,
+// the TUI registers under the OS login name (decision 11).
+func TestRunTUIOSUserFallback(t *testing.T) {
+	pinTUI(t, 80, 24)
+	prev := currentUser
+	currentUser = func() (*user.User, error) { return &user.User{Username: "eric"}, nil }
+	t.Cleanup(func() { currentUser = prev })
+	e := newTestEnv(t)
+	e.writeProfile(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}) // no identity
+	sam := e.conn(t, "sam")
+	r := startTUI(t, e)
+	driveSend(t, r, sam)
+}
+
+// TestRunTUINoIdentityNoUser: with the OS user unknown the old error stands.
+func TestRunTUINoIdentityNoUser(t *testing.T) {
+	prev := currentUser
+	currentUser = func() (*user.User, error) { return nil, errors.New("no passwd entry") }
+	t.Cleanup(func() { currentUser = prev })
+	e := newTestEnv(t)
+	e.writeProfile(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}) // no identity
+	var out, errb syncBuf
+	if code := RunTUI(context.Background(), nil, e.Environ, strings.NewReader(""), &out, &errb); code != 2 || !strings.Contains(errb.String(), "identity is required") {
+		t.Fatalf("code %d stderr %q, want 2 and the identity error", code, errb.String())
+	}
 }
 
 func TestRunTUIServerProfile(t *testing.T) {

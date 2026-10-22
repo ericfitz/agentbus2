@@ -50,11 +50,15 @@ func SelectName(sel Selection) (name, source string, err error) {
 type IdentitySelection struct {
 	Flag, Env   string
 	Credentials []string
+	// Fallback is the last resort, tried only when non-empty (the TUI sets it
+	// to the OS login name; every other command leaves it empty).
+	Fallback string
 }
 
 // ResolveIdentity picks the identity: the flag, the environment, the
 // profile's identity, then, in server mode only, the one credential file when
-// exactly one exists. The source is "flag", "env", "profile" or "credential".
+// exactly one exists, then Fallback when set. The source is "flag", "env",
+// "profile", "credential" or "os-user".
 func (p Profile) ResolveIdentity(sel IdentitySelection) (identity, source string, err error) {
 	pick := func(id, src string) (string, string, error) {
 		if err := store.FileNameRule(id); err != nil {
@@ -71,6 +75,8 @@ func (p Profile) ResolveIdentity(sel IdentitySelection) (identity, source string
 		return pick(p.Identity, "profile")
 	case p.Mode == ModeServer && len(sel.Credentials) == 1:
 		return pick(sel.Credentials[0], "credential")
+	case sel.Fallback != "":
+		return pick(sel.Fallback, "os-user")
 	}
 	return "", "", fmt.Errorf("identity is required: pass -identity, set AGENTBUS2_IDENTITY, or set identity in profile %q", p.Name)
 }

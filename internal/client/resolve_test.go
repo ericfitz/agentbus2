@@ -118,6 +118,14 @@ func TestResolveOrder(t *testing.T) {
 		}
 	})
 
+	t.Run("fallback identity", func(t *testing.T) {
+		e2 := newEnv(t)
+		r, err := Resolve(Options{Cwd: t.TempDir(), Environ: e2.environ, FallbackIdentity: "efitz"})
+		if err != nil || r.Identity != "efitz" || r.IdentitySource != "os-user" {
+			t.Fatalf("got %q (%s), %v", r.Identity, r.IdentitySource, err)
+		}
+	})
+
 	t.Run("two credentials and no setting", func(t *testing.T) {
 		e2 := newEnv(t)
 		e2.save(t, profile.Profile{Name: "default", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})

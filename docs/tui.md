@@ -8,7 +8,7 @@
 agentbus2 tui [-profile P] [-identity I]
 ```
 
-`-profile` and `-identity` select the profile and the identity exactly as they do for every other command (`AGENTBUS2_PROFILE` and `AGENTBUS2_IDENTITY`, then `.local/agentbus2.json`, then the profile's `identity`, then the profile's only credential). There are no other flags: v1's `-config` and `-as` are rejected (exit 2), and so is a positional argument. `-h` prints the flags and exits 0.
+`-profile` and `-identity` select the profile and the identity exactly as they do for every other command (`AGENTBUS2_PROFILE` and `AGENTBUS2_IDENTITY`, then `.local/agentbus2.json`, then the profile's `identity`, then the profile's only credential, then the OS login name, the TUI's own last step; a Windows `DOMAIN\name` is cut to `name`, a `/` becomes `-`, and an unknown user leaves the "identity is required" error). There are no other flags: v1's `-config` and `-as` are rejected (exit 2), and so is a positional argument. `-h` prints the flags and exits 0.
 
 In local mode the TUI also runs the maintenance loop, as v1's TUI ran its background loops; when several local processes run it, a lease row in the database lets one tick at a time. A server runs its own maintenance, so server mode does not.
 
