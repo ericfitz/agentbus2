@@ -256,12 +256,16 @@ The release tooling plan's proposals 1 to 5
 1. **Release key**: a new ed25519 pair for agentbus2
    (`~/.keys/agentbus2-release-ed25519.pem`), not v1's. How the private key
    is managed is a separate backlog item to discuss.
-2. **Docker image**: published to ghcr.io, public, with 2.0.0. The image
-   name (`agentbus2` or `agentbus`) is still to be discussed before
-   `vars.IMAGE_REPOSITORY` is set.
+2. **Docker image**: `ghcr.io/ericfitz/agentbus` (the product name, not
+   `agentbus2`: a deliberate exception to Decision 32's separate names; v1
+   publishes no image), public, with 2.0.0.
 3. **Authenticode**: 2.0.0 ships with `--windows-signing=off` unless the
    Artifact Signing account is already live when the release runs.
-4. **`windows.yml` is a required check**, not informational (departs from
-   v1). The `TestRunQuitsOnCanceledContext` flake must be fixed first.
+4. **`windows.yml` is required**, not informational (departs from v1). Work
+   still lands directly on `main` with no PRs, so "required" is a done-gate
+   rule, not a GitHub setting: work is done only when `ci.yml` and
+   `windows.yml` are green on the pushed commit, and a red `windows.yml` is
+   fixed before other work. The `TestRunQuitsOnCanceledContext` flake is
+   fixed first.
 5. **`make release-check` moves out of `make verify`** into its own CI job;
    the done gate no longer runs it.
