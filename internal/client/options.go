@@ -27,7 +27,12 @@ type Options struct {
 	// Maintenance (local mode) runs maintenance.New(c).Tick on a ticker.
 	Maintenance bool
 	Logger      *slog.Logger
-	Now         func() time.Time // tests only
+	// OpenLogger receives only the SQLite open warning (local mode). The core,
+	// the in-process handler and the maintenance loop never use it, so their
+	// warnings cannot reach a terminal (the TUI owns the screen). Logger, when
+	// set, receives the open warning too.
+	OpenLogger *slog.Logger
+	Now        func() time.Time // tests only
 
 	Notifier     notify.Notifier // tests only; nil: notify.NewPolling(PollInterval)
 	PollInterval time.Duration   // 0: 1 s (v1 WaitPollInterval)

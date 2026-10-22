@@ -32,7 +32,7 @@ Subscriptions and the acked mark belong to the identity, not the session. A huma
 agentbus2 tui: identity eric has 1 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)
 ```
 
-There is no OS-user-name fallback (v1's `tui_name`): a local profile with no identity is a resolution error, as for every command.
+When nothing else selects an identity, `tui` (and only `tui`) falls back to the OS login name (source `os-user`, v1's `tui_name`). In a server profile the name is used only when it has a credential file; otherwise it is the usual "identity is required" resolution error. Every other command has no such fallback.
 
 ## Layout
 

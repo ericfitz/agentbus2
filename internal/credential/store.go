@@ -182,10 +182,10 @@ func (s Store) LoadPending(identity string) (crypto.Signer, keys.Algorithm, bool
 }
 
 // CommitPending makes k, the key that was registered, identity's credential.
-// When the pending file still holds k it is renamed onto Path(identity)
-// atomically; when another run replaced it, k is saved as the credential and
-// the other run's pending file stays for that run. The pending directory is
-// then removed when empty (another pending key keeps it).
+// k is always saved as the credential first; the pending file is then removed
+// only when it still holds k, so another run's replacement stays for that run
+// (no window in which a later key is renamed onto the credential). The pending
+// directory is then removed when empty (another pending key keeps it).
 func (s Store) CommitPending(identity string, k crypto.Signer) error {
 	if err := checkName(identity); err != nil {
 		return err
@@ -194,17 +194,15 @@ func (s Store) CommitPending(identity string, k crypto.Signer) error {
 	if err != nil {
 		return err
 	}
-	if p, _, ok, err := s.LoadPending(identity); err == nil && ok {
-		if got, err := keys.KID(p.Public()); err == nil && got == want {
-			if err := os.Rename(s.PendingPath(identity), s.Path(identity)); err != nil {
-				return fmt.Errorf("credential: commit %s: %w", s.PendingPath(identity), err)
-			}
-			s.removePendingDir()
-			return nil
-		}
-	}
 	if err := s.Save(identity, k); err != nil {
 		return err
+	}
+	if p, _, ok, err := s.LoadPending(identity); err == nil && ok {
+		if got, err := keys.KID(p.Public()); err == nil && got == want {
+			if err := os.Remove(s.PendingPath(identity)); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return fmt.Errorf("credential: commit %s: %w", s.PendingPath(identity), err)
+			}
+		}
 	}
 	s.removePendingDir()
 	return nil

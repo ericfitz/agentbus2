@@ -2,6 +2,7 @@ package profile
 
 import (
 	"fmt"
+	"slices"
 
 	"github.com/ericfitz/agentbus2/internal/repoconfig"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -57,7 +58,8 @@ type IdentitySelection struct {
 
 // ResolveIdentity picks the identity: the flag, the environment, the
 // profile's identity, then, in server mode only, the one credential file when
-// exactly one exists, then Fallback when set. The source is "flag", "env",
+// exactly one exists, then Fallback when set (in server mode only when it is
+// one of the credential files). The source is "flag", "env",
 // "profile", "credential" or "os-user".
 func (p Profile) ResolveIdentity(sel IdentitySelection) (identity, source string, err error) {
 	pick := func(id, src string) (string, string, error) {
@@ -75,7 +77,9 @@ func (p Profile) ResolveIdentity(sel IdentitySelection) (identity, source string
 		return pick(p.Identity, "profile")
 	case p.Mode == ModeServer && len(sel.Credentials) == 1:
 		return pick(sel.Credentials[0], "credential")
-	case sel.Fallback != "":
+	case sel.Fallback != "" && p.Mode != ModeServer:
+		return pick(sel.Fallback, "os-user")
+	case sel.Fallback != "" && slices.Contains(sel.Credentials, sel.Fallback):
 		return pick(sel.Fallback, "os-user")
 	}
 	return "", "", fmt.Errorf("identity is required: pass -identity, set AGENTBUS2_IDENTITY, or set identity in profile %q", p.Name)

@@ -283,3 +283,20 @@ func TestOpenWarnsOnReadableSQLiteOnStderr(t *testing.T) {
 		t.Fatalf("stdout changed: %q, want %q", out, firstOut)
 	}
 }
+
+// TestOpenCoreWarningsStayOffStderr: open gives stderr only the SQLite open
+// warning; the core's logger (and so the maintenance loop's, which runs under
+// the TUI's alternate screen) never writes there.
+func TestOpenCoreWarningsStayOffStderr(t *testing.T) {
+	e := newTestEnv(t)
+	var errb bytes.Buffer
+	c, code := open(context.Background(), client.Options{Environ: e.Environ}, &errb)
+	if code != 0 {
+		t.Fatalf("open: code %d, stderr %q", code, errb.String())
+	}
+	defer func() { _ = c.Close() }()
+	c.Core.Log.Warn("maintenance job failed", "err", "boom")
+	if errb.Len() != 0 {
+		t.Fatalf("core warning reached stderr: %q", errb.String())
+	}
+}

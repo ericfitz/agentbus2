@@ -66,10 +66,12 @@ func open(ctx context.Context, o client.Options, stderr io.Writer) (*client.Conn
 	if testClientOptions != nil {
 		testClientOptions(&o)
 	}
-	if o.Logger == nil {
-		// Warnings (a SQLite file others can read or write) go to stderr, never
-		// stdout: results are JSON there.
-		o.Logger = slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
+	if o.Logger == nil && o.OpenLogger == nil {
+		// Only the SQLite open warning (a file others can read or write) goes to
+		// stderr, never stdout: results are JSON there. The core and the
+		// maintenance loop keep their discard logger, so nothing prints over
+		// the TUI's screen.
+		o.OpenLogger = slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	}
 	c, err := client.Open(ctx, o)
 	if err != nil {

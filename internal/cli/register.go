@@ -63,7 +63,8 @@ func selectProfile(o client.Options) (selectedProfile, error) {
 // [-enrollment-token T] [-algorithm EdDSA|ES256]` (Milestone 6 choice 14;
 // Decision (Eric, 2026-10-21), item 6): generate a key, write it to the
 // pending file (credential.Store.PendingPath), register its public half and,
-// once the server answered 201, move the pending file to the credential. A
+// once the server answered 201, save that key as the credential and remove the
+// pending file if it still holds it. A
 // failed run leaves the pending file and the next run reuses that key. A run
 // after success reuses the saved key and registers it again, which the server
 // answers idempotently (Milestone 5 choice 8). Overlapping runs for one

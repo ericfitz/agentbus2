@@ -262,6 +262,14 @@ func TestCommitPendingOtherKey(t *testing.T) {
 	if err != nil || !ok || mustKID(t, p) != mustKID(t, kB) {
 		t.Fatalf("B's pending key was lost: %v %v", ok, err)
 	}
+	// The pending file is B's: committing kA again leaves it, and the
+	// credential stays kA.
+	if err := s.CommitPending("pat", kA); err != nil {
+		t.Fatal(err)
+	}
+	if p, _, ok, err := s.LoadPending("pat"); err != nil || !ok || mustKID(t, p) != mustKID(t, kB) {
+		t.Fatalf("B's pending key did not survive a second commit: %v %v", ok, err)
+	}
 	if err := s.DiscardPending("pat"); err != nil {
 		t.Fatal(err)
 	}

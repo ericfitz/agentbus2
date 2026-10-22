@@ -42,7 +42,11 @@ func openLocal(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 	if err := os.MkdirAll(r.DataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create %s: %w", r.DataDir, err)
 	}
-	st, err := sqlite.Open(ctx, profile.SQLitePath(r.Profile, r.DataDir), sqlite.Options{Logger: o.Logger})
+	openLogger := o.Logger
+	if openLogger == nil {
+		openLogger = o.OpenLogger
+	}
+	st, err := sqlite.Open(ctx, profile.SQLitePath(r.Profile, r.DataDir), sqlite.Options{Logger: openLogger})
 	if err != nil {
 		return nil, err
 	}

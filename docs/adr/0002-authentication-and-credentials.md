@@ -424,9 +424,9 @@ the choice numbers below are its.
   (which is removed); an explicit `-algorithm` that disagrees with the pending
   key is exit 2 naming the file; a 409 for a pending key names the file and
   says to remove it or have an administrator reset the credential. Overlapping
-  runs race on the pending file: the commit renames it only when it still holds
-  the registered key, else saves the registered key as the credential and
-  leaves the other run's file. `login`
+  runs race on the pending file: the commit saves the registered key as the
+  credential first, then removes the pending file only when it still holds
+  that key, and leaves the other run's file otherwise. `login`
   discovers, asserts, exchanges and caches, and refuses a local profile with
   exit 2. Tests: `TestRegisterCreatesServerProfile`; in `internal/e2e` a
   server on `0.0.0.0` (enrollment mode) refuses `register` without a token
