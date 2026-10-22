@@ -151,7 +151,7 @@ func (m *Model) cursorRow() (row, bool) {
 // rowAvail is the width left for a row's text after its tree prefix: two
 // columns per depth level plus the two-column marker.
 func (m *Model) rowAvail(depth int) int {
-	return max(m.stream.Width, 20) - 2*depth - 2
+	return max(m.stream.Width(), 20) - 2*depth - 2
 }
 
 // openCursor (→) opens the cursor row's body when it's closed and the row

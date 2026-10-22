@@ -93,7 +93,7 @@ func TestHelpOverlayListsKeysAndHealthIsSeparate(t *testing.T) {
 	if f.m.mode != modeHelp {
 		t.Fatalf("? opens help, got mode %v", f.m.mode)
 	}
-	v := f.m.View()
+	v := f.m.View().Content
 	for _, want := range []string{"help", "tab / shift+tab", "next / previous pane", "home", "<name> [memory|tasks]", "alt+enter", "quit"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("help lacks %q:\n%s", want, v)
@@ -128,7 +128,7 @@ func TestTaskListsHelpRowIsItsOwnGroup(t *testing.T) {
 		if !strings.Contains(l, "task lists") {
 			continue
 		}
-		if i == 0 || strings.TrimSpace(lines[i-1]) != "" {
+		if i == 0 || strings.TrimSpace(stripANSI(lines[i-1])) != "" {
 			t.Fatalf("(task lists) row at %d must be preceded by a blank separator, got %q", i, lines[i-1])
 		}
 		return

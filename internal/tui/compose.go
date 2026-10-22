@@ -5,9 +5,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
 
@@ -58,12 +58,24 @@ func (m *Model) openPrompt(label string, accept func(*Model, string) tea.Cmd) te
 	in := textinput.New()
 	in.Prompt = ""
 	in.CharLimit = 128
-	// Static cursor: textinput's default Blink mode reschedules itself
-	// forever (see the compose textarea's Cursor.SetMode note in model.go),
-	// which never terminates against the fixture's synchronous cmd runner.
-	in.Cursor.SetMode(cursor.CursorStatic)
+	in.SetStyles(promptStyles())
 	m.prompt = promptState{active: true, label: label, input: in, accept: accept}
 	return m.prompt.input.Focus() // focus the copy the model keeps, not the local
+}
+
+// promptStyles is a text input's styles as Bubbles v1 drew them: no prompt or
+// text color, placeholder and suggestion in 240, and a static cursor in the
+// terminal's own color. Static, because textinput's Blink mode reschedules
+// itself forever (see composeStyles in model.go), which never terminates
+// against the fixture's synchronous cmd runner.
+func promptStyles() textinput.Styles {
+	gray := lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
+	state := textinput.StyleState{Placeholder: gray, Suggestion: gray}
+	return textinput.Styles{
+		Focused: state,
+		Blurred: state,
+		Cursor:  textinput.CursorStyle{Color: lipgloss.NoColor{}, Shape: tea.CursorBlock},
+	}
 }
 
 func (m *Model) updatePrompt(msg tea.Msg) tea.Cmd {

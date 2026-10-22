@@ -46,7 +46,6 @@ func (f *fixture) task(t *testing.T, id int64) bus.Task {
 // task while off pending; the row shows the draft in the unsaved color
 // with a hint toast; nothing reaches the bus; a full cycle clears it.
 func TestSpaceCyclesADraftAndAssignsAnUnassignedTask(t *testing.T) {
-	setColorProfileANSI(t)
 	f := newFixture(t)
 	a := f.openTasks(t, "a")[0]
 	unsaved, _, _ := strings.Cut(f.m.theme.Style(f.m.theme.Unsaved).Render("\x00"), "\x00")
@@ -407,7 +406,7 @@ func TestAssignPicker(t *testing.T) {
 		if f.m.assign.names[0] != f.c.identity {
 			t.Fatalf("the TUI's own identity is listed first: %v", f.m.assign.names)
 		}
-		if v := stripANSI(f.m.View()); !strings.Contains(v, "eric (you)") {
+		if v := stripANSI(f.m.View().Content); !strings.Contains(v, "eric (you)") {
 			t.Fatalf("the picker marks the TUI's identity:\n%s", v)
 		}
 		var want []string
@@ -426,7 +425,7 @@ func TestAssignPicker(t *testing.T) {
 				t.Fatalf("%q not in the picker: %v", name, f.m.assign.names)
 			}
 		}
-		if v := f.m.View(); !strings.Contains(v, "assign") || !strings.Contains(v, "sam") {
+		if v := f.m.View().Content; !strings.Contains(v, "assign") || !strings.Contains(v, "sam") {
 			t.Fatalf("picker view:\n%s", v)
 		}
 		f.key("enter")

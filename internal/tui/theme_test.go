@@ -2,13 +2,13 @@ package tui
 
 import (
 	"bytes"
+	"image/color"
 	"io"
 	"strings"
 	"testing"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/muesli/termenv"
 )
 
 func TestColorIndexForms(t *testing.T) {
@@ -59,7 +59,7 @@ func TestThemeSelectionTextKey(t *testing.T) {
 }
 
 func TestParseColorAcceptsNamesIndicesAndDefault(t *testing.T) {
-	cases := map[string]lipgloss.TerminalColor{
+	cases := map[string]color.Color{
 		"cyan":        lipgloss.Color("6"),
 		"CYAN":        lipgloss.Color("6"),
 		"brightblack": lipgloss.Color("8"),
@@ -142,8 +142,6 @@ func TestLoadThemeDefaultEntryOverrides(t *testing.T) {
 }
 
 func TestRailSelNeverWraps(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 	th := LoadTheme(Settings{}, io.Discard)
 	line := strings.Repeat("x", 40)
 	for _, focused := range []bool{true, false} {
@@ -167,9 +165,6 @@ func TestChipTextContrastsWithTagColor(t *testing.T) {
 // RailSel on a focused row strips the row's colors to the selection text
 // color; unfocused keeps the original colors.
 func TestRailSelFocusedStripsColors(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 	th := LoadTheme(Settings{}, io.Discard)
 	colored := th.Style(th.Agent).Render("name")
 	if got := ansi.Strip(th.RailSel(true, colored, 10)); strings.TrimSpace(got) != "name" {

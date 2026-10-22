@@ -6,19 +6,16 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/muesli/termenv"
 )
 
 // The sender icon is drawn in the sender's color (user for the TUI's own
 // identity, agent for everyone else) in every icon mode, and styling it
 // never changes a width: the gear's CSI escapes stay invisible to lipgloss.
 func TestSenderIconColoredInEveryIconMode(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev); setIcons(emojiIcons) })
+	t.Cleanup(func() { setIcons(emojiIcons) })
 	for _, mode := range []string{"emoji", "nerdfont", "custom"} {
 		s := Settings{Icons: mode}
 		if mode == "custom" {
@@ -50,10 +47,10 @@ func TestSenderIconColoredInEveryIconMode(t *testing.T) {
 		}
 		msg := bus.Message{Seq: 1, Channel: "dev", Sender: "sam", CreatedAt: time.Now().UnixMilli()}
 		colored := lipgloss.Width(f.m.header(msg, "dev", "", lipgloss.NewStyle(), 200))
-		lipgloss.SetColorProfile(termenv.Ascii)
-		plain := lipgloss.Width(f.m.header(msg, "dev", "", lipgloss.NewStyle(), 200))
-		lipgloss.SetColorProfile(termenv.ANSI)
-		if colored != plain {
+		f.m.theme = noColorTheme(th)
+		head := f.m.header(msg, "dev", "", lipgloss.NewStyle(), 200)
+		f.m.theme = th
+		if plain := lipgloss.Width(head); colored != plain {
 			t.Errorf("%s: header width %d colored vs %d plain", mode, colored, plain)
 		}
 	}
@@ -63,7 +60,6 @@ func TestSenderIconColoredInEveryIconMode(t *testing.T) {
 // Highlight must re-apply the selection background right after it (and
 // after every other inner reset), or the rest of the line loses it.
 func TestSelectedRowReappliesBackgroundAfterSenderIcon(t *testing.T) {
-	setColorProfileANSI(t)
 	f := newFixture(t)
 	f.samSend("dev", "hello from sam")
 	f.receive(t)
@@ -78,8 +74,13 @@ func TestSelectedRowReappliesBackgroundAfterSenderIcon(t *testing.T) {
 	if !strings.Contains(first, icon+pre) {
 		t.Fatalf("selection background not re-applied after the sender icon: %q", first)
 	}
-	body := strings.TrimSuffix(first, "\x1b[0m")
-	if n, m := strings.Count(body, "\x1b[0m"), strings.Count(body, "\x1b[0m"+pre); n != m {
+	// Lip Gloss v2 closes the padding and then the whole line, each with its
+	// own reset: those trailing resets end the row and re-apply nothing.
+	body := first
+	for strings.HasSuffix(body, ansi.ResetStyle) {
+		body = strings.TrimSuffix(body, ansi.ResetStyle)
+	}
+	if n, m := strings.Count(body, ansi.ResetStyle), strings.Count(body, ansi.ResetStyle+pre); n != m {
 		t.Fatalf("%d of %d inner resets drop the selection background: %q", n-m, n, first)
 	}
 }

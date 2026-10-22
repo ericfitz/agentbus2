@@ -53,7 +53,7 @@ func TestTasksReloadScrollsToBottomWhileFollowing(t *testing.T) {
 	f.m.cursor, f.m.follow = -1, true
 	f.run(f.m.loadTasks("todo"))
 	if !f.m.stream.AtBottom() {
-		t.Fatalf("following tree not at bottom: offset %d of %d lines", f.m.stream.YOffset, f.m.stream.TotalLineCount())
+		t.Fatalf("following tree not at bottom: offset %d of %d lines", f.m.stream.YOffset(), f.m.stream.TotalLineCount())
 	}
 }
 
@@ -78,8 +78,8 @@ func TestOtherTaskListReloadKeepsScroll(t *testing.T) {
 	f.run(f.m.loadTasks("todo"))
 	f.m.stream.GotoTop()
 	f.run(f.m.loadTasks("other"))
-	if f.m.stream.YOffset != 0 {
-		t.Fatalf("reloading another list scrolled the pane to %d", f.m.stream.YOffset)
+	if f.m.stream.YOffset() != 0 {
+		t.Fatalf("reloading another list scrolled the pane to %d", f.m.stream.YOffset())
 	}
 }
 

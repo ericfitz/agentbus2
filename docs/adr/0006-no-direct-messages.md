@@ -158,3 +158,15 @@ states and marked `pending Eric: Milestone 8 item N` in code:
 3. No resume token is persisted across TUI restarts, so a crashed TUI's next
    start is `<identity>/tui-2` until retention removes the lapsed row
    (alternative: persist it, as the MCP server does).
+
+Post-build decision 2 (Eric, 2026-10-21,
+`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`): the TUI moved from
+Bubble Tea v1.3.10, Bubbles v1.0.0 and Lip Gloss v1.1.0 to Bubble Tea v2
+(`charm.land/bubbletea/v2` v2.0.10, `charm.land/bubbles/v2` v2.2.1,
+`charm.land/lipgloss/v2` v2.0.6), because v1's package `init` queried the
+terminal in every `agentbus2` process. `TestVersionOnSilentPTY` (repository
+root) runs `agentbus2 version` on a pty that never answers: 5.02 s on v1,
+about 28 ms on v2. The keymap, theme, icons, layout widths, alternate screen,
+bounded bus calls and receive loop are unchanged; the background query now
+runs only when `agentbus2 tui` starts, and the gear icon's cursor-forward
+escape no longer reaches the terminal (`docs/tui.md`, Terminal).

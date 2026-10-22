@@ -9,7 +9,8 @@ import (
 	"io"
 	"os"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
@@ -54,17 +55,28 @@ func run(ctx context.Context, o Options) (Model, error) {
 	if err != nil {
 		return Model{}, err
 	}
-	opts := []tea.ProgramOption{tea.WithAltScreen(), tea.WithContext(ctx)}
+	opts := []tea.ProgramOption{tea.WithContext(ctx)} // the alternate screen is View's AltScreen
 	if o.Input != nil {
 		opts = append(opts, tea.WithInput(o.Input))
 	}
 	if o.Output != nil {
 		opts = append(opts, tea.WithOutput(o.Output))
 	}
-	p := tea.NewProgram(New(c, theme, o.Host), opts...)
 	if o.Width > 0 && o.Height > 0 {
-		go p.Send(tea.WindowSizeMsg{Width: o.Width, Height: o.Height})
+		// The renderer and the model both take this size; a WindowSizeMsg
+		// sent after start would reach only the model, and Bubble Tea v2's
+		// renderer draws nothing at size 0.
+		opts = append(opts, tea.WithWindowSize(o.Width, o.Height))
 	}
+	p := tea.NewProgram(New(c, theme, o.Host), opts...)
+	// Measure cells the way Lip Gloss lays them out (grapheme clusters, as
+	// Bubble Tea v1 did by writing the frame as is). Bubble Tea v2 measures
+	// with wcwidth until a terminal reports Unicode core mode 2027, so a
+	// VS16 emoji (the gear, the stopwatch) would be one cell to the renderer
+	// and two to the layout. The report is what v2 acts on when a terminal
+	// answers its own 2027 query; it enables the mode, which a terminal that
+	// does not know it ignores, and v2 resets it on exit.
+	go p.Send(tea.ModeReportMsg{Mode: ansi.ModeUnicodeCore, Value: ansi.ModeSet})
 	go c.receiveLoop(func(m any) { p.Send(m) })
 	final, err := p.Run()
 	_ = c.close()

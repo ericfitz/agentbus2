@@ -2,13 +2,15 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"slices"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/version"
@@ -69,16 +71,17 @@ func (m Model) channelLabel(name string) string {
 }
 
 // tagChips renders tags as " tag " chips on the tag color, one space apart.
-// When the background alone emits no escape (tag is "default", or lipgloss
-// is on its no-color profile) a chip would be invisible, so they fall back
-// to dim "#tag" words.
+// When the background alone emits no escape (tag is "default"), or the
+// terminal shows no color (Bubble Tea's ColorProfileMsg reported NoTTY or
+// Ascii, see Model.noColor; Lip Gloss v1 rendered no escape there), a chip
+// would be invisible, so they fall back to dim "#tag" words.
 func (m Model) tagChips(tags []string) string {
 	if len(tags) == 0 {
 		return ""
 	}
 	chip := lipgloss.NewStyle().Background(m.theme.Tag).Foreground(chipText(m.theme.Tag))
 	parts := make([]string, len(tags))
-	if lipgloss.NewStyle().Background(m.theme.Tag).Render("x") == "x" {
+	if m.noColor || lipgloss.NewStyle().Background(m.theme.Tag).Render("x") == "x" {
 		for i, t := range tags {
 			parts[i] = "#" + t
 		}
@@ -143,7 +146,17 @@ func (m Model) railWidth() int {
 	return min(max(w, railMin), max(m.width-streamMin-1, railMin))
 }
 
-func (m Model) View() string {
+// View is the frame Bubble Tea draws: render's screen on the alternate screen
+// (Bubble Tea v2 declares the alternate screen per frame; v1 took it as the
+// WithAltScreen program option).
+func (m Model) View() tea.View {
+	v := tea.NewView(m.render())
+	v.AltScreen = true
+	return v
+}
+
+// render is the screen as a string, "" until the first window size.
+func (m Model) render() string {
 	if m.width == 0 {
 		return ""
 	}
@@ -162,7 +175,7 @@ func (m Model) View() string {
 	center := lipgloss.JoinVertical(lipgloss.Left, header, m.stream.View())
 	body := center
 	if m.showLeft() {
-		border := strings.TrimRight(strings.Repeat(dim.Render("│")+"\n", m.stream.Height+1), "\n")
+		border := strings.TrimRight(strings.Repeat(dim.Render("│")+"\n", m.stream.Height()+1), "\n")
 		body = lipgloss.JoinHorizontal(lipgloss.Top, m.renderRails(), border, center)
 	}
 	parts := []string{body, dim.Render(strings.Repeat("─", m.width))}
@@ -215,7 +228,7 @@ func (m Model) renderHeader() string {
 	// Cut a long title instead of Width's word-wrap, which would add a row
 	// and push the status bar off the bottom of the screen; cut, not
 	// MaxWidth, so an icon's cursor escape is never left behind.
-	return cut(s, m.stream.Width, "")
+	return cut(s, m.stream.Width(), "")
 }
 
 // Rail sections, top to bottom. railTop holds each one's scroll offset.
@@ -383,7 +396,7 @@ func (m Model) railSpans() (s [railSections]railSpan, blanks, compact bool) {
 		n[i] = s[i].n
 		s[i].collapsed = m.collapsed[i]
 	}
-	b, blanks, compact := railLayout(m.stream.Height+1, n, m.collapsed)
+	b, blanks, compact := railLayout(m.stream.Height()+1, n, m.collapsed)
 	for i := range s {
 		if !s[i].collapsed {
 			s[i].top, s[i].end = railWindow(s[i].n, b[i], m.railTop[i], s[i].sel, compact)
@@ -564,7 +577,7 @@ func (m Model) renderRails() string {
 		return row
 	})
 	col := strings.TrimSuffix(b.String(), "\n")
-	return lipgloss.NewStyle().Width(rail).MaxHeight(m.stream.Height + 1).Render(col)
+	return lipgloss.NewStyle().Width(rail).MaxHeight(m.stream.Height() + 1).Render(col)
 }
 
 // renderStream draws the selected channel's messages, oldest first, with the
@@ -590,7 +603,7 @@ func (m *Model) renderStream() string {
 	if len(m.paneMsgs(ch)) == 0 {
 		return dim.Render("no messages yet in " + ch + " · type below to send the first")
 	}
-	w := max(m.stream.Width, 20)
+	w := max(m.stream.Width(), 20)
 	divider := func(label string) string {
 		side := strings.Repeat("─", max((w-len(label)-2)/2, 1))
 		return dim.Render(side + " " + label + " " + side)
@@ -802,7 +815,7 @@ func (m Model) overlaySize() (w, h int) {
 
 // overlay renders a titled, bordered box centered on the screen; the border
 // color names the overlay (cyan search, green health).
-func (m Model) overlay(title string, border lipgloss.TerminalColor, body, footer string) string {
+func (m Model) overlay(title string, border color.Color, body, footer string) string {
 	w, h := m.overlaySize()
 	if m.toast != "" {
 		footer = m.toastLine() + "\n" + footer
@@ -813,6 +826,6 @@ func (m Model) overlay(title string, border lipgloss.TerminalColor, body, footer
 		lipgloss.NewStyle().Width(w-4).Height(h-4).MaxHeight(h-4).Render(body),
 		m.theme.Style(m.theme.Dim).Render(footer),
 	)
-	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1).Width(w - 2).Render(inner)
+	box := lipgloss.NewStyle().Border(lipgloss.RoundedBorder()).BorderForeground(border).Padding(0, 1).Width(w).Render(inner)
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, box)
 }

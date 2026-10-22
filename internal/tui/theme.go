@@ -2,18 +2,19 @@ package tui
 
 import (
 	"fmt"
+	"image/color"
 	"io"
 	"strconv"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
 // Theme holds one terminal color per role. Only ANSI indices 0-15 and the
 // terminal default are representable, on purpose (see ColorIndex).
 type Theme struct {
-	BG, Text, Dim, Stamp, Tag, Agent, User, Mem, Tasks, Health, Warn, Error, Sel, SelInactive, SelText, Unsaved lipgloss.TerminalColor
+	BG, Text, Dim, Stamp, Tag, Agent, User, Mem, Tasks, Health, Warn, Error, Sel, SelInactive, SelText, Unsaved color.Color
 	// Name is the theme applied and Sources the resolved value per color key
 	// ("cyan", "default", ...), for the Health overlay.
 	Name    string
@@ -24,7 +25,7 @@ type Theme struct {
 }
 
 // ParseColor is ColorIndex as a Lip Gloss color.
-func ParseColor(s string) (lipgloss.TerminalColor, error) {
+func ParseColor(s string) (color.Color, error) {
 	n, err := ColorIndex(s)
 	if err != nil {
 		return nil, err
@@ -73,7 +74,7 @@ func LoadTheme(s Settings, warn io.Writer) Theme {
 	return t
 }
 
-func (t *Theme) set(key string, c lipgloss.TerminalColor) {
+func (t *Theme) set(key string, c color.Color) {
 	switch key {
 	case "background":
 		t.BG = c
@@ -111,14 +112,14 @@ func (t *Theme) set(key string, c lipgloss.TerminalColor) {
 }
 
 // Style is a foreground-only style in color c.
-func (t Theme) Style(c lipgloss.TerminalColor) lipgloss.Style {
+func (t Theme) Style(c color.Color) lipgloss.Style {
 	return lipgloss.NewStyle().Foreground(c)
 }
 
 // chipText is the chip foreground on tag background bg: black on the light
 // ANSI colors, bright white on the rest. v1 defines it in view.go; it lives
 // here because Highlight needs it and this task lands before the view.
-func chipText(bg lipgloss.TerminalColor) lipgloss.Color {
+func chipText(bg color.Color) color.Color {
 	switch bg {
 	case lipgloss.Color("3"), lipgloss.Color("6"), lipgloss.Color("7"), lipgloss.Color("10"), lipgloss.Color("11"), lipgloss.Color("14"), lipgloss.Color("15"):
 		return lipgloss.Color("0")
@@ -130,15 +131,18 @@ func chipText(bg lipgloss.TerminalColor) lipgloss.Color {
 // the stream cursor, SelInactive for a rail selection without focus).
 // Styled segments inside the line end with a reset that would drop the
 // background for the rest of that line, so it is re-applied after every
-// reset. A segment whose foreground is bg itself would vanish into it (the
-// default theme's dim and selection_inactive are both brightblack, so an
-// idle session's dim "name age" disappeared from a selected row while the
-// stream or compose had focus), so that foreground is swapped for
-// chipText(bg), the text color that reads on bg; every other color stays.
-func (t Theme) Highlight(bg lipgloss.TerminalColor, line string, width int) string {
+// reset (Lip Gloss v2 closes with CSI m, ansi.ResetStyle; the CSI 0m that
+// v1 wrote is folded into it first). A segment whose foreground is bg itself
+// would vanish into it (the default theme's dim and selection_inactive are
+// both brightblack, so an idle session's dim "name age" disappeared from a
+// selected row while the stream or compose had focus), so that foreground is
+// swapped for chipText(bg), the text color that reads on bg; every other
+// color stays.
+func (t Theme) Highlight(bg color.Color, line string, width int) string {
 	style := lipgloss.NewStyle().Background(bg)
 	if pre := sgrPrefix(style); pre != "" {
-		line = strings.ReplaceAll(line, "\x1b[0m", "\x1b[0m"+pre)
+		line = strings.ReplaceAll(line, "\x1b[0m", ansi.ResetStyle)
+		line = strings.ReplaceAll(line, ansi.ResetStyle, ansi.ResetStyle+pre)
 	}
 	if same := sgrPrefix(t.Style(bg)); same != "" {
 		line = strings.ReplaceAll(line, same, sgrPrefix(t.Style(chipText(bg))))
@@ -147,7 +151,8 @@ func (t Theme) Highlight(bg lipgloss.TerminalColor, line string, width int) stri
 }
 
 // sgrPrefix is the escape sequence style opens with, "" for no styling (a
-// NoColor role, or the Ascii profile tests render under).
+// NoColor role; Lip Gloss v2 always renders full color and Bubble Tea
+// downsamples the frame to the terminal's profile).
 func sgrPrefix(style lipgloss.Style) string {
 	pre, _, _ := strings.Cut(style.Render("\x00"), "\x00")
 	return pre
@@ -155,7 +160,7 @@ func sgrPrefix(style lipgloss.Style) string {
 
 // SelBG is a rail selection's background: Sel while that rail has focus,
 // SelInactive while focus is in the stream or compose (v1 ADR 0011 section 3).
-func (t Theme) SelBG(focused bool) lipgloss.TerminalColor {
+func (t Theme) SelBG(focused bool) color.Color {
 	if focused {
 		return t.Sel
 	}

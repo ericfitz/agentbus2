@@ -9,10 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/muesli/termenv"
 )
 
 // taskCtx is the context the task tests call the bus with.
@@ -173,9 +172,6 @@ func TestSelectedLongSubjectTaskRendersOneLine(t *testing.T) {
 // swap dim text to the selection-readable color (rowDim), not stay dim on
 // the whole body, matching the unselected-row convention used for suffix.
 func TestSelectedCompletedTaskDimsWithRowDim(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 	f := newFixture(t)
 	f.key("esc")
 	if _, err := f.sam.CreateChannel(taskCtx, bus.CreateChannelInput{Name: "todo", Kind: bus.KindTasks}); err != nil {
@@ -476,9 +472,6 @@ func TestTaskIndentIsCapped(t *testing.T) {
 // only an in-progress row shows the owner with the rail icon; completed rows
 // are dimmed as a whole; the lease suffix follows the owner.
 func TestTaskRowSuffixes(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 	f := newFixture(t)
 	f.key("esc")
 	if _, err := f.sam.CreateChannel(taskCtx, bus.CreateChannelInput{Name: "todo", Kind: bus.KindTasks}); err != nil {
@@ -518,7 +511,7 @@ func TestTaskRowSuffixes(t *testing.T) {
 		t.Fatalf("pending with owner shows a dim arrow, not the icon: %q", lines[0])
 	}
 	agentOpen, _, _ := strings.Cut(f.m.theme.Style(f.m.theme.Agent).Render("\x00"), "\x00")
-	if !strings.Contains(raw[1], agentOpen+iconAgent+"\x1b[0m"+agentOpen+"sam") || !strings.Contains(lines[1], "lease 59m") && !strings.Contains(lines[1], "lease 60m") {
+	if !strings.Contains(raw[1], agentOpen+iconAgent+ansi.ResetStyle+agentOpen+"sam") || !strings.Contains(lines[1], "lease 59m") && !strings.Contains(lines[1], "lease 60m") {
 		t.Fatalf("in-progress row shows icon + colored owner then the lease: %q", raw[1])
 	}
 	if idx := strings.Index(lines[1], "lease"); idx < strings.Index(lines[1], "sam") {
@@ -588,9 +581,6 @@ func TestCompletedTaskWithOwnerShowsNoArrow(t *testing.T) {
 // the user icon and color, matching how the session rail distinguishes the
 // TUI's own row from everyone else's.
 func TestTaskInProgressOwnedBySelfUsesUserIcon(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 	f := newFixture(t)
 	f.key("esc")
 	if _, err := f.sam.CreateChannel(taskCtx, bus.CreateChannelInput{Name: "todo", Kind: bus.KindTasks}); err != nil {
@@ -608,7 +598,7 @@ func TestTaskInProgressOwnedBySelfUsesUserIcon(t *testing.T) {
 	raw := f.m.renderStream()
 	userOpen, _, _ := strings.Cut(f.m.theme.Style(f.m.theme.User).Render("\x00"), "\x00")
 	agentOpen, _, _ := strings.Cut(f.m.theme.Style(f.m.theme.Agent).Render("\x00"), "\x00")
-	if !strings.Contains(raw, userOpen+iconUser+"\x1b[0m"+userOpen+f.c.identity) {
+	if !strings.Contains(raw, userOpen+iconUser+ansi.ResetStyle+userOpen+f.c.identity) {
 		t.Fatalf("self-owned in-progress row must use the user icon and color: %q", raw)
 	}
 	if strings.Contains(raw, agentOpen+f.c.identity) {
@@ -626,7 +616,7 @@ func TestTaskRowCutDropsOrphanedCursorEscape(t *testing.T) {
 	if _, err := f.sam.CreateChannel(taskCtx, bus.CreateChannelInput{Name: "todo", Kind: bus.KindTasks}); err != nil {
 		t.Fatal(err)
 	}
-	w := max(f.m.stream.Width, 20)
+	w := max(f.m.stream.Width(), 20)
 	for n := w - 16; n <= w; n++ {
 		task, err := f.sam.Create(taskCtx, bus.TaskCreateInput{Channel: "todo", Subject: strings.Repeat("s", n)})
 		if err != nil {
@@ -660,7 +650,7 @@ func TestTaskRowCutEndsInEllipsis(t *testing.T) {
 	f.selectTaskChannel(t, "todo")
 	for _, line := range strings.Split(f.m.renderStream(), "\n") {
 		if s := strings.TrimRight(ansi.Strip(line), " "); strings.Contains(s, "long ") {
-			if !strings.HasSuffix(s, "…") || lipgloss.Width(line) > max(f.m.stream.Width, 20) {
+			if !strings.HasSuffix(s, "…") || lipgloss.Width(line) > max(f.m.stream.Width(), 20) {
 				t.Fatalf("cut task row must end in … within the pane: %q", s)
 			}
 			return

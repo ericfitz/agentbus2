@@ -7,12 +7,11 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/version"
-	"github.com/muesli/termenv"
 )
 
 func TestViewShowsRailsStreamComposeAndStatus(t *testing.T) {
@@ -27,7 +26,7 @@ func TestViewShowsRailsStreamComposeAndStatus(t *testing.T) {
 
 	// Insert mode is the fixture's starting mode: the compose line reads
 	// "dev ›" and the status bar shows the insert-mode key hints.
-	v := f.m.View()
+	v := stripANSI(f.m.View().Content)
 	for _, want := range []string{"channels", "memories", "tasks", "tags", "sessions", "dev", iconMem + "dev-notes", "hello from sam", "sam", "eric/tui", "as eric/tui", "esc commands", "alt+enter", "dev ›"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("view lacks %q:\n%s", want, v)
@@ -37,7 +36,7 @@ func TestViewShowsRailsStreamComposeAndStatus(t *testing.T) {
 
 	// Normal mode swaps the status bar for the command-key help.
 	f.key("esc")
-	v = f.m.View()
+	v = stripANSI(f.m.View().Content)
 	for _, want := range []string{"? help", "/ search", "h health", "q quit"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("normal-mode view lacks %q:\n%s", want, v)
@@ -85,8 +84,8 @@ func TestLongChannelNameAndShortRailDoNotOverflow(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.run(f.m.statusCmd())
-	f.m.stream.Height = 1 // fewer rows than channels: rails must not grow past this
-	v := f.m.View()
+	f.m.stream.SetHeight(1) // fewer rows than channels: rails must not grow past this
+	v := stripANSI(f.m.View().Content)
 	assertStatusBarIsLastLine(t, v, f.m.height)
 }
 
@@ -109,15 +108,15 @@ func TestNarrowTerminalKeepsOneLineRows(t *testing.T) {
 		f.key("esc")
 		for step := range 2 * len(f.m.railPositions()) {
 			rows := strings.Split(f.m.renderRails(), "\n")
-			if len(rows) > f.m.stream.Height+1 {
-				t.Fatalf("%s: rail is %d rows, stream+1 is %d", set, len(rows), f.m.stream.Height+1)
+			if len(rows) > f.m.stream.Height()+1 {
+				t.Fatalf("%s: rail is %d rows, stream+1 is %d", set, len(rows), f.m.stream.Height()+1)
 			}
 			for _, r := range rows {
 				if strings.Contains(r, "\n") || ansi.StringWidth(r) > f.m.railWidth() {
 					t.Fatalf("%s step %d: rail row %q is %d wide, rail is %d", set, step, ansi.Strip(r), ansi.StringWidth(r), f.m.railWidth())
 				}
 			}
-			v := f.m.View()
+			v := stripANSI(f.m.View().Content)
 			assertStatusBarIsLastLine(t, v, f.m.height)
 			bar := f.m.renderStatusBar()
 			if w := lipgloss.Width(bar); w > f.m.width || strings.Contains(bar, "\n") {
@@ -154,13 +153,13 @@ func TestReplyBannerAndMemoryHint(t *testing.T) {
 	f.receive(t)
 	f.key("esc")
 	f.key("r")
-	if v := f.m.View(); !strings.Contains(v, "replying to sam") || !strings.Contains(v, "#"+itoa(r.Seq)) {
+	if v := stripANSI(f.m.View().Content); !strings.Contains(v, "replying to sam") || !strings.Contains(v, "#"+itoa(r.Seq)) {
 		t.Fatalf("view:\n%s", v)
 	}
 	f.key("esc")
 	f.key("esc")
 	f.moveTo(t, "dev-notes")
-	if v := f.m.View(); !strings.Contains(v, "new memory") {
+	if v := stripANSI(f.m.View().Content); !strings.Contains(v, "new memory") {
 		t.Fatalf("memory channel hint missing:\n%s", v)
 	}
 }
@@ -168,7 +167,7 @@ func TestReplyBannerAndMemoryHint(t *testing.T) {
 func TestIdleSessionShowsAge(t *testing.T) {
 	f := newFixture(t)
 	f.m.sessionsSeen["codex"] = time.Now().Add(-14 * time.Minute)
-	rail := f.m.renderRails()
+	rail := stripANSI(f.m.renderRails())
 	if !strings.Contains(rail, iconIdle+"codex 14m") {
 		t.Fatalf("rail:\n%s", rail)
 	}
@@ -179,15 +178,15 @@ func TestRailIsFifthOfScreenWithFloor(t *testing.T) {
 	for _, tc := range []struct{ width, rail int }{{60, 16}, {100, 20}, {200, 40}} {
 		f.m.width = tc.width
 		f.m.layout()
-		if f.m.stream.Width != tc.width-tc.rail-1 {
-			t.Errorf("width %d: stream %d, want %d", tc.width, f.m.stream.Width, tc.width-tc.rail-1)
+		if f.m.stream.Width() != tc.width-tc.rail-1 {
+			t.Errorf("width %d: stream %d, want %d", tc.width, f.m.stream.Width(), tc.width-tc.rail-1)
 		}
 	}
 }
 
 func TestEmptyChannelShowsHint(t *testing.T) {
 	f := newFixture(t)
-	v := f.m.View()
+	v := stripANSI(f.m.View().Content)
 	if !strings.Contains(v, "no messages yet in dev") {
 		t.Fatalf("view:\n%s", v)
 	}
@@ -201,7 +200,6 @@ func TestEmptyChannelShowsHint(t *testing.T) {
 // inner timestamp and sender styles end with a reset, which used to drop the
 // highlight for the rest of the first line.
 func TestSelectedRowKeepsBackgroundAcrossSegments(t *testing.T) {
-	setColorProfileANSI(t)
 	f := newFixture(t)
 	f.samSend("dev", "hello from sam")
 	f.receive(t)
@@ -224,7 +222,6 @@ func TestSelectedRowKeepsBackgroundAcrossSegments(t *testing.T) {
 // rail has focus and on selection_inactive (brightblack, 100m) while the
 // stream does; the stream cursor stays on selection.
 func TestRailSelectionUsesInactiveColorWithoutFocus(t *testing.T) {
-	setColorProfileANSI(t)
 	f := newFixture(t)
 	f.samSend("dev", "hello from sam")
 	f.receive(t)
@@ -257,7 +254,6 @@ func TestRailSelectionUsesInactiveColorWithoutFocus(t *testing.T) {
 // colors (cyan agent fg, 36m); an unfocused selection keeps the original
 // colors.
 func TestRailSelectionTextColorOnFocus(t *testing.T) {
-	setColorProfileANSI(t)
 	f := newFixture(t)
 	f.samSend("dev", "hello from sam")
 	f.receive(t)
@@ -302,7 +298,6 @@ func TestIconTasksIsWideEmojiWithoutEscapes(t *testing.T) {
 // The channel name carries its kind's color (agent for chat, memory for
 // memory) in the rail and the stream header, as it does in the compose row.
 func TestChannelNameColoredInRailAndHeader(t *testing.T) {
-	setColorProfileANSI(t)
 	f := newFixture(t)
 	ch := f.m.selected()
 	if ch == nil {
@@ -330,7 +325,6 @@ func TestChannelNameColoredInRailAndHeader(t *testing.T) {
 // chanStyle assigns the same color to the same channel every time it's asked
 // (no per-render randomness or drift).
 func TestMemoryChannelColorIsStable(t *testing.T) {
-	setColorProfileANSI(t)
 	f := newFixture(t)
 	var notes bus.Channel
 	for _, c := range f.m.channels {
@@ -423,7 +417,6 @@ func TestHeaderTargetOnlyOutsideOwnChannel(t *testing.T) {
 }
 
 func TestSelectedRowSwapsDimToText(t *testing.T) {
-	setColorProfileANSI(t)
 	f := newFixture(t)
 	f.m.theme.Text = lipgloss.Color("7")
 	f.samSend("dev", "one")
@@ -445,7 +438,6 @@ func TestSelectedRowSwapsDimToText(t *testing.T) {
 }
 
 func TestTagChipsAndFallback(t *testing.T) {
-	setColorProfileANSI(t)
 	f := newFixture(t)
 	f.msgAt("dev", "sam", 9001, time.Now().UnixMilli(), "tagged", "release", "bug")
 	chip := lipgloss.NewStyle().Background(f.m.theme.Tag).Foreground(lipgloss.Color("15"))
@@ -483,16 +475,16 @@ func TestHeaderNeverWrapsOnNarrowPane(t *testing.T) {
 	}
 	f.msgAt(long, "sam", 9001, time.Now().UnixMilli(), "body", "a", "b", "c")
 	lines := strings.Split(f.m.renderStream(), "\n")
-	if w := lipgloss.Width(lines[0]); w > f.m.stream.Width {
-		t.Fatalf("header wrapped or overflowed: width %d > %d: %q", w, f.m.stream.Width, lines[0])
+	if w := lipgloss.Width(lines[0]); w > f.m.stream.Width() {
+		t.Fatalf("header wrapped or overflowed: width %d > %d: %q", w, f.m.stream.Width(), lines[0])
 	}
 	// The own-channel header drops the recipient, so only a header viewed
 	// from elsewhere (a tag pane) is long enough to need the cut.
 	msg := bus.Message{Channel: long, Sender: "sam", CreatedAt: time.Now().UnixMilli(), Tags: []string{"a", "b", "c"}}
-	if w := lipgloss.Width(f.m.header(msg, tagPanePrefix+"a", "", lipgloss.NewStyle(), f.m.stream.Width)); w > f.m.stream.Width {
-		t.Fatalf("mixed-pane header overflowed: width %d > %d", w, f.m.stream.Width)
+	if w := lipgloss.Width(f.m.header(msg, tagPanePrefix+"a", "", lipgloss.NewStyle(), f.m.stream.Width())); w > f.m.stream.Width() {
+		t.Fatalf("mixed-pane header overflowed: width %d > %d", w, f.m.stream.Width())
 	}
-	lines[0] = f.m.header(msg, tagPanePrefix+"a", "", lipgloss.NewStyle(), f.m.stream.Width)
+	lines[0] = f.m.header(msg, tagPanePrefix+"a", "", lipgloss.NewStyle(), f.m.stream.Width())
 	if s := ansi.Strip(lines[0]); !strings.Contains(s, "…") || strings.Contains(s, " a ") {
 		t.Fatalf("tags go first, then the recipient is cut with …: %q", s)
 	}
@@ -507,27 +499,31 @@ func TestHeaderNeverWrapsOnNarrowPane(t *testing.T) {
 // as zero width, so this inspects the bytes after the ellipsis: only SGR
 // may follow it.
 func TestHeaderCutDropsCursorEscapesPastEllipsis(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 	f := newFixture(t)
 	msg := bus.Message{Channel: "dev-notes", Sender: "sam", CreatedAt: time.Now().UnixMilli()}
-	for _, profile := range []termenv.Profile{termenv.Ascii, termenv.ANSI} {
-		lipgloss.SetColorProfile(profile)
+	colored := f.m.theme
+	for _, plain := range []bool{true, false} {
+		profile := "colored"
+		f.m.theme = colored
+		if plain {
+			profile = "no-color"
+			f.m.theme = noColorTheme(colored)
+		}
 		full := lipgloss.Width(f.m.header(msg, tagPanePrefix+"a", "", lipgloss.NewStyle(), 200))
 		for avail := 1; avail < full; avail++ {
 			head := f.m.header(msg, tagPanePrefix+"a", "", lipgloss.NewStyle(), avail)
 			i := strings.LastIndex(head, "…")
 			if i < 0 {
-				t.Fatalf("profile %v avail %d: no ellipsis: %q", profile, avail, head)
+				t.Fatalf("%s avail %d: no ellipsis: %q", profile, avail, head)
 			}
 			for rest := head[i+len("…"):]; rest != ""; {
 				seq, _, n, _ := ansi.DecodeSequence(rest, ansi.NormalState, nil)
 				if !strings.HasPrefix(seq, "\x1b[") || !strings.HasSuffix(seq, "m") {
-					t.Fatalf("profile %v avail %d: %q after the ellipsis: %q", profile, avail, seq, head)
+					t.Fatalf("%s avail %d: %q after the ellipsis: %q", profile, avail, seq, head)
 				}
 				rest = rest[n:]
 			}
-			if profile == termenv.ANSI && !strings.HasSuffix(head, "\x1b[0m") {
+			if !plain && !strings.HasSuffix(head, ansi.ResetStyle) {
 				t.Fatalf("avail %d: the cut line must still close its style: %q", avail, head)
 			}
 		}
@@ -551,8 +547,8 @@ func TestRailWidthClampsToTerminal(t *testing.T) {
 		if got := f.m.railWidth(); got != tc.rail {
 			t.Errorf("saved %d, width %d: rail %d, want %d", tc.saved, tc.width, got, tc.rail)
 		}
-		if f.m.stream.Width != tc.width-tc.rail-1 {
-			t.Errorf("saved %d, width %d: stream %d, want %d", tc.saved, tc.width, f.m.stream.Width, tc.width-tc.rail-1)
+		if f.m.stream.Width() != tc.width-tc.rail-1 {
+			t.Errorf("saved %d, width %d: stream %d, want %d", tc.saved, tc.width, f.m.stream.Width(), tc.width-tc.rail-1)
 		}
 	}
 }
@@ -570,8 +566,8 @@ func TestRailKeysResizeAndPersist(t *testing.T) {
 	if got := f.m.railWidth(); got != 22 {
 		t.Fatalf("after >: rail %d, want 22", got)
 	}
-	if f.m.stream.Width != 100-22-1 {
-		t.Fatalf("stream %d did not reflow", f.m.stream.Width)
+	if f.m.stream.Width() != 100-22-1 {
+		t.Fatalf("stream %d did not reflow", f.m.stream.Width())
 	}
 	f.key("<")
 	f.key("<")
@@ -605,8 +601,8 @@ func TestRailKeysStopAtBounds(t *testing.T) {
 	if got := f.m.railWidth(); got != 19 || f.m.host.RailWidth != 22 {
 		t.Fatalf("rail %d, saved %d; want 19, 22", got, f.m.host.RailWidth)
 	}
-	if f.m.stream.Width < streamMin {
-		t.Fatalf("stream %d below the %d-column minimum", f.m.stream.Width, streamMin)
+	if f.m.stream.Width() < streamMin {
+		t.Fatalf("stream %d below the %d-column minimum", f.m.stream.Width(), streamMin)
 	}
 	for range 20 {
 		f.key("<")

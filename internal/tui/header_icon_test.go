@@ -15,7 +15,6 @@ import (
 // The kind picks the icon (ADR 0008): a channel named like a kind prefix but
 // of ordinary kind gets the chat icon.
 func TestPaneTitleShowsChannelTypeIcon(t *testing.T) {
-	setColorProfileANSI(t)
 	t.Cleanup(func() { setIcons(emojiIcons) })
 	for _, mode := range []string{"emoji", "nerdfont"} {
 		LoadIcons(Settings{Icons: mode}, io.Discard)

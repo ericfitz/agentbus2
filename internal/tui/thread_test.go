@@ -181,8 +181,8 @@ func TestExpandScrollsRevealedRepliesIntoView(t *testing.T) {
 	if got := len(f.m.rows("dev")); got != 34 {
 		t.Fatalf("right did not expand A's replies: %d rows", got)
 	}
-	if bottom := f.m.stream.YOffset + f.m.stream.Height; f.m.cursorEnd > bottom || f.m.cursorLine < f.m.stream.YOffset {
-		t.Fatalf("expanded thread not in view: lines %d..%d, window %d..%d", f.m.cursorLine, f.m.cursorEnd, f.m.stream.YOffset, bottom)
+	if bottom := f.m.stream.YOffset() + f.m.stream.Height(); f.m.cursorEnd > bottom || f.m.cursorLine < f.m.stream.YOffset() {
+		t.Fatalf("expanded thread not in view: lines %d..%d, window %d..%d", f.m.cursorLine, f.m.cursorEnd, f.m.stream.YOffset(), bottom)
 	}
 }
 

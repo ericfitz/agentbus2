@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
 
@@ -474,7 +474,7 @@ func (m *Model) renderTasks(ch string) string {
 	if len(rs) == 0 {
 		return dim.Render("no tasks yet in " + ch)
 	}
-	w := max(m.stream.Width, 20)
+	w := max(m.stream.Width(), 20)
 	byID := make(map[int64]bus.TaskSummary, len(m.tasks[ch]))
 	for _, t := range m.tasks[ch] {
 		byID[t.ID] = t

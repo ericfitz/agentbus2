@@ -112,8 +112,8 @@ func TestHiddenChildSummaryCountsAsALine(t *testing.T) {
 		t.Fatalf("cursorLine = %d, want 0", f.m.cursorLine)
 	}
 	lines := strings.Split(f.m.renderStream(), "\n")
-	if w0, w1 := ansi.StringWidth(lines[0]), ansi.StringWidth(lines[1]); w0 != w1 || w0 < f.m.stream.Width {
-		t.Fatalf("both lines of the selected block are padded to the pane width: %d, %d (width %d)", w0, w1, f.m.stream.Width)
+	if w0, w1 := ansi.StringWidth(lines[0]), ansi.StringWidth(lines[1]); w0 != w1 || w0 < f.m.stream.Width() {
+		t.Fatalf("both lines of the selected block are padded to the pane width: %d, %d (width %d)", w0, w1, f.m.stream.Width())
 	}
 }
 

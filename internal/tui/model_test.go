@@ -10,12 +10,11 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/muesli/termenv"
 )
 
 // fixture is the busFixture (a core over SQLite, sam with dev and dev-notes,
@@ -129,42 +128,66 @@ func (f *fixture) moveTo(t *testing.T, name string) {
 	t.Fatalf("never reached %q, at %q", name, f.m.selName())
 }
 
-func (f *fixture) key(k string) {
+func (f *fixture) key(k string) { f.send(keyPress(k)) }
+
+// keyPress is the Bubble Tea v2 key press a terminal sends for k, named as
+// keyString names it: "enter", " " (the space bar), "ctrl+u", "alt+enter",
+// or text, which a single press types whole (as v1's KeyRunes did).
+func keyPress(k string) tea.KeyPressMsg {
 	switch k {
 	case "enter":
-		f.send(tea.KeyMsg{Type: tea.KeyEnter})
+		return tea.KeyPressMsg{Code: tea.KeyEnter}
 	case " ":
-		// Runes carries the literal space so a textarea's default keybinding
-		// (insert whatever Runes holds) types it; normal-mode " " (cycle a
-		// task's state) matches on the key's Type/String, not Runes, so this
-		// is safe there too.
-		f.send(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune(" ")})
+		// Text carries the literal space so a textarea types it; normal-mode
+		// " " (cycle a task's state) matches on keyString, not Text.
+		return tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
 	case "esc":
-		f.send(tea.KeyMsg{Type: tea.KeyEsc})
+		return tea.KeyPressMsg{Code: tea.KeyEscape}
 	case "tab":
-		f.send(tea.KeyMsg{Type: tea.KeyTab})
+		return tea.KeyPressMsg{Code: tea.KeyTab}
 	case "shift+tab":
-		f.send(tea.KeyMsg{Type: tea.KeyShiftTab})
+		return tea.KeyPressMsg{Code: tea.KeyTab, Mod: tea.ModShift}
 	case "home":
-		f.send(tea.KeyMsg{Type: tea.KeyHome})
+		return tea.KeyPressMsg{Code: tea.KeyHome}
 	case "up":
-		f.send(tea.KeyMsg{Type: tea.KeyUp})
+		return tea.KeyPressMsg{Code: tea.KeyUp}
 	case "down":
-		f.send(tea.KeyMsg{Type: tea.KeyDown})
+		return tea.KeyPressMsg{Code: tea.KeyDown}
 	case "pgup":
-		f.send(tea.KeyMsg{Type: tea.KeyPgUp})
+		return tea.KeyPressMsg{Code: tea.KeyPgUp}
 	case "pgdown":
-		f.send(tea.KeyMsg{Type: tea.KeyPgDown})
+		return tea.KeyPressMsg{Code: tea.KeyPgDown}
 	case "left":
-		f.send(tea.KeyMsg{Type: tea.KeyLeft})
+		return tea.KeyPressMsg{Code: tea.KeyLeft}
 	case "right":
-		f.send(tea.KeyMsg{Type: tea.KeyRight})
+		return tea.KeyPressMsg{Code: tea.KeyRight}
+	case "ctrl+c":
+		return tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl}
 	case "ctrl+u":
-		f.send(tea.KeyMsg{Type: tea.KeyCtrlU})
+		return tea.KeyPressMsg{Code: 'u', Mod: tea.ModCtrl}
 	case "alt+enter":
-		f.send(tea.KeyMsg{Type: tea.KeyEnter, Alt: true})
-	default:
-		f.send(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(k)})
+		return tea.KeyPressMsg{Code: tea.KeyEnter, Mod: tea.ModAlt}
+	}
+	if r := []rune(k); len(r) == 1 {
+		return tea.KeyPressMsg{Code: r[0], Text: k}
+	}
+	return tea.KeyPressMsg{Code: tea.KeyExtended, Text: k}
+}
+
+// TestKeyPressNamesMatchKeyString checks the helper against the production
+// key names: every key the fixture sends is the one keyString reads back.
+func TestKeyPressNamesMatchKeyString(t *testing.T) {
+	for _, k := range []string{"enter", " ", "esc", "tab", "shift+tab", "home", "up", "down", "pgup", "pgdown",
+		"left", "right", "ctrl+c", "ctrl+u", "alt+enter", "q", "G", "?", "/"} {
+		if got := keyString(keyPress(k)); got != k {
+			t.Errorf("keyString(keyPress(%q)) = %q", k, got)
+		}
+	}
+	if got := keyString(tea.KeyReleaseMsg{Code: 'q', Text: "q"}); got != "" {
+		t.Errorf("a key release is %q, want no key", got)
+	}
+	if got := keyString(tea.PasteMsg{Content: "q"}); got != "" {
+		t.Errorf("a paste is %q, want no key", got)
 	}
 }
 
@@ -549,14 +572,14 @@ func TestNormalModeCursorScrollsIntoView(t *testing.T) {
 	for range 30 {
 		f.key("up")
 	}
-	if f.m.cursorLine < f.m.stream.YOffset || f.m.cursorLine >= f.m.stream.YOffset+f.m.stream.Height {
-		t.Fatalf("cursor scrolled out of view going up: cursorLine=%d YOffset=%d Height=%d", f.m.cursorLine, f.m.stream.YOffset, f.m.stream.Height)
+	if f.m.cursorLine < f.m.stream.YOffset() || f.m.cursorLine >= f.m.stream.YOffset()+f.m.stream.Height() {
+		t.Fatalf("cursor scrolled out of view going up: cursorLine=%d YOffset=%d Height=%d", f.m.cursorLine, f.m.stream.YOffset(), f.m.stream.Height())
 	}
 	for range 30 {
 		f.key("down")
 	}
-	if f.m.cursorLine < f.m.stream.YOffset || f.m.cursorLine >= f.m.stream.YOffset+f.m.stream.Height {
-		t.Fatalf("cursor scrolled out of view going down: cursorLine=%d YOffset=%d Height=%d", f.m.cursorLine, f.m.stream.YOffset, f.m.stream.Height)
+	if f.m.cursorLine < f.m.stream.YOffset() || f.m.cursorLine >= f.m.stream.YOffset()+f.m.stream.Height() {
+		t.Fatalf("cursor scrolled out of view going down: cursorLine=%d YOffset=%d Height=%d", f.m.cursorLine, f.m.stream.YOffset(), f.m.stream.Height())
 	}
 }
 
@@ -567,7 +590,7 @@ func TestQuitKeysInNormalModeOnly(t *testing.T) {
 		t.Fatal("q in insert mode types")
 	}
 	f.key("esc")
-	next, cmd := f.m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
+	next, cmd := f.m.Update(keyPress("q"))
 	f.m = next.(Model)
 	if cmd == nil {
 		t.Fatal("q in normal mode must quit")
@@ -619,13 +642,13 @@ func TestHomeFromStreamKeepsScrollAndDivider(t *testing.T) {
 	f.key("shift+tab") // compose -> stream directly
 	f.key("g")         // scroll to the top; follow=false
 	f.m.divider = 12   // a sentinel the full reset would clobber
-	offset := f.m.stream.YOffset
+	offset := f.m.stream.YOffset()
 	f.key("home")
 	if f.m.pane() != paneChannels {
 		t.Fatalf("home must reach the channel pane, got %v", f.m.pane())
 	}
-	if f.m.stream.YOffset != offset {
-		t.Fatalf("home must not move the stream, got YOffset=%d want=%d", f.m.stream.YOffset, offset)
+	if f.m.stream.YOffset() != offset {
+		t.Fatalf("home must not move the stream, got YOffset=%d want=%d", f.m.stream.YOffset(), offset)
 	}
 	if f.m.divider != 12 {
 		t.Fatalf("home must not reset the divider, got %d", f.m.divider)
@@ -747,7 +770,7 @@ func TestDeleteChannelConfirm(t *testing.T) {
 	f := newFixture(t)
 	f.key("esc")
 	f.key("d")
-	if f.m.mode != modeConfirmChannel || !strings.Contains(f.m.View(), "PERMANENTLY") {
+	if f.m.mode != modeConfirmChannel || !strings.Contains(f.m.View().Content, "PERMANENTLY") {
 		t.Fatalf("d must open the confirm line; mode=%v", f.m.mode)
 	}
 	f.key("n")
@@ -855,7 +878,6 @@ func TestNoAccessChannelInRail(t *testing.T) {
 	if rail := stripANSI(f.m.renderRails()); !strings.Contains(rail, "private (no access)") {
 		t.Fatalf("rail row must read private (no access):\n%s", rail)
 	}
-	setColorProfileANSI(t)
 	if dim := openSeq(f.m.theme.Style(f.m.theme.Dim)); dim == "" || !strings.Contains(f.m.renderRails(), dim+iconChat+"private (no access)") {
 		t.Fatalf("the no-access row must be drawn in the dim style (%q):\n%q", dim, f.m.renderRails())
 	}
@@ -903,7 +925,6 @@ func TestUsageMsgStoredQuietly(t *testing.T) {
 // The sessions rail names live sessions by their server-assigned display
 // name; the TUI's own is marked (you) in the user color.
 func TestOwnSessionIsYou(t *testing.T) {
-	setColorProfileANSI(t)
 	f := newFixture(t)
 	f.run(f.m.statusCmd())
 	agentOpen := openSeq(f.m.theme.Style(f.m.theme.Agent))
@@ -1073,13 +1094,14 @@ func TestNoInboxView(t *testing.T) {
 // stripANSI is ansi.Strip.
 func stripANSI(s string) string { return ansi.Strip(s) }
 
-// setColorProfileANSI renders colors as the sixteen ANSI escapes for the
-// rest of the test.
-func setColorProfileANSI(t *testing.T) {
-	t.Helper()
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
+// noColorTheme is th with every role the terminal default, so nothing it
+// styles emits a color escape: the plain rendering Lip Gloss v1 gave under the
+// Ascii profile (v2 has no global profile; it downsamples at output).
+func noColorTheme(th Theme) Theme {
+	nc := lipgloss.NoColor{}
+	th.BG, th.Text, th.Dim, th.Stamp, th.Tag, th.Agent, th.User, th.Mem = nc, nc, nc, nc, nc, nc, nc, nc
+	th.Tasks, th.Health, th.Warn, th.Error, th.Sel, th.SelInactive, th.SelText, th.Unsaved = nc, nc, nc, nc, nc, nc, nc, nc
+	return th
 }
 
 // openSeq is the escape that opens style's color, "" when it renders none.

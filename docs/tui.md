@@ -14,6 +14,14 @@ In local mode the TUI also runs the maintenance loop, as v1's TUI ran its backgr
 
 Exit codes: 0 on a clean quit, 1 with `agentbus2: <error>` on stderr when the session is lost or the program fails, 2 for a usage or profile/identity resolution error.
 
+### Terminal
+
+The TUI is built on Bubble Tea v2 (`charm.land/bubbletea/v2` v2.0.10, Bubbles v2.2.1, Lip Gloss v2.0.6). It draws on the alternate screen and quits on `q` or `ctrl+c`. Only `agentbus2 tui` talks to the terminal: once it starts it asks for the background color (OSC 11), which picks the compose line's light or dark colors (dark until the terminal answers), and Bubble Tea asks for its own capabilities. No other command queries the terminal; with Bubble Tea v1 every `agentbus2` process did so at package init and stalled for up to 5 s on a pty that never answered (post-build decision 2; `TestVersionOnSilentPTY` proves the fix).
+
+Colors follow the terminal's color profile: on a terminal without color (`NO_COLOR`, `TERM=dumb`, or output that is not a terminal) tag chips fall back to dim `#tag` words. The TUI turns on Unicode core mode 2027 so Bubble Tea measures emoji the way the layout does; a terminal without that mode ignores it.
+
+Terminal.app draws the `emoji` set's agent gear two cells wide but advances one. Bubble Tea v1 wrote the gear with a cursor-forward escape to cover the gap; Bubble Tea v2's renderer drops that escape, so in Terminal.app a row with the gear is one column short after it. `nerdfont`, `custom` (`icon_map` with `agent` set to a glyph of fixed width) or another terminal avoid it.
+
 ### Identity
 
 The TUI opens a session with the hint `tui`, so a human running it as identity `eric` shows as `eric/tui` (`eric/tui-2` for a second TUI). Agents can tell it from the identity's agent sessions. The session is closed on quit, which frees the name at once. A TUI that is killed leaves its session lapsed until the server's retention removes it, and the next start is then `eric/tui-2`; nothing is lost, because a new session catches up from the identity's acked mark.

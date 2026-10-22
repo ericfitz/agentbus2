@@ -6,7 +6,7 @@ import (
 	"maps"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // Rail icons. Each carries U+FE0F so the terminal draws the color emoji
@@ -25,8 +25,8 @@ var (
 
 // Task status marks. The stopwatch U+23F1 is text-presentation by default
 // (like the gear) and carries U+FE0F for the color glyph; if a terminal
-// font draws its own half-width stopwatch, give it the gear's CSI 2X/1C
-// treatment.
+// font draws its own half-width stopwatch, the gear's CSI 2X/1C treatment
+// would not help: Bubble Tea v2 drops those escapes (see icons_unix.go).
 var (
 	taskPending    = "❎ "  // negative squared cross mark
 	taskInProgress = "⏱️ " // stopwatch

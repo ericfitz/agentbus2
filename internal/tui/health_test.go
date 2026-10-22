@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/version"
 )
@@ -141,7 +140,7 @@ func TestHealthScrollStopsAtEnd(t *testing.T) {
 	if want := len(f.m.healthLines()) - 1; f.m.health.scroll != want {
 		t.Fatalf("scroll = %d, want clamped at %d", f.m.health.scroll, want)
 	}
-	if v := f.m.View(); !strings.Contains(v, "}") {
+	if v := f.m.View().Content; !strings.Contains(v, "}") {
 		t.Fatalf("scrolled to the clamp the config JSON's closing brace must show:\n%s", v)
 	}
 	f.key("?")
@@ -160,7 +159,7 @@ func TestOOpensEditorAndToastsOnReturn(t *testing.T) {
 	f := newFixtureWith(t, nil, Host{ConfigPath: cfg})
 	f.key("esc")
 	f.key("h")
-	_, cmd := f.m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	_, cmd := f.m.Update(keyPress("o"))
 	if cmd == nil {
 		t.Fatal("o must start the editor")
 	}

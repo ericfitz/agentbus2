@@ -9,10 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textarea"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/colorprofile"
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
 
@@ -141,6 +142,10 @@ type Model struct {
 	assign     assignPicker
 	lastNotice string
 
+	// noColor: the terminal shows no color (Bubble Tea's color profile is
+	// NoTTY or Ascii), so the tag chips fall back to words (tagChips).
+	noColor bool
+
 	search     searchState
 	mem        memView
 	health     healthState
@@ -154,10 +159,9 @@ func New(c *client, th Theme, h Host) Model {
 	ta.CharLimit = 0
 	ta.SetHeight(1)
 	ta.KeyMap.InsertNewline.SetEnabled(false)
-	// Blinking is a perpetual tea.Cmd chain (bubbles/cursor reschedules
-	// itself on every message forever); fine for the real async runtime, but
-	// it never terminates, so a static cursor is used instead.
-	ta.Cursor.SetMode(cursor.CursorStatic)
+	// Dark until the terminal answers Init's background query, as Bubbles v1
+	// assumed when nothing answered.
+	ta.SetStyles(composeStyles(true))
 	return Model{
 		c:            c,
 		theme:        th,
@@ -182,20 +186,41 @@ func New(c *client, th Theme, h Host) Model {
 		loaded:       map[string]bool{},
 		seen:         map[string]int64{},
 		sessionsSeen: map[string]time.Time{},
-		stream:       viewport.New(80, 20),
+		stream:       viewport.New(viewport.WithWidth(80), viewport.WithHeight(20)),
 		compose:      ta,
 	}
 }
 
+// Init loads the status and asks the terminal for its background color: the
+// compose line's default colors depend on it (composeStyles). This is the only
+// terminal query, and it runs only once `agentbus2 tui` has started, never at
+// package init (Bubble Tea v1 queried at init in every agentbus2 process).
 func (m Model) Init() tea.Cmd {
-	return tea.Batch(m.statusCmd(), statusTick())
+	return tea.Batch(m.statusCmd(), statusTick(), tea.RequestBackgroundColor)
+}
+
+// composeStyles is the compose textarea's styles: the Bubbles defaults for a
+// dark or light background with a static cursor in the terminal's own color,
+// as Bubbles v1 drew it. Blinking is a perpetual tea.Cmd chain (bubbles/cursor
+// reschedules itself on every message forever); fine for the real async
+// runtime, but it never terminates against the fixture's synchronous cmd
+// runner, so the cursor is static.
+func composeStyles(isDark bool) textarea.Styles {
+	s := textarea.DefaultStyles(isDark)
+	s.Cursor.Color = lipgloss.NoColor{}
+	s.Cursor.Blink = false
+	return s
 }
 
 // keyString is the key as Bubble Tea names it ("q", "ctrl+c", "alt+enter"),
-// or "" for any other message.
+// or "" for any other message. Bubble Tea v2 names the space bar "space";
+// it is " " here, as in v1, so the keymap is unchanged.
 func keyString(msg tea.Msg) string {
-	if k, ok := msg.(tea.KeyMsg); ok {
-		return k.String()
+	if k, ok := msg.(tea.KeyPressMsg); ok {
+		if s := k.String(); s != "space" {
+			return s
+		}
+		return " "
 	}
 	return ""
 }
@@ -227,6 +252,12 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 		m.layout()
+		return m, nil
+	case tea.BackgroundColorMsg:
+		m.compose.SetStyles(composeStyles(msg.IsDark()))
+		return m, nil
+	case tea.ColorProfileMsg:
+		m.noColor = msg.Profile == colorprofile.NoTTY || msg.Profile == colorprofile.Ascii
 		return m, nil
 	case batchMsg:
 		cmds = append(cmds, m.onBatch(msg.res))
@@ -300,7 +331,7 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case cursorSeq > 0:
 			m.placeCursor(cursorSeq)
 		case msg.prepend && msg.channel == m.selName():
-			m.stream.SetYOffset(m.stream.YOffset + (m.stream.TotalLineCount() - prevLines))
+			m.stream.SetYOffset(m.stream.YOffset() + (m.stream.TotalLineCount() - prevLines))
 		}
 	case tasksMsg:
 		if msg.err != nil {
@@ -938,14 +969,14 @@ func (m *Model) placeTaskCursor(ch string, seq int64) {
 // cursor's first rendered line, set by renderStream) lies within the visible
 // window, scrolling by the minimum amount rather than recentering every move.
 func (m *Model) scrollCursorIntoView() {
-	if m.cursor < 0 || m.cursorLine < 0 || m.stream.Height <= 0 {
+	if m.cursor < 0 || m.cursorLine < 0 || m.stream.Height() <= 0 {
 		return
 	}
 	switch {
-	case m.cursorLine < m.stream.YOffset:
+	case m.cursorLine < m.stream.YOffset():
 		m.stream.SetYOffset(m.cursorLine)
-	case m.cursorLine >= m.stream.YOffset+m.stream.Height:
-		m.stream.SetYOffset(m.cursorLine - m.stream.Height + 1)
+	case m.cursorLine >= m.stream.YOffset()+m.stream.Height():
+		m.stream.SetYOffset(m.cursorLine - m.stream.Height() + 1)
 	}
 }
 
@@ -953,11 +984,11 @@ func (m *Model) scrollCursorIntoView() {
 // under the cursor (cursorLine through cursorEnd), keeping the cursor's
 // header on screen when the block is taller than the pane.
 func (m *Model) scrollOpenedIntoView() {
-	if m.cursor < 0 || m.cursorLine < 0 || m.stream.Height <= 0 {
+	if m.cursor < 0 || m.cursorLine < 0 || m.stream.Height() <= 0 {
 		return
 	}
-	if m.cursorEnd > m.stream.YOffset+m.stream.Height {
-		m.stream.SetYOffset(min(m.cursorLine, m.cursorEnd-m.stream.Height))
+	if m.cursorEnd > m.stream.YOffset()+m.stream.Height() {
+		m.stream.SetYOffset(min(m.cursorLine, m.cursorEnd-m.stream.Height()))
 	}
 	m.scrollCursorIntoView()
 }
@@ -1345,7 +1376,7 @@ func (m *Model) layout() {
 	if m.showLeft() {
 		w -= m.railWidth() + 1
 	}
-	m.stream.Width = max(w, 20)
+	m.stream.SetWidth(max(w, 20))
 	// header (1) is already subtracted below; divider and status bar are the
 	// only other always-present rows -- compose's own height is accounted
 	// for separately via composeHeight, so it does not belong here too.
@@ -1356,8 +1387,8 @@ func (m *Model) layout() {
 	if m.toast != "" {
 		extra++
 	}
-	m.stream.Height = max(m.height-1-composeHeight(m.compose)-extra, 3)
-	m.compose.SetWidth(max(m.stream.Width-len(m.selName())-16, 10))
+	m.stream.SetHeight(max(m.height-1-composeHeight(m.compose)-extra, 3))
+	m.compose.SetWidth(max(m.stream.Width()-len(m.selName())-16, 10))
 	m.refreshStream()
 }
 

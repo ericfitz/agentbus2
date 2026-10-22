@@ -9,11 +9,10 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/muesli/termenv"
 )
 
 func TestRailWindowScrollsByOneWithArrows(t *testing.T) {
@@ -181,8 +180,8 @@ func TestRail24LinesShowsEverySection(t *testing.T) {
 	}
 	f.send(tea.WindowSizeMsg{Width: 80, Height: 24})
 	lines := f.railLines()
-	if len(lines) > f.m.stream.Height+1 {
-		t.Fatalf("rail is %d rows, stream+1 is %d", len(lines), f.m.stream.Height+1)
+	if len(lines) > f.m.stream.Height()+1 {
+		t.Fatalf("rail is %d rows, stream+1 is %d", len(lines), f.m.stream.Height()+1)
 	}
 	all := strings.Join(lines, "\n")
 	// Items under each non-empty section: the row after its heading is not
@@ -451,9 +450,7 @@ func isHeadingRow(plain string) bool {
 // markSel in place of the leading space. The sessions rows are drawn but are
 // not stops. Spec 2026-10-21 section 5.
 func TestSelectedRowsStayOneLine(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev); setIcons(emojiIcons) })
+	t.Cleanup(func() { setIcons(emojiIcons) })
 	for _, icons := range []string{"emoji", "nerdfont"} {
 		for _, rail := range []int{12, 24} {
 			for _, collapsed := range [][]int{nil, {secMemories, secTasks}} {
@@ -819,8 +816,8 @@ func TestCollapsedSectionRowsGoElsewhere(t *testing.T) {
 	if after := shown(); after <= before {
 		t.Fatalf("collapsing memories at 80x30 shows %d other items, was %d; want more", after, before)
 	}
-	if lines := f.railLines(); len(lines) > f.m.stream.Height+1 {
-		t.Fatalf("rail is %d rows, stream+1 is %d", len(lines), f.m.stream.Height+1)
+	if lines := f.railLines(); len(lines) > f.m.stream.Height()+1 {
+		t.Fatalf("rail is %d rows, stream+1 is %d", len(lines), f.m.stream.Height()+1)
 	}
 }
 
@@ -852,9 +849,6 @@ func TestCollapseShownSectionMovesToHeading(t *testing.T) {
 }
 
 func TestHeadingSelectedSingleHighlight(t *testing.T) {
-	prev := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(termenv.ANSI)
-	t.Cleanup(func() { lipgloss.SetColorProfile(prev) })
 	f := sectionedFixture(t)
 	f.toHeading(t, secMemories)
 	probe := sgrPrefix(lipgloss.NewStyle().Background(f.m.theme.SelBG(true)))

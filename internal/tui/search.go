@@ -6,10 +6,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/cursor"
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
 
@@ -33,8 +32,7 @@ func (m *Model) openSearch() tea.Cmd {
 	in := textinput.New()
 	in.Prompt = "> "
 	in.CharLimit = 512
-	// Static cursor: see the compose textarea's Cursor.SetMode note in model.go.
-	in.Cursor.SetMode(cursor.CursorStatic)
+	in.SetStyles(promptStyles()) // a static cursor: see promptStyles
 	m.search = searchState{input: in, mode: "text", semanticDown: m.search.semanticDown}
 	m.mode = modeSearch
 	return m.search.input.Focus() // focus the copy the model keeps, not the local

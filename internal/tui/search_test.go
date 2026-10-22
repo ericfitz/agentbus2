@@ -65,7 +65,7 @@ func TestSlashOpensSearchAndEnterRuns(t *testing.T) {
 	if got := spy.searchs[0]; got.Query != "deploy" || got.Mode != "text" || got.Count != searchCount {
 		t.Fatalf("SearchInput = %+v", got)
 	}
-	if v := stripANSI(f.m.View()); !strings.Contains(v, "1 results") || !strings.Contains(v, "deploy failed") {
+	if v := stripANSI(f.m.View().Content); !strings.Contains(v, "1 results") || !strings.Contains(v, "deploy failed") {
 		t.Fatalf("view:\n%s", v)
 	}
 	// A response for an older query is ignored.
@@ -128,7 +128,7 @@ func TestSemanticUnavailableShowsTextOnlyBadge(t *testing.T) {
 	if !f.m.search.textOnly || !f.m.search.semanticDown || f.m.search.err != nil {
 		t.Fatalf("textOnly=%v semanticDown=%v err=%v", f.m.search.textOnly, f.m.search.semanticDown, f.m.search.err)
 	}
-	v := stripANSI(f.m.View())
+	v := stripANSI(f.m.View().Content)
 	if !strings.Contains(v, "text only") || strings.Contains(v, iconError) {
 		t.Fatalf("want the badge and no error:\n%s", v)
 	}
@@ -193,14 +193,14 @@ func TestSearchErrorIsShownInOverlay(t *testing.T) {
 	if f.m.search.err == nil || len(f.m.search.hits) != 0 || f.m.search.textOnly {
 		t.Fatalf("err=%v hits=%d textOnly=%v", f.m.search.err, len(f.m.search.hits), f.m.search.textOnly)
 	}
-	v := stripANSI(f.m.View())
+	v := stripANSI(f.m.View().Content)
 	if !strings.Contains(v, "forbidden: no read") || f.m.mode != modeSearch {
 		t.Fatalf("overlay must show the error and stay open:\n%s", v)
 	}
 	spy.fail = errors.New("boom")
 	f.key("enter") // same query, no hits: re-runs
-	if !strings.Contains(stripANSI(f.m.View()), "boom") {
-		t.Fatalf("a plain error must show too:\n%s", f.m.View())
+	if !strings.Contains(stripANSI(f.m.View().Content), "boom") {
+		t.Fatalf("a plain error must show too:\n%s", f.m.View().Content)
 	}
 }
 
@@ -226,7 +226,7 @@ func TestSearchHitListWindowsToFitTheOverlay(t *testing.T) {
 		t.Fatalf("cursor=%d", f.m.search.cursor)
 	}
 	f.m.search.textOnly = true
-	v := stripANSI(f.m.View())
+	v := stripANSI(f.m.View().Content)
 	if !strings.Contains(v, "text only") {
 		t.Fatalf("badge must render alongside a full hit list:\n%s", v)
 	}

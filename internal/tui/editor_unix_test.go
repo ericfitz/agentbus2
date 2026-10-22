@@ -7,8 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	tea "github.com/charmbracelet/bubbletea"
 )
 
 // The background half of TestVisualEditorRunsInBackground: "true" is a Unix
@@ -18,7 +16,7 @@ func TestVisualEditorBackgroundCommandUnix(t *testing.T) {
 	f.key("esc")
 	f.key("h")
 	t.Setenv("VISUAL", "true")
-	cmd := f.m.updateHealth(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("o")})
+	cmd := f.m.updateHealth(keyPress("o"))
 	if cmd == nil || f.m.mode != modeHealth {
 		t.Fatalf("o must return a background command and stay in health, mode=%v", f.m.mode)
 	}

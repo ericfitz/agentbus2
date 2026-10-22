@@ -3,7 +3,7 @@
 package tui
 
 import (
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
 
