@@ -27,7 +27,7 @@ func TestViewShowsRailsStreamComposeAndStatus(t *testing.T) {
 	// Insert mode is the fixture's starting mode: the compose line reads
 	// "dev ›" and the status bar shows the insert-mode key hints.
 	v := stripANSI(f.m.View().Content)
-	for _, want := range []string{"channels", "memories", "tasks", "tags", "sessions", "dev", iconMem + "dev-notes", "hello from sam", "sam", "eric/tui", "as eric/tui", "esc commands", "alt+enter", "dev ›"} {
+	for _, want := range []string{"channels", "memories", "tasks", "tags", "sessions", "dev", iconMem + "dev-notes", "hello from sam", "sam", "eric/tui", "as eric", "esc commands", "alt+enter", "dev ›"} {
 		if !strings.Contains(v, want) {
 			t.Errorf("view lacks %q:\n%s", want, v)
 		}
@@ -62,12 +62,12 @@ func assertStatusBarIsLastLine(t *testing.T, v string, height int) {
 func TestStatusBarShowsVersion(t *testing.T) {
 	f := newFixture(t)
 	bar := ansi.Strip(f.m.renderStatusBar())
-	if !strings.HasPrefix(bar, "agentbus2 v"+version.Version+"  as eric/tui") {
+	if !strings.HasPrefix(bar, "agentbus2 v"+version.Version+"  as eric") || strings.Contains(bar, "eric/tui") {
 		t.Fatalf("status bar: %q", bar)
 	}
 	f = newFixtureWith(t, nil, Host{Describe: "local · /tmp/x/bus.sqlite"})
-	if bar := ansi.Strip(f.m.renderStatusBar()); !strings.Contains(bar, "local · /tmp/x/bus.sqlite  as eric/tui") {
-		t.Fatalf("status bar lacks the mode line: %q", bar)
+	if bar := ansi.Strip(f.m.renderStatusBar()); !strings.Contains(bar, "as eric") {
+		t.Fatalf("status bar: %q", bar)
 	}
 	for _, w := range []int{60, 40} {
 		f.m.width = w

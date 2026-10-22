@@ -50,6 +50,7 @@ func RunTUI(ctx context.Context, args []string, environ []string, stdin io.Reade
 	opts := tui.Options{
 		Bus:      conn.Bus,
 		Identity: r.Identity,
+		Hint:     hostHint(),
 		Input:    stdin,
 		Output:   stdout,
 		Stderr:   stderr,

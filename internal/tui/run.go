@@ -19,6 +19,9 @@ import (
 type Options struct {
 	Bus      bus.Bus
 	Identity string
+	// Hint is the session hint, the host's short name (TUI decision 12);
+	// "" means "tui".
+	Hint     string
 	Settings Settings
 	Host     Host
 	Input    io.Reader // nil: os.Stdin
@@ -51,7 +54,7 @@ func run(ctx context.Context, o Options) (Model, error) {
 	}
 	theme := LoadTheme(o.Settings, stderr)
 	LoadIcons(o.Settings, stderr)
-	c, err := newClient(ctx, o.Bus, o.Identity)
+	c, err := newClient(ctx, o.Bus, o.Identity, o.Hint)
 	if err != nil {
 		return Model{}, err
 	}

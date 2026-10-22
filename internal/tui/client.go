@@ -24,7 +24,8 @@ const (
 	subNoAccess
 )
 
-// sessionHint makes the human's session show as <identity>/tui (Decision 39).
+// sessionHint is the hint when the entry has no host name to offer: the
+// human's session then shows as <identity>/tui (Decision 39, TUI decision 12).
 const sessionHint = "tui"
 
 // errSessionLost wraps replaced and session_closed: nobody else may arm this
@@ -47,6 +48,7 @@ var callTimeout = 10 * time.Second
 type client struct {
 	b        bus.Bus
 	identity string
+	hint     string // the session hint; "" means sessionHint
 	ctx      context.Context
 	cancel   context.CancelFunc
 
@@ -62,16 +64,17 @@ type client struct {
 	floor int64
 }
 
-// newClient opens a session for identity with sessionHint and subscribes to
-// every listed channel from "now". On a failure after the session opened it
-// closes the session and returns the error.
-func newClient(ctx context.Context, b bus.Bus, identity string) (*client, error) {
-	s, err := b.Open(ctx, bus.OpenSessionInput{Hint: sessionHint})
+// newClient opens a session for identity with hint (sessionHint when hint is
+// empty) and subscribes to every listed channel from "now". On a failure after
+// the session opened it closes the session and returns the error.
+func newClient(ctx context.Context, b bus.Bus, identity, hint string) (*client, error) {
+	c := &client{b: b, identity: identity, hint: hint, subscribed: map[string]subState{}}
+	s, err := b.Open(ctx, bus.OpenSessionInput{Hint: c.openHint()})
 	if err != nil {
 		return nil, err
 	}
 	cctx, cancel := context.WithCancel(ctx)
-	c := &client{b: b, identity: identity, ctx: cctx, cancel: cancel, session: s, subscribed: map[string]subState{}}
+	c.ctx, c.cancel, c.session = cctx, cancel, s
 	chans, err := b.ListChannels(ctx)
 	if err != nil {
 		_ = c.close()
@@ -84,6 +87,15 @@ func newClient(ctx context.Context, b bus.Bus, identity string) (*client, error)
 		}
 	}
 	return c, nil
+}
+
+// openHint is the hint every Open of this client sends, the first open and a
+// resume after a lapse alike.
+func (c *client) openHint() string {
+	if c.hint == "" {
+		return sessionHint
+	}
+	return c.hint
 }
 
 // sessionID reads the session id under mu: the one way the model reads it.
@@ -170,7 +182,7 @@ func (c *client) ok() {
 // replacing c.session under mu. A second lapse before any successful call
 // does not resume again. The hint goes with the token: a row the retention
 // job swept makes Open start a fresh session (Decision 18), which must still
-// be <identity>/tui; a real resume ignores it and keeps the name. The token
+// keep the same name; a real resume ignores it and keeps the name. The token
 // lives only in memory, never across restarts (pending Eric: Milestone 8 item 3).
 func (c *client) resumeLapsed() error {
 	c.mu.Lock()
@@ -181,7 +193,7 @@ func (c *client) resumeLapsed() error {
 	c.lapsedOnce = true
 	token := c.session.ResumeToken
 	c.mu.Unlock()
-	s, err := c.b.Open(c.ctx, bus.OpenSessionInput{Hint: sessionHint, ResumeToken: token})
+	s, err := c.b.Open(c.ctx, bus.OpenSessionInput{Hint: c.openHint(), ResumeToken: token})
 	if err != nil {
 		if bus.CodeOf(err) == "" {
 			// A transport failure says nothing about the lapse: a later

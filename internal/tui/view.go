@@ -757,7 +757,7 @@ func (m Model) renderStatusBar() string {
 	if m.host.Describe != "" {
 		left += m.host.Describe + "  "
 	}
-	left += "as " + th.Style(th.User).Render(m.c.displayName())
+	left += "as " + th.Style(th.User).Render(m.c.identity)
 	if m.statusOK {
 		// The administrator's view: the embedding pass and the notices
 		// (capacity, embedding) the server reports (Decision 73).

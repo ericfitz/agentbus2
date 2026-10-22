@@ -23,9 +23,13 @@ import (
 	"github.com/ericfitz/agentbus2/internal/tui"
 )
 
-// pinTUI pins the TUI's window size for the test and restores it.
+// pinTUI pins the TUI's window size and the host name (macmini) for the test
+// and restores them.
 func pinTUI(t *testing.T, w, h int) {
 	t.Helper()
+	prevHost := osHostname
+	osHostname = func() (string, error) { return "MacMini.local", nil }
+	t.Cleanup(func() { osHostname = prevHost })
 	prev := testTUIOptions
 	testTUIOptions = func(o *tui.Options) { o.Width, o.Height = w, h }
 	t.Cleanup(func() { testTUIOptions = prev })
@@ -105,7 +109,7 @@ func tuiSessionUp(t *testing.T, b bus.Bus, want string) {
 
 // driveSend runs the shared script: wait for the TUI's session and its first
 // frame, type a message into general, expect sam to receive it from
-// eric/tui, then quit.
+// eric/macmini, then quit.
 func driveSend(t *testing.T, r *runningTUI, sam *client.Conn) {
 	t.Helper()
 	ctx := context.Background()
@@ -113,7 +117,7 @@ func driveSend(t *testing.T, r *runningTUI, sam *client.Conn) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	tuiSessionUp(t, sam.Bus, "eric/tui")
+	tuiSessionUp(t, sam.Bus, "eric/macmini")
 	waitUntil(t, "the first frame to list general", 5*time.Second, func() bool { return strings.Contains(r.out.String(), "general") })
 	if _, err := r.in.Write([]byte("i")); err != nil {
 		t.Fatal(err)
@@ -136,8 +140,8 @@ func driveSend(t *testing.T, r *runningTUI, sam *client.Conn) {
 		}
 		return got != nil
 	})
-	if got.Display != "eric/tui" || got.Sender != "eric" || got.Channel != "general" {
-		t.Fatalf("message %+v, want sender eric, display eric/tui on general", *got)
+	if got.Display != "eric/macmini" || got.Sender != "eric" || got.Channel != "general" {
+		t.Fatalf("message %+v, want sender eric, display eric/macmini on general", *got)
 	}
 	if code := r.quit(t); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, r.stderr.String())
@@ -279,7 +283,7 @@ func TestRunTUIWarnsOnSharedIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := startTUI(t, e, "-identity", "eric")
-	tuiSessionUp(t, other.Bus, "eric/tui")
+	tuiSessionUp(t, other.Bus, "eric/macmini")
 	want := "agentbus2 tui: identity eric has 1 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)\n"
 	if got := r.stderr.String(); got != want {
 		t.Fatalf("stderr %q, want %q", got, want)
@@ -294,7 +298,7 @@ func TestRunTUIRailWidthSaved(t *testing.T) {
 	e := newTestEnv(t)
 	sam := e.conn(t, "sam")
 	r := startTUI(t, e, "-identity", "eric")
-	tuiSessionUp(t, sam.Bus, "eric/tui")
+	tuiSessionUp(t, sam.Bus, "eric/macmini")
 	waitUntil(t, "the first frame to list general", 5*time.Second, func() bool { return strings.Contains(r.out.String(), "general") })
 	waitUntil(t, "rail_width saved", 5*time.Second, func() bool {
 		go func() { _, _ = r.in.Write([]byte(">")) }()
@@ -309,6 +313,20 @@ func TestRunTUIRailWidthSaved(t *testing.T) {
 	if _, ok := cfg.Profiles["default"]; !ok {
 		t.Fatalf("profiles not kept: %+v", cfg.Profiles)
 	}
+	if code := r.quit(t); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, r.stderr.String())
+	}
+}
+
+// TestRunTUIHostnameFallback: a host name that fails the name rule makes the
+// session <identity>/tui, not an Open error (TUI decision 12).
+func TestRunTUIHostnameFallback(t *testing.T) {
+	pinTUI(t, 80, 24)
+	osHostname = func() (string, error) { return "a/b", nil }
+	e := newTestEnv(t)
+	sam := e.conn(t, "sam")
+	r := startTUI(t, e, "-identity", "eric")
+	tuiSessionUp(t, sam.Bus, "eric/tui")
 	if code := r.quit(t); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, r.stderr.String())
 	}

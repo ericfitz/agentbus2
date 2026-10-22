@@ -117,7 +117,7 @@ func TestNewClientOpensTuiSessionAndSubscribesAll(t *testing.T) {
 			t.Errorf("not subscribed to %q", ch)
 		}
 	}
-	c2, err := newClient(context.Background(), f.bus, "eric")
+	c2, err := newClient(context.Background(), f.bus, "eric", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestNewClientOpensTuiSessionAndSubscribesAll(t *testing.T) {
 func TestNewClientClosesSessionWhenListChannelsFails(t *testing.T) {
 	f := newBusFixture(t)
 	failing := &failListBus{Bus: identityBus(t, f.core, "zed")}
-	if _, err := newClient(context.Background(), failing, "zed"); err == nil {
+	if _, err := newClient(context.Background(), failing, "zed", ""); err == nil {
 		t.Fatal("newClient succeeded though ListChannels failed")
 	}
 	if got := sessionNames(t, f.sam, "zed"); len(got) != 0 {
@@ -147,7 +147,7 @@ func (failListBus) ListChannels(context.Context) ([]bus.Channel, error) {
 func TestSubscribeIsIdempotentAndKeepsOff(t *testing.T) {
 	f := newBusFixture(t)
 	cb := newCountingBus(identityBus(t, f.core, "zed"))
-	c, err := newClient(context.Background(), cb, "zed")
+	c, err := newClient(context.Background(), cb, "zed", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -200,7 +200,7 @@ func TestNoAccessChannelIsMarkedOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	cb := newCountingBus(identityBus(t, f.core, "ann"))
-	c, err := newClient(context.Background(), cb, "ann")
+	c, err := newClient(context.Background(), cb, "ann", "")
 	if err != nil {
 		t.Fatalf("newClient failed on a no-access channel: %v", err)
 	}
@@ -531,7 +531,7 @@ func (s *watchSpy) Watch(ctx context.Context, in bus.WatchInput) (bus.WatchResul
 func TestCloseFreesTheName(t *testing.T) {
 	f := newBusFixture(t)
 	spy := &watchSpy{Bus: identityBus(t, f.core, "bob"), started: make(chan struct{})}
-	c, err := newClient(context.Background(), spy, "bob")
+	c, err := newClient(context.Background(), spy, "bob", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -723,7 +723,7 @@ func TestReceiveLoopResumesLapsedSessionOnRealCore(t *testing.T) {
 		t.Fatal(err)
 	}
 	sam := identityBus(t, co, "sam")
-	c, err := newClient(ctx, identityBus(t, co, "eric"), "eric")
+	c, err := newClient(ctx, identityBus(t, co, "eric"), "eric", "")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -850,6 +850,61 @@ func TestSweptSessionNotFoundTwiceIsReported(t *testing.T) {
 				t.Fatalf("Open called %d times without a success between, want 1", got)
 			}
 			stopLoop(t, c, done)
+		})
+	}
+}
+
+// TestNewClientUsesHint: Options.Hint names the session (TUI decision 12), an
+// empty one means tui, and a second client on the same host is -2.
+func TestNewClientUsesHint(t *testing.T) {
+	f := newBusFixture(t)
+	c, err := newClient(context.Background(), identityBus(t, f.core, "zed"), "zed", "macmini")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c.close() })
+	if got := c.displayName(); got != "zed/macmini" {
+		t.Fatalf("display name = %q, want zed/macmini", got)
+	}
+	c2, err := newClient(context.Background(), identityBus(t, f.core, "zed"), "zed", "macmini")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = c2.close() })
+	if got := c2.displayName(); got != "zed/macmini-2" {
+		t.Fatalf("second display name = %q, want zed/macmini-2", got)
+	}
+}
+
+// openSpy records every Open input of the bus it wraps.
+type openSpy struct {
+	bus.Bus
+	opens []bus.OpenSessionInput
+}
+
+func (o *openSpy) Open(ctx context.Context, in bus.OpenSessionInput) (bus.Session, error) {
+	o.opens = append(o.opens, in)
+	return o.Bus.Open(ctx, in)
+}
+
+// TestHintSentOnOpenAndResume: the first Open and the Open after a lapse send
+// the client's hint; an empty hint sends tui.
+func TestHintSentOnOpenAndResume(t *testing.T) {
+	for _, tc := range []struct{ hint, want string }{{"macmini", "macmini"}, {"", "tui"}} {
+		t.Run(tc.want, func(t *testing.T) {
+			f := newBusFixture(t)
+			spy := &openSpy{Bus: identityBus(t, f.core, "zed")}
+			c, err := newClient(context.Background(), spy, "zed", tc.hint)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = c.close() })
+			if err := c.resumeLapsed(); err != nil {
+				t.Fatal(err)
+			}
+			if len(spy.opens) != 2 || spy.opens[0].Hint != tc.want || spy.opens[1].Hint != tc.want || spy.opens[1].ResumeToken == "" {
+				t.Fatalf("Open calls = %+v, want two with hint %q, the second with the resume token", spy.opens, tc.want)
+			}
 		})
 	}
 }

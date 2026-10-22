@@ -137,7 +137,7 @@ func newBusFixture(t *testing.T) *busFixture {
 		t.Fatalf("sam Open: %v", err)
 	}
 	eric := identityBus(t, c, "eric")
-	cl, err := newClient(ctx, eric, "eric")
+	cl, err := newClient(ctx, eric, "eric", "")
 	if err != nil {
 		t.Fatalf("newClient: %v", err)
 	}
