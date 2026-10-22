@@ -7,6 +7,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
@@ -64,6 +65,11 @@ var testClientOptions func(*client.Options)
 func open(ctx context.Context, o client.Options, stderr io.Writer) (*client.Conn, int) {
 	if testClientOptions != nil {
 		testClientOptions(&o)
+	}
+	if o.Logger == nil {
+		// Warnings (a SQLite file others can read or write) go to stderr, never
+		// stdout: results are JSON there.
+		o.Logger = slog.New(slog.NewTextHandler(stderr, &slog.HandlerOptions{Level: slog.LevelWarn}))
 	}
 	c, err := client.Open(ctx, o)
 	if err != nil {

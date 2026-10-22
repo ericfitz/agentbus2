@@ -96,7 +96,7 @@ func TestOpenWarnsOnReadableFile(t *testing.T) {
 // fix; a 0600 file opens and a missing file is created 0600.
 func TestOpenRequirePrivate(t *testing.T) {
 	withUmask(t, 0o022)
-	for _, perm := range []os.FileMode{0o644, 0o640, 0o604} {
+	for _, perm := range []os.FileMode{0o644, 0o640, 0o604, 0o620, 0o602} {
 		path := newPath(t)
 		_ = mustOpen(t, path, Options{}).Close()
 		if err := os.Chmod(path, perm); err != nil {

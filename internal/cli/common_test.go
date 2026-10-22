@@ -6,6 +6,8 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"os"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -246,5 +248,38 @@ func TestTestEnvRestoresGlobals(t *testing.T) {
 	}
 	if _, ok := processTable.(*fakeTable); ok {
 		t.Fatal("processTable still the fake")
+	}
+}
+
+// TestOpenWarnsOnReadableSQLiteOnStderr: a local profile over a SQLite file
+// others can read opens, and the warning (path and mode) goes to stderr; the
+// command's stdout is unchanged (post-build decision 8).
+func TestOpenWarnsOnReadableSQLiteOnStderr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no Unix mode bits")
+	}
+	e := newTestEnv(t)
+	run := func() (int, string, string) {
+		var out, errb bytes.Buffer
+		code := RunStatus(context.Background(), nil, e.Environ, strings.NewReader(""), &out, &errb)
+		return code, out.String(), errb.String()
+	}
+	first, firstOut, firstErr := run()
+	if first != 0 || firstErr != "" {
+		t.Fatalf("first run: code %d stderr %q", first, firstErr)
+	}
+	db := profile.SQLitePath(e.Config.Profiles["default"], e.DataDir)
+	if err := os.Chmod(db, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	code, out, errOut := run()
+	if code != 0 {
+		t.Fatalf("code %d, stderr %q", code, errOut)
+	}
+	if !strings.Contains(errOut, "level=WARN") || !strings.Contains(errOut, db) || !strings.Contains(errOut, "0644") || strings.Contains(errOut, "signing key") {
+		t.Fatalf("stderr lacks the warning: %q", errOut)
+	}
+	if out != firstOut {
+		t.Fatalf("stdout changed: %q, want %q", out, firstOut)
 	}
 }

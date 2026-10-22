@@ -340,8 +340,10 @@ func TestServerRefusesReadableSQLite(t *testing.T) {
 	if err := os.Chmod(db, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
 	var o, e syncBuf
-	if code := Run(context.Background(), []string{"-listen", "127.0.0.1:0", "-sqlite", db}, nil, &o, &e); code == 0 || !strings.Contains(e.String(), db) {
+	if code := Run(ctx, []string{"-listen", "127.0.0.1:0", "-sqlite", db}, nil, &o, &e); code == 0 || !strings.Contains(e.String(), db) {
 		t.Errorf("server: exit %d stderr %q, want non-zero naming %s", code, e.String(), db)
 	}
 	var ao, ae syncBuf
