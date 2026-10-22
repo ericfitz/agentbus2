@@ -27,6 +27,11 @@ func TestSkillDeliveryClaims(t *testing.T) {
 		}
 	}
 
+	// Park acts on the harness's primary session, so a subagent must not run it.
+	if n := bytes.Count(SkillMD, []byte("a subagent never runs `agentbus2 park`")) + bytes.Count(SkillMD, []byte("never runs `agentbus2 park`")); n < 2 {
+		t.Errorf("the skill names the subagent park ban %d times, want the Park and Subagents sections", n)
+	}
+
 	e := newTestEnv(t)
 	ctx := context.Background()
 	sam := e.conn(t, "sam")

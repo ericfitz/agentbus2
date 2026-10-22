@@ -477,6 +477,19 @@ func TestInitPromptsWakeWithBackgroundWait(t *testing.T) {
 	if !strings.Contains(codexPrompt, "Codex has no idle wake") {
 		t.Error("codexPrompt does not say Codex has no idle wake")
 	}
+	for name, text := range map[string]string{"InitPrompt": InitPrompt, "grokRule": grokRule, "skill": string(SkillMD)} {
+		if !strings.Contains(text, "do not restart it in a loop") || !strings.Contains(text, "Never poll") {
+			t.Errorf("%s lacks the exit 2 and no-polling wording", name)
+		}
+	}
+	for name, text := range map[string]string{"InitPrompt": InitPrompt, "grokRule": grokRule, "codexPrompt": codexPrompt, "skill": string(SkillMD)} {
+		if !strings.Contains(text, "as your last") || !strings.Contains(text, "agentbus2 park") {
+			t.Errorf("%s lacks the park-last wording", name)
+		}
+	}
+	if !strings.Contains(grokRule, "a background shell (on Claude Code, Bash with run_in_background)") {
+		t.Error("grokRule does not use the shared background-shell wording")
+	}
 	if !strings.Contains(grokCommand, "run_in_background") {
 		t.Error("grokCommand does not tell Grok to run a background wait")
 	}

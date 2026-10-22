@@ -205,6 +205,28 @@ func TestUnparkDrainsLargeStdin(t *testing.T) {
 	}
 }
 
+func TestUnparkHeldOpenStdinIsFastAndSilent(t *testing.T) {
+	e := newTestEnv(t)
+	sess := parkSession(t, e)
+	if err := sessionstate.SetParked(e.DataDir, sess.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	pr, pw := io.Pipe() // never written, never closed: the harness holds stdin open
+	t.Cleanup(func() { _ = pw.Close() })
+	var so, se syncBuf
+	start := time.Now()
+	code := RunUnpark(context.Background(), nil, e.Environ, pr, &so, &se)
+	if d := time.Since(start); code != 0 || d > hookBudget/2 {
+		t.Fatalf("exit %d after %v, want 0 well under the %v budget", code, d, hookBudget)
+	}
+	if f, _ := sessionstate.Read(e.DataDir, sess.ID); f.Parked {
+		t.Fatal("still parked")
+	}
+	if b, err := os.ReadFile(filepath.Join(e.DataDir, "logs", "hook.log")); err == nil && len(b) > 0 {
+		t.Fatalf("hook.log is not empty: %q", b)
+	}
+}
+
 type countReader struct{ n int }
 
 func (c *countReader) Read(p []byte) (int, error) {

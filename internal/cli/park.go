@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"time"
 
 	"github.com/ericfitz/agentbus2/internal/profile"
 	"github.com/ericfitz/agentbus2/internal/sessionstate"
@@ -57,14 +58,7 @@ func RunPark(ctx context.Context, args []string, environ []string, stdin io.Read
 // line in hook.log on a failure; a session with no state file is not a
 // failure. Unparking a session that is not parked succeeds.
 func RunUnpark(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
-	return runHook(ctx, environ, stdout, func(context.Context) hookResult {
-		// The prompt arrives on stdin; read it all (bounded) so a large one
-		// never meets a closed pipe.
-		defer func() {
-			if stdin != nil {
-				_, _ = io.Copy(io.Discard, io.LimitReader(stdin, 4<<20))
-			}
-		}()
+	code := runHook(ctx, environ, stdout, func(context.Context) hookResult {
 		var session string
 		flags := newFlagSet("unpark", io.Discard)
 		flags.StringVar(&session, "session", "", "")
@@ -90,4 +84,23 @@ func RunUnpark(ctx context.Context, args []string, environ []string, stdin io.Re
 		}
 		return hookResult{}
 	})
+	// The prompt arrives on stdin. Drain it (bounded) only after the unpark,
+	// in a goroutine the hook result never waits on beyond a short grace, so
+	// a stdin the harness holds open costs nothing and logs nothing.
+	if stdin != nil {
+		done := make(chan struct{})
+		go func() {
+			defer close(done)
+			_, _ = io.Copy(io.Discard, io.LimitReader(stdin, 4<<20))
+		}()
+		select {
+		case <-done:
+		case <-time.After(unparkDrainGrace):
+		}
+	}
+	return code
 }
+
+// unparkDrainGrace bounds how long RunUnpark waits for the prompt to drain
+// after the unpark, so a large one rarely meets a closed pipe.
+const unparkDrainGrace = 100 * time.Millisecond

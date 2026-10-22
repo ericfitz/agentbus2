@@ -62,7 +62,7 @@ func TestStopHookBlocksWhenPending(t *testing.T) {
 	}
 	state("grok")
 	code, out, _ = run()
-	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "background `agentbus2 wait`") || strings.Contains(out["reason"], "agentbus2 watch") ||
+	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "background `agentbus2 wait`") || !strings.Contains(out["reason"], "in a background shell; on Claude Code, Bash with run_in_background") || !strings.Contains(out["reason"], "If it exits 2, read stderr; do not loop.") || strings.Contains(out["reason"], "agentbus2 watch") ||
 		strings.Contains(out["reason"], "Monitor") || strings.Contains(out["reason"], "Codex") {
 		t.Fatalf("other harness: exit %d %v", code, out)
 	}

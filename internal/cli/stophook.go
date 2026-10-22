@@ -172,8 +172,8 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 	tail := "Then stop."
 	if !strings.HasPrefix(strings.ToLower(l.HarnessClient), "codex") {
 		tail = "Then make sure a background `agentbus2 wait` is running " +
-			"(Bash with run_in_background; start one if none is; it replaces any running wait or watch) " +
-			"so the next message wakes you, and stop."
+			"(in a background shell; on Claude Code, Bash with run_in_background; start one if none is; it replaces any running wait or watch) " +
+			"so the next message wakes you, and stop. If it exits 2, read stderr; do not loop."
 	}
 	b, err := json.Marshal(map[string]string{"decision": "block", "reason": head + tail})
 	if err != nil {
