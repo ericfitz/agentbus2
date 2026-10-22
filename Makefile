@@ -41,7 +41,7 @@ vet-cross:   ## go vet for linux and windows on amd64 and arm64, and golangci-li
 	GOOS=windows GOARCH=amd64 go vet ./...
 	GOOS=windows GOARCH=arm64 go vet ./...
 	GOOS=windows golangci-lint run ./...
-release-check: ## Part of verify. Release tooling: check-pins, the installer, release, render and build-archive harnesses, the local dry run (test-pipeline), vet-cross. Needs bash, git, go, golangci-lint, python3, jq, shasum, OpenSSL 3, ruby, tar, zip, curl; docker on macOS
+release-check: ## Not part of verify (its own CI job). Release tooling: check-pins, the installer, release, render and build-archive harnesses, the local dry run (test-pipeline), vet-cross. Needs bash, git, go, golangci-lint, python3, jq, shasum, OpenSSL 3, ruby, tar, zip, curl; docker on macOS
 	bash release/check-pins.sh
 	bash release/test-install.sh --self-test
 	bash release/test-release.sh
@@ -56,7 +56,7 @@ release-lint: ## actionlint over the workflows and shellcheck over release/, scr
 	shellcheck -s sh install.sh
 release-install-check: ## The installer matrix in Docker (RELEASE_INSTALL_ARGS=--quick for one image; not part of verify; its own CI job)
 	bash release/test-install.sh $(RELEASE_INSTALL_ARGS)
-verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, tidy go.mod, generated-code freshness, unit tests, conformance suites on both engines, gate checks, release-check
+verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, tidy go.mod, generated-code freshness, unit tests, conformance suites on both engines, gate checks
 	$(MAKE) build
 	$(MAKE) build-all
 	$(MAKE) vet
@@ -67,5 +67,4 @@ verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, tidy go.mod, gen
 	$(MAKE) test
 	$(MAKE) test-conformance
 	$(MAKE) check-gates
-	$(MAKE) release-check
 	@echo "verify: OK"
