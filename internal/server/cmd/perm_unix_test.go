@@ -11,8 +11,8 @@ import (
 
 // TestAdminCreatesPrivateDatabase: the Finding 2 probe of the Milestone 5
 // review. `server admin create-identity` on a missing file under umask 022
-// creates it 0600; on a 0644 file it still works and warns on stderr naming
-// the path and mode.
+// creates it 0600; a 0644 file is refused (exit 1) with stderr naming the path
+// and mode (post-build decision 8).
 func TestAdminCreatesPrivateDatabase(t *testing.T) {
 	old := syscall.Umask(0o022)
 	t.Cleanup(func() { syscall.Umask(old) })
@@ -31,10 +31,10 @@ func TestAdminCreatesPrivateDatabase(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, _, errOut := e.run("create-identity", "kim")
-	if code != 0 {
-		t.Fatalf("create-identity on a 0644 file: code %d stderr %q", code, errOut)
+	if code != 1 {
+		t.Fatalf("create-identity on a 0644 file: code %d, want 1; stderr %q", code, errOut)
 	}
-	if !strings.Contains(errOut, "level=WARN") || !strings.Contains(errOut, e.file) || !strings.Contains(errOut, "0644") {
-		t.Fatalf("stderr lacks the file-mode warning: %q", errOut)
+	if !strings.Contains(errOut, e.file) || !strings.Contains(errOut, "0644") || !strings.Contains(errOut, "chmod 600") {
+		t.Fatalf("stderr lacks the refusal naming file, mode and fix: %q", errOut)
 	}
 }

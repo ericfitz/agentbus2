@@ -35,8 +35,13 @@ const defaultBusy = 5 * time.Second
 type Options struct {
 	BusyTimeout time.Duration // 0: 5 s (Decision 69)
 	Store       sqlstore.Options
+	// RequirePrivate refuses an existing database file that is group- or
+	// world-readable (the server sets it: the file holds its signing key in
+	// clear, so read access equals admin). False only warns, for the local
+	// mode's database, which holds the bus's messages and no signing key.
+	RequirePrivate bool
 	// Logger receives the warning about a group- or world-readable database
-	// file; nil discards it.
+	// file when RequirePrivate is false; nil discards it.
 	Logger *slog.Logger
 }
 
@@ -77,15 +82,15 @@ func uriPath(slashed string) string {
 }
 
 // Open opens (creating when empty) the database file at path under the
-// Decision 34 rules. A missing file is created 0600 first: it holds the
-// server's signing key in clear (Milestone 5 choice 6), and SQLite gives the
-// -wal and -shm files the database file's mode.
+// Decision 34 rules. A missing file is created 0600 first: the server's
+// database holds its signing key in clear (Milestone 5 choice 6), and SQLite
+// gives the -wal and -shm files the database file's mode.
 func Open(ctx context.Context, path string, opts Options) (store.Store, error) {
 	dsn, err := DSN(path, opts.BusyTimeout)
 	if err != nil {
 		return nil, err
 	}
-	if err := ensurePrivateFile(path, opts.Logger); err != nil {
+	if err := ensurePrivateFile(path, opts.RequirePrivate, opts.Logger); err != nil {
 		return nil, err
 	}
 	db, err := sqlx.Open("sqlite", dsn)
@@ -119,10 +124,10 @@ func Open(ctx context.Context, path string, opts Options) (store.Store, error) {
 // openers racing on a missing file both end here: one creates it, the other
 // gets ErrExist and treats it as existing. A crash after the create leaves an
 // empty 0600 file, which SQLite opens as a new database. An existing file
-// that is group- or world-readable is opened as it is, with a warning naming
-// the path and mode (refusing it is a design call left open). Windows has no
-// Unix mode bits to check.
-func ensurePrivateFile(path string, log *slog.Logger) error {
+// that is group- or world-readable is refused when require is set (post-build
+// decision 8) and otherwise opened as it is, with a warning naming the path
+// and mode. Windows has no Unix mode bits to check.
+func ensurePrivateFile(path string, require bool, log *slog.Logger) error {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) // #nosec G304 -- the operator's own database path
 	switch {
 	case err == nil:
@@ -138,10 +143,13 @@ func ensurePrivateFile(path string, log *slog.Logger) error {
 		return fmt.Errorf("sqlite: %w", err)
 	}
 	if perm := fi.Mode().Perm(); perm&0o077 != 0 {
+		if require {
+			return fmt.Errorf("sqlite: %s has mode %#o and holds the server signing key; chmod 600 it", path, perm)
+		}
 		if log == nil {
 			log = slog.New(slog.DiscardHandler)
 		}
-		log.Warn("the database file is readable by other accounts and holds the server signing key; chmod 600 it",
+		log.Warn("the database file is readable by other accounts and holds the bus's messages; chmod 600 it",
 			"path", path, "mode", fmt.Sprintf("%#o", perm))
 	}
 	return nil

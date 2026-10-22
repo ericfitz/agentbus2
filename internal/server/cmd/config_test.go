@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -324,5 +325,27 @@ func TestRunWarnsOnPlainHTTPJWKS(t *testing.T) {
 	r := runServer(t, "-listen", "127.0.0.1:0", "-sqlite", db, "-set", "issuers="+issuers)
 	if got := r.stderr.String(); !strings.Contains(got, "level=WARN") || !strings.Contains(got, "issuers: entry 0") || !strings.Contains(got, uri) {
 		t.Fatalf("stderr lacks the jwks_uri warning: %q", got)
+	}
+}
+
+// TestServerRefusesReadableSQLite: both `server` and `server admin` refuse a
+// SQLite file readable by group or others, naming the file (post-build
+// decision 8).
+func TestServerRefusesReadableSQLite(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("no Unix mode bits")
+	}
+	db := filepath.Join(t.TempDir(), "ab2.db")
+	adminOnce(t, db, "create-identity", "pat")
+	if err := os.Chmod(db, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	var o, e syncBuf
+	if code := Run(context.Background(), []string{"-listen", "127.0.0.1:0", "-sqlite", db}, nil, &o, &e); code == 0 || !strings.Contains(e.String(), db) {
+		t.Errorf("server: exit %d stderr %q, want non-zero naming %s", code, e.String(), db)
+	}
+	var ao, ae syncBuf
+	if code := RunAdmin(context.Background(), []string{"-sqlite", db, "create-identity", "kim"}, nil, &ao, &ae); code == 0 || !strings.Contains(ae.String(), db) {
+		t.Errorf("server admin: exit %d stderr %q, want non-zero naming %s", code, ae.String(), db)
 	}
 }

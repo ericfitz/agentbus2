@@ -16,7 +16,7 @@ sqlite3 /var/lib/agentbus2/agentbus2.db ".backup /backups/agentbus2.db"
 chmod 600 /backups/agentbus2.db
 ```
 
-`.backup` writes the copy with the process's umask (mode 0644 under a default umask), so set the mode yourself; a backup that others can read triggers the same warning as a database that others can read when the server opens it. The copy opens as a database: `agentbus2 server admin -sqlite /backups/agentbus2.db enrollment list` exited 0.
+`.backup` writes the copy with the process's umask (mode 0644 under a default umask), so set the mode yourself; a backup that others can read is refused, like a database that others can read, when `agentbus2 server` or `agentbus2 server admin` opens it. The copy opens as a database: `agentbus2 server admin -sqlite /backups/agentbus2.db enrollment list` exited 0.
 
 ## Postgres
 

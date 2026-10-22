@@ -12,7 +12,7 @@ There is no default port: `listen` is required, and the server exits 2 with `lis
 
 On start the server prints `generated signing key <kid>` (first start only) and `agentbus2 server listening on ...` with the engine, registration mode, issuer and key id. SIGINT or SIGTERM starts a shutdown that gives in-flight requests up to 60 seconds; a clean shutdown exits 0.
 
-The SQLite file is created with mode 0600. An existing file readable by group or others is opened with a warning that names the path and mode; fix it with `chmod 600`. The file runs in WAL mode, so `-wal` and `-shm` files sit next to it.
+The SQLite file is created with mode 0600. An existing file readable by group or others is refused: `agentbus2 server` and `agentbus2 server admin` exit non-zero with an error that names the path and mode; fix it with `chmod 600`. (Local mode, which has no signing key, only warns.) The file runs in WAL mode, so `-wal` and `-shm` files sit next to it.
 
 Set `issuer` on every server that is not local. When it is unset the issuer is `http://<bound address>`, so a server bound to `0.0.0.0` tells clients `http://0.0.0.0:<port>`, and the server prints a notice saying so. Behind a TLS proxy set it to the public `https` URL (no path, no trailing slash).
 

@@ -64,9 +64,10 @@ func TestOpenCreatesPrivateFile(t *testing.T) {
 	}
 }
 
-// TestOpenWarnsOnReadableFile: an existing group- or world-readable file is
-// opened (refusing is Eric's call) with a warning naming the path and mode;
-// the mode is left as it is.
+// TestOpenWarnsOnReadableFile: without RequirePrivate (local mode) an existing
+// group- or world-readable file is opened with a warning naming the path and
+// mode; the mode is left as it is. A local database has no signing key, so the
+// warning does not mention one.
 func TestOpenWarnsOnReadableFile(t *testing.T) {
 	withUmask(t, 0o022)
 	for _, perm := range []os.FileMode{0o644, 0o640, 0o604} {
@@ -81,10 +82,42 @@ func TestOpenWarnsOnReadableFile(t *testing.T) {
 		if !strings.Contains(out, "level=WARN") || !strings.Contains(out, path) || !strings.Contains(out, fmt.Sprintf("%#o", perm)) {
 			t.Errorf("perm %#o: warning lacks level, path or mode: %q", perm, out)
 		}
+		if strings.Contains(out, "signing key") {
+			t.Errorf("perm %#o: local-mode warning mentions a signing key: %q", perm, out)
+		}
 		if got := mode(t, path); got != perm {
 			t.Errorf("perm %#o: mode changed to %#o", perm, got)
 		}
 	}
+}
+
+// TestOpenRequirePrivate: with RequirePrivate an existing file readable by
+// group or others is refused with an error naming the path, the mode and the
+// fix; a 0600 file opens and a missing file is created 0600.
+func TestOpenRequirePrivate(t *testing.T) {
+	withUmask(t, 0o022)
+	for _, perm := range []os.FileMode{0o644, 0o640, 0o604} {
+		path := newPath(t)
+		_ = mustOpen(t, path, Options{}).Close()
+		if err := os.Chmod(path, perm); err != nil {
+			t.Fatal(err)
+		}
+		_, err := openAt(t, path, Options{RequirePrivate: true})
+		if err == nil {
+			t.Fatalf("perm %#o: Open succeeded, want a refusal", perm)
+		}
+		for _, want := range []string{path, fmt.Sprintf("%#o", perm), "chmod 600", "signing key"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("perm %#o: error %q lacks %q", perm, err, want)
+			}
+		}
+	}
+	path := newPath(t)
+	_ = mustOpen(t, path, Options{RequirePrivate: true}).Close() // missing: created 0600
+	if got := mode(t, path); got != 0o600 {
+		t.Fatalf("created mode = %#o, want 0600", got)
+	}
+	mustOpen(t, path, Options{RequirePrivate: true}) // 0600: opens
 }
 
 // TestOpenQuietOnPrivateFile: a second open of a 0600 file logs nothing.
