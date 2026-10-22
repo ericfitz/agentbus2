@@ -430,15 +430,16 @@ the choice numbers below are its.
   written in the token transaction (Decision (Eric, 2026-10-21), Milestone 7
   item 4; `docs/superpowers/specs/2026-10-21-gate-0-decisions.md`).
   `token.Replay` is deleted. `Token` verifies the assertion, then one
-  `Store.Tx` calls `PutAssertionJTI(identity, jti, exp + token.Leeway + 1 s)` and
-  nothing else (Decision 26); `store.ErrConflict` answers 401
+  `Store.Tx` calls `PutAssertionJTI(identity, jti, exp + token.Leeway + 1 s)`
+  and nothing else (Decision 26); `store.ErrConflict` answers 401
   `unauthenticated` "assertion replayed", and `Issuer.Mint` runs after the
-  transaction. Replicas racing on one `(identity, jti)` serialize on the primary key and
-  exactly one commits. A replica that dies between the commit and the mint
+  transaction. Replicas racing on one `(identity, jti)` serialize on the
+  primary key and exactly one commits. A replica that dies between the commit and the mint
   leaves a row the client cannot reuse; it signs a fresh assertion, as it
   does after any failed exchange. The "assertion replay expiry" maintenance
   job deletes rows past their retention, so the table holds only assertions
-  still acceptable. Encoded in `TestReplayPutConcurrent`, `TestReplayExpiry`
+  still acceptable. Encoded in `TestReplayPutConcurrent`, `TestReplayExpiry`,
+  `TestReplayPerIdentity`, `TestOpenMigratesVersion3AssertionJTI`
   and `TestTokenReplayIsShared`, and in the
   `assertion-single-use-across-replicas` leaf of `TestReplicasWake` on both
   engines (one assertion is 200 through replica A and 401 "assertion

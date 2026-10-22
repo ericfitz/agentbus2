@@ -2,10 +2,10 @@ package store
 
 import "context"
 
-// MaxJTIBytes bounds a stored assertion jti: the primary key of a longer one
-// can exceed the Postgres btree entry limit (2704 bytes), and no client
-// needs more than a random identifier. assertion.MaxJTIBytes is the same
-// bound at parse time.
+// MaxJTIBytes bounds a stored assertion jti: the primary key (identity, jti)
+// of a longer one can exceed the Postgres btree entry limit (2704 bytes; the
+// identity adds at most 128 bytes), and no client needs more than a random
+// identifier. assertion.MaxJTIBytes is the same bound at parse time.
 const MaxJTIBytes = 256
 
 // AssertionReplays is the shared single-use record of client assertions

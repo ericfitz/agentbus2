@@ -246,8 +246,8 @@ func TestOpenMigratesVersion3AssertionJTI(t *testing.T) {
 		if err := putJTIFor(s2, "a", "old", 100); !errors.Is(err, ab2store.ErrConflict) {
 			t.Errorf("replay after migration: %v, want ErrConflict", err)
 		}
-		if n := deleteJTIBefore(t, s2, 1000); n < 1 {
-			t.Errorf("delete before 1000 = %d, want at least 1", n)
+		if n := deleteJTIBefore(t, s2, 1000); n != 1 {
+			t.Errorf("delete before 1000 = %d, want 1 (the version 3 row was dropped)", n)
 		}
 		if got := scalar[int](t, db, "SELECT count(*) FROM assertion_jti"); got != 0 {
 			t.Errorf("rows after delete = %d, want 0", got)

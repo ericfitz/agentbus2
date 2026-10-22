@@ -477,8 +477,8 @@ block_sqlite_lease_ignored() {
 # table: the second replica mints from the same assertion.
 block_assertion_replay_ignored() {
 	mutate_replicas_block assertion-replay-ignored internal/server/auth_handlers.go \
-		'return tx.PutAssertionJTI(ctx, p.JTI, keepUntil)' \
-		'_ = tx.PutAssertionJTI(ctx, p.JTI, keepUntil); return nil' \
+		'return tx.PutAssertionJTI(ctx, p.Identity, p.JTI, keepUntil)' \
+		'_ = tx.PutAssertionJTI(ctx, p.Identity, p.JTI, keepUntil); return nil' \
 		'^TestReplicasWake$/sqlite' TestReplicasWake/sqlite/assertion-single-use-across-replicas
 }
 
