@@ -51,12 +51,9 @@ func subagentHookWork(environ []string, stdin io.Reader) hookResult {
 	if _, err := locateSession(dataDir, "", processTable, selfPID()); err != nil {
 		return hookResult{stage: "locate", err: err}
 	}
-	text := fmt.Sprintf("Agentbus2: If your dispatcher's prompt asks you to use agentbus2 "+
-		"(for example \"use agentbus\" or \"register with agentbus2\"), call the agentbus2 "+
-		"register tool with hint=%q, or the hint your prompt names (pick another if it is taken), "+
-		"then pass the returned session on every later agentbus2 call. Follow the using-agentbus2 protocol, "+
-		"but do not start a background `agentbus2 wait` or `agentbus2 watch`: you are short-lived, "+
-		"so use receive instead. Otherwise ignore this note: you do not need to register.",
+	text := fmt.Sprintf("Agentbus2: only if your prompt asks you to use agentbus2, call the register tool "+
+		"with hint=%q (or the hint your prompt names) and follow the using-agentbus2 skill. "+
+		"Do not start wait or watch; use receive.",
 		subagentName(hi.AgentType))
 	b, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]string{
 		"hookEventName":     "SubagentStart",
@@ -70,7 +67,8 @@ func subagentHookWork(environ []string, stdin io.Reader) hookResult {
 
 // RunSubagentHook is the SubagentStart hook (choice 15, v1 ADR 0016): when the
 // parent has a session it prints additionalContext telling a subagent to
-// register with its own hint only if its prompt asks it to use agentbus2. It
+// register with its own hint only if its prompt asks it to use agentbus2
+// (decision 19: the text stays under 300 characters). It
 // always exits 0 and falls open within hookBudget.
 func RunSubagentHook(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return runHook(ctx, environ, stdout, func(context.Context) hookResult {

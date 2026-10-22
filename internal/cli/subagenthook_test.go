@@ -42,10 +42,13 @@ func TestSubagentHookContext(t *testing.T) {
 		t.Fatalf("shape: %q (%v)", out, err)
 	}
 	c := res.H["additionalContext"]
-	for _, want := range []string{"register", "session", "do not start a background `agentbus2 wait` or `agentbus2 watch`", "Otherwise ignore this note"} {
+	for _, want := range []string{"register", "only if your prompt asks you to use agentbus2", "using-agentbus2", "receive", "Do not start wait or watch"} {
 		if !strings.Contains(c, want) {
 			t.Errorf("context lacks %q: %s", want, c)
 		}
+	}
+	if len(c) >= 300 {
+		t.Errorf("context is %d characters, want under 300: %s", len(c), c)
 	}
 	if strings.Contains(c, "parent=") {
 		t.Errorf("context names a parent: %s", c)
