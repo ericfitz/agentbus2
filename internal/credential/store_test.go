@@ -189,7 +189,7 @@ func TestPendingLifecycle(t *testing.T) {
 	if err := s.SavePending("kim", k); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.CommitPending("pat"); err != nil {
+	if err := s.CommitPending("pat", k); err != nil {
 		t.Fatal(err)
 	}
 	if !s.Exists("pat") {
@@ -202,14 +202,15 @@ func TestPendingLifecycle(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(s.Dir, ".pending")); err != nil {
 		t.Fatalf("pending dir removed while in use: %v", err)
 	}
-	if err := s.CommitPending("kim"); err != nil {
+	if err := s.CommitPending("kim", k); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := os.Stat(filepath.Join(s.Dir, ".pending")); !os.IsNotExist(err) {
 		t.Fatalf("empty pending dir remains: %v", err)
 	}
-	if err := s.CommitPending("zed"); err == nil {
-		t.Fatal("CommitPending of nothing succeeded")
+	// With no pending file the registered key is saved as the credential.
+	if err := s.CommitPending("zed", k); err != nil || !s.Exists("zed") {
+		t.Fatalf("CommitPending of nothing: %v", err)
 	}
 	for _, bad := range []string{"", "..", "a/b"} {
 		if s.SavePending(bad, k) == nil {
@@ -235,5 +236,39 @@ func TestLoadPendingRefusesWideMode(t *testing.T) {
 	}
 	if _, _, _, err := s.LoadPending("pat"); err == nil {
 		t.Fatal("a wide-mode pending file was accepted")
+	}
+}
+
+// Overlap: run A saves kA pending, run B replaces it with kB, A's 201 for kA
+// commits kA (not kB) and leaves B's pending file.
+func TestCommitPendingOtherKey(t *testing.T) {
+	s := Store{Dir: t.TempDir()}
+	kA, _ := keys.Generate(keys.EdDSA)
+	kB, _ := keys.Generate(keys.EdDSA)
+	if err := s.SavePending("pat", kA); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SavePending("pat", kB); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CommitPending("pat", kA); err != nil {
+		t.Fatal(err)
+	}
+	got, _, err := s.Load("pat")
+	if err != nil || mustKID(t, got) != mustKID(t, kA) {
+		t.Fatalf("credential is not kA: %v", err)
+	}
+	p, _, ok, err := s.LoadPending("pat")
+	if err != nil || !ok || mustKID(t, p) != mustKID(t, kB) {
+		t.Fatalf("B's pending key was lost: %v %v", ok, err)
+	}
+	if err := s.DiscardPending("pat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, ok, _ := s.LoadPending("pat"); ok {
+		t.Fatal("pending remains after DiscardPending")
+	}
+	if err := s.DiscardPending("pat"); err != nil {
+		t.Fatalf("second DiscardPending: %v", err)
 	}
 }

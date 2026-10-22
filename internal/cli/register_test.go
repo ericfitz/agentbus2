@@ -10,6 +10,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -249,11 +250,16 @@ func TestRegisterPendingKeyReuse(t *testing.T) {
 
 	// A proxy that forwards to the server and, on its first request, drops the
 	// connection instead of relaying the answer. It records each request body.
+	var mu sync.Mutex
 	var bodies []string
 	var dropped bool
 	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
+		mu.Lock()
 		bodies = append(bodies, string(b))
+		drop := !dropped
+		dropped = true
+		mu.Unlock()
 		req, _ := http.NewRequestWithContext(r.Context(), r.Method, base+r.URL.RequestURI(), strings.NewReader(string(b)))
 		req.Header = r.Header.Clone()
 		resp, err := http.DefaultClient.Do(req)
@@ -262,8 +268,7 @@ func TestRegisterPendingKeyReuse(t *testing.T) {
 			return
 		}
 		defer func() { _ = resp.Body.Close() }()
-		if !dropped {
-			dropped = true
+		if drop {
 			conn, _, err := w.(http.Hijacker).Hijack()
 			if err == nil {
 				_ = conn.Close()
@@ -310,7 +315,7 @@ func TestRegisterPendingKeyReuse(t *testing.T) {
 	}
 
 	code, out, errs := register()
-	if code != 0 {
+	if code != 0 || !strings.HasSuffix(out, "(existing key)\n") {
 		t.Fatalf("retry: code %d %q %q", code, out, errs)
 	}
 	if len(bodies) != 2 || bodies[0] != bodies[1] {
@@ -330,5 +335,50 @@ func TestRegisterPendingKeyReuse(t *testing.T) {
 	b, _ := keys.KID(got.Public())
 	if a != b {
 		t.Fatal("the credential is not the pending key")
+	}
+}
+
+// TestRegisterPendingConflictAndStale: a pending key the server does not hold
+// fails with a hint naming the pending file; a saved credential discards a
+// stale pending file.
+func TestRegisterPendingConflictAndStale(t *testing.T) {
+	ctx := context.Background()
+	e := newTestEnv(t)
+	base := startServer(t, filepath.Join(t.TempDir(), "srv.sqlite"))
+	register := func() (int, string, string) {
+		var out, errb syncBuf
+		code := RunRegister(ctx, []string{"-profile", "lab", "-server", base, "-identity", "pat"}, e.Environ, nil, &out, &errb)
+		return code, out.String(), errb.String()
+	}
+	cs := credential.Store{Dir: profile.CredentialDir(e.ConfigDir, "lab")}
+	if code, _, errs := register(); code != 0 {
+		t.Fatalf("register: %d %q", code, errs)
+	}
+	// Another key is pending, and the credential is gone: the server holds the
+	// first key, so the pending one conflicts.
+	stale, _ := keys.Generate(keys.EdDSA)
+	if err := cs.SavePending("pat", stale); err != nil {
+		t.Fatal(err)
+	}
+	cred, _ := os.ReadFile(cs.Path("pat"))
+	if err := os.Rename(cs.Path("pat"), cs.Path("pat")+".keep"); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errs := register()
+	if code != 1 || !strings.Contains(errs, cs.PendingPath("pat")) || !strings.Contains(errs, "reset") {
+		t.Fatalf("conflict: code %d %q", code, errs)
+	}
+	// With the credential back, the stale pending file is discarded.
+	if err := os.Rename(cs.Path("pat")+".keep", cs.Path("pat")); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errs = register(); code != 0 {
+		t.Fatalf("with credential: %d %q", code, errs)
+	}
+	if _, err := os.Stat(cs.PendingPath("pat")); !os.IsNotExist(err) {
+		t.Fatalf("stale pending file remains: %v", err)
+	}
+	if after, _ := os.ReadFile(cs.Path("pat")); string(after) != string(cred) {
+		t.Fatal("the credential changed")
 	}
 }

@@ -415,8 +415,18 @@ the choice numbers below are its.
   `internal/e2e`'s `TestSection24Sequence`.
 - **Choice 14, `register` and `login` (item 6, Decision (Eric,
   2026-10-21)).** `register -server URL` on an undefined profile creates it
-  as `{mode: server, server: URL, identity: I}`; the credential is saved only
-  after the server answers 201, and a same-key retry is idempotent. `login`
+  as `{mode: server, server: URL, identity: I}`. A new key is first written
+  to `credentials/<profile>/.pending/<identity>` (0600, `List` skips it) and
+  moved onto the credential after the server answers 201, so a crash or lost
+  response keeps the key; the next run reuses the pending key and the server
+  answers the same key idempotently, without consulting the used enrollment
+  token (post-build decision 6). A saved credential wins over a pending file
+  (which is removed); an explicit `-algorithm` that disagrees with the pending
+  key is exit 2 naming the file; a 409 for a pending key names the file and
+  says to remove it or have an administrator reset the credential. Overlapping
+  runs race on the pending file: the commit renames it only when it still holds
+  the registered key, else saves the registered key as the credential and
+  leaves the other run's file. `login`
   discovers, asserts, exchanges and caches, and refuses a local profile with
   exit 2. Tests: `TestRegisterCreatesServerProfile`; in `internal/e2e` a
   server on `0.0.0.0` (enrollment mode) refuses `register` without a token

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/credential"
 	"github.com/ericfitz/agentbus2/internal/profile"
@@ -149,6 +150,10 @@ func RunRegister(ctx context.Context, args []string, environ []string, stdin io.
 			return usage(fmt.Errorf("the saved credential for %q is %s, not %s; remove %s to register a new key", identity, have, alg, cs.Path(identity)))
 		}
 		signer = k
+		// A credential wins over a pending key left by an earlier run.
+		if err := cs.DiscardPending(identity); err != nil {
+			return fail(stderr, err)
+		}
 	} else if k, have, ok, err := cs.LoadPending(identity); err != nil {
 		return usage(err)
 	} else if ok {
@@ -171,10 +176,15 @@ func RunRegister(ctx context.Context, args []string, environ []string, stdin io.
 		if errors.As(err, &re) {
 			return usage(err)
 		}
+		if fromPending && bus.CodeOf(err) == bus.CodeConflict {
+			code := fail(stderr, err)
+			_, _ = fmt.Fprintf(stderr, "agentbus2 register: the pending key %s differs from the key the server holds: remove it, or ask an administrator to reset the credential for %q\n", cs.PendingPath(identity), identity)
+			return code
+		}
 		return fail(stderr, err)
 	}
 	if fromPending {
-		if err := cs.CommitPending(identity); err != nil {
+		if err := cs.CommitPending(identity, signer); err != nil {
 			return fail(stderr, err)
 		}
 	}

@@ -181,17 +181,47 @@ func (s Store) LoadPending(identity string) (crypto.Signer, keys.Algorithm, bool
 	return k, alg, true, nil
 }
 
-// CommitPending makes identity's pending key its credential, by an atomic
-// rename onto Path(identity), then removes the pending directory when it is
-// empty (another identity's pending key keeps it).
-func (s Store) CommitPending(identity string) error {
+// CommitPending makes k, the key that was registered, identity's credential.
+// When the pending file still holds k it is renamed onto Path(identity)
+// atomically; when another run replaced it, k is saved as the credential and
+// the other run's pending file stays for that run. The pending directory is
+// then removed when empty (another pending key keeps it).
+func (s Store) CommitPending(identity string, k crypto.Signer) error {
 	if err := checkName(identity); err != nil {
 		return err
 	}
-	if err := os.Rename(s.PendingPath(identity), s.Path(identity)); err != nil {
-		return fmt.Errorf("credential: commit %s: %w", s.PendingPath(identity), err)
+	want, err := keys.KID(k.Public())
+	if err != nil {
+		return err
 	}
-	// os.Remove refuses a non-empty directory; that is the case to ignore.
-	_ = os.Remove(filepath.Join(s.Dir, pendingDir))
+	if p, _, ok, err := s.LoadPending(identity); err == nil && ok {
+		if got, err := keys.KID(p.Public()); err == nil && got == want {
+			if err := os.Rename(s.PendingPath(identity), s.Path(identity)); err != nil {
+				return fmt.Errorf("credential: commit %s: %w", s.PendingPath(identity), err)
+			}
+			s.removePendingDir()
+			return nil
+		}
+	}
+	if err := s.Save(identity, k); err != nil {
+		return err
+	}
+	s.removePendingDir()
 	return nil
 }
+
+// DiscardPending removes identity's pending key, if any.
+func (s Store) DiscardPending(identity string) error {
+	if err := checkName(identity); err != nil {
+		return err
+	}
+	if err := os.Remove(s.PendingPath(identity)); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("credential: discard %s: %w", s.PendingPath(identity), err)
+	}
+	s.removePendingDir()
+	return nil
+}
+
+// removePendingDir removes the pending directory; os.Remove refuses a
+// non-empty one, which is the case to ignore.
+func (s Store) removePendingDir() { _ = os.Remove(filepath.Join(s.Dir, pendingDir)) }
