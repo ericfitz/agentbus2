@@ -239,3 +239,32 @@ func TestResolveHumanIdentity(t *testing.T) {
 		}
 	})
 }
+
+// TestResolveHumanIdentityServerRepo: a repository-selected server profile
+// holds the agent's only credential; the TUI must not take it, other commands
+// still do.
+func TestResolveHumanIdentityServerRepo(t *testing.T) {
+	e := newEnv(t)
+	e.save(t, profile.Profile{Name: "repo", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
+	e.credential(t, "repo", "agentbus2")
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, ".local"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".local", "agentbus2.json"), []byte(`{"profile":"repo"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	human := Options{Cwd: dir, Environ: e.environ, HumanIdentity: true, FallbackIdentity: "efitz"}
+	if _, err := Resolve(human); err == nil || !strings.Contains(err.Error(), "identity is required") {
+		t.Fatalf("err %v, want identity is required", err)
+	}
+	r, err := Resolve(Options{Cwd: dir, Environ: e.environ})
+	if err != nil || r.Identity != "agentbus2" || r.IdentitySource != "credential" {
+		t.Fatalf("other commands: %q (%s), %v", r.Identity, r.IdentitySource, err)
+	}
+	e.credential(t, "repo", "efitz")
+	r, err = Resolve(human)
+	if err != nil || r.Identity != "efitz" || r.IdentitySource != "os-user" {
+		t.Fatalf("with an efitz credential: %q (%s), %v", r.Identity, r.IdentitySource, err)
+	}
+}

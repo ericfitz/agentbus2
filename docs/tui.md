@@ -8,7 +8,7 @@
 agentbus2 tui [-profile P] [-identity I]
 ```
 
-`-profile` and `-identity` select the profile as they do for every other command (`AGENTBUS2_PROFILE`, then `.local/agentbus2.json`, then `default`). The identity order is the TUI's own: `-identity`, `AGENTBUS2_IDENTITY`, the profile's `identity` only when the profile was not selected by the repository file (so inside a repository the TUI is not the repository's agent identity), the profile's only credential, then the OS login name (a Windows `DOMAIN\name` is cut to `name`, a `/` becomes `-`, and an unknown user leaves the "identity is required" error). There are no other flags: v1's `-config` and `-as` are rejected (exit 2), and so is a positional argument. `-h` prints the flags and exits 0.
+`-profile` and `-identity` select the profile as they do for every other command (`AGENTBUS2_PROFILE`, then `.local/agentbus2.json`, then `default`). The identity order is the TUI's own: `-identity`, `AGENTBUS2_IDENTITY`, the profile's `identity` only when the profile was not selected by the repository file (so inside a repository the TUI is not the repository's agent identity), the profile's only credential (also skipped when the repository file selected the profile, because it is the agent's), then the OS login name (a Windows `DOMAIN\name` is cut to `name`, a `/` becomes `-`, and an unknown user leaves the "identity is required" error). There are no other flags: v1's `-config` and `-as` are rejected (exit 2), and so is a positional argument. `-h` prints the flags and exits 0.
 
 In local mode the TUI also runs the maintenance loop, as v1's TUI ran its background loops; when several local processes run it, a lease row in the database lets one tick at a time. A server runs its own maintenance, so server mode does not.
 
@@ -32,7 +32,7 @@ Subscriptions and the acked mark belong to the identity, not the session. A huma
 agentbus2 tui: identity eric has 1 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)
 ```
 
-When nothing else selects an identity, and also whenever the repository file selected the profile (its `identity` is skipped, so in a `$HOME` repository the agent `efitz-home` and the human `efitz` stay apart), `tui` (and only `tui`) falls back to the OS login name (source `os-user`, v1's `tui_name`). In a server profile the name is used only when it has a credential file; otherwise it is the usual "identity is required" resolution error. Every other command has no such fallback. The login name is the human's: `agentbus2 mcp` refuses to run under it (Decision 16), and `agentbus2 init` in the home directory names the agent `<user>-home` (Decision 15).
+When nothing else selects an identity, and also whenever the repository file selected the profile (its `identity` and its single credential are skipped, so in a `$HOME` repository the agent `efitz-home` and the human `efitz` stay apart), `tui` (and only `tui`) falls back to the OS login name (source `os-user`, v1's `tui_name`). In a server profile the name is used only when it has a credential file; otherwise it is the usual "identity is required" resolution error. Every other command has no such fallback. The login name is the human's: `agentbus2 mcp` refuses to run under it (Decision 16), and `agentbus2 init` in the home directory names the agent `<user>-home` (Decision 15).
 
 ## Layout
 
