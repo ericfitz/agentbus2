@@ -203,3 +203,15 @@ Made after Eric ran the post-build TUI.
     that session's details in the main pane (display name, identity, session
     id, live or idle with the last time it was seen). There is still no inbox
     view and no messaging from a session row, and nothing new on the wire.
+15. **Changed (shared with agentbus v1)**: a name derived from the home
+    directory never equals the human's. When `agentbus2 init` defaults a
+    repository profile's identity from a repository whose root is the user's
+    home directory (compared with `os.UserHomeDir` after resolving symlinks on
+    both), the identity is `<user>-home` (`efitz-home`), where `<user>` is the
+    same sanitized login name the TUI falls back to. The human keeps the plain
+    login name, an explicit name (flag, environment, profile) is never
+    rewritten, and any other directory-derived name is left as it is.
+16. **Changed (v2 analog of v1's register guard)**: `agentbus2 mcp`, the
+    agent's server, refuses to start when its identity equals the OS login
+    name (the TUI's fallback), with a message saying to choose another
+    identity. The TUI and the other CLI commands are unaffected.
