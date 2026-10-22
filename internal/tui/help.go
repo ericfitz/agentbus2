@@ -65,7 +65,7 @@ func (m Model) helpLines() []string {
 		{"ctrl+u", "clear"},
 		{"", ""},
 		{"(task lists)", "a tasks channel shows the task tree: → opens a task's details, then its subtasks; ← hides its subtasks, then its details; only unassigned tasks or yours can be changed"},
-		{"(rail)", "sections: channels, memories, tasks, tags, sessions, each under a heading; sessions is a display-only list; a collapsed heading shows (count[, N unread]); collapsing lasts until the TUI quits"},
+		{"(rail)", "sections: channels, memories, tasks, tags, sessions, each under a heading; a sessions row is selectable and shows the session's details (no messages); a collapsed heading shows (count[, N unread]); collapsing lasts until the TUI quits"},
 		{"(tags)", "the tags rail section shows messages carrying every tag of a set; read-only"},
 	}
 	key, dim := m.theme.Style(m.theme.Agent), m.theme.Style(m.theme.Dim)

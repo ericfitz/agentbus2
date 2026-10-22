@@ -979,10 +979,11 @@ func TestSessionLostQuits(t *testing.T) {
 	}
 }
 
-// Review Focus 8: no inbox view, behaviorally. Walking every rail position
-// and pressing enter and right on each selects no session and no identity,
-// and every channel the TUI reads (History) or subscribes is one ListChannels
-// returned: a tags: pane never reaches the bus.
+// Review Focus 8: no inbox view, behaviorally. Session rows are rail stops
+// (TUI decision 14) that show details from what the TUI already holds, so
+// walking every rail position and pressing keys on each makes no bus call
+// for a session or identity, and every channel the TUI reads (History) or
+// subscribes is one ListChannels returned: a tags: pane never reaches the bus.
 func TestNoInboxView(t *testing.T) {
 	f, cb := newCountingFixture(t)
 	ctx := context.Background()
@@ -1024,6 +1025,7 @@ func TestNoInboxView(t *testing.T) {
 	f.key("esc")
 	f.key("home")
 	seen := map[string]bool{}
+	sessionStops := map[string]bool{}
 	sawSessions := false
 	bound := 4 * len(f.m.railPositions())
 	for step := 0; ; step++ {
@@ -1034,6 +1036,30 @@ func TestNoInboxView(t *testing.T) {
 		sel := f.m.selName()
 		if notChannels[sel] {
 			t.Fatalf("stop %+v selects %q, a session or identity name that is not a channel", pos, sel)
+		}
+		if pos.sec == secSessions && pos.item >= 0 {
+			if sel != "" || f.m.sessSel == "" {
+				t.Fatalf("session stop %+v selects channel %q (sessSel %q)", pos, sel, f.m.sessSel)
+			}
+			sessionStops[f.m.sessSel] = true
+			// Every key a channel row would act on does nothing on a session row.
+			before := counts()
+			for _, k := range []string{"enter", "esc", "right", "left", "g", "G", "pgup", "s", "d", "r", "tab", "esc"} {
+				f.key(k)
+				validMode()
+			}
+			f.key("esc")
+			if got := counts(); got != before {
+				t.Fatalf("keys on session row %q made bus calls: %v -> %v", f.m.sessSel, before, got)
+			}
+			if f.m.railPos() != pos {
+				t.Fatalf("keys moved the selection off session stop %+v to %+v", pos, f.m.railPos())
+			}
+			f.key("down")
+			if f.m.railPos() == pos {
+				break
+			}
+			continue
 		}
 		if pos.item >= 0 {
 			seen[sel] = true
@@ -1073,8 +1099,15 @@ func TestNoInboxView(t *testing.T) {
 	if !sawSessions {
 		t.Fatal("the walk never reached the sessions heading")
 	}
-	if last := f.m.railPos(); last.sec != secSessions || last.item >= 0 {
-		t.Fatalf("down must end on the sessions heading, ended on %+v", last)
+	if last := f.m.railPos(); last.sec != secSessions || last.item != len(f.m.sessionRows())-1 {
+		t.Fatalf("down must end on the last session row, ended on %+v", last)
+	}
+	wantSessions := map[string]bool{}
+	for _, r := range f.m.sessionRows() {
+		wantSessions[r.display] = true
+	}
+	if len(wantSessions) < 3 || !sameSet(sessionStops, wantSessions) {
+		t.Fatalf("session stops %v, want every session row %v", sessionStops, wantSessions)
 	}
 	if !sameSet(seen, wantStops) {
 		t.Fatalf("item stops %v, want the ListChannels names plus the tags pane %v", seen, wantStops)

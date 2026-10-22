@@ -172,7 +172,11 @@ func (m Model) render() string {
 	}
 	dim := m.theme.Style(m.theme.Dim)
 	header := m.renderHeader()
-	center := lipgloss.JoinVertical(lipgloss.Left, header, m.stream.View())
+	pane := m.stream.View()
+	if m.sessSel != "" {
+		pane = m.renderSession()
+	}
+	center := lipgloss.JoinVertical(lipgloss.Left, header, pane)
 	body := center
 	if m.showLeft() {
 		border := strings.TrimRight(strings.Repeat(dim.Render("│")+"\n", m.stream.Height()+1), "\n")
@@ -215,6 +219,9 @@ func (m Model) chanStyle(c bus.Channel) lipgloss.Style {
 }
 
 func (m Model) renderHeader() string {
+	if m.sessSel != "" {
+		return cut(m.theme.Style(m.theme.Agent).Render(m.sessSel), m.stream.Width(), "")
+	}
 	ch := m.selected()
 	if ch == nil {
 		return m.theme.Style(m.theme.Dim).Render("no channels yet · c to create one")
@@ -387,11 +394,14 @@ func (m Model) railSpans() (s [railSections]railSpan, blanks, compact bool) {
 	for sec := secChannels; sec <= secTags; sec++ {
 		lo, hi := m.sectionRange(sec)
 		s[sec] = railSpan{n: hi - lo, sel: -1}
-		if m.headSel < 0 && m.sel >= lo && m.sel < hi {
+		if m.headSel < 0 && m.sessSel == "" && m.sel >= lo && m.sel < hi {
 			s[sec].sel = m.sel - lo
 		}
 	}
-	s[secSessions] = railSpan{n: len(m.sessionRows()), sel: -1} // display-only: never selected
+	s[secSessions] = railSpan{n: len(m.sessionRows()), sel: -1}
+	if m.sessSel != "" && m.headSel < 0 {
+		s[secSessions].sel = m.sessionIndex(m.sessSel)
+	}
 	for i := range s {
 		n[i] = s[i].n
 		s[i].collapsed = m.collapsed[i]
@@ -414,7 +424,7 @@ func (m *Model) scrollRail() {
 	}
 }
 
-// sessionRow is one row of the display-only sessions section: a live session
+// sessionRow is one row of the sessions section: a live session
 // of some identity, or a display name seen live within idleSessionTTL and
 // not listed now.
 type sessionRow struct {
@@ -448,7 +458,7 @@ func (m Model) sessionRows() []sessionRow {
 }
 
 // renderRails draws the left column: the channels, memories and tasks, the
-// followed tag sets, and the display-only session list, each under its
+// followed tag sets, and the session list, each under its
 // heading and always shown; an empty or collapsed section is only its heading. A section longer than its
 // share of the stream's height scrolls (see railLayout and railWindow),
 // with a dim arrow row above or below for the items out of view. Every row
@@ -558,7 +568,7 @@ func (m Model) renderRails() string {
 	})
 
 	rows := m.sessionRows()
-	list(secSessions, false, func(i int) string {
+	list(secSessions, focus == paneChannels, func(i int) string {
 		r := rows[i]
 		if !r.live {
 			age := time.Since(r.seen).Round(time.Minute)
@@ -578,6 +588,38 @@ func (m Model) renderRails() string {
 	})
 	col := strings.TrimSuffix(b.String(), "\n")
 	return lipgloss.NewStyle().Width(rail).MaxHeight(m.stream.Height() + 1).Render(col)
+}
+
+// renderSession is the main pane for a selected session row (TUI decision
+// 14): what the rail already knows of it, no bus call. A live row shows its
+// identity and session id; an idle row, whose identity the TUI never learned,
+// shows `unknown` and when it was last listed live.
+func (m Model) renderSession() string {
+	th := m.theme
+	dim := th.Style(th.Dim)
+	var lines []string
+	line := func(k, v string) { lines = append(lines, dim.Render(k+"  ")+v) }
+	i := m.sessionIndex(m.sessSel)
+	if i < 0 {
+		return ""
+	}
+	r := m.sessionRows()[i]
+	line("name", r.display)
+	if r.live {
+		line("identity", r.identity)
+		line("session", r.id)
+		line("state", "live")
+		if r.id == m.c.sessionID() {
+			lines = append(lines, "", dim.Render("this is your session"))
+		}
+	} else {
+		line("identity", "unknown")
+		line("state", "idle, last seen "+stamp(r.seen.UnixMilli()))
+	}
+	for j := range lines {
+		lines[j] = cut(lines[j], m.stream.Width(), "…")
+	}
+	return lipgloss.NewStyle().Width(m.stream.Width()).Height(m.stream.Height()).MaxHeight(m.stream.Height()).Render(strings.Join(lines, "\n"))
 }
 
 // renderStream draws the selected channel's messages, oldest first, with the

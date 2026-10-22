@@ -46,9 +46,9 @@ The rail has five sections, each under a heading:
 | `memories` | channels of kind `memory` |
 | `tasks` | channels of kind `tasks` |
 | `tags` | the tag sets you follow (`t` on the rail), read-only |
-| `sessions` | every live session by display name, grouped under its identity; display only |
+| `sessions` | every live session by display name, then the recently idle ones; `↑`/`↓` select a row and the main pane shows its details |
 
-The section of a channel comes from its kind, never from its name. Rows show the full name. `←`/`→` or `enter` on a heading collapses or expands its section; a collapsed heading shows `(count[, N unread])`. Collapsing lasts until the TUI quits. `home` selects the `channels` heading. The `sessions` section has no selectable rows: there is no inbox view and no session selection (ADR 0006).
+The section of a channel comes from its kind, never from its name. Rows show the full name. `←`/`→` or `enter` on a heading collapses or expands its section; a collapsed heading shows `(count[, N unread])`. Collapsing lasts until the TUI quits. `home` selects the `channels` heading. A `sessions` row is a rail stop. Selecting it replaces the main pane with that session's details: display name, identity (`unknown` for an idle row, whose identity the TUI never learned), session id (live rows only), and `live` or `idle, last seen <time>`. The details come from what the rail already holds, so selecting a row makes no bus call; there is still no inbox view and no messaging from a session row (ADR 0006), and `i`, `enter`, `s` and `d` do nothing on one. When a refresh removes the selected row, the selection moves to the `sessions` heading.
 
 Rail markers:
 
@@ -191,8 +191,8 @@ Three Font Awesome glyphs (`fa-face-sleeping`, `fa-microchip-ai`, `fa-user-robot
 
 ## What differs from v1
 
-- No direct messages and no inbox view (spec 1.3, ADR 0006): nothing in the rail selects a session or an identity.
-- No session selection: the `sessions` section is a display-only list.
+- No direct messages and no inbox view (spec 1.3, ADR 0006): a session row shows details only, never messages (TUI decision 14).
+- A session row is selectable only to show its details (TUI decision 14); there is no session view of messages.
 - Kinds, not prefixes: a task list is a channel of kind `tasks`, a memory channel of kind `memory` (ADR 0008). v1's `general/`, `memory/` and `tasks/` prefixes are not read, and names are shown in full.
 - Identity comes from `-profile` and `-identity` (Decision 71), not from `tui_name`, `-as` or the OS user.
 - Names shown for messages and sessions are the server's (`Message.Display`, `Session.DisplayName`; ADR 0003).

@@ -170,3 +170,13 @@ about 28 ms on v2. The keymap, theme, icons, layout widths, alternate screen,
 bounded bus calls and receive loop are unchanged; the background query now
 runs only when `agentbus2 tui` starts, and the gear icon's cursor-forward
 escape no longer reaches the terminal (`docs/tui.md`, Terminal).
+
+## TUI decision 14 addendum (Eric, 2026-10-22)
+
+The rail's `sessions` rows are selectable, and a selected row shows that
+session's details (display name, identity, session id, live or idle with the
+last time seen) in the main pane. This changes the Milestone 8 statement that
+nothing in the TUI selects a session. It adds no inbox view, no messaging from
+a session row and nothing on the wire: the details come from the `Identities`
+result the rail already holds, and `TestNoInboxView` still proves no
+`History` or `Subscribe` call names anything but a listed channel.

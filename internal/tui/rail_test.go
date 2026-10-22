@@ -198,18 +198,18 @@ func TestRail24LinesShowsEverySection(t *testing.T) {
 			t.Fatalf("no item under %q:\n%s", h, all)
 		}
 	}
-	// Down reaches the sessions heading and stops there: its rows are drawn
-	// (display-only) but are not stops (ADR 0006).
+	// Down reaches the last session row and stops there: session rows are
+	// stops (TUI decision 14).
 	f.key("esc")
 	f.key("home")
 	for range len(f.m.railPositions()) + 1 {
 		f.key("down")
 	}
-	if p := f.m.railPos(); p.sec != secSessions || p.item >= 0 || f.m.pane() != paneChannels {
-		t.Fatalf("down must end on the sessions heading, ended on %+v pane=%v", p, f.m.pane())
+	if p := f.m.railPos(); p.sec != secSessions || p.item != len(f.m.sessionRows())-1 || f.m.pane() != paneChannels {
+		t.Fatalf("down must end on the last session row, ended on %+v pane=%v", p, f.m.pane())
 	}
-	if !slices.ContainsFunc(f.railLines(), func(l string) bool { return strings.Contains(l, "s1") }) {
-		t.Fatalf("the sessions rows must still be drawn:\n%s", strings.Join(f.railLines(), "\n"))
+	if !slices.ContainsFunc(f.railLines(), func(l string) bool { return strings.Contains(l, "s5") }) {
+		t.Fatalf("the sessions rows must still be drawn (the window scrolls to the selected last row):\n%s", strings.Join(f.railLines(), "\n"))
 	}
 }
 
@@ -679,9 +679,8 @@ func sectionedFixture(t *testing.T) *fixture {
 func TestRailDownWalksHeadings(t *testing.T) {
 	f := sectionedFixture(t)
 	want := f.m.railPositions()
-	// Five headings and every channel (tags included); the sessions section
-	// is its heading alone.
-	if n := 5 + len(f.m.channels); len(want) != n {
+	// Five headings, every channel (tags included) and every session row.
+	if n := 5 + len(f.m.channels) + len(f.m.sessionRows()); len(want) != n {
 		t.Fatalf("railPositions has %d stops, want %d: %v", len(want), n, want)
 	}
 	var got []railPos
@@ -699,8 +698,8 @@ func TestRailDownWalksHeadings(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Fatalf("down visited %v, want %v", got, want)
 	}
-	if last := got[len(got)-1]; last.sec != secSessions || last.item >= 0 || f.m.pane() != paneChannels {
-		t.Fatalf("down ended on %+v pane=%v, want the sessions heading", last, f.m.pane())
+	if last := got[len(got)-1]; last.sec != secSessions || last.item != len(f.m.sessionRows())-1 || f.m.pane() != paneChannels {
+		t.Fatalf("down ended on %+v pane=%v, want the last session row", last, f.m.pane())
 	}
 	// A heading is selected without the stream following it: down from the
 	// last channel lands on the next heading with the stream unchanged.
