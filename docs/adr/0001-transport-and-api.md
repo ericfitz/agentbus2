@@ -293,7 +293,8 @@ internal/` then prints nothing).
 - **Choice 9, `watch` and `wait` over the long-poll (item 4, Decision (Eric,
   2026-10-21)).** `watch` arms `GET .../watch` with the server's cap in a
   loop and prints one line per wake; `wait` prints one JSON line
-  `{"seq","count","channels"}` and exits 0. Exit codes are spec 3.5's:
+  `{"seq","count","channels"}` and exits 0 (`count` is omitted on a wake
+  whose memory channels were filtered out, decision 20). Exit codes are spec 3.5's:
   0 woke (`wait` only), 1 timeout (`wait -timeout`), 2 error, 3 replaced by
   a newer watch (the 409) or ended by SIGINT, SIGTERM or SIGHUP, 4 harness
   gone (polled every 2 s). When the context is canceled the exit follows
