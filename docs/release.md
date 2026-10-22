@@ -22,7 +22,7 @@ The Docker image is separate: `.github/workflows/publish-image.yml` builds and p
 
 ## One-time setup (needs the maintainer)
 
-1. **Release key pair.** A new pair for agentbus2 (v1's key can be reused instead: `cp ~/.keys/agentbus-release-ed25519.pem ~/.keys/agentbus2-release-ed25519.pem` before the next command; each installer verifies with the key embedded in it, so the choice does not affect v1 releases). No agent reads the `.pem`; only `release.sh` passes its path to `openssl`. Override the path with `AGENTBUS2_SIGNING_KEY`.
+1. **Release key pair.** A new pair for agentbus2, not v1's (Milestone 9 decisions 1 and 6 in `docs/superpowers/specs/2026-10-21-gate-0-decisions.md`). No agent reads the `.pem`; only `release.sh` passes its path to `openssl`. Override the path with `AGENTBUS2_SIGNING_KEY`. CI never holds the key.
 
    ```sh
    umask 077
@@ -39,7 +39,12 @@ The Docker image is separate: `.github/workflows/publish-image.yml` builds and p
    git commit -m "chore(release): the agentbus2 release public key, embedded in install.sh and install.ps1"
    ```
 
-   Until this is done the installers hold a placeholder key and `release.sh` refuses to run (`install.sh has no embedded release key`). Losing the private key means generating a new pair and shipping the new public key in the next `install.sh`; earlier releases stay verifiable with the key in their own `install.sh`.
+   Until this is done the installers hold a placeholder key and `release.sh` refuses to run (`install.sh has no embedded release key`).
+
+   Then copy `~/.keys/agentbus2-release-ed25519.pem` into your password manager; that copy is the only backup. The key's fingerprint, quoted in release notes and advisories, is `"$(brew --prefix openssl@3)/bin/openssl" pkey -pubin -in release/agentbus2-release-ed25519.pub -outform DER | shasum -a 256`.
+
+   - **Rotation** (planned, or the key and its backup both lost): generate a new pair with the commands above, commit the new public key and installers, and give the new fingerprint in the next release's notes. There is no cross-signing; earlier releases stay verifiable with the key in their own `install.sh`.
+   - **Compromise**: rotate as above, re-sign the `SHA256SUMS` of every release still supported with the new key (replacing each `SHA256SUMS.sig` asset), and publish a GitHub security advisory naming the old key's fingerprint.
 2. **GitHub, in `ericfitz/agentbus2`.** Create the `release` environment with the deployment tag rule `v*`. Push `main`, then confirm `gh workflow view release-build.yml --repo ericfitz/agentbus2` sees the workflow (`release.sh` requires it on the default branch). For winget, a fine-grained personal access token with `public_repo` in `~/.keys/KOMAC_GITHUB_KEY`, as one line `export KOMAC_GITHUB_KEY='<value>'` (v1's file serves if it exists).
 3. **Azure** (only for `--windows-signing=on`): follow `docs/release-signing.md`: a federated credential with the subject `repo:ericfitz/agentbus2:environment:release`, the Signer role on the certificate profile, and the seven repository variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `ARTIFACT_SIGNING_ENDPOINT`, `ARTIFACT_SIGNING_ACCOUNT`, `ARTIFACT_SIGNING_PROFILE`, `AUTHENTICODE_SIGNER`). `gh variable list --repo ericfitz/agentbus2` must list all seven. Skip this for a release made with `--windows-signing=off`.
 4. **Apple.** `xcrun notarytool history --keychain-profile sqdist-notary` answers (the profile name is `NOTARY_PROFILE` in `release.sh`; the profile is team-level and shared with v1), and `security find-identity -v -p codesigning` lists the Developer ID Application identity named by `SIGN_IDENTITY` in `release.sh`.

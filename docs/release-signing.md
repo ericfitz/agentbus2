@@ -2,6 +2,8 @@
 
 The Windows release binaries can be signed with Authenticode through Microsoft Artifact Signing (formerly Trusted Signing), Basic plan, in the maintainer's personal Azure subscription. Signing runs inside the `package-windows` job of `.github/workflows/release-build.yml` with OIDC federation: no signing secret is stored anywhere. Whether a release is signed is chosen per release with `release/release.sh <tag> --windows-signing=on|off`; the flag is required.
 
+This page covers Authenticode only. The Ed25519 key that signs `SHA256SUMS` (where it lives, its backup, rotation and compromise) is in `docs/release.md`, "One-time setup", step 1.
+
 The workflow signs with `Azure/artifact-signing-action`, the renamed `azure/trusted-signing-action`; the workflow pins the commit by SHA (`release/check-pins.sh` enforces that for every action).
 
 This is the same arrangement agentbus 1.x uses, set up separately for `ericfitz/agentbus2`: the federated credential names this repository, and the repository variables below are set on this repository.

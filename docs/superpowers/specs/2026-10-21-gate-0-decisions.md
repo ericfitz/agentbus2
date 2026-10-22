@@ -255,7 +255,17 @@ The release tooling plan's proposals 1 to 5
 
 1. **Release key**: a new ed25519 pair for agentbus2
    (`~/.keys/agentbus2-release-ed25519.pem`), not v1's. How the private key
-   is managed is a separate backlog item to discuss.
+   is managed is item 6.
+6. **Release key management** (issue #9): the private key is an unencrypted
+   PEM file at `~/.keys/agentbus2-release-ed25519.pem`, mode 600, on the
+   maintainer's Mac only; `release/release.sh` passes its path to `openssl`
+   (`AGENTBUS2_SIGNING_KEY` overrides it), no agent reads it and CI never
+   holds it. The backup is a copy in the maintainer's password manager.
+   Rotation is a new pair embedded in the next `install.sh` and
+   `install.ps1`, with the release notes giving the new key's fingerprint;
+   there is no cross-signing. On compromise: generate and embed a new pair,
+   re-sign the `SHA256SUMS` of every release still supported, and publish a
+   GitHub security advisory naming the old key's fingerprint.
 2. **Docker image**: `ghcr.io/ericfitz/agentbus` (the product name, not
    `agentbus2`: a deliberate exception to Decision 32's separate names; v1
    publishes no image), public, with 2.0.0.
