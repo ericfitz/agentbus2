@@ -373,7 +373,11 @@ func TestRunQuitsOnCancelDuringStartup(t *testing.T) {
 	ensureIdentity(t, c, "pat")
 	sb := &slowListBus{Bus: identityBus(t, c, "pat"), entered: make(chan struct{})}
 	rh := startRun(t, sb, 80, 24)
-	<-sb.entered
+	select {
+	case <-sb.entered:
+	case <-time.After(2 * time.Second):
+		t.Fatal("start-up never reached ListChannels")
+	}
 	rh.cancel()
 	res := rh.wait(t, 2*time.Second)
 	if res.err != nil {

@@ -477,7 +477,7 @@ git commit -m "chore(release): the agentbus2 release public key, embedded in ins
 
 - [ ] **Step 6: Apple**: `xcrun notarytool history --keychain-profile sqdist-notary` answers (the profile is team-level and shared with v1); `security find-identity -v -p codesigning` lists `Developer ID Application: Robert Fitzgerald (796T45968D)`.
 
-- [ ] **Step 7: Image publishing** (proposal 2, as answered in Step 1). To ship the image with 2.0.0: `gh variable set IMAGE_REPOSITORY --repo ericfitz/agentbus2 --body ghcr.io/ericfitz/agentbus2` (or the registry chosen), and confirm the repository's Actions settings let `GITHUB_TOKEN` hold `packages: write` (the job asks for it). To ship it later: leave the variable unset; `publish-image.yml` then skips its job on every release. The package's visibility is set once after its first push (Task 10 Step 4).
+- [ ] **Step 7: Image publishing** (proposal 2, as answered in Step 1). To ship the image with 2.0.0: `gh variable set IMAGE_REPOSITORY --repo ericfitz/agentbus2 --body ghcr.io/ericfitz/agentbus` (Eric's Milestone 9 decision in the Gate 0 file; the proposal was `ghcr.io/ericfitz/agentbus2`), and confirm the repository's Actions settings let `GITHUB_TOKEN` hold `packages: write` (the job asks for it). To ship it later: leave the variable unset; `publish-image.yml` then skips its job on every release. The package's visibility is set once after its first push (Task 10 Step 4).
 
 ---
 
