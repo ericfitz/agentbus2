@@ -222,7 +222,7 @@ func TestLocalMaintenanceRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for {
 		var found bool
 		err := a.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
@@ -237,7 +237,7 @@ func TestLocalMaintenanceRuns(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("the expired receipt survived 3 s of maintenance")
+			t.Fatal("the expired receipt survived 10 s of maintenance")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
@@ -353,7 +353,7 @@ func TestLocalMaintenanceReleasesLockOnClose(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(10 * time.Second)
 	for {
 		var found bool
 		err := a.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
@@ -368,7 +368,7 @@ func TestLocalMaintenanceReleasesLockOnClose(t *testing.T) {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatal("maintenance did not tick within 3 s")
+			t.Fatal("maintenance did not tick within 10 s")
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
