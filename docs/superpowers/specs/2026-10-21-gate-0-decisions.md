@@ -152,3 +152,31 @@ reviews.
 3. Milestone 9 Tasks 9 and 10 (the release key, signing, notarization,
    publishing and the tagged 2.0.0 release) are deferred: a tested build
    from source is the deliverable for now.
+4. **Changed**: the `assertion_jti` table (schema version 3) is keyed on
+   (identity, jti), not jti alone, so replay protection is per identity and
+   one identity cannot consume another's jti.
+5. **Kept, departing from plan choice 11** ("no file locks"): `register` in
+   the MCP server holds the host file lock `sessions/.register.lock`, because
+   without it two MCP servers restarting at once resume the same session.
+6. **Changed**: `agentbus2 register` writes the new private key (0600) to a
+   pending file before the registration request, reuses that key on a retry,
+   and renames it into place after the 201, so a crash or a lost response
+   after the server commits no longer loses the key and the enrollment token.
+7. **Changed**: a TUI whose session row was swept (asleep past retention) and
+   gets `not_found` treats it like `session_lapsed`: resume, else open a fresh
+   TUI session, instead of retrying forever.
+8. **Changed**: the server refuses to start when an existing SQLite database
+   file is readable by group or others (it holds the token signing key, so
+   read access equals admin), with a message naming the file and the fix;
+   previously it warned.
+9. **Changed**: on Windows the unix-socket listener gets the same owner-only
+   DACL as the credential files, so Decision 58's who-may-self-register rule
+   holds there as on Unix.
+10. **Changed**: editing a memory keeps every field not given (content, type,
+    metadata) instead of clearing it, with a revision check so a concurrent
+    edit fails instead of being lost.
+11. **Changed (Decision 71, TUI only)**: when no identity is given by flag,
+    `AGENTBUS2_IDENTITY` or the profile, `agentbus2 tui` uses the OS login
+    name (domain stripped on Windows), as v1 did. Every other command keeps
+    requiring an explicit identity on a local profile, so an agent never runs
+    as the human by accident.
