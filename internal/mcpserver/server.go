@@ -44,6 +44,8 @@ type server struct {
 	smu         sync.Mutex // guards files and havePrimary; held across register
 	files       map[string]sessionstate.File
 	havePrimary bool
+
+	kinds *bus.KindIndex // decision 20: agents never receive memory channels
 }
 
 // NewServer builds the MCP server with every tool registered. The Conn is
@@ -52,7 +54,7 @@ type server struct {
 // `validation` (choice 11). The returned func closes the Conn and leaves
 // every state file in place; only close_session removes one (choice 10).
 func NewServer(ctx context.Context, o Options) (*mcp.Server, func() error, error) {
-	s := &server{o: o, ctx: ctx, log: o.Log, self: o.Self, tbl: o.Table, files: map[string]sessionstate.File{}}
+	s := &server{o: o, ctx: ctx, log: o.Log, self: o.Self, tbl: o.Table, files: map[string]sessionstate.File{}, kinds: bus.NewKindIndex()}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
 	}
@@ -429,6 +431,11 @@ func (s *server) addTools(srv *mcp.Server) {
 					}
 					return map[string]any{"subscribed_tags": in.Tags}, nil
 				}
+				if mem, err := s.kinds.IsMemory(ctx, b, in.Channel); err != nil {
+					return nil, err
+				} else if mem {
+					return nil, validation("%s is a memory channel: agents do not subscribe to memories (decision 20); use search to find a memory and get_memory to read it", in.Channel)
+				}
 				if err := b.Subscribe(ctx, bus.SubscribeInput{Channel: in.Channel, From: in.From, IdempotencyKey: in.IdempotencyKey}); err != nil {
 					return nil, err
 				}
@@ -467,7 +474,7 @@ func (s *server) addTools(srv *mcp.Server) {
 				return b.Send(ctx, si)
 			}))
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "receive", Description: "Agentbus2: receive new messages for your session. Pass ack with the batch token from your previous receive to acknowledge it; an unacknowledged batch is redelivered. channels restricts the result to those channels (the rest stay pending). wait_seconds, when nothing is pending, waits up to that long for a message and then receives again; it replaces an armed agentbus2 wait or watch for this session, which then exits 3, so while one is running leave it off. Messages delivered through a tag subscription carry matched_tags."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "receive", Description: "Agentbus2: receive new messages for your session. Pass ack with the batch token from your previous receive to acknowledge it; an unacknowledged batch is redelivered. channels restricts the result to those channels (the rest stay pending). wait_seconds, when nothing is pending, waits up to that long for a message and then receives again; it replaces an armed agentbus2 wait or watch for this session, which then exits 3, so while one is running leave it off. Messages delivered through a tag subscription carry matched_tags. Memory channels are never delivered here, tag matches included: use search and get_memory."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in receiveIn) (*mcp.CallToolResult, any, error) {
 			wait, err := waitDuration(in.WaitSeconds)
 			if err != nil {
@@ -478,18 +485,29 @@ func (s *server) addTools(srv *mcp.Server) {
 			}
 			return result(withSession(ctx, s, in.Session, func(b bus.Bus, id string) (receiveOut, error) {
 				ri := bus.ReceiveInput{Session: id, Ack: in.Ack, Count: in.Count, Channels: in.Channels, IncludeOwn: in.IncludeOwn}
-				res, err := b.Receive(ctx, ri)
+				res, err := s.kinds.ReceiveAgent(ctx, b, ri)
 				if err != nil {
 					return receiveOut{}, err
 				}
 				if len(res.Messages) == 0 && wait > 0 {
-					w, err := b.Watch(ctx, bus.WatchInput{Session: id, Timeout: wait, IncludeOwn: in.IncludeOwn})
-					if err != nil {
-						return receiveOut{}, err
-					}
-					if w.Woke {
+					deadline := time.Now().Add(wait)
+					var floor int64
+					for rest := wait; rest > 0 && len(res.Messages) == 0; rest = time.Until(deadline) {
+						w, err := b.Watch(ctx, bus.WatchInput{Session: id, After: floor, Timeout: rest, IncludeOwn: in.IncludeOwn})
+						if err != nil {
+							return receiveOut{}, err
+						}
+						if !w.Woke {
+							break
+						}
+						floor = max(floor, w.Seq)
+						if w, err = s.kinds.AgentWake(ctx, b, w); err != nil {
+							return receiveOut{}, err
+						} else if !w.Woke {
+							continue // only memories: not a wake for an agent
+						}
 						ri.Ack = "" // the acknowledgment was taken by the first receive
-						again, err := b.Receive(ctx, ri)
+						again, err := s.kinds.ReceiveAgent(ctx, b, ri)
 						if err != nil {
 							return receiveOut{}, err
 						}
@@ -713,6 +731,16 @@ func (s *server) register(ctx context.Context, req *mcp.CallToolRequest, in regi
 		RejectedCursors: make([]rejectedOut, 0, len(sess.RejectedCursors)),
 	}
 	for _, p := range sess.Pending {
+		// Decision 20: the identity's subscriptions are shared, so a memory
+		// subscription made outside the agent paths is dropped here.
+		if mem, merr := s.kinds.IsMemory(ctx, conn.Bus, p.Channel); merr != nil {
+			s.log.Warn("classifying a pending channel failed", "channel", p.Channel, "err", merr)
+		} else if mem {
+			if uerr := conn.Bus.Unsubscribe(ctx, bus.UnsubscribeInput{Channel: p.Channel}); uerr != nil {
+				s.log.Warn("dropping a memory subscription failed", "channel", p.Channel, "err", uerr)
+			}
+			continue
+		}
 		out.Pending = append(out.Pending, pendingOut{Channel: p.Channel, Pending: p.Pending})
 	}
 	for _, r := range sess.RejectedCursors {

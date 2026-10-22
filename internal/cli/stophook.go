@@ -135,6 +135,25 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 	if r.Count == 0 {
 		return hookResult{}
 	}
+	// Decision 20: memory channels do not count. The listing runs only for a
+	// non-empty backlog, inside the hook budget.
+	kinds := bus.NewKindIndex()
+	kept := make([]bus.PeekChannel, 0, len(r.Channels))
+	r.Count = 0
+	for _, c := range r.Channels {
+		mem, err := kinds.IsMemory(ctx, conn.Bus, c.Channel)
+		if err != nil {
+			return hookResult{stage: "kinds", err: err}
+		}
+		if !mem {
+			kept = append(kept, c)
+			r.Count += c.Count
+		}
+	}
+	r.Channels = kept
+	if r.Count == 0 {
+		return hookResult{}
+	}
 	display := l.DisplayName
 	if display == "" {
 		display = conn.Resolved.Identity

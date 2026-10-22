@@ -61,7 +61,14 @@ func RunReceive(ctx context.Context, args []string, environ []string, _ io.Reade
 		}
 		id = s.ID
 	}
-	code = receiveOnce(ctx, conn.Bus, stdout, stderr, bus.ReceiveInput{Session: id, Ack: *ack, Count: *count, Channels: channels, IncludeOwn: *includeOwn}, throwaway && !*noAck)
+	// An explicit -session is an agent's (decision 20): memories are dropped
+	// from its batches. The throwaway session is the operator's look at the
+	// bus and shows everything its subscriptions deliver.
+	var kinds *bus.KindIndex
+	if !throwaway {
+		kinds = bus.NewKindIndex()
+	}
+	code = receiveOnce(ctx, conn.Bus, kinds, stdout, stderr, bus.ReceiveInput{Session: id, Ack: *ack, Count: *count, Channels: channels, IncludeOwn: *includeOwn}, throwaway && !*noAck)
 	if throwaway {
 		// The close must happen even when the command was cancelled.
 		err := conn.Bus.Close(context.WithoutCancel(ctx), bus.CloseSessionInput{Session: id})
@@ -75,8 +82,17 @@ func RunReceive(ctx context.Context, args []string, environ []string, _ io.Reade
 // receiveOnce reads one batch, prints it and, when ackAfter, acknowledges it
 // with a second receive whose own batch is discarded (the throwaway session
 // closes right after, so that batch is delivered again to the next reader).
-func receiveOnce(ctx context.Context, b bus.Bus, stdout, stderr io.Writer, in bus.ReceiveInput, ackAfter bool) int {
-	res, err := b.Receive(ctx, in)
+//
+// A non-nil kinds reads as an agent (bus.KindIndex.ReceiveAgent): memory
+// channels are dropped and their batches acknowledged.
+func receiveOnce(ctx context.Context, b bus.Bus, kinds *bus.KindIndex, stdout, stderr io.Writer, in bus.ReceiveInput, ackAfter bool) int {
+	var res bus.ReceiveResult
+	var err error
+	if kinds != nil {
+		res, err = kinds.ReceiveAgent(ctx, b, in)
+	} else {
+		res, err = b.Receive(ctx, in)
+	}
 	if err != nil {
 		return fail(stderr, err)
 	}

@@ -390,7 +390,7 @@ func TestWatchNeverExits0Or1(t *testing.T) {
 		}
 		done := make(chan res, 1)
 		go func() {
-			f, err := watchLoop(ctx, s, "s1", "pat", 0, false, &so)
+			f, err := watchLoop(ctx, s, nil, "s1", "pat", 0, false, &so)
 			done <- res{f, err}
 		}()
 		time.Sleep(200 * time.Millisecond)
@@ -498,10 +498,10 @@ func TestResumeOncePerLapse(t *testing.T) {
 	l := located{Session: "s1", ResumeToken: "tok", FromFile: true}
 	runs := map[string]func(s bus.Sessions) error{
 		"watch": func(s bus.Sessions) error {
-			return watchResuming(context.Background(), s, l, "pat", false, io.Discard)
+			return watchResuming(context.Background(), s, nil, l, "pat", false, io.Discard)
 		},
 		"wait": func(s bus.Sessions) error {
-			return waitResuming(context.Background(), s, l, false, 0, io.Discard)
+			return waitResuming(context.Background(), s, nil, l, false, 0, io.Discard)
 		},
 	}
 	for name, run := range runs {
@@ -519,9 +519,9 @@ func TestResumeOncePerLapse(t *testing.T) {
 		s = &lapsingSessions{script: []error{lapsed}}
 		var err2 error
 		if name == "watch" {
-			err2 = watchResuming(context.Background(), s, located{Session: "s1"}, "pat", false, io.Discard)
+			err2 = watchResuming(context.Background(), s, nil, located{Session: "s1"}, "pat", false, io.Discard)
 		} else {
-			err2 = waitResuming(context.Background(), s, located{Session: "s1"}, false, 0, io.Discard)
+			err2 = waitResuming(context.Background(), s, nil, located{Session: "s1"}, false, 0, io.Discard)
 		}
 		if bus.CodeOf(err2) != bus.CodeSessionLapsed || len(s.opens) != 0 {
 			t.Errorf("%s, no token: err %v, %d opens", name, err2, len(s.opens))

@@ -29,7 +29,7 @@ kind, given at creation:
 | Kind | Holds |
 |------|-------|
 | `ordinary` (the default) | Chat messages |
-| `memory` | Memories: searchable, revisable, found with `search` |
+| `memory` | Memories: searchable, revisable, found with `search`, read with `get_memory`; never delivered to you |
 | `tasks` | A task list (see "Task lists") |
 
 `general` exists on every bus (kind `ordinary`) and every identity is
@@ -38,7 +38,8 @@ chooses the names: a project channel is whatever the team calls it, for
 example `<repo>` for chat and `<repo>-memory` for memories. Use
 `list_channels` to see the names and kinds that exist; if the team already
 made a project channel, use it. Create one with `create_channel` (`name`,
-`kind`), then `subscribe` to it; creating a channel does not subscribe you.
+`kind`), then `subscribe` to it (not a memory channel: `subscribe` refuses
+one); creating a channel does not subscribe you.
 
 Use `general` for facts that hold across projects and for messages to agents
 on unrelated projects. Routine project status goes to the project channel.
@@ -252,8 +253,11 @@ for OR. A tag subscription matches only messages on channels you may read.
 Matches from channels you are not subscribed to arrive through `receive`
 with `matched_tags` (the message's own tags, such as `area:aws`, not your
 pattern), from now on; `agentbus2 wait` wakes on them.
-Tag subscriptions also match memories on memory channels you may read; task
-lists carry no tags, so they never match there. They belong to
+Memories are never pushed to you: `receive`, `agentbus2 wait` and the Stop
+hook ignore memory channels, tag matches included, so a tag subscription
+never brings a memory; find memories with `search` and read them with
+`get_memory`. Task lists carry no tags, so they never match there. Tag
+subscriptions belong to
 your identity and live on the server, so every session you open under it
 has them and nothing is recorded in the repository. `unsubscribe` with the
 same `tags` drops a set.
@@ -283,8 +287,8 @@ and results page with the returned `next` cursor.
 4. `search` the memory channels (`list_channels` shows which exist) before
    unfamiliar work, and whenever something you believe should work does not,
    filtering by the area's tag (`area:aws`, `area:go`, ...) when there is
-   one. `receive` delivers memories only from a memory channel you subscribe to
-   (or through a tag subscription); `search` finds the rest.
+   one. Never `subscribe` to a memory channel: memories are not delivered to
+   agents, so `search` finds them and `get_memory` reads them.
 5. `receive` again after each task and before asking the user a question.
 6. `close_session` when you are done for good. Without it, your session just
    lapses, and `register` with no `hint` resumes it on the same harness

@@ -1,6 +1,6 @@
 # The terminal UI
 
-`agentbus2 tui` is a dashboard for a human: channels, messages, memories, task lists, search, and the health of the bus. It is a port of the agentbus 1.x TUI that runs over the `Bus` interfaces, so it behaves the same against a local SQLite file and against a server.
+`agentbus2 tui` is a dashboard for a human: channels, messages, memories, task lists, search, and the health of the bus. Unlike an agent, it sees memories: agents never receive memory channels (decision 20), and the TUI, the bus observer, is the exception. It is a port of the agentbus 1.x TUI that runs over the `Bus` interfaces, so it behaves the same against a local SQLite file and against a server.
 
 ## Start
 

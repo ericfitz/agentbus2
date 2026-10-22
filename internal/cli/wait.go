@@ -26,7 +26,11 @@ type waitWake struct {
 
 // waitOnce arms Watch until a wake (nil), the deadline (errTimeout) or an
 // error. timeout 0 waits forever.
-func waitOnce(ctx context.Context, s bus.Sessions, session string, includeOwn bool, timeout time.Duration, stdout io.Writer) error {
+//
+// mf drops memory channels from a wake (decision 20); a wake that held only
+// memories is not one: Watch is armed again with the floor at its Seq.
+func waitOnce(ctx context.Context, s bus.Sessions, mf *memoryFilter, session string, includeOwn bool, timeout time.Duration, stdout io.Writer) error {
+	var floor int64
 	var deadline time.Time
 	if timeout > 0 {
 		deadline = time.Now().Add(timeout)
@@ -38,11 +42,17 @@ func waitOnce(ctx context.Context, s bus.Sessions, session string, includeOwn bo
 				return errTimeout
 			}
 		}
-		r, err := s.Watch(ctx, bus.WatchInput{Session: session, After: 0, Timeout: remaining, IncludeOwn: includeOwn})
+		r, err := s.Watch(ctx, bus.WatchInput{Session: session, After: floor, Timeout: remaining, IncludeOwn: includeOwn})
 		if err != nil {
 			return err
 		}
 		if !r.Woke {
+			continue
+		}
+		floor = max(floor, r.Seq)
+		if r, err = mf.agentWake(ctx, r); err != nil {
+			return err
+		} else if !r.Woke {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
@@ -92,7 +102,7 @@ func RunWait(ctx context.Context, args []string, environ []string, stdin io.Read
 		return code
 	}
 	defer w.stop()
-	if err := waitResuming(w.ctx, w.conn.Bus, w.l, includeOwn, timeout, stdout); err != nil {
+	if err := waitResuming(w.ctx, w.conn.Bus, newMemoryFilter(w.conn.Bus), w.l, includeOwn, timeout, stdout); err != nil {
 		return exitFail(stderr, cancelCause(w.ctx, err))
 	}
 	return 0
@@ -101,7 +111,7 @@ func RunWait(ctx context.Context, args []string, environ []string, stdin io.Read
 // waitResuming runs waitOnce under one deadline for the whole command (it runs
 // across a resume) and answers a session_lapsed error with one resume: once
 // per lapse, never twice in a row without a successful Watch in between.
-func waitResuming(ctx context.Context, s bus.Sessions, l located, includeOwn bool, timeout time.Duration, stdout io.Writer) error {
+func waitResuming(ctx context.Context, s bus.Sessions, mf *memoryFilter, l located, includeOwn bool, timeout time.Duration, stdout io.Writer) error {
 	var deadline time.Time
 	if timeout > 0 {
 		deadline = time.Now().Add(timeout)
@@ -116,7 +126,7 @@ func waitResuming(ctx context.Context, s bus.Sessions, l located, includeOwn boo
 				return errTimeout
 			}
 		}
-		err := cancelCause(ctx, waitOnce(ctx, p, l.Session, includeOwn, remaining, stdout))
+		err := cancelCause(ctx, waitOnce(ctx, p, mf, l.Session, includeOwn, remaining, stdout))
 		if err == nil || errors.Is(err, errTimeout) {
 			return err
 		}
@@ -132,4 +142,23 @@ func waitResuming(ctx context.Context, s bus.Sessions, l located, includeOwn boo
 		}
 		resumed = true
 	}
+}
+
+// memoryFilter drops memory channels from the wakes of wait and watch
+// (decision 20). A nil filter passes every wake through.
+type memoryFilter struct {
+	m bus.Messaging
+	k *bus.KindIndex
+}
+
+func newMemoryFilter(m bus.Messaging) *memoryFilter {
+	return &memoryFilter{m: m, k: bus.NewKindIndex()}
+}
+
+// agentWake is bus.KindIndex.AgentWake.
+func (f *memoryFilter) agentWake(ctx context.Context, r bus.WatchResult) (bus.WatchResult, error) {
+	if f == nil {
+		return r, nil
+	}
+	return f.k.AgentWake(ctx, f.m, r)
 }
