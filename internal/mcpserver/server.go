@@ -80,7 +80,7 @@ func NewServer(ctx context.Context, o Options) (*mcp.Server, func() error, error
 		func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
 			return &mcp.GetPromptResult{Messages: []*mcp.PromptMessage{{Role: "user", Content: &mcp.TextContent{Text: initPrompt}}}}, nil
 		})
-	srv.AddReceivingMiddleware(wrapSchemaErrorsInEnvelope)
+	srv.AddReceivingMiddleware(wrapSchemaErrorsInEnvelope, s.unparkOnToolCall)
 	s.addTools(srv)
 	return srv, s.close, nil
 }
@@ -709,6 +709,7 @@ func (s *server) register(ctx context.Context, req *mcp.CallToolRequest, in regi
 		primary = base.Primary
 	}
 	f := base
+	f.Parked = false // register is activity: a park left by a dead session ends (decision 18)
 	f.Session, f.Identity, f.Profile = sess.ID, sess.Identity, conn.Resolved.Profile.Name
 	f.DisplayName, f.ResumeToken = sess.DisplayName, sess.ResumeToken
 	f.HarnessPID, f.HarnessStart = s.harness.Pid, s.harness.Start

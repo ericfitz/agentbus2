@@ -38,7 +38,9 @@ type File struct {
 	HarnessClientVersion string `json:"harness_client_version,omitempty"`
 	MCPPID               int    `json:"mcp_pid"`
 	Primary              bool   `json:"primary"`
-	OpenedAt             int64  `json:"opened_at"`
+	// Parked: nothing wakes the session (decision 18); see SetParked.
+	Parked   bool  `json:"parked,omitempty"`
+	OpenedAt int64 `json:"opened_at"`
 }
 
 const ext = ".json"
@@ -75,6 +77,23 @@ func Write(dataDir string, f File) error {
 		return err
 	}
 	return writeAtomic(path(dataDir, f.Session), append(data, '\n'))
+}
+
+// SetParked sets the Parked flag of session: it re-reads the file, changes
+// that one field and replaces the file atomically, so every other field
+// survives and a crash leaves the previous file. Setting the value it
+// already holds is a successful no-op; a session with no file is
+// fs.ErrNotExist.
+func SetParked(dataDir, session string, parked bool) error {
+	f, err := Read(dataDir, session)
+	if err != nil {
+		return err
+	}
+	if f.Parked == parked {
+		return nil
+	}
+	f.Parked = parked
+	return Write(dataDir, f)
 }
 
 // writeAtomic writes data to path through a temp file created O_EXCL with mode

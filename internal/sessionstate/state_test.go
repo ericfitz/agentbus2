@@ -1,6 +1,8 @@
 package sessionstate
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -324,5 +326,43 @@ func TestWriteAtomicRemovesTempOnFailure(t *testing.T) {
 	ents, _ := os.ReadDir(Dir(dir))
 	if len(ents) != 1 || ents[0].Name() != "s.json" || !ents[0].IsDir() {
 		t.Fatalf("entries = %v", ents)
+	}
+}
+
+func TestSetParkedKeepsEveryOtherField(t *testing.T) {
+	dir := t.TempDir()
+	want := File{Session: "s1", Identity: "pat", Profile: "default", DisplayName: "pat", ResumeToken: "tok",
+		HarnessPID: 10, HarnessStart: 5, HarnessClient: "claude-code", HarnessClientVersion: "1", MCPPID: 42, Primary: true, OpenedAt: 7}
+	if err := Write(dir, want); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ { // twice: a no-op the second time
+		if err := SetParked(dir, "s1", true); err != nil {
+			t.Fatal(err)
+		}
+		got, err := Read(dir, "s1")
+		if err != nil {
+			t.Fatal(err)
+		}
+		want.Parked = true
+		if got != want {
+			t.Fatalf("parked: %+v, want %+v", got, want)
+		}
+	}
+	for i := 0; i < 2; i++ {
+		if err := SetParked(dir, "s1", false); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := Read(dir, "s1")
+		want.Parked = false
+		if got != want {
+			t.Fatalf("unparked: %+v, want %+v", got, want)
+		}
+	}
+	if err := SetParked(dir, "missing", true); !errors.Is(err, fs.ErrNotExist) {
+		t.Fatalf("missing session: %v, want fs.ErrNotExist", err)
+	}
+	if err := SetParked(dir, "../x", true); err == nil {
+		t.Fatal("a path-like session id was accepted")
 	}
 }

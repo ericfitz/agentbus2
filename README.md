@@ -16,11 +16,13 @@ docker run --rm -p 8420:8420 -v agentbus2-data:/data agentbus2:local -listen 0.0
 
 ## Quick start
 
-Install the MCP server, the Stop hook (and Claude Code's SubagentStart hook) and the skill into every harness on the machine (Claude Code, Codex, Grok):
+Install the MCP server, the Stop and UserPromptSubmit hooks (and Claude Code's SubagentStart hook) and the skill into every harness on the machine (Claude Code, Codex, Grok):
 
 ```sh
 agentbus2 init --global
 ```
+
+At the end of a session, `agentbus2 park` stops anything waking the session (`wait`, `watch` and the Stop hook go quiet); the next prompt, `register` or any MCP tool call but `receive` unparks it (`agentbus2 unpark` is the `UserPromptSubmit` hook that `init --global` installs).
 
 Inside a repository, `agentbus2 init` writes `.local/agentbus2.json` (`{"profile": "<repo>"}`), adds a profile named for the repository to `config.json` and git-ignores `.local/`. With no configuration the `default` profile is local: every process on the machine shares one SQLite file under the data directory (`~/.local/share/agentbus2`, or `$AGENTBUS2_DATA_DIR`).
 

@@ -105,6 +105,9 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 	if err != nil {
 		return hookResult{stage: "locate", err: err}
 	}
+	if l.Parked {
+		return hookResult{} // decision 18: nothing wakes a parked session
+	}
 	// Profile and identity come from the state file only (bindProfile on zero
 	// flags), never from flags, the environment or the repository file.
 	o := client.Options{Environ: environ, Cwd: hi.Cwd}

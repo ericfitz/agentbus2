@@ -48,11 +48,14 @@ func TestInitGlobalClaude(t *testing.T) {
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		t.Fatal(err)
 	}
-	if len(parsed.Hooks) != 2 {
-		t.Fatalf("want exactly the Stop and SubagentStart events (no SessionStart), got %s", body)
+	if len(parsed.Hooks) != 3 {
+		t.Fatalf("want exactly the Stop, SubagentStart and UserPromptSubmit events (no SessionStart), got %s", body)
 	}
 	if h := parsed.Hooks["Stop"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentbus2 stop-hook" {
 		t.Fatalf("Stop: %s", body)
+	}
+	if h := parsed.Hooks["UserPromptSubmit"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentbus2 unpark" {
+		t.Fatalf("UserPromptSubmit: %s", body)
 	}
 	if h := parsed.Hooks["SubagentStart"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentbus2 subagent-hook" {
 		t.Fatalf("SubagentStart: %s", body)

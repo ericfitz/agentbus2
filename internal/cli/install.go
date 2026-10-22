@@ -27,6 +27,9 @@ const (
 	// subagentHookCommand is Claude Code only (v1 ADR 0016): Codex subagents get
 	// their own MCP process, and no other harness has a SubagentStart prompt.
 	subagentHookCommand = "agentbus2 subagent-hook"
+	// unparkHookCommand is the UserPromptSubmit hook of every harness
+	// (decision 18): a prompt from the user unparks the session.
+	unparkHookCommand = "agentbus2 unpark"
 )
 
 // InitPrompt is what the `init` MCP prompt (Claude Code) and the Codex custom
@@ -248,7 +251,7 @@ func (in *initer) claude(dir string) error {
 		return err
 	}
 	if err := in.hooks(filepath.Join(dir, "settings.json"),
-		hookSpec{"Stop", stopHookCommand, ""}, hookSpec{"SubagentStart", subagentHookCommand, ""}); err != nil {
+		hookSpec{"Stop", stopHookCommand, ""}, hookSpec{"SubagentStart", subagentHookCommand, ""}, hookSpec{"UserPromptSubmit", unparkHookCommand, ""}); err != nil {
 		return err
 	}
 	return in.write(filepath.Join(dir, skillPath), SkillMD)
@@ -263,7 +266,7 @@ func (in *initer) codex(dir string) error {
 	if err := in.codexTimeout(filepath.Join(dir, "config.toml")); err != nil {
 		return err
 	}
-	if err := in.hook(filepath.Join(dir, "hooks.json"), "Stop", stopHookCommand, ""); err != nil {
+	if err := in.hooks(filepath.Join(dir, "hooks.json"), hookSpec{"Stop", stopHookCommand, ""}, hookSpec{"UserPromptSubmit", unparkHookCommand, ""}); err != nil {
 		return err
 	}
 	if err := in.write(filepath.Join(dir, "prompts", "agentbus2.md"), []byte(codexPrompt)); err != nil {
@@ -286,7 +289,7 @@ func (in *initer) grok(dir string) error {
 		return err
 	}
 	// Grok reads Stop hook stdout, and ~/.grok/hooks/*.json is trusted.
-	if err := in.hook(filepath.Join(dir, "hooks", "agentbus2.json"), "Stop", stopHookCommand, ""); err != nil {
+	if err := in.hooks(filepath.Join(dir, "hooks", "agentbus2.json"), hookSpec{"Stop", stopHookCommand, ""}, hookSpec{"UserPromptSubmit", unparkHookCommand, ""}); err != nil {
 		return err
 	}
 	if err := in.write(filepath.Join(dir, skillPath), SkillMD); err != nil {
@@ -412,6 +415,7 @@ func (in *initer) hooks(path string, specs ...hookSpec) error {
 			entry["matcher"] = sp.matcher
 		}
 		hooks[sp.event] = append(entries, entry)
+		in.say("  %s hook: %s", sp.event, sp.cmd)
 		added = true
 	}
 	if !added {

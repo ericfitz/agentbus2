@@ -357,6 +357,17 @@ instruction to `receive`: do that, handle what concerns you, make sure a
 background `agentbus2 wait` is running (except on Codex), then stop. It fires
 at most once per turn, and it does not fire for a batch you already hold.
 
+## Park
+
+At the end of a session, after a handoff, run `agentbus2 park` in a shell.
+While parked nothing wakes you: a running `agentbus2 wait` ignores wakes and
+the Stop hook stays silent. There are no direct messages, so no message class
+overrides a park. Any of these unparks you: the user's next prompt (the
+`UserPromptSubmit` hook runs `agentbus2 unpark`), the `register` tool, any
+tool call other than `receive`, or an explicit `agentbus2 unpark`. A `receive`
+alone does not unpark you, and your next `receive` catches up on everything
+that arrived meanwhile.
+
 ## Idempotency
 
 Every mutating tool (`send`, `create_channel`, `delete_channel`,

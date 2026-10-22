@@ -191,7 +191,7 @@ func RunWatch(ctx context.Context, args []string, environ []string, stdin io.Rea
 		return code
 	}
 	defer w.stop()
-	return exitFail(stderr, cancelCause(w.ctx, watchResuming(w.ctx, w.conn.Bus, newMemoryFilter(w.conn.Bus), w.l, w.display, includeOwn, stdout)))
+	return exitFail(stderr, cancelCause(w.ctx, watchResuming(w.ctx, w.conn.Bus, newWakeFilter(w.conn.Bus, environ, w.l.Session), w.l, w.display, includeOwn, stdout)))
 }
 
 // watchResuming runs watchLoop from floor 0 and answers a session_lapsed

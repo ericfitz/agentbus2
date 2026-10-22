@@ -20,7 +20,9 @@ type located struct {
 	DisplayName, ResumeToken, Profile, Identity, HarnessClient string
 	// FromFile: a state file was read, so Profile and Identity bind the Conn.
 	FromFile bool
-	Harness  procs.Ref
+	// Parked is the state file's mark (decision 18).
+	Parked  bool
+	Harness procs.Ref
 	// HarnessFound is false on a non-ErrGone lookup error: the harness watch
 	// is disabled for the run (v1 startWaiter).
 	HarnessFound bool
@@ -49,7 +51,7 @@ func bindProfile(o *client.Options, l located) error {
 func withFile(l located, f sessionstate.File) located {
 	l.Session = f.Session
 	l.DisplayName, l.ResumeToken, l.Profile, l.Identity, l.HarnessClient = f.DisplayName, f.ResumeToken, f.Profile, f.Identity, f.HarnessClient
-	l.FromFile = true
+	l.FromFile, l.Parked = true, f.Parked
 	return l
 }
 

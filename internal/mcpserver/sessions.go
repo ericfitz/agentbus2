@@ -120,12 +120,14 @@ func (s *server) resumeLapsed(ctx context.Context, c *client.Conn, id string) (n
 	if sess.ID == id {
 		if f.DisplayName != sess.DisplayName || f.ResumeToken != sess.ResumeToken {
 			f.DisplayName, f.ResumeToken = sess.DisplayName, sess.ResumeToken
+			keepParked(dataDir, &f)
 			if err := s.putLocked(dataDir, f); err != nil {
 				return "", false, bus.Internal(err)
 			}
 		}
 		return id, true, nil
 	}
+	keepParked(dataDir, &f) // before the old file goes
 	s.forgetLocked(dataDir, id)
 	_ = sessionstate.Remove(dataDir, id)
 	nf := f

@@ -15,6 +15,8 @@ import (
 	"github.com/ericfitz/agentbus2/internal/agentview"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentbus2/internal/sessionstate"
 )
 
 // waitWake is the one JSON line a woken wait prints: the wire carries no
@@ -103,7 +105,7 @@ func RunWait(ctx context.Context, args []string, environ []string, stdin io.Read
 		return code
 	}
 	defer w.stop()
-	if err := waitResuming(w.ctx, w.conn.Bus, newMemoryFilter(w.conn.Bus), w.l, includeOwn, timeout, stdout); err != nil {
+	if err := waitResuming(w.ctx, w.conn.Bus, newWakeFilter(w.conn.Bus, environ, w.l.Session), w.l, includeOwn, timeout, stdout); err != nil {
 		return exitFail(stderr, cancelCause(w.ctx, err))
 	}
 	return 0
@@ -150,16 +152,37 @@ func waitResuming(ctx context.Context, s bus.Sessions, mf *memoryFilter, l locat
 type memoryFilter struct {
 	m bus.Messaging
 	k *agentview.KindIndex
+	// parked, when set, is asked on every wake: true drops it (decision 18),
+	// so the caller advances its floor and re-arms silently.
+	parked func() bool
 }
 
 func newMemoryFilter(m bus.Messaging) *memoryFilter {
 	return &memoryFilter{m: m, k: agentview.NewKindIndex()}
 }
 
+// newWakeFilter is the filter of a running wait or watch: memory channels
+// are dropped and, while the session's state file says parked, every wake.
+// The file is read on each wake, so a park or unpark takes effect on the next
+// one; an unreadable file counts as not parked.
+func newWakeFilter(m bus.Messaging, environ []string, session string) *memoryFilter {
+	f := newMemoryFilter(m)
+	if dataDir, err := profile.DataDir(environ); err == nil {
+		f.parked = func() bool {
+			sf, err := sessionstate.Read(dataDir, session)
+			return err == nil && sf.Parked
+		}
+	}
+	return f
+}
+
 // agentWake is agentview.KindIndex.AgentWake.
 func (f *memoryFilter) agentWake(ctx context.Context, r bus.WatchResult) (bus.WatchResult, bool, error) {
 	if f == nil {
 		return r, false, nil
+	}
+	if f.parked != nil && f.parked() {
+		return bus.WatchResult{}, true, nil
 	}
 	return f.k.AgentWake(ctx, f.m, r)
 }
