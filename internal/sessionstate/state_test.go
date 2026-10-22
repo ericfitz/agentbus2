@@ -253,6 +253,12 @@ func TestWriteAtomicReplacesWhole(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = old.Close() }()
+	if runtime.GOOS == "windows" {
+		// Windows refuses to rename over a file another handle holds open
+		// (Go opens files without FILE_SHARE_DELETE), so the open-reader
+		// property below is Unix-only; release the handle first.
+		_ = old.Close()
+	}
 	second := first
 	second.ResumeToken = "second"
 	second.MCPPID = 99

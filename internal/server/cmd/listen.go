@@ -8,7 +8,6 @@ import (
 	"net/netip"
 	"os"
 	"strings"
-	"syscall"
 
 	"github.com/ericfitz/agentbus2/internal/filelock"
 )
@@ -119,14 +118,24 @@ func removeStaleSocket(path string) error {
 		_ = c.Close()
 		return fmt.Errorf("%s is in use by a running listener", path)
 	}
-	switch {
-	case errors.Is(err, syscall.ECONNREFUSED), errors.Is(err, syscall.ENOENT):
-		beforeStaleRemove()
-		if rerr := os.Remove(path); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
-			return rerr
-		}
-		return nil
-	default:
+	if !isStaleDialError(err) {
 		return fmt.Errorf("probing socket %s: %w", path, err)
 	}
+	beforeStaleRemove()
+	if rerr := os.Remove(path); rerr != nil && !errors.Is(rerr, os.ErrNotExist) {
+		return rerr
+	}
+	return nil
+}
+
+// isStaleDialError reports whether a dial error says nothing listens on the
+// socket file (staleDialErrors, per platform). Any other error, such as a
+// permission error, leaves the file alone.
+func isStaleDialError(err error) bool {
+	for _, target := range staleDialErrors {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
 }

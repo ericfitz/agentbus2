@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -281,10 +282,13 @@ func TestStopHookSilentCases(t *testing.T) {
 			t.Fatalf("%s: log %q, want %d lines, the last naming %q", st.name, lines, i+1, st.stage)
 		}
 	}
-	if fi, err := os.Stat(logPath); err != nil || fi.Mode().Perm() != 0o600 {
+	// Windows has no mode bits (a file reads as 0666, a directory as 0777)
+	// and no ACL is set on the hook log.
+	unix := runtime.GOOS != "windows"
+	if fi, err := os.Stat(logPath); err != nil || unix && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("hook.log: %v, %v", fi, err)
 	}
-	if fi, err := os.Stat(filepath.Dir(logPath)); err != nil || fi.Mode().Perm() != 0o700 {
+	if fi, err := os.Stat(filepath.Dir(logPath)); err != nil || unix && fi.Mode().Perm() != 0o700 {
 		t.Fatalf("logs dir: %v, %v", fi, err)
 	}
 }

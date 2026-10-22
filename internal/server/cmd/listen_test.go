@@ -6,8 +6,10 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -57,7 +59,9 @@ func TestListenUnixAndStaleSocket(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if fi.Mode().Perm() != 0o600 {
+	// Windows has no mode bits on the socket file (Chmod only clears the
+	// read-only attribute) and, as for the state file, sets no ACL on it.
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("socket mode = %v, want 0600", fi.Mode().Perm())
 	}
 	accepted := make(chan struct{})
@@ -169,6 +173,10 @@ func TestListenConcurrentStaleTakeover(t *testing.T) {
 	t.Cleanup(func() { beforeStaleRemove = func() {} })
 
 	first, err1 := Listen("unix:" + path)
+	if !started.Load() {
+		// The hook never ran, so no second Listen will report.
+		t.Fatalf("the first Listen did not take the socket as stale: listener %v, err %v", first, err1)
+	}
 	r := <-second
 	for _, l := range []net.Listener{first, r.l} {
 		if l != nil {
@@ -195,6 +203,24 @@ func TestListenConcurrentStaleTakeover(t *testing.T) {
 		t.Fatalf("the surviving listener is unreachable: %v", err)
 	}
 	_ = c.Close()
+}
+
+// A dial error is stale only when it says nothing listens on the path; any
+// other error (a permission error, say) leaves the socket file alone.
+func TestIsStaleDialError(t *testing.T) {
+	wrap := func(err error) error {
+		return &net.OpError{Op: "dial", Net: "unix", Err: os.NewSyscallError("connect", err)}
+	}
+	for _, e := range staleDialErrors {
+		if !isStaleDialError(wrap(e)) {
+			t.Errorf("%v (%d) is not taken as stale", e, e)
+		}
+	}
+	for _, e := range []error{wrap(syscall.EACCES), wrap(syscall.ETIMEDOUT), errors.New("connection refused"), nil} {
+		if isStaleDialError(e) {
+			t.Errorf("%v is taken as stale", e)
+		}
+	}
 }
 
 // A hostname is local only when every address it resolves to is loopback.

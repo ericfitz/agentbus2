@@ -162,7 +162,10 @@ func startServer(t *testing.T, e *testEnv, tbl *fakeTable, clientName string, tu
 		t.Fatal(err)
 	}
 	r := &running{Opts: o, Close: closeFn, CS: cs}
-	t.Cleanup(func() { _ = cs.Close(); _ = ss.Close() })
+	// closeFn closes the server's Conn and its SQLite file, which Windows
+	// would otherwise keep t.TempDir's RemoveAll from deleting; closing a
+	// server the test already closed is a no-op.
+	t.Cleanup(func() { _ = cs.Close(); _ = ss.Close(); _ = closeFn() })
 	return r
 }
 

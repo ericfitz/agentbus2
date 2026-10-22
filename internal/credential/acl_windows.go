@@ -6,7 +6,8 @@ import "golang.org/x/sys/windows"
 
 // ownerOnly replaces path's DACL with one entry granting the current user
 // full access, protected from inheritance (Decision 55: owner-only ACL on
-// Windows). It is not exercised by CI.
+// Windows). TestSaveSetsOwnerOnlyACL and TestCacheSaveSetsOwnerOnlyACL check
+// it on the Windows CI.
 func ownerOnly(path string) error {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
 	if err != nil {

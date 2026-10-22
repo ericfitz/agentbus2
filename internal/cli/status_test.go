@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -29,7 +30,7 @@ func TestStatusReport(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("status: %d %q", code, errs)
 	}
-	for _, want := range []string{"profile: default (local, " + e.DataDir + "/agentbus2.sqlite)", "identity: pat", "  " + s.DisplayName + " (pat) since ", "  general [ordinary]"} {
+	for _, want := range []string{"profile: default (local, " + filepath.Join(e.DataDir, "agentbus2.sqlite") + ")", "identity: pat", "  " + s.DisplayName + " (pat) since ", "  general [ordinary]"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report lacks %q:\n%s", want, out)
 		}

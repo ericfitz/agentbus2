@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -50,8 +51,12 @@ func startServer(t *testing.T) string {
 	ctx, cancel := context.WithCancel(context.Background())
 	out, errb := &lockedBuf{}, &lockedBuf{}
 	done := make(chan int, 1)
+	// The directory is made before the stop cleanup is registered, so its
+	// RemoveAll runs after the server has closed the database (Windows
+	// refuses to delete an open file).
+	db := filepath.Join(t.TempDir(), "srv.sqlite")
 	go func() {
-		done <- cmd.Run(ctx, []string{"-listen", "127.0.0.1:0", "-sqlite", filepath.Join(t.TempDir(), "srv.sqlite")}, nil, out, errb)
+		done <- cmd.Run(ctx, []string{"-listen", "127.0.0.1:0", "-sqlite", db}, nil, out, errb)
 	}()
 	t.Cleanup(func() {
 		cancel()
@@ -157,7 +162,9 @@ func TestServerOpenExchangesAndCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("token cache: %v", err)
 	}
-	if fi.Mode().Perm() != 0o600 {
+	// Windows has no mode bits; the cache's owner-only ACL is checked by
+	// credential.TestCacheSaveSetsOwnerOnlyACL.
+	if runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600 {
 		t.Fatalf("cache mode %v", fi.Mode().Perm())
 	}
 	if n := rt.count("/v1/auth/token"); n != 1 {
@@ -247,6 +254,11 @@ func TestServerOpenWithoutCredential(t *testing.T) {
 }
 
 func TestServerOpenRefusesWideCredential(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		// Milestone 6 choice 5: the mode check is Unix-only; Windows sets an
+		// owner-only ACL on save (credential.TestSaveSetsOwnerOnlyACL).
+		t.Skip("Unix modes")
+	}
 	e := newEnv(t)
 	e.save(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
 	e.credential(t, "lab", "pat")

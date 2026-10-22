@@ -20,8 +20,11 @@ func TestLoginExchangesAndCaches(t *testing.T) {
 	sctx, cancel := context.WithCancel(ctx)
 	srvOut, srvErr := &syncBuf{}, &syncBuf{}
 	done := make(chan int, 1)
+	// Made before the stop cleanup is registered, so its RemoveAll runs after
+	// the server has closed the database (Windows refuses to delete an open file).
+	db := filepath.Join(t.TempDir(), "srv.sqlite")
 	go func() {
-		done <- cmd.Run(sctx, []string{"-listen", "127.0.0.1:0", "-sqlite", filepath.Join(t.TempDir(), "srv.sqlite")}, nil, srvOut, srvErr)
+		done <- cmd.Run(sctx, []string{"-listen", "127.0.0.1:0", "-sqlite", db}, nil, srvOut, srvErr)
 	}()
 	t.Cleanup(func() {
 		cancel()
