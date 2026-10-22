@@ -306,7 +306,7 @@ internal/` then prints nothing).
 - **Choice 11 and item 3, `wait_seconds` (Decision (Eric, 2026-10-21)).**
   `receive` with `wait_seconds` above 0 on an empty result runs `Watch` and
   receives again; the tool description and the skill say this replaces an
-  armed `agentbus2 watch` for that session, which then exits 3. Test:
+  armed `agentbus2 wait` or `watch` for that session, which then exits 3. Test:
   `TestReceiveWaitSecondsReplacesWatch`.
 - **Decision 35 as shipped.** A local profile composes the core, the HTTP
   handler and the in-process transport in each process over the shared

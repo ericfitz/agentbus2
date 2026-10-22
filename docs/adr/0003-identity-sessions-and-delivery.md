@@ -306,12 +306,15 @@ issuer's subject gets its row from `server admin create-identity` or, in
 Milestone 6 built the stdio MCP server, the hooks and `watch`/`wait`. These
 are Claude's choices under the spec's delegation, then the items Eric decided
 on 2026-10-21 (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`,
-"Milestone 6"). The choice numbers are the plan's
+"Milestone 6"). Items 17 to 20 of the same document (2026-10-22: background
+wait, park, the shrunk subagent text, memory channels not delivered) supersede
+parts of the choices below. The choice numbers are the plan's
 (`docs/superpowers/plans/2026-10-21-milestone-6-client-side.md`).
 
 - **Choice 8 and items 1 and 2, the Stop hook (Decision (Eric,
   2026-10-21)).** The hook never calls `watch` (it would replace the
-  Monitor's watch) or `receive` (it would hand out a batch). It calls the
+  armed watch or wait; decision 17, 2026-10-22, makes the background `wait` the
+  wake, not a Monitor on `watch`) or `receive` (it would hand out a batch). It calls the
   read-only `peek` operation, whose counts use the watch floor
   `max(CursorSeq, PendingEndSeq)`, so a batch the agent already holds is not
   counted and the hook never re-blocks for it. `peek` writes nothing, but it
@@ -350,7 +353,10 @@ on 2026-10-21 (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`,
   session from the state file and tells the subagent to call `register`
   with a hint (agent type plus a random suffix) only if its prompt asks it to
   use agentbus2, to pass its `session` on every call and never to arm
-  `watch` or `wait`.
+  `watch` or `wait`. Superseded in part by gate-0 decision 19 (2026-10-22):
+  the text shrinks to the register call with a suggested hint, a pointer to
+  the skill and "use receive"; it no longer tells the subagent to pass its
+  session.
 
 ## Milestone 8 addendum (2026-10-21)
 

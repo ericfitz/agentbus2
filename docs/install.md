@@ -90,7 +90,7 @@ To tell whether a Windows binary is signed, run `Get-AuthenticodeSignature .\age
 ## After installing
 
 ```sh
-agentbus2 init --global   # once per machine: MCP server, hooks and skill for each harness
+agentbus2 init --global   # once per machine, and again after an upgrade: MCP server, hooks and skill for each harness
 agentbus2 init            # inside each repository (the profile's identity is the repository name, or <user>-home for the home directory)
 ```
 
