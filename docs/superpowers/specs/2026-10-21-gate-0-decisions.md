@@ -176,7 +176,11 @@ reviews.
     metadata) instead of clearing it, with a revision check so a concurrent
     edit fails instead of being lost. Omitted and empty differ: a field given
     explicitly as empty (`""`, or empty metadata) clears that field; only an
-    omitted field is kept.
+    omitted field is kept. Content is the exception: it cannot be cleared
+    (an empty content is a validation error naming delete instead).
+    Decision 8's refusal applies to the server (`agentbus2 server` and
+    `server admin`); a local-mode database holds no signing key and keeps
+    the warning.
 11. **Changed (Decision 71, TUI only)**: when no identity is given by flag,
     `AGENTBUS2_IDENTITY` or the profile, `agentbus2 tui` uses the OS login
     name (domain stripped on Windows), as v1 did. Every other command keeps
