@@ -5,6 +5,7 @@ import (
 	"errors"
 	"io"
 
+	"github.com/ericfitz/agentbus2/internal/agentview"
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
 
@@ -30,7 +31,7 @@ type opReceiveOut struct {
 // session and acks only what -ack names.
 func RunReceive(ctx context.Context, args []string, environ []string, _ io.Reader, stdout, stderr io.Writer) int {
 	c := newOpCmd("receive", stderr)
-	session := c.fs.String("session", "", "receive on this session (default: a throwaway session)")
+	session := c.fs.String("session", "", "receive on this session, as an agent: memory-channel messages are dropped and acknowledged (default: a throwaway session, which shows memories too)")
 	ack := c.fs.String("ack", "", "batch token to acknowledge (with -session)")
 	count := c.fs.Int("count", 0, "maximum messages (0: the server default)")
 	var channels opList
@@ -64,9 +65,9 @@ func RunReceive(ctx context.Context, args []string, environ []string, _ io.Reade
 	// An explicit -session is an agent's (decision 20): memories are dropped
 	// from its batches. The throwaway session is the operator's look at the
 	// bus and shows everything its subscriptions deliver.
-	var kinds *bus.KindIndex
+	var kinds *agentview.KindIndex
 	if !throwaway {
-		kinds = bus.NewKindIndex()
+		kinds = agentview.NewKindIndex()
 	}
 	code = receiveOnce(ctx, conn.Bus, kinds, stdout, stderr, bus.ReceiveInput{Session: id, Ack: *ack, Count: *count, Channels: channels, IncludeOwn: *includeOwn}, throwaway && !*noAck)
 	if throwaway {
@@ -83,9 +84,9 @@ func RunReceive(ctx context.Context, args []string, environ []string, _ io.Reade
 // with a second receive whose own batch is discarded (the throwaway session
 // closes right after, so that batch is delivered again to the next reader).
 //
-// A non-nil kinds reads as an agent (bus.KindIndex.ReceiveAgent): memory
+// A non-nil kinds reads as an agent (agentview.KindIndex.ReceiveAgent): memory
 // channels are dropped and their batches acknowledged.
-func receiveOnce(ctx context.Context, b bus.Bus, kinds *bus.KindIndex, stdout, stderr io.Writer, in bus.ReceiveInput, ackAfter bool) int {
+func receiveOnce(ctx context.Context, b bus.Bus, kinds *agentview.KindIndex, stdout, stderr io.Writer, in bus.ReceiveInput, ackAfter bool) int {
 	var res bus.ReceiveResult
 	var err error
 	if kinds != nil {

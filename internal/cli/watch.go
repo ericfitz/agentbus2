@@ -28,7 +28,11 @@ func watchLine(display string, r bus.WatchResult) string {
 	chans := slices.Clone(r.Channels)
 	slices.Sort(chans)
 	chans = slices.Compact(chans)
-	return fmt.Sprintf("agentbus2: %d new message(s) for %s on %s; call receive", r.Count, display, strings.Join(chans, ", "))
+	n := "new message(s)" // a Count of 0: memory channels were filtered out, the rest is uncounted
+	if r.Count > 0 {
+		n = fmt.Sprintf("%d new message(s)", r.Count)
+	}
+	return fmt.Sprintf("agentbus2: %s for %s on %s; call receive", n, display, strings.Join(chans, ", "))
 }
 
 // watchLoop arms Watch{After: floor} in a loop and stays armed: a wake raises
@@ -45,6 +49,7 @@ func watchLine(display string, r bus.WatchResult) string {
 func watchLoop(ctx context.Context, s bus.Sessions, mf *memoryFilter, session, display string, floor int64, includeOwn bool, stdout io.Writer) (int64, error) {
 	var held bus.WatchResult
 	var last time.Time
+	unknown := false // a held wake had memory channels filtered out: its count is unknown
 	for {
 		if err := ctx.Err(); err != nil {
 			return floor, err
@@ -53,10 +58,13 @@ func watchLoop(ctx context.Context, s bus.Sessions, mf *memoryFilter, session, d
 		if held.Woke {
 			rest := watchMinGap - time.Since(last)
 			if rest <= 0 {
+				if unknown {
+					held.Count = 0
+				}
 				if _, err := fmt.Fprintln(stdout, watchLine(display, held)); err != nil {
 					return floor, err
 				}
-				last, held = time.Now(), bus.WatchResult{}
+				last, held, unknown = time.Now(), bus.WatchResult{}, false
 				continue
 			}
 			in.Timeout = rest
@@ -69,11 +77,13 @@ func watchLoop(ctx context.Context, s bus.Sessions, mf *memoryFilter, session, d
 			continue
 		}
 		floor = r.Seq
-		if r, err = mf.agentWake(ctx, r); err != nil {
+		var filtered bool
+		if r, filtered, err = mf.agentWake(ctx, r); err != nil {
 			return floor, err
 		} else if !r.Woke {
 			continue // only memories (decision 20): no wake, floor advanced
 		}
+		unknown = unknown || filtered
 		held = bus.WatchResult{Woke: true, Seq: r.Seq, Count: held.Count + r.Count, Channels: append(held.Channels, r.Channels...)}
 	}
 }

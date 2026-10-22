@@ -6,6 +6,7 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/ericfitz/agentbus2/internal/agentview"
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
 
@@ -59,7 +60,7 @@ func TestSkillDeliveryClaims(t *testing.T) {
 		t.Fatalf("bus receive %+v, want the subscribed memory and the tag-matched one (the TUI path)", r.Messages)
 	}
 	// The agent path drops both and acknowledges the batch.
-	got, err := bus.NewKindIndex().ReceiveAgent(ctx, pat.Bus, bus.ReceiveInput{Session: s.ID, Ack: r.Batch})
+	got, err := agentview.NewKindIndex().ReceiveAgent(ctx, pat.Bus, bus.ReceiveInput{Session: s.ID, Ack: r.Batch})
 	if err != nil || len(got.Messages) != 0 {
 		t.Fatalf("agent receive %+v, %v", got, err)
 	}

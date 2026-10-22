@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
@@ -135,5 +136,41 @@ func TestBusStillDeliversMemoryToObservers(t *testing.T) {
 	res, err := pat.Bus.Receive(ctx, bus.ReceiveInput{Session: s.ID})
 	if err != nil || len(res.Messages) != 1 {
 		t.Fatalf("observer receive: %v %v", res, err)
+	}
+}
+
+func TestReceiveWaitSecondsSkipsMemoryOnlyWakes(t *testing.T) {
+	e := newTestEnv(t)
+	ctx := context.Background()
+	r := startServer(t, e, newFakeTable(), "test-client")
+	sid := str(r.must(t, "register", nil), "session")
+	r.must(t, "create_channel", map[string]any{"name": "mem", "kind": "memory"})
+	r.must(t, "subscribe", map[string]any{"tags": []any{"x"}})
+	sam := e.conn(t, "sam")
+
+	// A memory wakes the watch first; the ordinary message that follows is
+	// the only one returned.
+	go func() {
+		time.Sleep(300 * time.Millisecond)
+		_, _ = sam.Bus.Send(ctx, bus.SendInput{Channel: "mem", Content: "m", Tags: []string{"x"}})
+		time.Sleep(500 * time.Millisecond)
+		_, _ = sam.Bus.Send(ctx, bus.SendInput{Channel: "general", Content: "chat"})
+	}()
+	got := r.must(t, "receive", map[string]any{"session": sid, "wait_seconds": 5})
+	msgs := arr(got, "messages")
+	if len(msgs) != 1 || str(msgs[0].(map[string]any), "channel") != "general" {
+		t.Fatalf("want only the general message: %v", got)
+	}
+
+	// Only a memory arrives: the call returns empty at the deadline, no error.
+	r.must(t, "receive", map[string]any{"session": sid, "ack": str(got, "batch")})
+	go func() {
+		time.Sleep(200 * time.Millisecond)
+		_, _ = sam.Bus.Send(ctx, bus.SendInput{Channel: "mem", Content: "m2", Tags: []string{"x"}})
+	}()
+	start := time.Now()
+	got = r.must(t, "receive", map[string]any{"session": sid, "wait_seconds": 1})
+	if len(arr(got, "messages")) != 0 || time.Since(start) < 900*time.Millisecond {
+		t.Fatalf("after %v: %v", time.Since(start), got)
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ericfitz/agentbus2/internal/agentview"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/profile"
@@ -137,7 +138,7 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 	}
 	// Decision 20: memory channels do not count. The listing runs only for a
 	// non-empty backlog, inside the hook budget.
-	kinds := bus.NewKindIndex()
+	kinds := agentview.NewKindIndex()
 	kept := make([]bus.PeekChannel, 0, len(r.Channels))
 	r.Count = 0
 	for _, c := range r.Channels {

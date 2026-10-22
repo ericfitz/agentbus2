@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/ericfitz/agentbus2/internal/agentview"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
 )
@@ -20,7 +21,7 @@ import (
 // message (Decision 10), receive reads them.
 type waitWake struct {
 	Seq      int64    `json:"seq"`
-	Count    int      `json:"count"`
+	Count    int      `json:"count,omitempty"` // absent: memory channels were filtered out and the count of the rest is unknown
 	Channels []string `json:"channels"`
 }
 
@@ -50,7 +51,7 @@ func waitOnce(ctx context.Context, s bus.Sessions, mf *memoryFilter, session str
 			continue
 		}
 		floor = max(floor, r.Seq)
-		if r, err = mf.agentWake(ctx, r); err != nil {
+		if r, _, err = mf.agentWake(ctx, r); err != nil {
 			return err
 		} else if !r.Woke {
 			continue
@@ -148,17 +149,17 @@ func waitResuming(ctx context.Context, s bus.Sessions, mf *memoryFilter, l locat
 // (decision 20). A nil filter passes every wake through.
 type memoryFilter struct {
 	m bus.Messaging
-	k *bus.KindIndex
+	k *agentview.KindIndex
 }
 
 func newMemoryFilter(m bus.Messaging) *memoryFilter {
-	return &memoryFilter{m: m, k: bus.NewKindIndex()}
+	return &memoryFilter{m: m, k: agentview.NewKindIndex()}
 }
 
-// agentWake is bus.KindIndex.AgentWake.
-func (f *memoryFilter) agentWake(ctx context.Context, r bus.WatchResult) (bus.WatchResult, error) {
+// agentWake is agentview.KindIndex.AgentWake.
+func (f *memoryFilter) agentWake(ctx context.Context, r bus.WatchResult) (bus.WatchResult, bool, error) {
 	if f == nil {
-		return r, nil
+		return r, false, nil
 	}
 	return f.k.AgentWake(ctx, f.m, r)
 }

@@ -12,6 +12,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/ericfitz/agentbus2/internal/agentview"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/procs"
@@ -45,7 +46,7 @@ type server struct {
 	files       map[string]sessionstate.File
 	havePrimary bool
 
-	kinds *bus.KindIndex // decision 20: agents never receive memory channels
+	kinds *agentview.KindIndex // decision 20: agents never receive memory channels
 }
 
 // NewServer builds the MCP server with every tool registered. The Conn is
@@ -54,7 +55,7 @@ type server struct {
 // `validation` (choice 11). The returned func closes the Conn and leaves
 // every state file in place; only close_session removes one (choice 10).
 func NewServer(ctx context.Context, o Options) (*mcp.Server, func() error, error) {
-	s := &server{o: o, ctx: ctx, log: o.Log, self: o.Self, tbl: o.Table, files: map[string]sessionstate.File{}, kinds: bus.NewKindIndex()}
+	s := &server{o: o, ctx: ctx, log: o.Log, self: o.Self, tbl: o.Table, files: map[string]sessionstate.File{}, kinds: agentview.NewKindIndex()}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
 	}
@@ -501,7 +502,7 @@ func (s *server) addTools(srv *mcp.Server) {
 							break
 						}
 						floor = max(floor, w.Seq)
-						if w, err = s.kinds.AgentWake(ctx, b, w); err != nil {
+						if w, _, err = s.kinds.AgentWake(ctx, b, w); err != nil {
 							return receiveOut{}, err
 						} else if !w.Woke {
 							continue // only memories: not a wake for an agent

@@ -331,7 +331,9 @@ It takes no filter and no `-as` flag: it finds your session from the harness
 it runs under (the session your MCP server opened), so call `register` first.
 `agentbus2 wait` blocks until a message you have not been handed yet exists
 on your subscribed channels, prints one JSON line with the count and the
-channels, and exits 0. It carries no message content; call `receive` to read
+channels, and exits 0. Memory channels never wake it: when a wake had some
+filtered out, the line lists only the other channels and has no `count`. It
+carries no message content; call `receive` to read
 them. It never acks or moves your cursor, so when it exits 0, call `receive`
 as usual, handle what concerns you, ack that batch, then start a new wait.
 Add `-timeout 2h` to give up (exit 1) instead of waiting forever; exit 1

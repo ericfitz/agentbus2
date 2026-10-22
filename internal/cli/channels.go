@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/ericfitz/agentbus2/internal/agentview"
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
 
@@ -232,7 +233,7 @@ func runChannelsSubscribe(ctx context.Context, args []string, environ []string, 
 		return code
 	}
 	defer func() { _ = conn.Close() }()
-	if mem, err := bus.NewKindIndex().IsMemory(ctx, conn.Bus, rest[0]); err != nil {
+	if mem, err := agentview.NewKindIndex().IsMemory(ctx, conn.Bus, rest[0]); err != nil {
 		return fail(stderr, err)
 	} else if mem {
 		return fail(stderr, bus.Errorf(bus.CodeValidation, false, "%s is a memory channel: agents do not subscribe to memories (decision 20); use search to find a memory and get_memory to read it", rest[0]))

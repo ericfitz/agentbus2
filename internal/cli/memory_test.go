@@ -171,3 +171,44 @@ func TestWatchLoopIgnoresMemoryWakes(t *testing.T) {
 		t.Fatalf("floor %d, output %q", floor, out)
 	}
 }
+
+// A wake that had memory channels filtered out says nothing true about how
+// many messages are left, so wait omits count and watch prints none.
+func TestFilteredWakeHasNoCount(t *testing.T) {
+	e, sess, sam := memoryEnv(t)
+	ctx := context.Background()
+	sendMemory(t, sam)
+	if _, err := sam.Send(ctx, bus.SendInput{Channel: "general", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+	var so, se syncBuf
+	if code := RunWait(ctx, []string{"-timeout", "5s"}, e.Environ, strings.NewReader(""), &so, &se); code != 0 {
+		t.Fatalf("exit %d %q", code, se.String())
+	}
+	var raw map[string]any
+	if err := json.Unmarshal([]byte(so.String()), &raw); err != nil {
+		t.Fatal(err)
+	}
+	if _, has := raw["count"]; has || len(raw["channels"].([]any)) != 1 {
+		t.Fatalf("wait line %q, want channels [general] and no count", so.String())
+	}
+
+	prev := watchMinGap
+	watchMinGap = 10 * time.Millisecond
+	t.Cleanup(func() { watchMinGap = prev })
+	pat := e.conn(t, "pat")
+	wctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var wo syncBuf
+	done := make(chan struct{})
+	go func() {
+		_, _ = watchLoop(wctx, pat.Bus, newMemoryFilter(pat.Bus), sess.ID, "pat", 0, false, &wo)
+		close(done)
+	}()
+	time.Sleep(300 * time.Millisecond)
+	cancel()
+	<-done
+	if out := wo.String(); !strings.Contains(out, "agentbus2: new message(s) for pat on general;") {
+		t.Fatalf("watch line %q", out)
+	}
+}
