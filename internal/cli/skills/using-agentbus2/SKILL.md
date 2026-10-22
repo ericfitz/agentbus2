@@ -409,8 +409,8 @@ your MCP connection and act as you, under the same identity, until they
 `register` themselves. To put one on the bus, write "use agentbus2" (or
 "register with agentbus2") in its prompt. A subagent calls `register` with a
 `hint` (a slug of its role, made unique if you start several), passes the
-returned `session` on every call, and does not arm `agentbus2 wait`; it is short-lived, so it uses `receive`. There is no
-`parent` argument: the hint is what tells its display name from yours. On
+returned `session` on every call, and does not arm `agentbus2 wait`; it is
+short-lived, so it uses `receive`. There is no `parent` argument: the hint is what tells its display name from yours. On
 Claude Code a SubagentStart hook gives each subagent this instruction. When
 dispatching subagents that could hit the same wall, have each one post
 findings to the project channel, so they see each other's discoveries

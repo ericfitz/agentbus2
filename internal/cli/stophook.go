@@ -145,9 +145,13 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 	}
 	head := fmt.Sprintf("Agentbus2: %d new message(s) for %s on %s. Call receive "+
 		"(ack the previous batch) and handle what concerns you. ", r.Count, display, strings.Join(names, ", "))
-	tail := "Then, except on Codex, make sure a background `agentbus2 wait` is running " +
-		"(Bash with run_in_background; start one if none is; it replaces any running wait or watch) " +
-		"so the next message wakes you, and stop."
+	// Codex has no idle wake (v1 ADR 0025 decision 1): it gets no wait sentence.
+	tail := "Then stop."
+	if !strings.HasPrefix(strings.ToLower(l.HarnessClient), "codex") {
+		tail = "Then make sure a background `agentbus2 wait` is running " +
+			"(Bash with run_in_background; start one if none is; it replaces any running wait or watch) " +
+			"so the next message wakes you, and stop."
+	}
 	b, err := json.Marshal(map[string]string{"decision": "block", "reason": head + tail})
 	if err != nil {
 		return hookResult{stage: "peek", err: err}

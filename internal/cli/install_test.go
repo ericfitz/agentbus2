@@ -455,6 +455,12 @@ func TestInitPromptsAvoidRetiredVocabulary(t *testing.T) {
 }
 
 func TestInitPromptsWakeWithBackgroundWait(t *testing.T) {
+	if strings.Contains(codexPrompt, "run_in_background") || strings.Contains(codexPrompt, "`agentbus2 wait`") {
+		t.Error("codexPrompt tells Codex to run a background wait")
+	}
+	if !strings.Contains(codexPrompt, "end of each task") {
+		t.Error("codexPrompt does not tell Codex to receive at the end of each task")
+	}
 	for name, text := range map[string]string{"InitPrompt": InitPrompt, "codexPrompt": codexPrompt, "grokRule": grokRule} {
 		if strings.Contains(text, "Monitor") || strings.Contains(text, "agentbus2 watch") {
 			t.Errorf("%s names Monitor or watch as the wake", name)
@@ -465,8 +471,11 @@ func TestInitPromptsWakeWithBackgroundWait(t *testing.T) {
 			t.Errorf("%s does not tell the agent to run a background agentbus2 wait", name)
 		}
 	}
-	if !strings.Contains(InitPrompt, "Codex") {
-		t.Error("InitPrompt does not say Codex has no idle wake")
+	if !strings.Contains(codexPrompt, "Codex has no idle wake") {
+		t.Error("codexPrompt does not say Codex has no idle wake")
+	}
+	if !strings.Contains(grokCommand, "run_in_background") {
+		t.Error("grokCommand does not tell Grok to run a background wait")
 	}
 }
 

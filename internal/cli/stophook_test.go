@@ -60,11 +60,18 @@ func TestStopHookBlocksWhenPending(t *testing.T) {
 		strings.Contains(out["reason"], "Monitor") || strings.Contains(out["reason"], "-filter") {
 		t.Fatalf("claude-code: exit %d %v", code, out)
 	}
-	state("codex")
+	state("grok")
 	code, out, _ = run()
 	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "background `agentbus2 wait`") || strings.Contains(out["reason"], "agentbus2 watch") ||
-		strings.Contains(out["reason"], "Monitor") {
+		strings.Contains(out["reason"], "Monitor") || strings.Contains(out["reason"], "Codex") {
 		t.Fatalf("other harness: exit %d %v", code, out)
+	}
+	state("codex-mcp-client")
+	code, out, _ = run()
+	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "Call receive") ||
+		strings.Contains(out["reason"], "agentbus2 wait") || strings.Contains(out["reason"], "run_in_background") ||
+		strings.Contains(out["reason"], "Monitor") || strings.Contains(out["reason"], "watch") {
+		t.Fatalf("codex: exit %d %v", code, out)
 	}
 	// Grok's camelCase flag also ends the hook silently.
 	var so, se syncBuf

@@ -32,7 +32,9 @@ const (
 // InitPrompt is what the `init` MCP prompt (Claude Code) and the Codex custom
 // prompt tell the agent to do. It names no file step: the repository's profile
 // is already written by `agentbus2 init`.
-const InitPrompt = `Set up Agentbus2 for this repository:
+const InitPrompt = initPromptHead + initStepWait + initPromptTail
+
+const initPromptHead = `Set up Agentbus2 for this repository:
 1. Run ` + "`agentbus2 init`" + ` in a shell. Inside a git repository it selects a profile
    for the repository and prints the next step: ` + "`agentbus2 register`" + ` when the
    profile talks to a server and holds no credential yet.
@@ -40,21 +42,35 @@ const InitPrompt = `Set up Agentbus2 for this repository:
    Agentbus2 call. Call receive right after registering, whenever you finish
    a task and before you ask the user a question; pass each batch's token as
    ack on your next receive.
-3. So new messages wake you while idle (every harness except Codex), run
-   ` + "`agentbus2 wait`" + ` with Bash run_in_background; no timeout is needed. When
-   it exits 0, call receive, handle what concerns you, and start it again; on
-   exit 3 or 4 do nothing; on exit 2 report the error. Codex has no idle wake:
-   call receive at the end of each task. The using-agentbus2 skill is the full
-   protocol.
-If the register tool is missing, tell the user to run ` + "`agentbus2 init --global`" + `
+`
+
+// initStepWait is step 3 for every harness except Codex; initStepCodex is
+// Codex's (no idle wake, so no background wait).
+const initStepWait = `3. So new messages wake you while idle, run ` + "`agentbus2 wait`" + ` with Bash
+   run_in_background; no timeout is needed. When it exits 0, call receive,
+   handle what concerns you, and start it again; on exit 3 or 4 do nothing; on
+   exit 2 report the error. The using-agentbus2 skill is the full protocol.
+`
+
+const initStepCodex = `3. Codex has no idle wake: call receive at the end of each task. The
+   using-agentbus2 skill is the full protocol.
+`
+
+const initPromptTail = `If the register tool is missing, tell the user to run ` + "`agentbus2 init --global`" + `
 from a shell and restart the harness.`
 
 // codexPrompt is the in-session agentbus2 command. Codex does not surface MCP
 // prompts, so init writes it to ~/.codex/prompts/agentbus2.md
-// (/prompts:agentbus2). Grok Build gets the same text at
+// (/prompts:agentbus2). Codex has no idle wake, so its step 3 is receive at
+// the end of each task. Grok Build gets grokCommand at
 // ~/.grok/commands/agentbus2.md; its command files follow Claude's $ARGUMENTS
 // placeholder.
 const codexPrompt = "# Agentbus2\n\nThe user asked for: agentbus2 $ARGUMENTS\n\n" +
+	"For `init`:\n" + initPromptHead + initStepCodex + initPromptTail + "\n\n" +
+	"For anything else, run `agentbus2 $ARGUMENTS` in a shell and report the output.\n"
+
+// grokCommand is codexPrompt with the background-wait step 3.
+const grokCommand = "# Agentbus2\n\nThe user asked for: agentbus2 $ARGUMENTS\n\n" +
 	"For `init`:\n" + InitPrompt + "\n\n" +
 	"For anything else, run `agentbus2 $ARGUMENTS` in a shell and report the output.\n"
 
@@ -276,7 +292,7 @@ func (in *initer) grok(dir string) error {
 	if err := in.write(filepath.Join(dir, skillPath), SkillMD); err != nil {
 		return err
 	}
-	if err := in.write(filepath.Join(dir, "commands", "agentbus2.md"), []byte(codexPrompt)); err != nil {
+	if err := in.write(filepath.Join(dir, "commands", "agentbus2.md"), []byte(grokCommand)); err != nil {
 		return err
 	}
 	return in.write(filepath.Join(dir, "rules", "agentbus2.md"), []byte(grokRule))

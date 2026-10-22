@@ -103,7 +103,7 @@ type receiveIn struct {
 	Count       int      `json:"count,omitempty" jsonschema:"maximum number of messages to return"`
 	Channels    []string `json:"channels,omitempty" jsonschema:"only return messages from these channels; the rest stay pending"`
 	IncludeOwn  bool     `json:"include_own,omitempty" jsonschema:"also return messages sent by this session"`
-	WaitSeconds float64  `json:"wait_seconds,omitempty" jsonschema:"when nothing is pending, wait up to this many seconds for a message and then receive again. This replaces an armed watch for the session: a running agentbus2 watch exits 3"`
+	WaitSeconds float64  `json:"wait_seconds,omitempty" jsonschema:"when nothing is pending, wait up to this many seconds for a message and then receive again. This replaces an armed agentbus2 wait or watch for the session, which then exits 3"`
 }
 
 type historyIn struct {
