@@ -155,8 +155,9 @@ verify_checksum() {
 
 install_binary() {
     mkdir -p "$INSTALL_DIR" 2>/dev/null || true
-    [ -d "$INSTALL_DIR" ] && [ -w "$INSTALL_DIR" ] \
-        || die "cannot write to $INSTALL_DIR. Rerun with AGENTBUS2_INSTALL_DIR=<a writable directory>, or for a system-wide install: curl -fsSL $BASE_URL/releases/latest/download/install.sh | sudo env AGENTBUS2_INSTALL_DIR=/usr/local/bin sh"
+    if [ ! -d "$INSTALL_DIR" ] || [ ! -w "$INSTALL_DIR" ]; then
+        die "cannot write to $INSTALL_DIR. Rerun with AGENTBUS2_INSTALL_DIR=<a writable directory>, or for a system-wide install: curl -fsSL $BASE_URL/releases/latest/download/install.sh | sudo env AGENTBUS2_INSTALL_DIR=/usr/local/bin sh"
+    fi
     [ ! -d "$INSTALL_DIR/agentbus2" ] || die "$INSTALL_DIR/agentbus2 is a directory; remove it or choose another AGENTBUS2_INSTALL_DIR"
     if [ -x "$INSTALL_DIR/agentbus2" ]; then
         UPGRADE=1
