@@ -1348,6 +1348,12 @@ maps to Decision N+64). No question is open; a future gap goes here as
 Question 33 onward, labeled "Claude proposal, pending Eric" where the
 text depends on it.
 
+The Milestone 9 release proposals (key pair, image publishing,
+Authenticode, `windows.yml`, `release-check`) were decided by Eric on
+2026-10-22; the answers are in
+`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`, section
+"Milestone 9".
+
 Question 25. Channel delete and rename. Decided by Eric on 2026-10-20:
 both are authorized by `admin` on the channel; server administrators
 satisfy it everywhere through the implicit `admins` entry; the admin API

@@ -1,4 +1,4 @@
-# Gate 0 decisions, Milestones 1 to 7
+# Gate 0 decisions, Milestones 1 to 9
 
 Decision (Eric, 2026-10-21) on every item the milestone plans marked
 "Claude proposal, pending Eric". Each line names the plan item, the answer
@@ -247,3 +247,21 @@ review: cut model turns that carry no message.
     identity's memory subscriptions; receive, wait, watch and the Stop hook
     as agents run them ignore memory-channel messages, tag matches included.
     The TUI, the bus observer, is the exception. Task lists stay pushed.
+
+## Milestone 9 (Eric, 2026-10-22)
+
+The release tooling plan's proposals 1 to 5
+(`docs/superpowers/plans/2026-10-21-milestone-9-release-tooling.md`).
+
+1. **Release key**: a new ed25519 pair for agentbus2
+   (`~/.keys/agentbus2-release-ed25519.pem`), not v1's. How the private key
+   is managed is a separate backlog item to discuss.
+2. **Docker image**: published to ghcr.io, public, with 2.0.0. The image
+   name (`agentbus2` or `agentbus`) is still to be discussed before
+   `vars.IMAGE_REPOSITORY` is set.
+3. **Authenticode**: 2.0.0 ships with `--windows-signing=off` unless the
+   Artifact Signing account is already live when the release runs.
+4. **`windows.yml` is a required check**, not informational (departs from
+   v1). The `TestRunQuitsOnCanceledContext` flake must be fixed first.
+5. **`make release-check` moves out of `make verify`** into its own CI job;
+   the done gate no longer runs it.
