@@ -68,7 +68,7 @@ func statusTick() tea.Cmd {
 // surroundings; the model never imports the profile or client packages.
 type Host struct {
 	ConfigPath    string          // the config file the health overlay names and o edits
-	Describe      string          // "local · <path>" or "server · <url>"
+	Describe      string          // "local · <path>" or "server · <url>"; the health overlay's mode line
 	RailWidth     int             // saved rail width; 0 for the default
 	SaveRailWidth func(int) error // nil: not saved, no toast
 	ReloadConfig  func() error    // re-validates the config after the editor closes; nil: not checked

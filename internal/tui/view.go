@@ -754,9 +754,6 @@ func (m Model) renderCompose() string {
 func (m Model) renderStatusBar() string {
 	th := m.theme
 	left := th.Style(th.Dim).Render("agentbus2 v"+version.Version) + "  "
-	if m.host.Describe != "" {
-		left += m.host.Describe + "  "
-	}
 	left += "as " + th.Style(th.User).Render(m.c.identity)
 	if m.statusOK {
 		// The administrator's view: the embedding pass and the notices

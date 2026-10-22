@@ -36,7 +36,7 @@ When nothing else selects an identity, `tui` (and only `tui`) falls back to the 
 
 ## Layout
 
-Three panes: the rail on the left (shown when the terminal is at least 60 columns wide), the messages in the middle, and the compose box at the bottom, with a status bar as the last line. `tab` and `shift+tab` move between them.
+Three panes: the rail on the left (shown when the terminal is at least 60 columns wide), the messages in the middle, and the compose box at the bottom, with a status bar as the last line (version, `as <identity>`, the administrator's embedding and notice fields, and the key hints; the mode line is in the health overlay only). `tab` and `shift+tab` move between them.
 
 The rail has five sections, each under a heading:
 

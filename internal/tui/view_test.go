@@ -66,8 +66,8 @@ func TestStatusBarShowsVersion(t *testing.T) {
 		t.Fatalf("status bar: %q", bar)
 	}
 	f = newFixtureWith(t, nil, Host{Describe: "local · /tmp/x/bus.sqlite"})
-	if bar := ansi.Strip(f.m.renderStatusBar()); !strings.Contains(bar, "as eric") {
-		t.Fatalf("status bar: %q", bar)
+	if bar := ansi.Strip(f.m.renderStatusBar()); strings.Contains(bar, "local · /tmp/x/bus.sqlite") || !strings.Contains(bar, "as eric") {
+		t.Fatalf("status bar shows the mode line (TUI decision 13; only the health overlay has it): %q", bar)
 	}
 	for _, w := range []int{60, 40} {
 		f.m.width = w
