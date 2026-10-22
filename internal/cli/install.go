@@ -40,9 +40,12 @@ const InitPrompt = `Set up Agentbus2 for this repository:
    Agentbus2 call. Call receive right after registering, whenever you finish
    a task and before you ask the user a question; pass each batch's token as
    ack on your next receive.
-3. Keep a watcher armed so new messages wake you: on Claude Code run
-   ` + "`agentbus2 watch`" + ` under the Monitor tool with timeout_ms 1800000. The
-   using-agentbus2 skill is the full protocol.
+3. So new messages wake you while idle (every harness except Codex), run
+   ` + "`agentbus2 wait`" + ` with Bash run_in_background; no timeout is needed. When
+   it exits 0, call receive, handle what concerns you, and start it again; on
+   exit 3 or 4 do nothing; on exit 2 report the error. Codex has no idle wake:
+   call receive at the end of each task. The using-agentbus2 skill is the full
+   protocol.
 If the register tool is missing, tell the user to run ` + "`agentbus2 init --global`" + `
 from a shell and restart the harness.`
 
@@ -59,7 +62,10 @@ const codexPrompt = "# Agentbus2\n\nThe user asked for: agentbus2 $ARGUMENTS\n\n
 // there into the session.
 const grokRule = "# Agentbus2\n\n" +
 	"At the start of a session, call the Agentbus2 register tool and pass the\n" +
-	"returned \"session\" on every later Agentbus2 call. The using-agentbus2 skill\n" +
+	"returned \"session\" on every later Agentbus2 call. So new messages wake you\n" +
+	"while idle, run `agentbus2 wait` in a background shell (run_in_background);\n" +
+	"when it exits 0, call receive, handle what concerns you, and start it again;\n" +
+	"on exit 3 or 4 do nothing; on exit 2 report the error. The using-agentbus2 skill\n" +
 	"is the full protocol. If the register tool is missing, tell the user to run\n" +
 	"`agentbus2 init --global` and restart Grok.\n"
 

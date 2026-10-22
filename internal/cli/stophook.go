@@ -19,10 +19,6 @@ import (
 // do not wait.
 var hookBudget = 500 * time.Millisecond
 
-// claudeCodeClient is the MCP clientInfo name Claude Code reports (v1 ADR
-// 0015).
-const claudeCodeClient = "claude-code"
-
 // stopHookInput is the part of a Stop hook's stdin that RunStopHook reads.
 // Claude Code and Codex send snake_case; Grok sends camelCase.
 type stopHookInput struct {
@@ -149,14 +145,9 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 	}
 	head := fmt.Sprintf("Agentbus2: %d new message(s) for %s on %s. Call receive "+
 		"(ack the previous batch) and handle what concerns you. ", r.Count, display, strings.Join(names, ", "))
-	var tail string
-	if l.HarnessClient == claudeCodeClient {
-		tail = "Then make sure an `agentbus2 watch` is running under the Monitor tool with timeout_ms 1800000 " +
-			"(start one if none is running; it replaces any running watch or wait) so the next message wakes you, and stop."
-	} else {
-		tail = "Then, except on Codex, make sure a background `agentbus2 wait` is running " +
-			"(start one; it replaces any running wait) so the next message wakes you, and stop."
-	}
+	tail := "Then, except on Codex, make sure a background `agentbus2 wait` is running " +
+		"(Bash with run_in_background; start one if none is; it replaces any running wait or watch) " +
+		"so the next message wakes you, and stop."
 	b, err := json.Marshal(map[string]string{"decision": "block", "reason": head + tail})
 	if err != nil {
 		return hookResult{stage: "peek", err: err}

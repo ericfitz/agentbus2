@@ -145,7 +145,8 @@ func (p probe) Watch(ctx context.Context, in bus.WatchInput) (bus.WatchResult, e
 	return r, err
 }
 
-// RunWatch is `agentbus2 watch` (choice 9, v1 ADR 0021): one line per wake on
+// RunWatch is `agentbus2 watch` (choice 9, v1 ADR 0021; deprecated in favor
+// of a background `agentbus2 wait`, decision 17): one line per wake on
 // stdout, until replaced (3), the harness is gone (4) or an error (2). It
 // never exits 0 or 1.
 func RunWatch(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -153,6 +154,10 @@ func RunWatch(ctx context.Context, args []string, environ []string, stdin io.Rea
 	var session string
 	var includeOwn, noHarness bool
 	fs := newFlagSet("watch", stderr)
+	fs.Usage = func() {
+		_, _ = fmt.Fprintln(stderr, "usage: agentbus2 watch [flags]\n\nwatch is deprecated in favor of a background `agentbus2 wait` (decision 17).\nIt prints one line per wake and never exits 0 or 1.")
+		fs.PrintDefaults()
+	}
 	client.Flags(fs, &o)
 	fs.StringVar(&session, "session", "", "session id (default: the session of this harness)")
 	fs.BoolVar(&includeOwn, "include-own", false, "also wake for this identity's own messages")

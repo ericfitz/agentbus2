@@ -453,3 +453,27 @@ func TestInitPromptsAvoidRetiredVocabulary(t *testing.T) {
 		}
 	}
 }
+
+func TestInitPromptsWakeWithBackgroundWait(t *testing.T) {
+	for name, text := range map[string]string{"InitPrompt": InitPrompt, "codexPrompt": codexPrompt, "grokRule": grokRule} {
+		if strings.Contains(text, "Monitor") || strings.Contains(text, "agentbus2 watch") {
+			t.Errorf("%s names Monitor or watch as the wake", name)
+		}
+	}
+	for name, text := range map[string]string{"InitPrompt": InitPrompt, "grokRule": grokRule} {
+		if !strings.Contains(text, "run_in_background") || !strings.Contains(text, "agentbus2 wait") {
+			t.Errorf("%s does not tell the agent to run a background agentbus2 wait", name)
+		}
+	}
+	if !strings.Contains(InitPrompt, "Codex") {
+		t.Error("InitPrompt does not say Codex has no idle wake")
+	}
+}
+
+func TestSkillWakesWithBackgroundWait(t *testing.T) {
+	for _, bad := range []string{"Monitor", "watch` under"} {
+		if strings.Contains(string(SkillMD), bad) {
+			t.Errorf("skill contains %q", bad)
+		}
+	}
+}

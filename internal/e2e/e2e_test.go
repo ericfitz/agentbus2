@@ -726,7 +726,7 @@ func TestSection24Sequence(t *testing.T) {
 				t.Fatalf("stop-hook: exit %d, stdout %q, stderr %q, hook.log %q", r.code, r.stdout, r.err, hookLogErr)
 			}
 			if r.code != 0 || out.Decision != "block" ||
-				!strings.Contains(out.Reason, "1 new message(s) for "+mcpName) || !strings.Contains(out.Reason, "agentbus2 watch") {
+				!strings.Contains(out.Reason, "1 new message(s) for "+mcpName) || !strings.Contains(out.Reason, "background `agentbus2 wait`") {
 				t.Fatalf("stop-hook: exit %d, %+v, hook.log %q", r.code, out, hookLogErr)
 			}
 			logBefore := hookLogErr

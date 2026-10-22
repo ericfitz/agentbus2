@@ -82,7 +82,7 @@ func NewServer(ctx context.Context, o Options) (*mcp.Server, func() error, error
 	return srv, s.close, nil
 }
 
-const initPrompt = `Register this session with Agentbus2: call the register tool (pass a hint only if you are a subagent or a second session, as a short role label). Then call receive with the returned session id and the batch token you got, and read what is pending. Pass the session id on send and receive for the rest of the session. Run agentbus2 watch under your harness's background monitor so you hear about new messages.`
+const initPrompt = `Register this session with Agentbus2: call the register tool (pass a hint only if you are a subagent or a second session, as a short role label). Then call receive with the returned session id and the batch token you got, and read what is pending. Pass the session id on send and receive for the rest of the session. Except on Codex, run agentbus2 wait with Bash run_in_background so new messages wake you; when it exits 0, call receive and start it again.`
 
 func (s *server) close() error {
 	s.cmu.Lock()
@@ -467,7 +467,7 @@ func (s *server) addTools(srv *mcp.Server) {
 				return b.Send(ctx, si)
 			}))
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "receive", Description: "Agentbus2: receive new messages for your session. Pass ack with the batch token from your previous receive to acknowledge it; an unacknowledged batch is redelivered. channels restricts the result to those channels (the rest stay pending). wait_seconds, when nothing is pending, waits up to that long for a message and then receives again; it replaces an armed agentbus2 watch for this session, which then exits 3, so on a harness that runs a watch leave it off. Messages delivered through a tag subscription carry matched_tags."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "receive", Description: "Agentbus2: receive new messages for your session. Pass ack with the batch token from your previous receive to acknowledge it; an unacknowledged batch is redelivered. channels restricts the result to those channels (the rest stay pending). wait_seconds, when nothing is pending, waits up to that long for a message and then receives again; it replaces an armed agentbus2 wait or watch for this session, which then exits 3, so while one is running leave it off. Messages delivered through a tag subscription carry matched_tags."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in receiveIn) (*mcp.CallToolResult, any, error) {
 			wait, err := waitDuration(in.WaitSeconds)
 			if err != nil {

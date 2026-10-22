@@ -56,12 +56,14 @@ func TestStopHookBlocksWhenPending(t *testing.T) {
 		t.Fatalf("stderr %q: a hook never writes to stderr", errOut)
 	}
 	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "2 new message(s) for "+sess.DisplayName+" on general") ||
-		!strings.Contains(out["reason"], "`agentbus2 watch`") || strings.Contains(out["reason"], "-filter") {
+		!strings.Contains(out["reason"], "background `agentbus2 wait`") || strings.Contains(out["reason"], "agentbus2 watch") ||
+		strings.Contains(out["reason"], "Monitor") || strings.Contains(out["reason"], "-filter") {
 		t.Fatalf("claude-code: exit %d %v", code, out)
 	}
 	state("codex")
 	code, out, _ = run()
-	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "`agentbus2 wait`") || strings.Contains(out["reason"], "agentbus2 watch") {
+	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "background `agentbus2 wait`") || strings.Contains(out["reason"], "agentbus2 watch") ||
+		strings.Contains(out["reason"], "Monitor") {
 		t.Fatalf("other harness: exit %d %v", code, out)
 	}
 	// Grok's camelCase flag also ends the hook silently.

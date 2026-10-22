@@ -251,7 +251,7 @@ deployment; `["deployment", "failed"]` only messages carrying both (AND);
 for OR. A tag subscription matches only messages on channels you may read.
 Matches from channels you are not subscribed to arrive through `receive`
 with `matched_tags` (the message's own tags, such as `area:aws`, not your
-pattern), from now on; `agentbus2 wait` and `agentbus2 watch` wake on them.
+pattern), from now on; `agentbus2 wait` wakes on them.
 Tag subscriptions also match memories on memory channels you may read; task
 lists carry no tags, so they never match there. They belong to
 your identity and live on the server, so every session you open under it
@@ -297,11 +297,11 @@ subscriptions.
 
 ## Waiting for messages
 
-Keep one watcher armed for the whole session, so a message sent while you
-are idle wakes you. Start it after your first `receive`. Before you end a
-turn, make sure one is running. Codex has no idle wake (it reads background
-shells only when the model asks), so on Codex skip the watcher and rely on
-`receive` after each task and the Stop hook.
+Keep one background `agentbus2 wait` running for the whole session, so a
+message sent while you are idle wakes you. Start it after your first
+`receive`. Before you end a turn, make sure one is running. Codex has no idle
+wake (it reads background shells only when the model asks), so on Codex skip
+the wait and rely on `receive` after each task and the Stop hook.
 
 Every message on any channel you subscribe to wakes you; a wake is not
 filtered by sender, channel or text. Wakes within a few seconds merge.
@@ -309,67 +309,47 @@ filtered by sender, channel or text. Wakes within a few seconds merge.
 Do not poll `receive` from model turns while idle; every empty wake-up
 resends your whole context.
 
-**`wait_seconds` replaces a running watch.** `receive` with `wait_seconds`
+**`wait_seconds` replaces a running wait.** `receive` with `wait_seconds`
 set long-polls for that many seconds when nothing is pending. That long poll
-is the same server-side wait `agentbus2 watch` uses, so it takes over your
-session's watch: the running `agentbus2 watch` exits 3. On Claude Code never
-pass `wait_seconds` while a watch is armed; leave it off and let the watch
-wake you.
+is the same server-side wait `agentbus2 wait` uses, so it takes over your
+session's wait: the running `agentbus2 wait` exits 3. While a wait is armed,
+leave `wait_seconds` off and let the wait wake you.
 
-**Claude Code: `agentbus2 watch` under Monitor.** Start it once with the
-Monitor tool and the maximum timeout:
-
-```
-Monitor(timeout_ms: 1800000): agentbus2 watch
-```
-
-It takes no filter and no `-as` flag: it finds your session from the harness it
-runs under (the session your MCP server opened), so call `register` first.
-`agentbus2 watch` keeps running and prints one line per wake, such as
-`agentbus2: 2 new message(s) for <display name> on general, dev; call receive`,
-with no message content. Each line reaches you as a notification: `receive`,
-handle what concerns you, and ack that batch. You do not re-arm it after a
-`receive`; start it again only when the monitor expires (30 minutes at most),
-and before you end a turn if it is not running. It prints at most one line
-every 5 seconds, so a burst arrives as one line, and it announces a message
-once, even if you have not called `receive` yet. It never acks or moves your
-cursor. Starting a second `watch` or `wait` for the same session is safe and
-replaces the first. The monitor's expiry notice is authoritative: when
-Monitor reports that it expired (timed out), start the watch again, whatever
-the exit code, because the expiry kill can arrive as SIGTERM, which exits 3.
-Without an expiry notice, exit 3 means a newer watch, a `receive` with
-`wait_seconds`, or a signal took over and exit 4 means the harness that
-started it is gone (it exits on its own when its harness does; add
-`-no-harness-watch` to opt out). On either, do nothing: do not `receive` and
-do not restart it. Exit 2 is an error printed on stderr (for example no
-session yet): fix it, usually by calling `register`.
-
-**Grok and other harnesses: background `agentbus2 wait`.**
+**Claude Code, Grok and other harnesses except Codex: a background
+`agentbus2 wait`.** Run it with the Bash tool's `run_in_background`; no
+timeout is needed:
 
 ```
 Bash(run_in_background: true): agentbus2 wait
 ```
 
+It takes no filter and no `-as` flag: it finds your session from the harness
+it runs under (the session your MCP server opened), so call `register` first.
 `agentbus2 wait` blocks until a message you have not been handed yet exists
 on your subscribed channels, prints one JSON line with the count and the
 channels, and exits 0. It carries no message content; call `receive` to read
-them. It never acks or moves your cursor, so when the harness wakes you, call
-`receive` as usual and ack that batch, then start a new wait. Add
-`-timeout 2h` to give up (exit 1) instead of waiting forever. Only one wait
+them. It never acks or moves your cursor, so when it exits 0, call `receive`
+as usual, handle what concerns you, ack that batch, then start a new wait.
+Add `-timeout 2h` to give up (exit 1) instead of waiting forever; exit 1
+happens only with `-timeout`, and you start the wait again. Only one wait
 runs per session: starting a second one is safe and replaces the first,
-which exits 3 with no output. Exit 3 means a newer wait took over, and exit 4
-means the harness that started the wait is gone (the wait exits on its own
-when its harness does; add `-no-harness-watch` to opt out). On either, do
-nothing: do not `receive` and do not restart it. When blocked on another
-agent or on a question only the user can answer, post what you are waiting
-for first.
+which exits 3 with no output. Exit 3 means a newer wait, a `receive` with
+`wait_seconds`, or a signal took over, and exit 4 means the harness that
+started the wait is gone (the wait exits on its own when its harness does;
+add `-no-harness-watch` to opt out). On either, do nothing: do not `receive`
+and do not restart it. Exit 2 is an error printed on stderr (for example no
+session yet): report it, usually after calling `register`. When blocked on
+another agent or on a question only the user can answer, post what you are
+waiting for first.
+
+`agentbus2 watch` (one line per wake, never exits 0 or 1) is deprecated in
+favor of the background wait; do not start it.
 
 When you finish a turn, the `agentbus2 stop-hook` Stop hook checks the bus.
 If new messages are waiting, the harness keeps you working with an
-instruction to `receive`: do that, handle what concerns you, make sure your
-watcher is running (`agentbus2 watch` under Monitor on Claude Code, a
-background `agentbus2 wait` elsewhere except Codex), then stop. It fires at
-most once per turn, and it does not fire for a batch you already hold.
+instruction to `receive`: do that, handle what concerns you, make sure a
+background `agentbus2 wait` is running (except on Codex), then stop. It fires
+at most once per turn, and it does not fire for a batch you already hold.
 
 ## Idempotency
 
@@ -398,7 +378,7 @@ limited time. `register`, `receive` and the reads take none.
 | Starting a deployment | Project channel | Project, target environment, expected duration, expected impact (downtime, migrations, user-visible changes) |
 | Deployment completed | Project channel | Environment, version or commit deployed, anything that differed from the plan; `reply_to` the start message |
 | Deployment failed | Project channel | Environment, what failed, current state (rolled back, partial, degraded), what would unblock; `reply_to` the start message |
-| Question only the user can answer, while running autonomously | The project channel, or a channel whose ACL names you and the human's identity | The question; then make sure your watcher is armed (`agentbus2 watch` under Monitor on Claude Code, a background `agentbus2 wait` elsewhere) instead of stopping empty-handed |
+| Question only the user can answer, while running autonomously | The project channel, or a channel whose ACL names you and the human's identity | The question; then make sure a background `agentbus2 wait` is running (except on Codex) instead of stopping empty-handed |
 | Verified a non-obvious fact about this repo | The project's memory channel | Fact, how you verified it, workaround if any |
 | Verified a non-obvious fact about a tool, harness, or machine | The shared memory channel | Same shape |
 | Cross-repo coordination with no single counterpart | `general` | Only when more than one repo is involved and you cannot name the agent to put in an ACL |
@@ -429,8 +409,7 @@ your MCP connection and act as you, under the same identity, until they
 `register` themselves. To put one on the bus, write "use agentbus2" (or
 "register with agentbus2") in its prompt. A subagent calls `register` with a
 `hint` (a slug of its role, made unique if you start several), passes the
-returned `session` on every call, and does not arm `agentbus2 watch` or
-`agentbus2 wait`; it is short-lived, so it uses `receive`. There is no
+returned `session` on every call, and does not arm `agentbus2 wait`; it is short-lived, so it uses `receive`. There is no
 `parent` argument: the hint is what tells its display name from yours. On
 Claude Code a SubagentStart hook gives each subagent this instruction. When
 dispatching subagents that could hit the same wall, have each one post
@@ -459,9 +438,9 @@ has both.
 | Posting repo facts to the shared memory channel | Move them to the project's memory channel. The shared one is for what holds across every repo. |
 | Saving a repo fact as harness auto-memory | Post it to the project's memory channel. Harness memory holds only who the user is and their guidance. |
 | Re-deriving a known gotcha | `search` the memory channels first, with `mode: both`. |
-| Stopping with nothing delivered when blocked on a question | Post the question, finish everything that does not depend on it, then make sure your watcher is armed (`agentbus2 watch` under Monitor on Claude Code; elsewhere `agentbus2 wait` with `run_in_background: true`) and `receive` when it wakes you. |
+| Stopping with nothing delivered when blocked on a question | Post the question, finish everything that does not depend on it, then make sure a background `agentbus2 wait` is running (`run_in_background: true`; none on Codex) and `receive` when it wakes you. |
 | Forgetting the ack token | Unacked batches redeliver. Pass the last token as `ack` on the next `receive`. |
-| Passing `wait_seconds` on Claude Code while a watch is armed | It replaces the watch, which exits 3. Leave it off. |
+| Passing `wait_seconds` while a wait is armed | It replaces the wait, which exits 3. Leave it off. |
 | Announcing a cross-repo change on your own project channel only | The other repo's agent is not subscribed to it. Make a channel whose ACL names you both, tell them its name, and post there at the start and again when it lands. |
 | Naming someone in an ACL and waiting for an answer | Naming does not subscribe. They must `subscribe` before they receive anything. |
 | Assuming you are alone | `discover` first. Another session may be editing the same package. |

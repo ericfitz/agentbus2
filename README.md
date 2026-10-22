@@ -39,6 +39,8 @@ agentbus2 session open -profile lab -identity pat
 agentbus2 send -profile lab -identity pat general "hello"
 ```
 
+The idle wake on every harness except Codex is a background `agentbus2 wait` (Bash `run_in_background`; exit 0: call `receive`, then start it again; exit 3 or 4: do nothing; exit 2: report). Codex has no idle wake and calls `receive` at the end of each task. `watch` stays but is deprecated in favor of the background wait (decision 17).
+
 `watch` and `wait` end with spec section 3.5's exit codes: `wait` exits 0 woke, 1 timeout, 2 error, 3 replaced, 4 harness gone; `watch` never exits 0 or 1. `scripts/m6-exit-checks.sh` and `internal/e2e` prove the section 2.4 sequence and that table against the built binary and a real server.
 
 ## Terminal UI

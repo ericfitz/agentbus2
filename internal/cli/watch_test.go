@@ -33,6 +33,9 @@ func TestWatchFlags(t *testing.T) {
 	if code := RunWatch(context.Background(), []string{"-h"}, e.Environ, strings.NewReader(""), &so, &se); code != 0 {
 		t.Errorf("-h: exit %d, want 0", code)
 	}
+	if !strings.Contains(se.String(), "deprecated") || !strings.Contains(se.String(), "background") {
+		t.Errorf("-h stderr %q: want it to say watch is deprecated in favor of a background wait", se.String())
+	}
 }
 
 func TestWatchPrintsOneLinePerWakeAndNeverExits(t *testing.T) {
