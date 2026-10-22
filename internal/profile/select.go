@@ -54,6 +54,9 @@ type IdentitySelection struct {
 	// Fallback is the last resort, tried only when non-empty (the TUI sets it
 	// to the OS login name; every other command leaves it empty).
 	Fallback string
+	// SkipProfile ignores the profile's own identity (the TUI, when the
+	// repository file selected the profile).
+	SkipProfile bool
 }
 
 // ResolveIdentity picks the identity: the flag, the environment, the
@@ -73,7 +76,7 @@ func (p Profile) ResolveIdentity(sel IdentitySelection) (identity, source string
 		return pick(sel.Flag, "flag")
 	case sel.Env != "":
 		return pick(sel.Env, "env")
-	case p.Identity != "":
+	case p.Identity != "" && !sel.SkipProfile:
 		return pick(p.Identity, "profile")
 	case p.Mode == ModeServer && len(sel.Credentials) == 1:
 		return pick(sel.Credentials[0], "credential")

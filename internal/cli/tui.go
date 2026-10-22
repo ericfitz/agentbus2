@@ -35,6 +35,7 @@ func RunTUI(ctx context.Context, args []string, environ []string, stdin io.Reade
 	}
 	// Decision 11: with no identity chosen, the TUI is the OS login name.
 	o.FallbackIdentity = osUserName()
+	o.HumanIdentity = true
 	conn, code := open(ctx, o, stderr)
 	if conn == nil {
 		return code

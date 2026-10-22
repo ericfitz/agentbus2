@@ -142,7 +142,7 @@ the `sessions` section is a display-only list, so nothing in the TUI selects a
 session or an identity. `TestNoInboxView` proves it behaviorally (every channel
 the TUI reads is one `ListChannels` listed) and `scripts/m8-exit-checks.sh`
 adds a word check over the production files. The milestone's choices 2 to 6
-(identity and session by Decision 71 with hint `tui`; the Decision 83 watch and
+(identity and session by Decision 71 with hint `tui` (later: the hostname hint with fallback `tui`, TUI decision 12); the Decision 83 watch and
 receive loop; rail sources and sections; the channel create prompt with kinds;
 task editing) are recorded in
 `docs/superpowers/plans/2026-10-21-milestone-8-tui.md`.
@@ -156,7 +156,7 @@ states and marked `pending Eric: Milestone 8 item N` in code:
    when the identity has other live sessions (alternative: fall back to the OS
    user name, as v1's `tui_name` did).
 3. No resume token is persisted across TUI restarts, so a crashed TUI's next
-   start is `<identity>/tui-2` until retention removes the lapsed row
+   start is `<identity>/tui-2` until retention removes the lapsed row (now `<identity>/<host>-2`; TUI decision 12)
    (alternative: persist it, as the MCP server does).
 
 Post-build decision 2 (Eric, 2026-10-21,

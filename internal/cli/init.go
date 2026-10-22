@@ -190,6 +190,9 @@ func (in *initer) repo(root string) error {
 		}
 	} else {
 		in.say("  profile %s already defined in %s; left unchanged", name, cfg.Path)
+		if in.Identity != "" {
+			in.say("  -identity %s ignored: profile %s keeps its identity %q; edit it in %s", in.Identity, name, p.Identity, cfg.Path)
+		}
 	}
 	if err := in.repoFile(root, existing, name); err != nil {
 		return err

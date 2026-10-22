@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/mcpserver"
@@ -101,5 +102,5 @@ func mcpIdentityGuard(o client.Options) error {
 	if err != nil || r.Identity != login {
 		return nil
 	}
-	return fmt.Errorf("agentbus2 mcp: identity %q is the OS login name, which is the human's; choose another with -identity or the profile's identity (`agentbus2 init -identity NAME` for a repository)", login)
+	return fmt.Errorf("agentbus2 mcp: identity %q is the OS login name, which is the human's; set the `identity` of profile %q in %s to another name, or pass -identity to `agentbus2 mcp` in the harness's MCP config", login, r.Profile.Name, filepath.Join(r.ConfigDir, "config.json"))
 }

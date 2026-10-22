@@ -178,3 +178,64 @@ func TestResolveReadsOnlyGivenEnviron(t *testing.T) {
 		t.Fatalf("%+v, %v", r, err)
 	}
 }
+
+// TestResolveHumanIdentity: with HumanIdentity the profile's identity counts
+// only when the profile was not chosen by the repository file (TUI decision
+// 11), so the human never shares the agent's identity.
+func TestResolveHumanIdentity(t *testing.T) {
+	e := newEnv(t)
+	e.save(t,
+		profile.Profile{Name: "default", Mode: profile.ModeLocal, Identity: "eric"},
+		profile.Profile{Name: "repo", Mode: profile.ModeLocal, Identity: "agentbus2"},
+		profile.Profile{Name: "homerepo", Mode: profile.ModeLocal, Identity: "efitz-home"},
+		profile.Profile{Name: "lab", Mode: profile.ModeLocal, Identity: "eric"},
+	)
+	repoWith := func(name string) string {
+		dir := t.TempDir()
+		if err := os.MkdirAll(filepath.Join(dir, ".local"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, ".local", "agentbus2.json"), []byte(`{"profile":"`+name+`"}`), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return dir
+	}
+	cases := []struct {
+		name         string
+		o            Options
+		identity, id string
+	}{
+		{"repo profile gives the login name", Options{Cwd: repoWith("repo")}, "efitz", "os-user"},
+		{"home repo profile gives the login name", Options{Cwd: repoWith("homerepo")}, "efitz", "os-user"},
+		{"identity flag wins in a repo", Options{Cwd: repoWith("repo"), Identity: "sam"}, "sam", "flag"},
+		{"profile flag keeps its identity", Options{Cwd: repoWith("repo"), Profile: "lab"}, "eric", "profile"},
+		{"default fallback keeps its identity", Options{Cwd: t.TempDir()}, "eric", "profile"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			c.o.Environ, c.o.HumanIdentity, c.o.FallbackIdentity = e.environ, true, "efitz"
+			r, err := Resolve(c.o)
+			if err != nil || r.Identity != c.identity || r.IdentitySource != c.id {
+				t.Fatalf("got %q (%s), %v; want %q (%s)", r.Identity, r.IdentitySource, err, c.identity, c.id)
+			}
+		})
+	}
+	t.Run("env profile keeps its identity", func(t *testing.T) {
+		r, err := Resolve(Options{Cwd: repoWith("repo"), Environ: append(append([]string{}, e.environ...), "AGENTBUS2_PROFILE=lab"), HumanIdentity: true, FallbackIdentity: "efitz"})
+		if err != nil || r.Identity != "eric" {
+			t.Fatalf("got %q, %v", r.Identity, err)
+		}
+	})
+	t.Run("env identity wins in a repo", func(t *testing.T) {
+		r, err := Resolve(Options{Cwd: repoWith("repo"), Environ: append(append([]string{}, e.environ...), "AGENTBUS2_IDENTITY=lee"), HumanIdentity: true, FallbackIdentity: "efitz"})
+		if err != nil || r.Identity != "lee" || r.IdentitySource != "env" {
+			t.Fatalf("got %q (%s), %v", r.Identity, r.IdentitySource, err)
+		}
+	})
+	t.Run("other commands keep the repo identity", func(t *testing.T) {
+		r, err := Resolve(Options{Cwd: repoWith("repo"), Environ: e.environ})
+		if err != nil || r.Identity != "agentbus2" || r.IdentitySource != "profile" {
+			t.Fatalf("got %q (%s), %v", r.Identity, r.IdentitySource, err)
+		}
+	})
+}

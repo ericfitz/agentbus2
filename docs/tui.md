@@ -8,7 +8,7 @@
 agentbus2 tui [-profile P] [-identity I]
 ```
 
-`-profile` and `-identity` select the profile and the identity exactly as they do for every other command (`AGENTBUS2_PROFILE` and `AGENTBUS2_IDENTITY`, then `.local/agentbus2.json`, then the profile's `identity`, then the profile's only credential, then the OS login name, the TUI's own last step; a Windows `DOMAIN\name` is cut to `name`, a `/` becomes `-`, and an unknown user leaves the "identity is required" error). There are no other flags: v1's `-config` and `-as` are rejected (exit 2), and so is a positional argument. `-h` prints the flags and exits 0.
+`-profile` and `-identity` select the profile as they do for every other command (`AGENTBUS2_PROFILE`, then `.local/agentbus2.json`, then `default`). The identity order is the TUI's own: `-identity`, `AGENTBUS2_IDENTITY`, the profile's `identity` only when the profile was not selected by the repository file (so inside a repository the TUI is not the repository's agent identity), the profile's only credential, then the OS login name (a Windows `DOMAIN\name` is cut to `name`, a `/` becomes `-`, and an unknown user leaves the "identity is required" error). There are no other flags: v1's `-config` and `-as` are rejected (exit 2), and so is a positional argument. `-h` prints the flags and exits 0.
 
 In local mode the TUI also runs the maintenance loop, as v1's TUI ran its background loops; when several local processes run it, a lease row in the database lets one tick at a time. A server runs its own maintenance, so server mode does not.
 
@@ -32,7 +32,7 @@ Subscriptions and the acked mark belong to the identity, not the session. A huma
 agentbus2 tui: identity eric has 1 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)
 ```
 
-When nothing else selects an identity, `tui` (and only `tui`) falls back to the OS login name (source `os-user`, v1's `tui_name`). In a server profile the name is used only when it has a credential file; otherwise it is the usual "identity is required" resolution error. Every other command has no such fallback. The login name is the human's: `agentbus2 mcp` refuses to run under it (Decision 16), and `agentbus2 init` in the home directory names the agent `<user>-home` (Decision 15).
+When nothing else selects an identity, and also whenever the repository file selected the profile (its `identity` is skipped, so in a `$HOME` repository the agent `efitz-home` and the human `efitz` stay apart), `tui` (and only `tui`) falls back to the OS login name (source `os-user`, v1's `tui_name`). In a server profile the name is used only when it has a credential file; otherwise it is the usual "identity is required" resolution error. Every other command has no such fallback. The login name is the human's: `agentbus2 mcp` refuses to run under it (Decision 16), and `agentbus2 init` in the home directory names the agent `<user>-home` (Decision 15).
 
 ## Layout
 
@@ -48,7 +48,7 @@ The rail has five sections, each under a heading:
 | `tags` | the tag sets you follow (`t` on the rail), read-only |
 | `sessions` | every live session by display name, then the recently idle ones; `↑`/`↓` select a row and the main pane shows its details |
 
-The section of a channel comes from its kind, never from its name. Rows show the full name. `←`/`→` or `enter` on a heading collapses or expands its section; a collapsed heading shows `(count[, N unread])`. Collapsing lasts until the TUI quits. `home` selects the `channels` heading. A `sessions` row is a rail stop. Selecting it replaces the main pane with that session's details: display name, identity (`unknown` for an idle row, whose identity the TUI never learned), session id (live rows only), and `live` or `idle, last seen <time>`. The details come from what the rail already holds, so selecting a row makes no bus call; there is still no inbox view and no messaging from a session row (ADR 0006), and `i`, `enter`, `s` and `d` do nothing on one. When a refresh removes the selected row, the selection moves to the `sessions` heading.
+The section of a channel comes from its kind, never from its name. Rows show the full name. `←`/`→` or `enter` on a heading collapses or expands its section; a collapsed heading shows `(count[, N unread])`. Collapsing lasts until the TUI quits. `home` selects the `channels` heading. A `sessions` row is a rail stop. Selecting it replaces the main pane with that session's details: display name, identity (`unknown` for an idle row, whose identity the TUI never learned), session id (live rows only), and `live` or `idle, last seen <time>`. The details come from what the rail already holds, so selecting a row makes no bus call; there is still no inbox view and no messaging from a session row (ADR 0006), and `i`, `enter`, `s`, `d` and `r` do nothing on one. When a refresh removes the selected row, the selection moves to the `sessions` heading.
 
 Rail markers:
 
@@ -194,7 +194,7 @@ Three Font Awesome glyphs (`fa-face-sleeping`, `fa-microchip-ai`, `fa-user-robot
 - No direct messages and no inbox view (spec 1.3, ADR 0006): a session row shows details only, never messages (TUI decision 14).
 - A session row is selectable only to show its details (TUI decision 14); there is no session view of messages.
 - Kinds, not prefixes: a task list is a channel of kind `tasks`, a memory channel of kind `memory` (ADR 0008). v1's `general/`, `memory/` and `tasks/` prefixes are not read, and names are shown in full.
-- Identity comes from `-profile` and `-identity` (Decision 71), not from `tui_name`, `-as` or the OS user.
+- Identity comes from `-identity`, `AGENTBUS2_IDENTITY` and the profile (Decision 71, with the repository-file exception above), then the OS login name as the last step; not from `tui_name` or `-as`.
 - Names shown for messages and sessions are the server's (`Message.Display`, `Session.DisplayName`; ADR 0003).
 - Task release is its own operation (`u`), and assigning picks from identities (owners are identities).
 - The TUI reads from `Watch` and `Receive` with acks (Decision 83) rather than a blocking `Receive`, and has no per-session repo or context.

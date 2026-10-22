@@ -107,12 +107,16 @@ func TestMCPRefusesLoginName(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("stdout must stay empty, got %q", stdout.String())
 	}
-	for _, w := range []string{"efitz", "-identity", "profile"} {
+	for _, w := range []string{"efitz", "-identity", `profile "default"`, filepath.Join(e.ConfigDir, "config.json")} {
 		if !strings.Contains(stderr.String(), w) {
 			t.Fatalf("stderr %q lacks %q", stderr.String(), w)
 		}
 	}
 	// The same refusal through the environment and the profile's identity.
+	stderr.Reset()
+	if code := runMCP(t.Context(), nil, append(append([]string{}, e.Environ...), "AGENTBUS2_IDENTITY=efitz"), strings.NewReader(""), &stdout, &stderr); code != 1 || stdout.Len() != 0 {
+		t.Fatalf("env identity: exit %d stdout %q stderr %q", code, stdout.String(), stderr.String())
+	}
 	e.writeProfile(t, profile.Profile{Name: "default", Mode: profile.ModeLocal, Identity: "efitz"})
 	stderr.Reset()
 	if code := runMCP(t.Context(), nil, e.Environ, strings.NewReader(""), &stdout, &stderr); code != 1 || stdout.Len() != 0 {
@@ -129,5 +133,31 @@ func TestMCPGuardAllows(t *testing.T) {
 		if err := mcpIdentityGuard(client.Options{Environ: e.Environ, Cwd: e.Home, Identity: tc.identity}); err != nil {
 			t.Errorf("login %q identity %q: %v", tc.login, tc.identity, err)
 		}
+	}
+}
+
+func TestInitIgnoredIdentityNote(t *testing.T) {
+	setLogin(t, "efitz")
+	e := newTestEnv(t)
+	repo := filepath.Join(t.TempDir(), "proj")
+	mkRepo(t, repo)
+	run := func(id string) string {
+		var out bytes.Buffer
+		if err := Init(InitOptions{Home: e.Home, Cwd: repo, Environ: e.Environ, OS: "linux", Identity: id}, &out); err != nil {
+			t.Fatalf("Init: %v\n%s", err, out.String())
+		}
+		return out.String()
+	}
+	if out := run(""); strings.Contains(out, "ignored") {
+		t.Fatalf("first run must not note an ignored identity:\n%s", out)
+	}
+	out := run("other")
+	for _, w := range []string{"-identity other ignored", `keeps its identity "proj"`, filepath.Join(e.ConfigDir, "config.json")} {
+		if !strings.Contains(out, w) {
+			t.Fatalf("output lacks %q:\n%s", w, out)
+		}
+	}
+	if out := run(""); strings.Contains(out, "ignored") {
+		t.Fatalf("no -identity, no note:\n%s", out)
 	}
 }

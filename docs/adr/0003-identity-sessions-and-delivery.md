@@ -358,7 +358,7 @@ on 2026-10-21 (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`,
   bare sender when empty) and its own `Session.DisplayName`, and never derives
   a name itself.
 - **Session lifecycle.** It opens its session with the hint `tui` (so the human
-  is `<identity>/tui`), passes the session id on `Send`, `Receive`, `Watch` and
+  is `<identity>/tui`; superseded by TUI decision 12: the hint is the short hostname, falling back to `tui`), passes the session id on `Send`, `Receive`, `Watch` and
   `Close` (the server sets `Display` only when a `Send` names a session),
   closes on quit, and on `session_lapsed` resumes once with the resume token
   before treating a second lapse as an error.

@@ -24,6 +24,10 @@ type Options struct {
 	// FallbackIdentity is the identity used when nothing else selects one
 	// (Decision 71's last step); only the TUI sets it, to the OS login name.
 	FallbackIdentity string
+	// HumanIdentity (the TUI only) ignores the profile's identity when the
+	// repository file selected the profile, so the human never shares the
+	// agent's identity there (TUI decision 11).
+	HumanIdentity bool
 	// Maintenance (local mode) runs maintenance.New(c).Tick on a ticker.
 	Maintenance bool
 	Logger      *slog.Logger
@@ -107,7 +111,7 @@ func Resolve(o Options) (Resolved, error) {
 		}
 	}
 	envIdentity, _ := profile.Getenv(o.Environ, "AGENTBUS2_IDENTITY")
-	r.Identity, r.IdentitySource, err = r.Profile.ResolveIdentity(profile.IdentitySelection{Flag: o.Identity, Env: envIdentity, Credentials: creds, Fallback: o.FallbackIdentity})
+	r.Identity, r.IdentitySource, err = r.Profile.ResolveIdentity(profile.IdentitySelection{Flag: o.Identity, Env: envIdentity, Credentials: creds, Fallback: o.FallbackIdentity, SkipProfile: o.HumanIdentity && src == profile.SourceRepo})
 	if err != nil {
 		return Resolved{}, resolveErr(err)
 	}
