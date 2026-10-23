@@ -271,6 +271,9 @@ func TestWatchIncludeOwnWire(t *testing.T) {
 		params.Timeout = ptrTo(0.5)
 		if own {
 			params.IncludeOwn = ptrTo(true)
+			// The wake ends this watch, so a long timeout costs nothing and
+			// tolerates a slow runner's late send.
+			params.Timeout = ptrTo(10.0)
 		}
 		params.After = ptrTo(s.send("sam", "")) // a floor: earlier messages do not wake
 		sent := s.sendLater(100*time.Millisecond, "pat", s.session.Id)
