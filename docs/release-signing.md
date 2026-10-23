@@ -10,15 +10,15 @@ This is the same arrangement agentbus 1.x uses, set up separately for `ericfitz/
 
 ## Cost
 
-Basic plan: $9.99 per month for up to 5,000 signatures, billed per account per month, not prorated, and it cannot be paused. Deleting the account is the only way to stop billing, and it discards the identity validation.
+Basic plan: $9.99 per month for up to 5,000 signatures, billed per account per month, not prorated, and it cannot be paused. Deleting the account is the only way to stop billing; it discards the certificate profiles, while identity validations are scoped to the subscription and survive it.
 
 ## One-time setup
 
-1. In the Azure subscription: first register the `Microsoft.CodeSigning` resource provider in the subscription, then create an Artifact Signing account (Basic), complete individual identity validation (the validation email link expires after 7 days), and create a Public Trust certificate profile. The signer name on the certificate is the validated individual identity. Per Microsoft's quickstart:
-   - The *Artifact Signing Identity Verifier* role is needed to create the identity validation.
-   - Individual validation comes from the Azure billing account (Account Type Individual, matching the government ID).
+1. In the Azure subscription: first register the `Microsoft.CodeSigning` resource provider in the subscription, then create an Artifact Signing account (Basic), complete a Public *organization* identity validation for the maintainer's company (Milestone 9 decision 7; the validation email links expire after 7 days), and create a Public Trust certificate profile. The signer name on the certificate is the validated organization. Per Microsoft's quickstart:
+   - The *Artifact Signing Identity Verifier* role, assigned on the account, is needed to create the identity validation.
+   - Organization validation takes the legal name, website, a primary and a different secondary email on the company's domain, a business identifier (the EIN) and the registered address; it matches them against public records (keep the D-U-N-S record current) and takes 1 to 20 business days. The named representative also completes an individual ID check when the request turns *Action Required*.
    - The validated name becomes the certificate's common name, which is the value of `AUTHENTICODE_SIGNER`; read it from the certificate profile's Certificate subject preview.
-2. Register an Entra application with a federated credential whose subject is `repo:ericfitz/agentbus2:environment:release` (issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`), so only jobs in this repository's `release` environment can obtain a token. Assign it the *Artifact Signing Certificate Profile Signer* role on that certificate profile only. An application registered for v1 can carry a second federated credential for this subject.
+2. Register an Entra application with a federated credential (scenario *GitHub Actions deploying Azure resources*, entity Environment `release`) whose subject is `repo:ericfitz@2677124/agentbus2@1426457945:environment:release` (issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`), so only jobs in this repository's `release` environment can obtain a token. Assign it the *Artifact Signing Certificate Profile Signer* role on that certificate profile only. The subject uses GitHub's immutable form (owner and repository ids), because this repository's OIDC subject claim does: `gh api repos/ericfitz/agentbus2/actions/oidc/customization/sub` reports `use_immutable_subject: true`. A credential with the name-only subject `repo:ericfitz/agentbus2:environment:release` never matches. An application registered for v1 can carry a second federated credential for this subject.
 3. In the repository, add a `v*` tag rule to the `release` environment (Settings > Environments > release > Deployment branches and tags > tag pattern `v*`, creating the environment there if absent), so only tags matching `v*` can deploy to it. `release.sh` dispatches the workflow on the tag itself (`gh workflow run --ref <tag>`), so the run's `github.ref` is the tag and the rule admits it. The `package-windows` job uses this environment for both `on` and `off` releases.
 4. Store these as repository **variables** (Settings > Secrets and variables > Actions > Variables), not secrets; none of them grants access on its own:
 
@@ -42,9 +42,9 @@ Basic plan: $9.99 per month for up to 5,000 signatures, billed per account per m
 
 ## Pausing and resuming
 
-Pausing: delete the Artifact Signing account. Billing stops; the identity validation and the certificate profile are lost. Releases continue with `--windows-signing=off`.
+Pausing: delete the Artifact Signing account. Billing stops; the certificate profile is lost, while the identity validation stays with the subscription. Releases continue with `--windows-signing=off`.
 
-Resuming: repeat setup step 1 (identity validation takes days), reassign the role in step 2 to the new certificate profile, and update the `ARTIFACT_SIGNING_*` variables. The workflow is unchanged either way.
+Resuming: repeat setup step 1 (reuse the identity validation if it is still valid; a new one takes days), reassign the role in step 2 to the new certificate profile, and update the `ARTIFACT_SIGNING_*` variables. The workflow is unchanged either way.
 
 ## Checking a release
 
@@ -52,4 +52,4 @@ Resuming: repeat setup step 1 (identity validation takes days), reassign the rol
 Get-AuthenticodeSignature .\agentbus2.exe | Format-List Status, SignerCertificate, TimeStamperCertificate
 ```
 
-`Status` is `Valid` and the signer's subject names the maintainer. An unsigned release says so in its notes; its binaries are still covered by the signed `SHA256SUMS` and the build attestations.
+`Status` is `Valid` and the signer's subject names the maintainer's company. An unsigned release says so in its notes; its binaries are still covered by the signed `SHA256SUMS` and the build attestations.

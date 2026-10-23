@@ -266,6 +266,13 @@ The release tooling plan's proposals 1 to 5
    there is no cross-signing. On compromise: generate and embed a new pair,
    re-sign the `SHA256SUMS` of every release still supported, and publish a
    GitHub security advisory naming the old key's fingerprint.
+7. **Publisher identity** (Eric, 2026-10-23): the signing identity on both
+   platforms is the maintainer's company, Trojan Unicorn Ventures LLC.
+   Authenticode uses an Artifact Signing *organization* identity validation
+   (not the individual one decision 3 assumed); the Apple Developer account
+   converts from individual to organization membership. Until each
+   completes, releases keep the current identity (macOS: the individual
+   Developer ID; Windows: `--windows-signing=off`), so 2.0.0 is unaffected.
 2. **Docker image**: `ghcr.io/ericfitz/agentbus` (the product name, not
    `agentbus2`: a deliberate exception to Decision 32's separate names; v1
    publishes no image), public, with 2.0.0.
