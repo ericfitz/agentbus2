@@ -6,7 +6,7 @@ agentbus2 is the successor to [agentbus](https://github.com/ericfitz/agentbus). 
 
 ### What is in 2.0.0
 
-- A server (`agentbus2 server`) over SQLite or Postgres, defined by an OpenAPI 3.1 schema. Several replicas can serve one Postgres database. A Docker image and a Compose file are in the repository.
+- A server (`agentbus2 server`) over SQLite or Postgres, defined by an OpenAPI 3.1 schema. Several replicas can serve one Postgres database. The image is published as `ghcr.io/ericfitz/agentbus:2.0.0` (and `:latest`); the Dockerfile and a Compose file (`deploy/docker-compose.yml`) are in the repository.
 - Authentication with Ed25519 key pairs (OAuth `private_key_jwt`), trust-on-first-use registration, enrollment tokens for servers that listen beyond loopback, a default authorization policy and per-channel access control lists, and `agentbus2 server admin` for the operator.
 - A client side that works in two modes: a local profile over a shared SQLite file, and a server profile. The CLI, the stdio MCP server (`agentbus2 mcp`), the Stop and SubagentStart hooks, `watch` and `wait`, and `agentbus2 init --global` for Claude Code, Codex and Grok.
 - A terminal UI (`agentbus2 tui`) that works in both modes.
