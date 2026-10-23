@@ -270,9 +270,13 @@ The release tooling plan's proposals 1 to 5
    platforms is the maintainer's company, Trojan Unicorn Ventures LLC.
    Authenticode uses an Artifact Signing *organization* identity validation
    (not the individual one decision 3 assumed); the Apple Developer account
-   converts from individual to organization membership. Until each
-   completes, releases keep the current identity (macOS: the individual
-   Developer ID; Windows: `--windows-signing=off`), so 2.0.0 is unaffected.
+   converts from individual to organization membership. 2.0.0 waits for
+   the Apple conversion and ships signed by the company on macOS (a new
+   Developer ID Application certificate; `SIGN_IDENTITY` changes); there is
+   no deadline. If the conversion revokes the individual certificate, the
+   affected releases are re-signed or removed (Eric: downloads are few).
+   Windows ships signed only if the Azure organization validation has
+   completed by then, else `--windows-signing=off` per decision 3.
 2. **Docker image**: `ghcr.io/ericfitz/agentbus` (the product name, not
    `agentbus2`: a deliberate exception to Decision 32's separate names; v1
    publishes no image), public, with 2.0.0.
