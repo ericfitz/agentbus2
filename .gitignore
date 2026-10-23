@@ -9,3 +9,6 @@ HANDOFF.md
 
 # The operator's compose secrets (copied from deploy/example.env)
 .env
+
+# Brainstorm visual companion sessions
+/.superpowers/
