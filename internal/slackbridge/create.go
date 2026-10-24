@@ -3,8 +3,10 @@ package slackbridge
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
@@ -23,6 +25,10 @@ const (
 // an overlapping Create.
 const reserveAttempts = 3
 
+// createLease bounds the SQLite lease on a create; the Slack calls under it
+// are far shorter.
+const createLease = 2 * time.Minute
+
 // human is an identity with explicit write on the channel and its email
 // binding.
 type human struct{ identity, email string }
@@ -32,7 +38,9 @@ type reservation struct {
 	bridge  store.Bridge
 	channel store.Channel
 	resumed bool
-	humans  []human
+	// inserted: this call inserted the row (only then may it delete it).
+	inserted bool
+	humans   []human
 }
 
 func nameTaken(name string) error {
@@ -98,9 +106,14 @@ func (s *Service) Create(ctx context.Context, admin string, in bus.CreateBridgeI
 	if err != nil {
 		return bus.BridgeCreated{}, err
 	}
-	live, err := s.goLive(ctx, b)
+	live, wasLive, err := s.goLive(ctx, b)
 	if err != nil {
 		return bus.BridgeCreated{}, err
+	}
+	if wasLive {
+		// An overlapping Create finished first and reported; this one only
+		// returns the same bridge.
+		return bus.BridgeCreated{Bridge: toBus(live), NotInvited: notInvited}, nil
 	}
 	s.log.Info("slack bridge: created", "channel", live.ChannelName, "slack_channel", live.SlackChannelID, "not_invited", len(notInvited))
 	if len(notInvited) > 0 {
@@ -110,9 +123,37 @@ func (s *Service) Create(ctx context.Context, admin string, in bus.CreateBridgeI
 }
 
 // reserveAndOpen is steps 1 and 2, serialized within this process.
+//
+// Across replicas the two steps hold the Store lock "bridge-create:<channel
+// id>" (a lease of createLease on SQLite, the session on Postgres), so a
+// resumed row and a fresh one never race for the Slack name; a held lock is a
+// retryable unavailable.
 func (s *Service) reserveAndOpen(ctx context.Context, in bus.CreateBridgeInput) (store.Bridge, reservation, error) {
 	s.createMu.Lock()
 	defer s.createMu.Unlock()
+	var ch store.Channel
+	err := s.core.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		ch, err = s.core.ChannelByName(ctx, tx, in.Channel)
+		return err
+	})
+	if err != nil {
+		return store.Bridge{}, reservation{}, core.FromStore(err)
+	}
+	owner, err := core.RandomHex(8)
+	if err != nil {
+		return store.Bridge{}, reservation{}, core.FromStore(err)
+	}
+	lock := fmt.Sprintf("bridge-create:%d", ch.ID)
+	now := s.core.Now()
+	held, err := s.core.Store.TryLock(ctx, lock, owner, now.UnixMilli(), now.Add(createLease).UnixMilli())
+	if err != nil {
+		return store.Bridge{}, reservation{}, core.FromStore(err)
+	}
+	if !held {
+		return store.Bridge{}, reservation{}, core.E(bus.CodeUnavailable, "another create of this bridge is in progress; retry")
+	}
+	defer func() { _ = s.core.Store.Unlock(context.WithoutCancel(ctx), lock, owner) }()
 	r, err := s.reserve(ctx, in)
 	if err != nil {
 		return store.Bridge{}, r, err
@@ -196,6 +237,7 @@ func (s *Service) reserveTx(ctx context.Context, tx store.Tx, in bus.CreateBridg
 			return core.E(bus.CodeValidation, "%s", err.Error())
 		}
 	}
+	r.inserted = true
 	r.bridge, err = tx.CreateBridge(ctx, store.Bridge{
 		ChannelID: ch.ID, ChannelName: ch.Name, Scope: ch.Scope, SlackName: name, CreatedAt: s.core.NowMs(),
 	})
@@ -276,9 +318,10 @@ func (s *Service) openSlackChannel(ctx context.Context, r reservation) (store.Br
 }
 
 // adopt answers the ID of the Slack channel that holds the bridge's name. Only
-// a resumed row adopts, and only an unarchived channel the app can see; a
-// fresh row, or anything else, is conflict, and the creating row (which has no
-// Slack channel) is deleted so the channel is not left pinned.
+// a resumed row adopts, and only an unarchived channel the app can see;
+// anything else is conflict. A row this call inserted (no Slack channel yet)
+// is deleted so the channel is not left pinned; a resumed row is left for
+// bridges remove, since another replica may be using it.
 func (s *Service) adopt(ctx context.Context, r reservation) (string, error) {
 	b := r.bridge
 	if r.resumed {
@@ -289,6 +332,9 @@ func (s *Service) adopt(ctx context.Context, r reservation) (string, error) {
 		case err != nil && !errors.Is(err, slackapi.ErrChannelNotFound):
 			return "", err
 		}
+	}
+	if !r.inserted {
+		return "", core.E(bus.CodeConflict, "Slack channel name %q is taken; run bridges remove for channel %q, then create it again with another -slack-name", b.SlackName, b.ChannelName)
 	}
 	if err := s.dropCreating(ctx, b); err != nil {
 		return "", err
@@ -358,9 +404,9 @@ func (s *Service) invite(ctx context.Context, self slackapi.Self, slackChannel s
 }
 
 // goLive is step 4.
-func (s *Service) goLive(ctx context.Context, b store.Bridge) (store.Bridge, error) {
-	var out store.Bridge
-	err := s.core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+func (s *Service) goLive(ctx context.Context, b store.Bridge) (out store.Bridge, wasLive bool, err error) {
+	err = s.core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		wasLive = false
 		cur, err := tx.Bridge(ctx, b.ID)
 		if errors.Is(err, store.ErrNotFound) {
 			return core.E(bus.CodeNotFound, "the bridge of channel %q was removed meanwhile; retry", b.ChannelName)
@@ -379,6 +425,7 @@ func (s *Service) goLive(ctx context.Context, b store.Bridge) (store.Bridge, err
 		if err := scopes.CheckBridgeACL(want); err != nil {
 			return err
 		}
+		wasLive = cur.State == store.BridgeLive
 		if err := tx.SetBridgeLive(ctx, b.ID); err != nil {
 			return err
 		}
@@ -400,9 +447,9 @@ func (s *Service) goLive(ctx context.Context, b store.Bridge) (store.Bridge, err
 		return err
 	})
 	if err != nil {
-		return store.Bridge{}, core.FromStore(err)
+		return store.Bridge{}, false, core.FromStore(err)
 	}
-	return out, nil
+	return out, wasLive, nil
 }
 
 // notice is step 5: a Slack post and a bus message from slack-bridge naming

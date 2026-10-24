@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"slices"
 	"strings"
 	"sync"
@@ -19,17 +20,36 @@ import (
 )
 
 const (
-	slBot   = "UBOT"
-	slTeam  = "T1"
-	slAlice = "alice@corp.example"
-	slGina  = "gina@corp.example"
-	slXav   = "xavier@corp.example"
-	slNone  = "nobody@corp.example"
+	reasonGuest = "Slack guest or external user"
+	slBot       = "UBOT"
+	slTeam      = "T1"
+	slAlice     = "alice@corp.example"
+	slGina      = "gina@corp.example"
+	slXav       = "xavier@corp.example"
+	slNone      = "nobody@corp.example"
 )
 
 // slackFix is a harness with the Slack fake, the bridge Service over it, a
 // scope job1 with an agent and the humans of the bridge tests.
+type logBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (l *logBuf) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.Write(p)
+}
+
+func (l *logBuf) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.b.String()
+}
+
 type slackFix struct {
+	logs *logBuf
 	h    *harness
 	fake *slackfake.Fake
 	svc  *slackbridge.Service
@@ -55,11 +75,27 @@ func newSlackFix(t *testing.T, e dbtest.Engine) *slackFix {
 			t.Fatalf("CreateIdentityByEmail %s: %v", em, err)
 		}
 	}
-	svc, err := slackbridge.New(context.Background(), h.core, f, slackbridge.Config{ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, LockRenew: 10 * time.Millisecond})
+	logs := &logBuf{}
+	svc, err := slackbridge.New(context.Background(), h.core, f, slackbridge.Config{
+		ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, LockRenew: 10 * time.Millisecond,
+		Logger: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
+	})
 	if err != nil {
 		t.Fatalf("slackbridge.New: %v", err)
 	}
-	return &slackFix{h: h, fake: f, svc: svc, adm: "adm"}
+	return &slackFix{h: h, fake: f, svc: svc, adm: "adm", logs: logs}
+}
+
+// noSecretsLogged fails when the captured log holds a token, the notice text
+// or the final line.
+func (x *slackFix) noSecretsLogged(t *testing.T) {
+	t.Helper()
+	log := x.logs.String()
+	for _, bad := range []string{"xoxb", "xapp", "Not invited", "This channel is archived", slGina, slAlice, slXav} {
+		if strings.Contains(log, bad) {
+			t.Errorf("the log contains %q:\n%s", bad, log)
+		}
+	}
 }
 
 func slEntry(id string, ps ...ab2store.Permission) ab2store.ACLEntry {
@@ -153,8 +189,6 @@ func TestSlackBridgeCreate(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		x := newSlackFix(t, e)
 		ch := x.slChannel("job1-chat", "job1", nil)
-		before := x.h.core.NowMs()
-		_ = before
 
 		got, err := x.create("job1-chat", "")
 		if err != nil {
@@ -252,6 +286,59 @@ func TestSlackBridgeCreate(t *testing.T) {
 			if err := call(); ab2bus.CodeOf(err) != ab2bus.CodeForbidden {
 				t.Errorf("%s by a non-admin = %v", name, err)
 			}
+		}
+		if !strings.Contains(x.logs.String(), "created") {
+			t.Error("the create logged nothing; the log assertion below would be vacuous")
+		}
+		x.noSecretsLogged(t)
+	})
+}
+
+// TestSlackBridgeDecision18: each reason alone keeps a user out of Slack.
+func TestSlackBridgeDecision18(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		x := newSlackFix(t, e)
+		R, W := ab2store.PermRead, ab2store.PermWrite
+		cases := []struct {
+			id, email string
+			user      slackapi.User
+			reason    string
+		}{
+			{"otherteam@corp.example", "otherteam@corp.example", slackapi.User{ID: "UA", TeamID: "T9", Email: "otherteam@corp.example"}, reasonGuest},
+			{"ultra@corp.example", "ultra@corp.example", slackapi.User{ID: "UB", TeamID: slTeam, Email: "ultra@corp.example", UltraRestricted: true}, reasonGuest},
+			{"restricted@corp.example", "restricted@corp.example", slackapi.User{ID: "UC", TeamID: slTeam, Email: "restricted@corp.example", Restricted: true}, reasonGuest},
+			{"stranger@corp.example", "stranger@corp.example", slackapi.User{ID: "UD", TeamID: slTeam, Email: "stranger@corp.example", Stranger: true}, reasonGuest},
+			{"deleted@corp.example", "deleted@corp.example", slackapi.User{ID: "UE", TeamID: slTeam, Email: "deleted@corp.example", Deleted: true}, "not found in Slack"},
+			{"bot@corp.example", "bot@corp.example", slackapi.User{ID: "UF", TeamID: slTeam, Email: "bot@corp.example", IsBot: true}, "not found in Slack"},
+		}
+		acl := []ab2store.ACLEntry{slEntry("job1-coder", R, W), slEntry(slAlice, R, W)}
+		for _, c := range cases {
+			x.fake.AddUser(c.user)
+			if _, _, err := (identities.Service{Core: x.h.core}).CreateIdentityByEmail(context.Background(), c.email); err != nil {
+				t.Fatal(err)
+			}
+			acl = append(acl, slEntry(c.id, R, W))
+		}
+		x.slChannel("job1-chat", "job1", acl)
+		got, err := x.create("job1-chat", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		reasons := map[string]string{}
+		for _, n := range got.NotInvited {
+			reasons[n.Identity] = n.Reason
+		}
+		fc, _ := x.fake.Channel(got.Bridge.SlackChannelID)
+		for _, c := range cases {
+			if reasons[c.id] != c.reason {
+				t.Errorf("%s: reason %q, want %q", c.id, reasons[c.id], c.reason)
+			}
+			if slices.Contains(fc.Members, c.user.ID) {
+				t.Errorf("%s was invited", c.id)
+			}
+		}
+		if !slices.Contains(fc.Members, "U1") {
+			t.Error("the full member was not invited")
 		}
 	})
 }
@@ -406,7 +493,7 @@ func TestSlackBridgeCreateResume(t *testing.T) {
 				t.Errorf("FindPrivateChannel calls = %d", x.fake.Calls("FindPrivateChannel"))
 			}
 		})
-		t.Run("a resumed name held by an archived channel is a conflict and drops the row", func(t *testing.T) {
+		t.Run("a resumed name held by an archived channel is a conflict and keeps the row", func(t *testing.T) {
 			x := newSlackFix(t, e)
 			ch := x.slChannel("job1-chat", "job1", nil)
 			x.h.tx(func(ctx context.Context, tx ab2store.Tx) error {
@@ -417,12 +504,66 @@ func TestSlackBridgeCreateResume(t *testing.T) {
 			x.fake.ArchiveByHand(old)
 			_, err := x.create("job1-chat", "")
 			codeOf(t, err, ab2bus.CodeConflict)
-			if _, found := x.bridgeRow(ch); found {
-				t.Error("the creating row was left")
+			if row, found := x.bridgeRow(ch); !found || row.State != ab2store.BridgeCreating {
+				t.Errorf("a row this call did not insert was touched: %+v, %v", row, found)
 			}
-			// With a new name the channel can be bridged.
+			// bridges remove clears the stuck row; a new name then works.
+			if err := x.svc.Remove(context.Background(), "adm", ab2bus.RemoveBridgeInput{Channel: "job1-chat"}); err != nil {
+				t.Fatalf("Remove: %v", err)
+			}
 			if got, err := x.create("job1-chat", "job1-chat-2"); err != nil || got.Bridge.State != ab2bus.BridgeLive {
 				t.Errorf("create with a new name = %+v, %v", got, err)
+			}
+		})
+		t.Run("two replicas creating concurrently", func(t *testing.T) {
+			x := newSlackFix(t, e)
+			sib := x.h.sibling(harnessOptions{})
+			svc2, err := slackbridge.New(context.Background(), sib.core, x.fake, slackbridge.Config{ArchiveAfterDone: time.Hour, MaxMessageChars: 3000})
+			if err != nil {
+				t.Fatal(err)
+			}
+			ch := x.slChannel("job1-chat", "job1", nil)
+			var wg sync.WaitGroup
+			svcs := []*slackbridge.Service{x.svc, svc2}
+			res := make([]ab2bus.BridgeCreated, 2)
+			errs := make([]error, 2)
+			for i := range 2 {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					res[i], errs[i] = svcs[i].Create(context.Background(), "adm", ab2bus.CreateBridgeInput{Channel: "job1-chat"})
+				}()
+			}
+			wg.Wait()
+			for i := range 2 {
+				switch {
+				case errs[i] == nil:
+				case ab2bus.CodeOf(errs[i]) == ab2bus.CodeUnavailable && msgOf(errs[i]) == "another create of this bridge is in progress; retry":
+					// Retryable: the retry must succeed.
+					if got, err := svcs[i].Create(context.Background(), "adm", ab2bus.CreateBridgeInput{Channel: "job1-chat"}); err != nil && (ab2bus.CodeOf(err) != ab2bus.CodeConflict || msgOf(err) != `channel "job1-chat" is already bridged`) {
+						t.Fatalf("retry %d = %+v, %v", i, got, err)
+					}
+				case ab2bus.CodeOf(errs[i]) == ab2bus.CodeConflict && msgOf(errs[i]) == `channel "job1-chat" is already bridged`:
+				default:
+					t.Fatalf("create %d = %+v, %v", i, res[i], errs[i])
+				}
+			}
+			row, found := x.bridgeRow(ch)
+			if !found || row.State != ab2store.BridgeLive || row.SlackChannelID == "" {
+				t.Fatalf("row = %+v, %v", row, found)
+			}
+			if n := x.fake.Calls("CreatePrivateChannel"); n != 1 {
+				t.Errorf("CreatePrivateChannel calls = %d, want exactly one Slack channel", n)
+			}
+			fc, _ := x.fake.Channel(row.SlackChannelID)
+			notices := 0
+			for _, p := range fc.Posts {
+				if strings.Contains(p.Section, "Not invited") {
+					notices++
+				}
+			}
+			if notices != 1 {
+				t.Errorf("not-invited notices in Slack = %d, want 1", notices)
 			}
 		})
 		t.Run("overlapping creates end live with one Slack channel", func(t *testing.T) {
@@ -518,6 +659,8 @@ func TestSlackBridgeRemoveAndArchive(t *testing.T) {
 		// A second Remove finds nothing.
 		err = x.svc.Remove(ctx, x.adm, ab2bus.RemoveBridgeInput{Channel: "job1-chat"})
 		codeOf(t, err, ab2bus.CodeNotFound)
+
+		x.noSecretsLogged(t)
 
 		// The archived Slack channel keeps its name.
 		_, err = x.create("job1-chat", "")

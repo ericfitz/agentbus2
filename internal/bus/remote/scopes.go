@@ -210,7 +210,8 @@ func (b *Bus) GetBridge(ctx context.Context, channel string) (ab2bus.Bridge, err
 	return fromGenBridge(*r.JSON200)
 }
 
-// RemoveBridge archives the bridge of a channel.
+// RemoveBridge archives the Slack channel of a channel's bridge and deletes
+// the bridge.
 func (b *Bus) RemoveBridge(ctx context.Context, in ab2bus.RemoveBridgeInput) error {
 	r, err := b.c.RemoveBridgeWithResponse(ctx, in.Channel)
 	if err != nil {

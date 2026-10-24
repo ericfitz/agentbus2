@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"os"
 	"strings"
 	"time"
@@ -324,5 +325,9 @@ func slackClientFor(cfg config.Config, logger *slog.Logger) (slackapi.Client, er
 	if err != nil {
 		return nil, err
 	}
-	return slackgo.New(app, bot, slackgo.Options{Logger: logger})
+	return slackgo.New(app, bot, slackgo.Options{Logger: logger, HTTP: &http.Client{Timeout: slackHTTPTimeout}})
 }
+
+// slackHTTPTimeout bounds every Slack Web API call, so a Slack that accepts
+// connections and never answers cannot block the start-up auth.test.
+const slackHTTPTimeout = 30 * time.Second
