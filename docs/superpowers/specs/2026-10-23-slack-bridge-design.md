@@ -117,14 +117,11 @@ Anti-goals:
 21. **Registration modes (decided 2026-10-23, after the plan review;
     amends ADR 0002 decisions 5 and 8).** The `closed` registration mode
     is removed; the modes are `open` (anyone claims a free name, trust on
-    first use) and `enrollment` (an admin-minted token is required). A new
-    server setting `enrollment_tokens` (`any`, the default, or `bound`)
-    gives the strict behavior: under `bound`, registration never creates a
-    name; a key binds only to an existing keyless row an administrator
-    created (a scoped agent, an unscoped agent from `create-identity`, or
-    any identity after `reset-credential`), with an enrollment token bound
-    to that name, and minting an unbound token is refused. Decision 17
-    applies in both modes. No release has shipped, so `closed` needs no
+    first use) and `enrollment` (an admin-minted token is required).
+    Whether a token is bound to a name is the administrator's choice when
+    minting it (`create-identity`, `enrollment create -identity`); there
+    is no server setting that forbids unbound tokens. Decision 17 applies
+    in both modes. No release has shipped, so `closed` needs no
     compatibility handling: it is an unknown value like any other.
 
 ## 4. Scopes
