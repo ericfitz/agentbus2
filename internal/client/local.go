@@ -2,11 +2,13 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -86,10 +88,7 @@ func openLocal(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 		// The TUI's OS-login identity is a human (spec 4.4); an identity the
 		// user named is never turned human.
 		if err := ids.RegisterLocalHuman(ctx, r.Identity); err != nil {
-			if bus.CodeOf(err) == bus.CodeConflict {
-				return nil, resolveErr(fmt.Errorf("identity %q holds keys, so it cannot be the TUI's human identity; pass -identity", r.Identity))
-			}
-			return nil, fmt.Errorf("registering %q: %w", r.Identity, err)
+			return nil, humanRegisterError(r.Identity, err)
 		}
 	} else if err := ids.RegisterLocal(ctx, r.Identity); err != nil {
 		return nil, fmt.Errorf("registering %q: %w", r.Identity, err)
@@ -116,6 +115,17 @@ func openLocal(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 			return st.Close()
 		},
 	}, nil
+}
+
+// humanRegisterError maps RegisterLocalHuman's failure: only the holds-keys
+// conflict is the user's to fix with -identity (a ResolveError); any other
+// error, a conflict left by exhausted reruns included, is reported as is.
+func humanRegisterError(name string, err error) error {
+	var be *bus.Error
+	if errors.As(err, &be) && be.Code == bus.CodeConflict && strings.Contains(be.Message, identities.HoldsKeysText) {
+		return resolveErr(fmt.Errorf("identity %q holds keys, so it cannot be the TUI's human identity; pass -identity", name))
+	}
+	return fmt.Errorf("registering %q: %w", name, err)
 }
 
 // startMaintenance ticks maintenance.New(c).Tick every interval after a random

@@ -10,6 +10,10 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
+// HoldsKeysText is the detail RegisterLocalHuman's conflict carries when the
+// identity holds keys, so a caller can tell it from an exhausted rerun.
+const HoldsKeysText = "holds keys, so it cannot be a human"
+
 // CreateIdentityByEmail creates the human identity named by email (spec 4):
 // the email is normalized, the identity's name is the normalized address, and
 // the binding has no issuer and no provider subject until the human first
@@ -154,7 +158,7 @@ func (s Service) RegisterLocalHuman(ctx context.Context, name string) error {
 				return err
 			}
 			if len(ks) > 0 {
-				return core.E(bus.CodeConflict, "identity %q holds keys, so it cannot be a human", name)
+				return core.E(bus.CodeConflict, "identity %q "+HoldsKeysText, name)
 			}
 			return tx.MarkHuman(ctx, name)
 		})

@@ -1490,3 +1490,70 @@ func TestKeyStoringPathsRefuseHuman(t *testing.T) {
 		return nil
 	})
 }
+
+// TestHumanOverlap: overlapping callers end with one row (Definition of
+// Done D): exactly one create reports created, and there is one binding and
+// one general subscription.
+func TestHumanOverlap(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	const n = 8
+	var wg sync.WaitGroup
+	type out struct {
+		id      string
+		created bool
+		err     error
+	}
+	res := make(chan out, n)
+	for range n {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			id, c, err := s.CreateIdentityByEmail(ctx, "eric@corp.example")
+			res <- out{id, c, err}
+		}()
+	}
+	wg.Wait()
+	close(res)
+	created := 0
+	for r := range res {
+		if r.err != nil || r.id != "eric@corp.example" {
+			t.Fatalf("overlapping CreateIdentityByEmail = %+v", r)
+		}
+		if r.created {
+			created++
+		}
+	}
+	if created != 1 {
+		t.Fatalf("%d creates reported created, want 1", created)
+	}
+	if got := generalSubscriptions(t, s, "eric@corp.example"); got != 1 {
+		t.Fatalf("%d general subscriptions, want 1", got)
+	}
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		ids, err := tx.ListIdentities(ctx)
+		if err != nil || len(ids) != 1 {
+			t.Fatalf("identities = %v, %v", ids, err)
+		}
+		return nil
+	})
+
+	errs := make(chan error, n)
+	for range n {
+		wg.Add(1)
+		go func() { defer wg.Done(); errs <- s.RegisterLocalHuman(ctx, "kim") }()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Fatalf("overlapping RegisterLocalHuman: %v", err)
+		}
+	}
+	if k := identityOf(t, s, "kim").Kind; k != store.IdentityHuman {
+		t.Fatalf("kim kind = %q", k)
+	}
+	if got := generalSubscriptions(t, s, "kim"); got != 1 {
+		t.Fatalf("%d general subscriptions for kim, want 1", got)
+	}
+}

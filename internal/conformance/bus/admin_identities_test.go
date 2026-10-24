@@ -3,10 +3,12 @@ package bus
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/dbtest"
 	ab2store "github.com/ericfitz/agentbus2/internal/store"
 )
@@ -241,6 +243,43 @@ func TestResetScopesHumansCallerKim(t *testing.T) {
 				t.Fatalf("everything #%d: %+v", i, st)
 			}
 			idRefs(t, st.admins, "kim@corp.example")
+		}
+	})
+}
+
+// TestCreateIdentityByEmailOverlap: overlapping creators of one address end
+// with one human row and one creator reporting created, on both engines.
+func TestCreateIdentityByEmailOverlap(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx := context.Background()
+		h := newHarness(t, e, harnessOptions{})
+		svc := identities.Service{Core: h.core}
+		const n = 6
+		var wg sync.WaitGroup
+		var mu sync.Mutex
+		created := 0
+		for range n {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				id, c, err := svc.CreateIdentityByEmail(ctx, "eric@corp.example")
+				mu.Lock()
+				defer mu.Unlock()
+				if err != nil || id != "eric@corp.example" {
+					t.Errorf("CreateIdentityByEmail = %q, %v", id, err)
+				}
+				if c {
+					created++
+				}
+			}()
+		}
+		wg.Wait()
+		if created != 1 {
+			t.Fatalf("%d creates reported created, want 1", created)
+		}
+		st := readRegistry(t, h)
+		if len(st.identities) != 1 || len(st.bindings) != 1 || st.identities["eric@corp.example"].Kind != ab2store.IdentityHuman {
+			t.Fatalf("registry = %+v", st)
 		}
 	})
 }

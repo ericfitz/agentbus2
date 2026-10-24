@@ -12,6 +12,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/profile"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -447,5 +448,20 @@ func TestOpenLocalOSUserWithKeysRefused(t *testing.T) {
 	var re *ResolveError
 	if !errors.As(err, &re) || !strings.Contains(err.Error(), `identity "eric" holds keys`) || !strings.Contains(err.Error(), "pass -identity") {
 		t.Fatalf("Open = %v, want a ResolveError naming eric", err)
+	}
+}
+
+func TestHumanRegisterErrorMapping(t *testing.T) {
+	holds := core.E(ab2bus.CodeConflict, "identity %q "+identities.HoldsKeysText, "eric")
+	var re *ResolveError
+	if err := humanRegisterError("eric", holds); !errors.As(err, &re) || !strings.Contains(err.Error(), "pass -identity") {
+		t.Fatalf("holds-keys = %v, want a ResolveError", err)
+	}
+	// A conflict from exhausted reruns is not the user's to fix with -identity.
+	for _, other := range []error{core.FromStore(store.ErrConflict), errors.New("disk full")} {
+		err := humanRegisterError("eric", other)
+		if errors.As(err, &re) || strings.Contains(err.Error(), "holds keys") {
+			t.Fatalf("%v mapped to %v", other, err)
+		}
 	}
 }
