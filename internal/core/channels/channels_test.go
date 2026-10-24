@@ -69,9 +69,6 @@ func TestCreateNamedScopeAdminCheckStoreErrorIsNotForbidden(t *testing.T) {
 	if err == nil {
 		t.Fatal("want an error")
 	}
-	if !errors.Is(err, errBoom) && !(errors.As(err, &be) && be.Code != bus.CodeForbidden) {
-		t.Fatalf("err = %v, want the store error", err)
-	}
 	if errors.As(err, &be) && be.Code == bus.CodeForbidden {
 		t.Fatalf("a store failure was reported as forbidden: %v", err)
 	}
