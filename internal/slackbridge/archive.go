@@ -70,6 +70,7 @@ func (s *Service) ArchiveBridge(ctx context.Context, b store.Bridge, reason stri
 	if err != nil {
 		return core.FromStore(err)
 	}
+	s.clearBridgePosted(cur.ID)
 	s.log.Info("slack bridge: archived", "channel", cur.ChannelName, "slack_channel", cur.SlackChannelID, "reason", reason)
 	return nil
 }
@@ -129,6 +130,7 @@ func (s *Service) Remove(ctx context.Context, admin string, in bus.RemoveBridgeI
 	if err != nil {
 		return core.FromStore(err)
 	}
+	s.clearBridgePosted(b.ID)
 	s.log.Info("slack bridge: removed", "channel", b.ChannelName, "slack_channel", b.SlackChannelID)
 	return nil
 }

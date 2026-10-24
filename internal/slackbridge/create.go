@@ -381,7 +381,7 @@ func (s *Service) invite(ctx context.Context, self slackapi.Self, slackChannel s
 		switch {
 		case u.Deleted || u.IsBot:
 			out = append(out, bus.BridgeNotInvited{Identity: h.identity, Reason: reasonNotFound})
-		case u.Restricted || u.UltraRestricted || u.Stranger || (self.TeamID != "" && u.TeamID != "" && u.TeamID != self.TeamID):
+		case u.Restricted || u.UltraRestricted || u.Stranger || otherTeam(u, self):
 			// Decision 18: guests and external users are never invited.
 			out = append(out, bus.BridgeNotInvited{Identity: h.identity, Reason: reasonGuest})
 		default:

@@ -315,6 +315,7 @@ func TestSlackBridgeDecision18(t *testing.T) {
 			user      slackapi.User
 			reason    string
 		}{
+			{"noteam@corp.example", "noteam@corp.example", slackapi.User{ID: "UG", Email: "noteam@corp.example"}, reasonGuest},
 			{"otherteam@corp.example", "otherteam@corp.example", slackapi.User{ID: "UA", TeamID: "T9", Email: "otherteam@corp.example"}, reasonGuest},
 			{"ultra@corp.example", "ultra@corp.example", slackapi.User{ID: "UB", TeamID: slTeam, Email: "ultra@corp.example", UltraRestricted: true}, reasonGuest},
 			{"restricted@corp.example", "restricted@corp.example", slackapi.User{ID: "UC", TeamID: slTeam, Email: "restricted@corp.example", Restricted: true}, reasonGuest},

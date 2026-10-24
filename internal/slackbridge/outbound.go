@@ -84,9 +84,11 @@ func sleep(ctx context.Context, d time.Duration) error {
 // State (Definition of Done D): the mark moves only after a successful post,
 // so a second Drain posts nothing already acked; overlapping Drains in one
 // process are serialized; after a failed run the next one resumes from the
-// mark and posts the unacked message again at worst (a crash between the
-// post and its map row is repaired by CatchUp through the message metadata,
-// which the runner runs before the first drain).
+// mark and finishes a post whose map row failed to store from the in-memory
+// posted map (dropped when the bridge is archived or removed and when the
+// runner loses the lock), posting the unacked message again at worst (a crash
+// between the post and its map row is repaired by CatchUp through the message
+// metadata, which the runner runs before the first drain).
 func (s *Service) Drain(ctx context.Context) error {
 	if _, err := s.requireReady(); err != nil {
 		return err
@@ -224,7 +226,7 @@ func (s *Service) drainOne(ctx context.Context, b store.Bridge, ch store.Channel
 	}, b.Scope, s.cfg.MaxMessageChars, quote)
 	in.Channel, in.ThreadTS = b.SlackChannelID, thread
 	key := postedKey{b.ID, m.Seq}
-	ts, again := s.takePosted(key)
+	ts, again := s.getPosted(key)
 	if !again {
 		var err error
 		ts, err = s.post(ctx, in)
@@ -267,7 +269,10 @@ func (s *Service) setPosted(k postedKey, ts string) {
 	s.posted[k] = ts
 }
 
-func (s *Service) takePosted(k postedKey) (string, bool) {
+// getPosted reads the remembered Slack ts without removing it; the entry goes
+// only through clearPosted (after the map row is stored) or clearBridgePosted
+// (the bridge is archived or removed, or the runner lost the lock).
+func (s *Service) getPosted(k postedKey) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ts, ok := s.posted[k]
@@ -278,6 +283,24 @@ func (s *Service) clearPosted(k postedKey) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.posted, k)
+}
+
+// clearBridgePosted drops every remembered post of one bridge (bridge 0 means
+// all bridges): an archived or removed bridge posts nothing more, and a
+// runner that lost the lock must not trust a ts another runner may have
+// recorded or repaired since.
+func (s *Service) clearBridgePosted(bridge int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if bridge == 0 {
+		clear(s.posted)
+		return
+	}
+	for k := range s.posted {
+		if k.bridge == bridge {
+			delete(s.posted, k)
+		}
+	}
 }
 
 // record stores the map row of a posted message (unless an overlapping runner

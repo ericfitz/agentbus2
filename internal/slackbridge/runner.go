@@ -94,6 +94,7 @@ func (s *Service) Run(ctx context.Context) error {
 				s.log.Warn("slack bridge: runner stopped; the lock is not held")
 				rs.stop()
 				rs = nil
+				s.clearBridgePosted(0)
 			}
 		case rs == nil && ctx.Err() == nil:
 			s.log.Info("slack bridge: runner started")

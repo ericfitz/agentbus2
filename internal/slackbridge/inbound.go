@@ -112,6 +112,13 @@ func (s *Service) ProcessEvent(ctx context.Context, ev slackapi.Event) string {
 	return out
 }
 
+// otherTeam reports whether u is not a member of the bot's workspace. An
+// empty team id on either side counts as another team (the stricter rule):
+// the inbound check drops the message and bridges create does not invite.
+func otherTeam(u slackapi.User, self slackapi.Self) bool {
+	return u.TeamID == "" || self.TeamID == "" || u.TeamID != self.TeamID
+}
+
 // refusal names why a Slack user may not post, or "" when it may.
 func (s *Service) refusal(u slackapi.User, self slackapi.Self) string {
 	switch {
@@ -123,7 +130,7 @@ func (s *Service) refusal(u slackapi.User, self slackapi.Self) string {
 		return "guest user"
 	case u.Stranger:
 		return "external user"
-	case u.TeamID != self.TeamID:
+	case otherTeam(u, self):
 		return "user of another workspace"
 	case u.Email == "":
 		return "user has no email"
