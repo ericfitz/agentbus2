@@ -138,6 +138,9 @@ func (c *Core) resolveReplyTo(ctx context.Context, tx store.Tx, channelID, paren
 		if err != nil {
 			return 0, FromStore(err)
 		}
+		if next.ChannelID != channelID {
+			break // a legacy reply into another channel: keep the last row in this one
+		}
 		root = next
 	}
 	return root.Seq, nil

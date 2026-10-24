@@ -453,3 +453,77 @@ func TestAppendRefusesOtherChannelParent(t *testing.T) {
 		return nil
 	})
 }
+
+// liveBridge puts a live bridge on the channel.
+func liveBridge(t *testing.T, c *Core, ch store.Channel) {
+	t.Helper()
+	mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
+		b, err := tx.CreateBridge(ctx, store.Bridge{ChannelID: ch.ID, ChannelName: ch.Name, Scope: "job1", SlackName: "ab-" + ch.Name, CreatedAt: 5})
+		if err != nil {
+			return err
+		}
+		if err := tx.SetBridgeSlackChannel(ctx, b.ID, "G1"); err != nil {
+			return err
+		}
+		return tx.SetBridgeLive(ctx, b.ID)
+	})
+}
+
+func rawMsg(t *testing.T, c *Core, chID int64, reply *int64) int64 {
+	t.Helper()
+	var seq int64
+	err := c.Store.Append(context.Background(), func(ctx context.Context, tx store.Tx) (err error) {
+		seq, err = tx.AppendMessage(ctx, store.NewMessage{ChannelID: chID, Sender: "pat", SenderKind: store.IdentityAgent, Content: "x", ReplyTo: reply})
+		return
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return seq
+}
+
+func storedReplyTo(t *testing.T, c *Core, seq int64) int64 {
+	t.Helper()
+	var got int64
+	mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
+		m, err := tx.Message(ctx, seq)
+		if err != nil || m.ReplyTo == nil {
+			t.Fatalf("Message %d = %+v, %v", seq, m, err)
+		}
+		got = *m.ReplyTo
+		return nil
+	})
+	return got
+}
+
+func TestReplyWalkStopsAtChannelAndGap(t *testing.T) {
+	c, _ := newTestCore(t, nil)
+	mustIdentity(t, c, "pat", false)
+	a := mustChannel(t, c, store.ChannelCreate{Name: "a", Kind: store.KindOrdinary, Creator: "pat"})
+	b := mustChannel(t, c, store.ChannelCreate{Name: "b", Kind: store.KindOrdinary, Creator: "pat"})
+	liveBridge(t, c, a)
+	send := func(parent int64) int64 {
+		seq, _, err := appendOne(t, c, AppendInput{ChannelID: a.ID, Kind: a.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "x", ReplyTo: &parent})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return seq
+	}
+	t.Run("legacy cross-channel hop", func(t *testing.T) {
+		foreign := rawMsg(t, c, b.ID, nil)
+		legacy1 := rawMsg(t, c, a.ID, &foreign) // stored before Decision 13
+		legacy2 := rawMsg(t, c, a.ID, &legacy1)
+		if got := storedReplyTo(t, c, send(legacy2)); got != legacy1 {
+			t.Errorf("reply_to = %d, want %d (last row in channel, not foreign %d)", got, legacy1, foreign)
+		}
+	})
+	t.Run("missing hop", func(t *testing.T) {
+		gone := rawMsg(t, c, a.ID, nil)
+		mid := rawMsg(t, c, a.ID, &gone)
+		leaf := rawMsg(t, c, a.ID, &mid)
+		mustTx(t, c, func(ctx context.Context, tx store.Tx) error { return tx.DeleteMessages(ctx, []int64{gone}) })
+		if got := storedReplyTo(t, c, send(leaf)); got != mid {
+			t.Errorf("reply_to = %d, want %d (last row found)", got, mid)
+		}
+	})
+}

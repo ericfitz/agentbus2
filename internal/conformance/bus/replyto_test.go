@@ -41,12 +41,14 @@ func TestReplyToRules(t *testing.T) {
 		h.channel("dev", ab2store.KindOrdinary, "pat", allow)
 		h.channel("ops", ab2store.KindOrdinary, "pat", allow)
 		h.channel("notes", ab2store.KindMemory, "pat", allow)
+		work := h.channel("work", ab2store.KindTasks, "pat", allow)
 		pat := h.as("pat")
+		task := h.append(work, "pat", "", "t")
 		a := sendTo(t, pat, "dev", "a", nil)
 		b := sendTo(t, pat, "ops", "b", nil)
 		mem := sendTo(t, pat, "notes", "m", nil)
 
-		for name, parent := range map[string]int64{"ordinary other channel": b, "memory other channel": mem} {
+		for name, parent := range map[string]int64{"ordinary other channel": b, "memory other channel": mem, "task other channel": task} {
 			_, err := pat.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "x", ReplyTo: p64(parent)})
 			codeOf(t, err, ab2bus.CodeValidation)
 			if !strings.Contains(err.Error(), "another channel") {
