@@ -9,10 +9,12 @@ $ agentbus2 server admin -sqlite t.db create-identity alice
 alice created
 $ agentbus2 server admin -sqlite t.db create-identity alice
 alice already exists
-$ agentbus2 server admin -sqlite t.db make-admin alice
-alice is now an administrator
-$ agentbus2 server admin -sqlite t.db make-admin alice -off
-alice is no longer an administrator
+$ agentbus2 server admin -sqlite t.db admins add -identity alice
+added
+$ agentbus2 server admin -sqlite t.db admins list
+{identity: alice}
+$ agentbus2 server admin -sqlite t.db admins remove -identity alice
+removed
 $ agentbus2 server admin -sqlite t.db enrollment create -identity bob
 token: abe_<token>
 id: 4ac4e3ca7b8aac8c identity: bob expires: 2026-10-22T20:50:28Z uses: 1
@@ -24,15 +26,15 @@ $ agentbus2 server admin -sqlite t.db enrollment list
 8004dc4bec2d0520 any 2026-10-21T21:50:28Z 2
 $ agentbus2 server admin -sqlite t.db reset-credential alice
 alice: 0 credential(s) removed; the name may be registered again
-$ agentbus2 server admin -sqlite t.db make-admin ghost
-agentbus2 server admin make-admin: {"code":"not_registered","message":"identity \"ghost\" is not registered; register it first","retryable":false}
+$ agentbus2 server admin -sqlite t.db admins add -identity ghost
+agentbus2 server admin admins: {"code":"not_registered","message":"identity \"ghost\" is not registered; register it first","retryable":false}
 ```
 
 (the last line exits 1.) The `enrollment list` columns are id, bound identity (`any` when unbound), expiry and uses left; an expired token has `expired` appended.
 
 ## Commands
 
-- `make-admin NAME [-off]`: set or clear the administrator flag. The identity must exist (registered, or created with `create-identity`).
+- `users|admins add|remove|list [-issuer NAME] [-email V | -group V | -subject V | -identity NAME]`: edit the two reference lists (federated identity spec 6). `admins add -identity NAME` sets the administrator flag (the identity must exist, registered or created with `create-identity`); `admins remove -identity NAME` clears it. A claim kind (`-email`, `-group`, `-subject`) needs `-issuer` naming a configured issuer; an identity reference takes none. `add` prints `added` or `already present`, `remove` prints `removed` or `not present`, `list` prints one `{identity: pat}` or `{issuer: corp, group: pai-users}` line per entry. Until the issuer settings land, every claim-kind `add` is refused. `make-admin` is gone: it exits 2 and names this replacement.
 - `reset-credential NAME`: remove every registered key of the identity so the name can be registered again. A bearer token already issued stays valid until it expires. For an administrator, the new key needs a token bound to `NAME` (`enrollment create -identity NAME`).
 - `create-identity NAME`: create a keyless row for an identity whose credential is an external issuer. In `open` registration the server also creates such a row on the first valid external token. In `open` mode any registrant may bind a key to a keyless name that is not an administrator; a keyless administrator can only be claimed with an enrollment token bound to its name.
 - `enrollment create [-identity NAME] [-expires 24h] [-uses 1]`: print a token and its row. Without `-identity` the token binds a key to a free name or to a keyless row that is not an administrator; presented for a keyless administrator it is refused `forbidden` (`identity "NAME" requires an enrollment token bound to it`) and not consumed. `-expires` and `-uses` must be positive.
@@ -45,9 +47,9 @@ A server on a non-loopback address, or in a container, defaults to `enrollment` 
 1. Start the server.
 2. On the server host: `agentbus2 server admin ... enrollment create -identity NAME` and hand the token to the agent.
 3. The agent registers its public key with the token (`POST /v1/auth/register`, body members `identity`, `public_key_jwk` and `enrollment_token`).
-4. On the server host: `agentbus2 server admin ... make-admin NAME`.
+4. On the server host: `agentbus2 server admin ... admins add -identity NAME`.
 
-Alternatively run `create-identity NAME` and `make-admin NAME` first, then create a token bound to `NAME`; the agent claims the keyless administrator row with it.
+Alternatively run `create-identity NAME` and `admins add -identity NAME` first, then create a token bound to `NAME`; the agent claims the keyless administrator row with it.
 
 In a container the same commands run against the same store:
 

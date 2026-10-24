@@ -33,13 +33,23 @@ func requireRegistered(ctx context.Context, tx store.Tx, name string) error {
 	return core.E(bus.CodeNotRegistered, "identity %q is not registered; register it first", name)
 }
 
-// MakeAdmin sets or clears the administrator flag; idempotent.
+// MakeAdmin sets or clears the administrator flag; idempotent. It keeps the
+// {admins, identity, name} reference and the flag together (spec 6.2).
 func (s Service) MakeAdmin(ctx context.Context, name string, admin bool) error {
 	return core.FromStore(s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		if err := requireRegistered(ctx, tx, name); err != nil {
 			return err
 		}
-		return tx.SetAdmin(ctx, name, admin)
+		r := store.Reference{List: store.ListAdmins, Kind: store.RefIdentity, Value: name}
+		if admin {
+			_, err := addReference(ctx, tx, r)
+			return err
+		}
+		if _, err := removeReference(ctx, tx, r); err != nil {
+			return err
+		}
+		// A flag without a row (set before the lists existed) is cleared too.
+		return tx.SetAdmin(ctx, name, false)
 	}))
 }
 

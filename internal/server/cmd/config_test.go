@@ -298,7 +298,7 @@ func TestRunChannelCreationSwitch(t *testing.T) {
 		_, tok := registerAndMint(t, r, "pat")
 		wantBusCode(t, create(t, r, tok.Token), bus.CodeForbidden)
 		// The flag is read per request: promoting pat takes effect at once.
-		adminOnce(t, db, "make-admin", "pat")
+		adminOnce(t, db, "admins", "add", "-identity", "pat")
 		if err := create(t, r, tok.Token); err != nil {
 			t.Fatalf("admin create: %v", err)
 		}

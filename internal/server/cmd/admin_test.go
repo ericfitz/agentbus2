@@ -69,41 +69,76 @@ func readStore[T any](t *testing.T, st store.Store, f func(context.Context, stor
 	return out
 }
 
-func TestAdminMakeAdminAndResetCredential(t *testing.T) {
+func TestAdminUsersAdminsCommands(t *testing.T) {
 	e := newAdminEnv(t)
-	if code, _, errOut := e.run("make-admin", "pat"); code != 1 || !strings.Contains(errOut, "register it first") {
-		t.Fatalf("make-admin before pat exists: code %d stderr %q", code, errOut)
+	if code, _, errOut := e.run("admins", "add", "-identity", "pat"); code != 1 || !strings.Contains(errOut, "register it first") {
+		t.Fatalf("admins add before pat exists: code %d stderr %q", code, errOut)
 	}
-	svc, st := e.service()
-	if err := svc.RegisterLocal(context.Background(), "pat"); err != nil {
-		t.Fatal(err)
+	if code, _, errOut := e.run("create-identity", "pat"); code != 0 {
+		t.Fatalf("create-identity: %d %s", code, errOut)
 	}
+	_, st := e.service()
 	isAdmin := func() bool {
 		return readStore(t, st, func(ctx context.Context, tx store.Tx) (bool, error) {
 			id, err := tx.Identity(ctx, "pat")
 			return id.Admin, err
 		})
 	}
-	code, out, _ := e.run("make-admin", "pat")
-	if code != 0 || !strings.Contains(out, "pat is now an administrator") || !isAdmin() {
-		t.Fatalf("make-admin: code %d out %q admin %v", code, out, isAdmin())
+	for i, want := range []string{"added", "already present"} {
+		code, out, errOut := e.run("admins", "add", "-identity", "pat")
+		if code != 0 || strings.TrimSpace(out) != want || !isAdmin() {
+			t.Fatalf("admins add %d: code %d out %q stderr %q admin %v", i, code, out, errOut, isAdmin())
+		}
 	}
-	code, out, _ = e.run("make-admin", "pat", "-off")
-	if code != 0 || !strings.Contains(out, "pat is no longer an administrator") || isAdmin() {
-		t.Fatalf("make-admin -off: code %d out %q admin %v", code, out, isAdmin())
+	if code, out, _ := e.run("admins", "list"); code != 0 || strings.TrimSpace(out) != "{identity: pat}" {
+		t.Fatalf("admins list: %d %q", code, out)
 	}
-	code, out, _ = e.run("make-admin", "-off", "pat")
-	if code != 0 || !strings.Contains(out, "no longer") {
-		t.Fatalf("make-admin -off first: code %d out %q", code, out)
+	if code, out, _ := e.run("users", "list"); code != 0 || out != "" {
+		t.Fatalf("users list: %d %q", code, out)
 	}
-	if code, _, _ := e.run("make-admin"); code != 2 {
-		t.Fatalf("make-admin without a name: code %d, want 2", code)
+	// No issuer is configured yet: a well-formed claim add is a service error.
+	if code, _, errOut := e.run("users", "add", "-issuer", "corp", "-group", "x"); code != 1 || !strings.Contains(errOut, "unknown issuer") {
+		t.Fatalf("users add group: code %d stderr %q", code, errOut)
 	}
-	if code, _, _ := e.run("make-admin", "a", "b"); code != 2 {
-		t.Fatalf("make-admin with two names: code %d, want 2", code)
+	for _, bad := range [][]string{
+		{"admins", "add", "-group", "x"},
+		{"admins", "add", "-identity", "pat", "-email", "a@b"},
+		{"admins", "add", "-identity", "pat", "-issuer", "corp"},
+		{"admins", "add"},
+		{"admins", "add", "-email", "nope", "-issuer", "corp"},
+		{"admins", "frob"},
+		{"admins"},
+		{"admins", "list", "extra"},
+		{"admins", "list", "-identity", "pat"},
+	} {
+		if code, _, errOut := e.run(bad...); code != 2 || errOut == "" {
+			t.Errorf("%v: code %d stderr %q, want 2 with a message", bad, code, errOut)
+		}
+	}
+	for i, want := range []string{"removed", "not present"} {
+		code, out, _ := e.run("admins", "remove", "-identity", "pat")
+		if code != 0 || strings.TrimSpace(out) != want || isAdmin() {
+			t.Fatalf("admins remove %d: code %d out %q admin %v", i, code, out, isAdmin())
+		}
+	}
+}
+
+func TestAdminMakeAdminReplaced(t *testing.T) {
+	e := newAdminEnv(t)
+	code, out, errOut := e.run("make-admin", "pat")
+	if code != 2 || out != "" || !strings.Contains(errOut, "make-admin was replaced by: admins add -identity NAME (admins remove -identity NAME)") {
+		t.Fatalf("make-admin: code %d out %q stderr %q", code, out, errOut)
+	}
+}
+
+func TestAdminResetCredential(t *testing.T) {
+	e := newAdminEnv(t)
+	svc, st := e.service()
+	if err := svc.RegisterLocal(context.Background(), "pat"); err != nil {
+		t.Fatal(err)
 	}
 
-	code, out, _ = e.run("reset-credential", "pat")
+	code, out, _ := e.run("reset-credential", "pat")
 	if code != 0 || !strings.Contains(out, "0 credential(s)") {
 		t.Fatalf("reset-credential (none): code %d out %q", code, out)
 	}
@@ -236,7 +271,7 @@ func TestAdminEnrollmentLifecycle(t *testing.T) {
 			t.Errorf("%v: code %d stderr %q, want 2 with a message", bad, code, errOut)
 		}
 	}
-	if _, _, errOut := e.run("nonsense"); !strings.Contains(errOut, "make-admin") {
+	if _, _, errOut := e.run("nonsense"); !strings.Contains(errOut, "users and admins") {
 		t.Errorf("unknown subcommand message does not list the subcommands: %q", errOut)
 	}
 	if code, _, _ := e.runEnv(nil, "-sqlite", e.file); code != 2 {

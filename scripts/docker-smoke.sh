@@ -87,8 +87,8 @@ esac
 echo "step 7: bootstrap inside the image"
 got="$(docker exec "$NAME" /agentbus2 server admin -sqlite /data/agentbus2.db create-identity pat 2>&1)"
 case "$got" in *'pat created'*) ;; *) fail "create-identity printed: $got" ;; esac
-got="$(docker exec "$NAME" /agentbus2 server admin -sqlite /data/agentbus2.db make-admin pat 2>&1)"
-case "$got" in *'pat is now an administrator'*) ;; *) fail "make-admin printed: $got" ;; esac
+got="$(docker exec "$NAME" /agentbus2 server admin -sqlite /data/agentbus2.db admins add -identity pat 2>&1)"
+case "$got" in *added*) ;; *) fail "admins add printed: $got" ;; esac
 
 echo "step 8: startup log"
 logs="$(docker logs "$NAME" 2>&1)"

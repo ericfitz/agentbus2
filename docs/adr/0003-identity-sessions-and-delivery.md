@@ -293,7 +293,7 @@ issuer's subject gets its row from `server admin create-identity` or, in
 - **Item 7, trust on first use on a keyless admin row (Decision (Eric,
   2026-10-21), option B).** A keyless row with the admin flag, created on
   the host by `create-identity` or registered locally and then given the
-  flag by `make-admin`, is never claimed by trust-on-first-use: `Register`
+  flag by `make-admin` (now `admins add -identity`), is never claimed by trust-on-first-use: `Register`
   without an enrollment token is `forbidden` ("identity %q requires an
   enrollment token"), while a valid token bound to the name binds the key
   (post-build decision 1: an unbound token is refused `forbidden` and not

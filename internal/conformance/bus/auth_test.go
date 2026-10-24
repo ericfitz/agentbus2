@@ -303,7 +303,7 @@ func TestAuthEndToEnd(t *testing.T) {
 			var so, se bytes.Buffer
 			// A nil environ: the developer's AGENTBUS2_SERVER_* variables
 			// never choose the store.
-			if code := cmd.RunAdmin(ctx, []string{storeFlag, dsn, "make-admin", "root"}, nil, &so, &se); code != 0 {
+			if code := cmd.RunAdmin(ctx, []string{storeFlag, dsn, "admins", "add", "-identity", "root"}, nil, &so, &se); code != 0 {
 				t.Fatalf("make-admin exited %d: %s%s", code, so.String(), se.String())
 			}
 			login(root)

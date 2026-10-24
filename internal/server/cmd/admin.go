@@ -11,9 +11,12 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentbus2/internal/store"
 )
 
-const adminSubcommands = "make-admin, reset-credential, create-identity, enrollment (create, list, revoke)"
+const adminSubcommands = "users and admins (add, remove, list), reset-credential, create-identity, enrollment (create, list, revoke)"
+
+const makeAdminReplaced = "make-admin was replaced by: admins add -identity NAME (admins remove -identity NAME)"
 
 const createIdentityUsage = `usage: agentbus2 server admin create-identity NAME
 
@@ -25,7 +28,15 @@ claimed with an enrollment token bound to its name (enrollment create
 -identity NAME).
 `
 
-type adminAction func(context.Context, identities.Service, io.Writer) error
+// hostEnv is what a host command runs against: the identities service and the
+// names of the configured issuers (nil until the issuer settings land, so
+// every claim-kind add is refused).
+type hostEnv struct {
+	Svc     identities.Service
+	Issuers []string
+}
+
+type adminAction func(context.Context, hostEnv, io.Writer) error
 
 // RunAdmin is `agentbus2 server admin`: host commands against the Store with
 // no listener and no credential. Exit codes: 0 success or -h, 1 runtime or
@@ -60,7 +71,10 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 	)
 	switch sub {
 	case "make-admin":
-		run, code, done = makeAdminCommand(subArgs, stdout, stderr)
+		_, _ = fmt.Fprintln(stderr, makeAdminReplaced)
+		return 2
+	case "users", "admins":
+		run, code, done = referenceCommand(sub, subArgs, stdout, stderr)
 	case "reset-credential":
 		run, code, done = resetCredentialCommand(subArgs, stdout, stderr)
 	case "create-identity":
@@ -90,36 +104,86 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin: %v\n", err)
 		return 1
 	}
-	if err := run(ctx, identities.Service{Core: c}, stdout); err != nil {
+	if err := run(ctx, hostEnv{Svc: identities.Service{Core: c}}, stdout); err != nil {
 		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin %s: %v\n", sub, err)
 		return 1
 	}
 	return 0
 }
 
-func makeAdminCommand(args []string, stdout, stderr io.Writer) (adminAction, int, bool) {
-	fs, buf := subFlags("make-admin")
-	off := fs.Bool("off", false, "clear the administrator flag instead of setting it")
-	pos, code, done := parseInterleaved(fs, buf, args, stdout, stderr)
+// referenceCommand parses `users|admins add|remove|list`.
+func referenceCommand(list string, args []string, stdout, stderr io.Writer) (adminAction, int, bool) {
+	use := fmt.Sprintf("usage: agentbus2 server admin %s add|remove|list [-issuer NAME] [-email V | -group V | -subject V | -identity NAME]", list)
+	if len(args) == 0 {
+		_, _ = fmt.Fprintln(stderr, use)
+		return nil, 2, true
+	}
+	action, rest := args[0], args[1:]
+	if action != "add" && action != "remove" && action != "list" {
+		_, _ = fmt.Fprintf(stderr, "%s: unknown action %q; %s\n", list, action, use)
+		return nil, 2, true
+	}
+	fs, buf := subFlags(list + " " + action)
+	var issuer, email, group, subject, identity *string
+	if action != "list" {
+		issuer = fs.String("issuer", "", "the configured issuer name (claim kinds)")
+		email = fs.String("email", "", "match this email address")
+		group = fs.String("group", "", "match members of this group")
+		subject = fs.String("subject", "", "match this provider subject")
+		identity = fs.String("identity", "", "match this identity name")
+	}
+	pos, code, done := parseInterleaved(fs, buf, rest, stdout, stderr)
 	if done {
 		return nil, code, true
 	}
-	if len(pos) != 1 {
-		_, _ = fmt.Fprintln(stderr, "usage: agentbus2 server admin make-admin NAME [-off]")
+	if len(pos) != 0 {
+		_, _ = fmt.Fprintf(stderr, "%s %s: unexpected argument %q\n", list, action, pos[0])
 		return nil, 2, true
 	}
-	name, admin := pos[0], !*off
-	return func(ctx context.Context, s identities.Service, w io.Writer) error {
-		if err := s.MakeAdmin(ctx, name, admin); err != nil {
+	l := store.RefList(list)
+	if action == "list" {
+		return func(ctx context.Context, e hostEnv, w io.Writer) error {
+			refs, err := e.Svc.ListReferences(ctx, l)
+			if err != nil {
+				return err
+			}
+			for _, r := range refs {
+				_, _ = fmt.Fprintln(w, formatReference(r))
+			}
+			return nil
+		}, 0, false
+	}
+	r, err := identities.ParseReference(list, *issuer, *email, *group, *subject, *identity)
+	if err != nil {
+		_, _ = fmt.Fprintf(stderr, "%s %s: %v\n", list, action, err)
+		return nil, 2, true
+	}
+	if action == "add" {
+		return func(ctx context.Context, e hostEnv, w io.Writer) error {
+			added, err := e.Svc.AddReference(ctx, r, e.Issuers)
+			if err != nil {
+				return err
+			}
+			_, _ = fmt.Fprintln(w, map[bool]string{true: "added", false: "already present"}[added])
+			return nil
+		}, 0, false
+	}
+	return func(ctx context.Context, e hostEnv, w io.Writer) error {
+		removed, err := e.Svc.RemoveReference(ctx, r)
+		if err != nil {
 			return err
 		}
-		if admin {
-			_, _ = fmt.Fprintf(w, "%s is now an administrator\n", name)
-		} else {
-			_, _ = fmt.Fprintf(w, "%s is no longer an administrator\n", name)
-		}
+		_, _ = fmt.Fprintln(w, map[bool]string{true: "removed", false: "not present"}[removed])
 		return nil
 	}, 0, false
+}
+
+// formatReference is `{issuer: corp, group: pai-users}` or `{identity: pat}`.
+func formatReference(r store.Reference) string {
+	if r.Kind == store.RefIdentity {
+		return fmt.Sprintf("{identity: %s}", r.Value)
+	}
+	return fmt.Sprintf("{issuer: %s, %s: %s}", r.Issuer, r.Kind, r.Value)
 }
 
 func resetCredentialCommand(args []string, stdout, stderr io.Writer) (adminAction, int, bool) {
@@ -133,7 +197,8 @@ func resetCredentialCommand(args []string, stdout, stderr io.Writer) (adminActio
 		return nil, 2, true
 	}
 	name := pos[0]
-	return func(ctx context.Context, s identities.Service, w io.Writer) error {
+	return func(ctx context.Context, e hostEnv, w io.Writer) error {
+		s := e.Svc
 		n, err := s.ResetCredential(ctx, name)
 		if err != nil {
 			return err
@@ -154,7 +219,8 @@ func createIdentityCommand(args []string, stdout, stderr io.Writer) (adminAction
 		return nil, 2, true
 	}
 	name := pos[0]
-	return func(ctx context.Context, s identities.Service, w io.Writer) error {
+	return func(ctx context.Context, e hostEnv, w io.Writer) error {
+		s := e.Svc
 		created, err := s.CreateIdentity(ctx, name)
 		if err != nil {
 			return err
@@ -195,7 +261,8 @@ func enrollmentCommand(args []string, stdout, stderr io.Writer) (adminAction, in
 			return nil, 2, true
 		}
 		in := identities.TokenInput{Identity: *identity, Expires: *expires, Uses: *uses}
-		return func(ctx context.Context, s identities.Service, w io.Writer) error {
+		return func(ctx context.Context, e hostEnv, w io.Writer) error {
+			s := e.Svc
 			token, row, err := s.CreateEnrollmentToken(ctx, in)
 			if err != nil {
 				return err
@@ -215,7 +282,8 @@ func enrollmentCommand(args []string, stdout, stderr io.Writer) (adminAction, in
 			_, _ = fmt.Fprintf(stderr, "enrollment list: unexpected argument %q\n", pos[0])
 			return nil, 2, true
 		}
-		return func(ctx context.Context, s identities.Service, w io.Writer) error {
+		return func(ctx context.Context, e hostEnv, w io.Writer) error {
+			s := e.Svc
 			rows, err := s.ListEnrollmentTokens(ctx)
 			if err != nil {
 				return err
@@ -241,7 +309,8 @@ func enrollmentCommand(args []string, stdout, stderr io.Writer) (adminAction, in
 			return nil, 2, true
 		}
 		id := pos[0]
-		return func(ctx context.Context, s identities.Service, w io.Writer) error {
+		return func(ctx context.Context, e hostEnv, w io.Writer) error {
+			s := e.Svc
 			if err := s.RevokeEnrollmentToken(ctx, id); err != nil {
 				return err
 			}
@@ -282,7 +351,7 @@ func parseFlags(fs *flag.FlagSet, args []string, usage *bytes.Buffer, stdout, st
 }
 
 // parseInterleaved parses fs allowing flags after positional arguments
-// (`make-admin pat -off`) and returns the positionals.
+// (`create-identity NAME -h`) and returns the positionals.
 func parseInterleaved(fs *flag.FlagSet, buf *bytes.Buffer, args []string, stdout, stderr io.Writer) (pos []string, code int, done bool) {
 	for {
 		if c, d := parseFlags(fs, args, buf, stdout, stderr); d {
