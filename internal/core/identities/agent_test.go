@@ -3,6 +3,7 @@ package identities
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -305,4 +306,77 @@ func TestResetCredentialHumanClearsSlackUser(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+// Two overlapping CreateAgentIdentityAs calls for the same scoped name end
+// with exactly one live bound token (agent.go revokes before it inserts, and
+// the Store serializes the transactions).
+func TestCreateAgentIdentityOverlap(t *testing.T) {
+	ctx := context.Background()
+	s, sc, _ := adminSvc(t)
+	mkScope(t, sc, "job1")
+	const n = 4
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	toks := make([]string, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			res, err := s.CreateAgentIdentityAs(ctx, "root", bus.CreateAgentIdentityInput{Name: "job1-coder", Scope: "job1"})
+			errs[i], toks[i] = err, res.EnrollmentToken
+		}()
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("call %d: %v", i, err)
+		}
+	}
+	rows := boundTokens(t, s, "job1-coder")
+	if len(rows) != 1 {
+		t.Fatalf("%d bound tokens after %d overlapping calls, want exactly 1", len(rows), n)
+	}
+	matches := 0
+	for _, tok := range toks {
+		if HashToken(tok) == rows[0].TokenHash {
+			matches++
+		}
+	}
+	if matches != 1 {
+		t.Fatalf("the surviving token matches %d of the returned tokens, want 1", matches)
+	}
+}
+
+// A bound token past its expiry does not register the agent, and the refusal
+// consumes nothing (register.go).
+func TestRegisterScopedExpiredBoundToken(t *testing.T) {
+	ctx := context.Background()
+	for _, mode := range []Mode{ModeOpen, ModeEnrollment} {
+		t.Run(string(mode), func(t *testing.T) {
+			s, sc, clk := adminSvc(t)
+			mkScope(t, sc, "job1")
+			res, err := s.CreateAgentIdentityAs(ctx, "root", bus.CreateAgentIdentityInput{Name: "job1-a", Scope: "job1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			clk.advance(agentTokenLifetime + time.Second)
+			_, err = s.Register(ctx, mode, RegisterInput{Identity: "job1-a", Key: genKey(t), EnrollmentToken: res.EnrollmentToken})
+			if err == nil {
+				t.Fatal("an expired bound token registered the agent")
+			}
+			wantCode(t, err, bus.CodeForbidden)
+			if len(keysOf(t, s, "job1-a")) != 0 {
+				t.Fatal("a key was bound")
+			}
+			// A fresh token issued after the expiry works.
+			res2, err := s.CreateAgentIdentityAs(ctx, "root", bus.CreateAgentIdentityInput{Name: "job1-a", Scope: "job1"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := s.Register(ctx, mode, RegisterInput{Identity: "job1-a", Key: genKey(t), EnrollmentToken: res2.EnrollmentToken}); err != nil {
+				t.Fatalf("fresh token: %v", err)
+			}
+		})
+	}
 }
