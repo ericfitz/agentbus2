@@ -185,10 +185,11 @@ internal/` then prints nothing).
   protected and 6 open, counted from `operationId` and `security: []`), one
   `operationId` per `Bus` method plus the authentication paths (delete and
   rename channel carry both the `channels` and `admin` tags and serve
-  `Messaging` and `Admin`; the table has 41 operations, 35 protected, after the
+  `Messaging` and `Admin`; the table has 42 operations, 35 protected, 7 open, after the
   federated-identity work, 2026-10-23). Three (`wellKnown`, `openidConfiguration`,
-  `discover`) declared `security: []` then; with `token`, `jwks` and
-  `register` six do now, and the rest take the global requirement. Admin reset and
+  `discover`) declared `security: []` then; with `token`, `jwks`, `register` and
+  `authorizationServerMetadata` (added by the federated-identity Task 7 work,
+  2026-10-23) seven do now, and the rest take the global requirement. Admin reset and
   reset-credential arrive with the Milestone 5 admin section; usage is
   Milestone 3 item 3 (Milestone 7, SQLite only: Decision (Eric,
   2026-10-21)); `peek` (read-only pending counts with the watch floor) is
@@ -228,7 +229,8 @@ internal/` then prints nothing).
   and `History`) under both transports.
 - **Item 1** (`Idempotency-Key` optional on the wire; absent means no
   receipt; test `TestSendIdempotencyWire`), **item 2** (auth paths declared
-  in Milestone 5; test `TestOpenIDConfigurationNamesMilestone5Paths`),
+  in Milestone 5; test `TestOpenIDConfigurationNamesMilestone5Paths`, renamed
+  `TestAuthorizationServerMetadata` by the federated-identity Task 7 work),
   **item 3** (interim server flags until Milestone 5's configuration; test
   `TestRunFlags`) and **item 4** (the watch `timeout` is fractional seconds;
   test `TestWatchTimeoutWire`): Decision (Eric, 2026-10-21), each as built

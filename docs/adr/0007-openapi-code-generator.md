@@ -216,7 +216,8 @@ Resolved on 2026-10-20:
   `/.well-known/openid-configuration` response names them now and they answer
   404 `not_found` meanwhile (Decision (Eric, 2026-10-21): as planned,
   Milestone 4 item 2 in `docs/superpowers/specs/2026-10-21-gate-0-decisions.md`;
-  test `TestOpenIDConfigurationNamesMilestone5Paths`, whose marker and 404
+  test `TestOpenIDConfigurationNamesMilestone5Paths` (renamed
+  `TestAuthorizationServerMetadata` by the federated-identity Task 7 work), whose marker and 404
   assertion Milestone 5 removes).
 - **Path-parameter facts.** The runtime's path styling uses `url.PathEscape`;
   the v2.8.0 std-http template binds `r.PathValue` with `ValueIsUnescaped:

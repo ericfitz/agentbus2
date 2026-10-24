@@ -328,6 +328,22 @@ func TestVerifyRequiresAccessTokenType(t *testing.T) {
 			t.Errorf("typ %q: %v", typ, err)
 		}
 	}
+	// No typ header at all.
+	s, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.EdDSA, Key: k},
+		(&jose.SignerOptions{}).WithHeader("kid", i.KID()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	noTyp, err := jwt.Signed(s).Claims(claims).Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h, _ := decodeJWT(t, noTyp); h["typ"] != nil {
+		t.Fatalf("test token has typ %v", h["typ"])
+	}
+	if _, err := i.Verify(noTyp, t0); !errors.Is(err, ErrInvalid) {
+		t.Errorf("no typ: %v", err)
+	}
 	for _, typ := range []string{"at+jwt", "application/at+jwt", "AT+JWT"} {
 		if id, err := i.Verify(withType(typ), t0); err != nil || id != "alice" {
 			t.Errorf("typ %q: %q %v", typ, id, err)

@@ -1,7 +1,8 @@
 // Package assertion builds and checks RFC 7523 client assertions: a JWT signed
-// by the identity's own key, with iss = sub = the identity and aud = the issuer
-// URL (Decisions 19 and 70; draft-ietf-oauth-rfc7523bis). It ships in the client binaries and imports
-// only the standard library, go-jose and internal/auth/keys.
+// by the identity's own key, with iss = sub = the identity and aud = the
+// issuer URL (Decisions 19 and 70; draft-ietf-oauth-rfc7523bis). It ships in
+// the client binaries and imports only the standard library, go-jose and
+// internal/auth/keys.
 package assertion
 
 import (

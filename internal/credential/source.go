@@ -181,7 +181,8 @@ func newJTI() (string, error) {
 
 // refresh mints a bearer. When that fails with a discovery document that was
 // held or cached rather than fetched now, it rediscovers once and, if the
-// server now advertises another token endpoint, mints again: a stale cached
+// server now advertises other metadata (a moved issuer or token endpoint),
+// mints again: a stale cached
 // document must not wedge the profile until its cache file is deleted.
 func (s *Source) refresh(ctx context.Context) (string, error) {
 	if s.Signer == nil && len(s.Process) == 0 {
