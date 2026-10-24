@@ -265,6 +265,10 @@ func TestRetireIdentity(t *testing.T) {
 			return tx.PutEnrollmentToken(ctx, ab2store.EnrollmentToken{ID: "t1", TokenHash: "h1", Identity: "job1-coder", ExpiresAt: 10, UsesLeft: 1, CreatedAt: 1})
 		})
 		liveSession(t, s, "s1", "job1-coder", 9000, 0)
+		mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			return tx.SubscribeTags(ctx, tagSet("job1-coder", "tk", 0, "x"))
+		})
+		execAll(t, rawDB(t, e, rawDSN), "INSERT INTO slack_users (identity, team_id, user_id, created_at) VALUES ('job1-coder', 'T1', 'U1', 1)")
 		mustAppend(t, s, ab2store.NewMessage{ChannelID: ops.ID, Sender: "job1-coder", Content: "hello"})
 
 		for i, want := range []bool{true, false} { // the second run finds nothing
@@ -285,6 +289,10 @@ func TestRetireIdentity(t *testing.T) {
 			"SELECT count(*) FROM subscriptions WHERE identity = 'job1-coder'",
 			"SELECT count(*) FROM channel_acl WHERE identity = 'job1-coder'",
 			"SELECT count(*) FROM enrollment_tokens WHERE identity = 'job1-coder'",
+			"SELECT count(*) FROM tag_subscriptions WHERE identity = 'job1-coder'",
+			"SELECT count(*) FROM tag_subscription_tags",
+			"SELECT count(*) FROM session_cursors WHERE session_id = 's1'",
+			"SELECT count(*) FROM slack_users WHERE identity = 'job1-coder'",
 		} {
 			if n := scalar[int](t, db, q); n != 0 {
 				t.Errorf("%s = %d, want 0", q, n)
@@ -295,6 +303,22 @@ func TestRetireIdentity(t *testing.T) {
 		}
 		if got := scalar[string](t, db, "SELECT scope FROM retired_identities WHERE name = 'job1-coder'"); got != "job1" {
 			t.Errorf("retired_identities scope = %q, want job1", got)
+		}
+		// An overlapping or repeated run is exact: false, and no second retired row.
+		if n := scalar[int](t, db, "SELECT count(*) FROM retired_identities WHERE name = 'job1-coder'"); n != 1 {
+			t.Errorf("retired_identities rows = %d, want 1", n)
+		}
+		for _, name := range []string{ab2store.SlackBridge, ab2store.Everyone, ab2store.Admins} {
+			err := txErr(s, func(ctx context.Context, tx ab2store.Tx) error {
+				_, err := tx.RetireIdentity(ctx, name, 70)
+				return err
+			})
+			if !errors.Is(err, ab2store.ErrInvalid) {
+				t.Errorf("RetireIdentity(%s) = %v, want ErrInvalid", name, err)
+			}
+		}
+		if n := scalar[int](t, db, "SELECT count(*) FROM identities WHERE name = 'slack-bridge'"); n != 1 {
+			t.Errorf("slack-bridge rows = %d, want 1 (a refused retire changes nothing)", n)
 		}
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 			if r, err := tx.IdentityRetired(ctx, "job1-coder"); err != nil || !r {
@@ -370,6 +394,9 @@ func TestSlackBridgeReserved(t *testing.T) {
 		mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 			if _, err := tx.Identity(ctx, ab2store.SlackBridge); err != nil {
 				t.Errorf("slack-bridge after ResetRegistry: %v", err)
+			}
+			if subs, err := tx.Subscriptions(ctx, ab2store.SlackBridge); err != nil || len(subs) != 0 {
+				t.Errorf("slack-bridge subscriptions after reset = %+v, %v; want none", subs, err)
 			}
 			ch, err := tx.ChannelByName(ctx, "bridged")
 			if err != nil {
@@ -522,4 +549,28 @@ func TestResetDataKeepsBridgeTables(t *testing.T) {
 // from schema version 6.
 func withoutBridge(ids []ab2store.Identity) []ab2store.Identity {
 	return slices.DeleteFunc(slices.Clone(ids), func(i ab2store.Identity) bool { return i.Name == ab2store.SlackBridge })
+}
+
+// TestSchemaChecksRefuseUnknownStates: the DB CHECKs behind the closed
+// enumerations refuse an unknown scopes.state, scopes.retire_mode and
+// bridges.state (a raw insert, bypassing the Store).
+func TestSchemaChecksRefuseUnknownStates(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		_, _, rawDSN := openStore(t, e, sqlstore.Options{})
+		db := rawDB(t, e, rawDSN)
+		for name, q := range map[string]string{
+			"scopes.state":       "INSERT INTO scopes (name, state, created_at, last_activity) VALUES ('x', 'paused', 1, 1)",
+			"scopes.retire_mode": "INSERT INTO scopes (name, state, retire_mode, created_at, last_activity) VALUES ('x', 'open', 'later', 1, 1)",
+			"bridges.state":      "INSERT INTO bridges (channel_id, channel_name, scope, slack_name, state, created_at) VALUES (1, 'c', 's', 'n', 'half', 1)",
+		} {
+			if _, err := db.Exec(q); err == nil {
+				t.Errorf("%s: an unknown value was accepted", name)
+			}
+		}
+		// The accepted values do insert, so the refusals above are the CHECKs.
+		execAll(t, db,
+			"INSERT INTO scopes (name, state, retire_mode, created_at, last_activity) VALUES ('ok', 'done', 'with_bridge', 1, 1)",
+			"INSERT INTO bridges (channel_id, channel_name, scope, slack_name, state, created_at) VALUES (1, 'c', 'ok', 'n', 'creating', 1)",
+		)
+	})
 }

@@ -209,6 +209,9 @@ func (s Service) Reset(ctx context.Context, admin string, key string, scope bus.
 				return err
 			}
 			for _, id := range ids {
+				if store.ReservedIdentity(id.Name) {
+					continue // slack-bridge holds no general subscription
+				}
 				if err := tx.Subscribe(ctx, id.Name, gen.ID, seq, now); err != nil {
 					return err
 				}

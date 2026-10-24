@@ -713,6 +713,29 @@ func fixtureAgain(t *testing.T, s Service) {
 	})
 }
 
+// TestResetLeavesSlackBridgeUnsubscribed: neither reset scope subscribes the
+// reserved slack-bridge identity to general.
+func TestResetLeavesSlackBridgeUnsubscribed(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	fixture(t, s)
+	for _, scope := range []bus.ResetScope{bus.ResetData, bus.ResetEverything} {
+		if err := s.Reset(ctx, "root", "", scope); err != nil {
+			t.Fatal(err)
+		}
+		tx(t, s, func(ctx context.Context, tx store.Tx) error {
+			subs, err := tx.Subscriptions(ctx, store.SlackBridge)
+			if err != nil || len(subs) != 0 {
+				t.Errorf("after reset %v: slack-bridge subscriptions = %+v, %v; want none", scope, subs, err)
+			}
+			if root, err := tx.Subscriptions(ctx, "root"); err != nil || len(root) != 1 {
+				t.Errorf("after reset %v: root subscriptions = %+v, %v; want general", scope, root, err)
+			}
+			return nil
+		})
+	}
+}
+
 func TestResetEverythingKeepsCaller(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newSvc(t, nil)

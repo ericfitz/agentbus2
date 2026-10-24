@@ -189,6 +189,9 @@ func (t *tx) RetireIdentity(ctx context.Context, name string, now int64) (bool, 
 	if badText(name) {
 		return false, nil
 	}
+	if store.ReservedIdentity(name) {
+		return false, fmt.Errorf("%w: identity %q is reserved and cannot be retired", store.ErrInvalid, name)
+	}
 	var scope string
 	err := t.get(ctx, &scope, "SELECT COALESCE(scope, '') FROM identities WHERE name = ?", name)
 	if errors.Is(err, sql.ErrNoRows) {
@@ -203,8 +206,14 @@ func (t *tx) RetireIdentity(ctx context.Context, name string, now int64) (bool, 
 	if _, err := t.DeleteEnrollmentTokensFor(ctx, name); err != nil {
 		return false, err
 	}
-	if _, err := t.execW(ctx, "DELETE FROM identities WHERE name = ?", name); err != nil {
+	res, err := t.execW(ctx, "DELETE FROM identities WHERE name = ?", name)
+	if err != nil {
 		return false, err
+	}
+	if n, err := res.RowsAffected(); err != nil {
+		return false, err
+	} else if n == 0 {
+		return false, nil // an overlapping run removed it first
 	}
 	if _, err := t.execW(ctx, "INSERT INTO retired_identities (name, scope, retired_at) VALUES (?, ?, ?) ON CONFLICT (name) DO NOTHING", name, scope, now); err != nil {
 		return false, err

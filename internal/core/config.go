@@ -45,8 +45,9 @@ type Config struct {
 	TaskExpiryHours       int // 0 disables the rule (v1 ADR 0013)
 	MemoryExpiryHours     int // 0 disables the rule
 	// EmptyChannelReapHours is the age after which an ordinary channel with
-	// no messages and no subscriptions is deleted (Decision (Eric,
-	// 2026-10-21), Milestone 3 item 8; key empty_channel_reap_hours).
+	// no messages and no subscriber with a live or resumable session is
+	// deleted (Decision (Eric, 2026-10-21), Milestone 3 item 8; Decision 20;
+	// key empty_channel_reap_hours).
 	EmptyChannelReapHours   int
 	ReceiptRetentionMinutes int
 	MaxMessageKiB           int
