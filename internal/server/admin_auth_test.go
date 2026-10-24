@@ -242,7 +242,7 @@ func TestResetCredentialKeepsMintedToken(t *testing.T) {
 	}
 }
 
-// postBody is post with a JSON body (nil sends none).
+// postBody is post with a JSON body (an empty body sends none).
 func (e *env) postBody(identity, path, body string) (int, string, string) {
 	e.t.Helper()
 	var rd io.Reader

@@ -311,8 +311,8 @@ func TestCreateIdentityByEmailBus(t *testing.T) {
 			t.Fatalf("keyed replay = %+v, %v; want the first result", res, err)
 		}
 
-		patAdmin := h.as("agent-a").(ab2bus.Admin)
-		_, err = patAdmin.CreateIdentityByEmail(ctx, ab2bus.CreateIdentityByEmailInput{Email: "x@corp.example"})
+		agentAdmin := h.as("agent-a").(ab2bus.Admin)
+		_, err = agentAdmin.CreateIdentityByEmail(ctx, ab2bus.CreateIdentityByEmailInput{Email: "x@corp.example"})
 		codeOf(t, err, ab2bus.CodeForbidden)
 		if hasIdentity(t, h, "x@corp.example") {
 			t.Fatal("a refused request created the identity")

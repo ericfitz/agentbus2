@@ -185,7 +185,8 @@ internal/` then prints nothing).
   protected and 6 open, counted from `operationId` and `security: []`), one
   `operationId` per `Bus` method plus the authentication paths (delete and
   rename channel carry both the `channels` and `admin` tags and serve
-  `Messaging` and `Admin`). Three (`wellKnown`, `openidConfiguration`,
+  `Messaging` and `Admin`; the table has 41 operations, 35 protected, after the
+  federated-identity work, 2026-10-23). Three (`wellKnown`, `openidConfiguration`,
   `discover`) declared `security: []` then; with `token`, `jwks` and
   `register` six do now, and the rest take the global requirement. Admin reset and
   reset-credential arrive with the Milestone 5 admin section; usage is
