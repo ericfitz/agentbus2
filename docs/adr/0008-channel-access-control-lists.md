@@ -228,7 +228,10 @@ the markers are removed as the decisions land.
    (Eric, 2026-10-21): **changed** (option B, rule A of the follow-up). A
    maintenance job deletes an ordinary channel (never `general`, never a
    task list) that has no messages and no subscriptions at all and was
-   created more than N hours ago; N is a new setting, default 24. (Superseded in part by Decision 20, Slack bridge, 2026-10-23: a subscription counts only for an identity other than `slack-bridge` with a live or resumable session; see ADR 0009.) Work: the
+   created more than N hours ago; N is a new setting, default 24.
+   (Superseded in part by Decision 20, Slack bridge, 2026-10-23: a
+   subscription counts only for an identity other than `slack-bridge` with a
+   live or resumable session; see ADR 0009.) Work: the
    job, its setting and Store support, conformance tests on both engines;
    implemented before Milestone 5, so the Milestone 5 configuration surface
    and the Milestone 7 job list carry it. A channel with an ACL and a

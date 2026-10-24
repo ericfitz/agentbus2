@@ -17,7 +17,7 @@ func RunSend(ctx context.Context, args []string, environ []string, stdin io.Read
 	var tags opList
 	c.fs.Var(&tags, "tag", "message tag (repeatable)")
 	var replyTo opInt
-	c.fs.Var(&replyTo, "reply-to", "seq of the message this replies to")
+	c.fs.Var(&replyTo, "reply-to", "seq of the message this replies to (it must be in the same channel)")
 	var meta opMeta
 	c.fs.Var(&meta, "metadata", "metadata k=v (repeatable)")
 	session := c.fs.String("session", "", "the sending session id (attribution)")

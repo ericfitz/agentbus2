@@ -205,7 +205,7 @@ func rejectRepeatedTokenParams(next http.Handler) http.Handler {
 					if vals, perr := url.ParseQuery(string(b)); perr == nil {
 						for _, k := range slices.Sorted(maps.Keys(vals)) {
 							if len(vals[k]) > 1 {
-								writeOAuthError(w, oauthFail(http.StatusBadRequest, "invalid_request", "parameter %q is repeated", k))
+								writeOAuthError(w, oauthFail(http.StatusBadRequest, "invalid_request", "parameter %q is repeated", clip(k)))
 								return
 							}
 						}

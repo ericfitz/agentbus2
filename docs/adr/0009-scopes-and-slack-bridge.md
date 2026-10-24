@@ -64,12 +64,14 @@ Choices made while building, recorded because they change behavior:
 - Catch-up also runs periodically from the lifecycle loop, not only on reconnect, so an exhausted retry is picked up without a reconnect.
 - Archiving goes through an `Archiver` port that the maintenance replica calls. A scope that is idle or done with a live bridge and no `Archiver` configured is held, never retired, so its Slack channel is never orphaned.
 - `bridges create` takes a cross-replica lock; a create that hits a Slack rate limit fails with `rate_limited` and resumes on the next call.
-- The create notice names identities (human identity names are emails): the rule "never emails" means no email leaks into Slack-side text beyond that notice's identity names, and no log line carries one.
+- The create notice names identities, and a human identity's name is its email address: the not-invited notice therefore posts those emails into the private Slack channel (a bus message of type `notice` carries the same names). Everywhere else "never emails" holds: no other Slack-side text and no log line carries one.
 - A posted Slack `ts` is recorded without reposting after a failed database write; the map row is repaired best effort from message metadata, whose readability with the documented scopes is unverified and must be checked on a real workspace.
 - Mention safety has two layers. `&`, `<` and `>` are escaped in subject, content and fallback text, including inside code spans and fences, so agent text cannot form Slack's `<!channel>`-style markup. Plain `@here`, `@channel`, `@everyone` and `#name` carry no markup and are not escaped; the Slack client sends every text object with `verbatim: true` and the fallback text with `parse=none` and `link_names=false`, so Slack does not auto-parse them. Verifying this on a real workspace is an operator step (`docs/ops/slack-bridge.md`).
 - Link URLs are allowed only with the schemes `http`, `https` and `mailto`; other targets render as text.
 - The scoped-agent enrollment token lives 24 hours and is single-use; issuing another for the same name revokes the earlier unused one.
 - `reset-credential` on a human also clears the recorded Slack binding.
+- `ResetData` keeps `bridge_dropped`: like `bridges`, `bridge_messages` and `slack_users`, so a dropped Slack message stays dropped across a data reset.
+- Archive and create logs may name the bus channel and the Slack channel id; they never carry a token, message text or email.
 - The agent icon is a stable emoji picked from a fixed list by hashing the identity name.
 - The migration (schema version 6) reshapes any pre-existing `slack-bridge` identity into the reserved shape.
 

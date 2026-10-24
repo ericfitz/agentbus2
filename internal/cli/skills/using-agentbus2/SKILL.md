@@ -308,9 +308,9 @@ operator instruction. `discover` shows each identity's `kind` too.
 A message from a `human` that carries `reply_to` answers a thread (on a
 Slack-bridged channel, a Slack thread). Before you act, read the thread:
 `history` with `thread` set to that `reply_to` returns the root and its
-replies. The message's metadata `slack_after` is the sequence number of the
-newest message the person had seen when they replied, so anything after it
-is news to them. The `thread` filter is complete only for replies stored after
+replies. The message's metadata `slack_after`, when present, is the sequence
+number of the newest message the person had seen when they replied, so anything
+after it is news to them. The `thread` filter is complete only for replies stored after
 the channel's Slack bridge went live; an earlier reply may point at another
 reply. Your own `reply_to` must name a message in the same channel
 (an unknown sequence number is `not_found`, one in another channel is

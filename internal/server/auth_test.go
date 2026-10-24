@@ -786,6 +786,21 @@ func TestTokenRepeatedAndEmptyParams(t *testing.T) {
 		}
 	}
 
+	// A hostile parameter name is clipped in the description, not echoed whole.
+	long := strings.Repeat("p", 5000)
+	hv := base()
+	hv[long] = []string{"1", "2"}
+	hb := readBody(t, post(hv))
+	if !strings.Contains(hb, `"invalid_request"`) || strings.Contains(hb, strings.Repeat("p", maxLogged+1)) || len(hb) > 1000 {
+		t.Errorf("long parameter name echoed (%d bytes): %.300s", len(hb), hb)
+	}
+
+	gv := base()
+	gv.Set("grant_type", strings.Repeat("g", 5000))
+	if gb := readBody(t, post(gv)); !strings.Contains(gb, "unsupported_grant_type") || len(gb) > 1000 {
+		t.Errorf("long grant_type echoed (%d bytes): %.300s", len(gb), gb)
+	}
+
 	// Empty client_id and scope are treated as omitted.
 	v := base()
 	v.Set("client_id", "")
