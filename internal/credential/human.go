@@ -195,7 +195,22 @@ func (s *HumanSource) refresh(ctx context.Context) (string, error) {
 	return s.exchange(ctx, tokens, e.Discovery)
 }
 
+// withoutDeadline returns a context that is canceled when ctx is canceled but
+// ignores ctx's deadline: a browser sign-in has its own timeout and must not be
+// cut short by the caller's request deadline (the TUI gives bus calls 10 s).
+func withoutDeadline(ctx context.Context) (context.Context, context.CancelFunc) {
+	c, cancel := context.WithCancel(context.WithoutCancel(ctx))
+	stop := context.AfterFunc(ctx, func() {
+		if errors.Is(ctx.Err(), context.Canceled) {
+			cancel()
+		}
+	})
+	return c, func() { stop(); cancel() }
+}
+
 func (s *HumanSource) signIn(ctx context.Context) (string, error) {
+	ctx, cancelSign := withoutDeadline(ctx)
+	defer cancelSign()
 	c := s.OIDC
 	c.Announce = s.announceURL
 	tokens, err := oidcclient.SignIn(ctx, c)

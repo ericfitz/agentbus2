@@ -1,6 +1,7 @@
 package credential
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -482,5 +483,24 @@ func TestHumanCacheModes(t *testing.T) {
 	}
 	if _, ok, err := c.Load(); ok || err == nil {
 		t.Errorf("Load of a corrupt file = %v, %v", ok, err)
+	}
+}
+
+// A request deadline shorter than the browser's answer must not abort the
+// sign-in (the TUI's bus calls carry a 10 s deadline); cancellation still does.
+func TestHumanSourceSignInIgnoresCallerDeadline(t *testing.T) {
+	h := newHumanEnv(t, false)
+	s := h.source(t, t.TempDir())
+	slow := s.OIDC.OpenBrowser
+	s.OIDC.OpenBrowser = func(u string) error { time.Sleep(300 * time.Millisecond); return slow(u) }
+	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
+	defer cancel()
+	if _, err := s.SignIn(ctx); err != nil {
+		t.Fatalf("SignIn with a 50 ms deadline: %v", err)
+	}
+	cctx, ccancel := context.WithCancel(t.Context())
+	s.OIDC.OpenBrowser = func(string) error { ccancel(); return nil }
+	if _, err := s.SignIn(cctx); err == nil {
+		t.Fatal("SignIn survived cancellation")
 	}
 }

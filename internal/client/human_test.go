@@ -99,7 +99,7 @@ func TestResolveHumanSignInNeedsOIDC(t *testing.T) {
 	e.save(t,
 		profile.Profile{Name: "default", Mode: profile.ModeLocal},
 		profile.Profile{Name: "plain", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"},
-		profile.Profile{Name: "corp", Mode: profile.ModeServer, Server: "http://127.0.0.1:1", OIDC: oidc},
+		profile.Profile{Name: "corp", Mode: profile.ModeServer, Server: "http://127.0.0.1:1", Identity: "profid", OIDC: oidc},
 	)
 	e.credential(t, "corp", "pat") // agent keys in the same profile never select the identity
 	for _, name := range []string{"plain", "default"} {
@@ -109,12 +109,14 @@ func TestResolveHumanSignInNeedsOIDC(t *testing.T) {
 			t.Errorf("profile %s: err %v, want a ResolveError naming the oidc setting", name, err)
 		}
 	}
-	r, err := Resolve(Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "corp", HumanSignIn: true, Identity: "ignored", FallbackIdentity: "efitz"})
+	// AGENTBUS2_IDENTITY, the profile's identity and its credentials never select the human's identity.
+	env := append(append([]string{}, e.environ...), "AGENTBUS2_IDENTITY=x")
+	r, err := Resolve(Options{Environ: env, Cwd: t.TempDir(), Profile: "corp", HumanSignIn: true, FallbackIdentity: "efitz"})
 	if err != nil || r.Identity != "" || r.IdentitySource != "sign-in" || r.Profile.OIDC == nil {
 		t.Fatalf("Resolve with oidc = %+v, %v", r, err)
 	}
 	// Without HumanSignIn the same profile still selects the agent's credential.
-	if r, err = Resolve(Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "corp"}); err != nil || r.Identity != "pat" {
+	if r, err = Resolve(Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "corp"}); err != nil || r.Identity != "profid" {
 		t.Fatalf("agent resolve = %q, %v", r.Identity, err)
 	}
 }

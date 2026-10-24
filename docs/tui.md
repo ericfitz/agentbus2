@@ -18,7 +18,7 @@ Exit codes: 0 on a clean quit, 1 with `agentbus2: <error>` on stderr when the se
 
 ### Server profiles and sign-in
 
-On a server profile `tui` does not select an agent identity: the profile needs an `oidc` setting, and the identity is the one the server binds to the signed-in email (Decision 11; spec 5.3). `-identity` is refused (exit 2), as are `AGENTBUS2_IDENTITY`, the profile's `identity` and the profile's credentials, which belong to agents; a server profile without `oidc` exits 2 naming the missing setting. Local profiles are unchanged.
+On a server profile `tui` does not select an agent identity: the profile needs an `oidc` setting, and the identity is the one the server binds to the signed-in email (Decision 11; spec 5.3). `-identity` is refused (exit 2); `AGENTBUS2_IDENTITY`, the profile's `identity` and the profile's credentials, which belong to agents, are ignored; a server profile without `oidc` exits 2 naming the missing setting. Local profiles are unchanged.
 
 ```json
 {"profiles": {"lab": {"mode": "server", "server": "https://bus.example.com",
@@ -29,7 +29,7 @@ On a server profile `tui` does not select an agent identity: the profile needs a
 
 With no usable session the TUI prints `agentbus2 tui: sign in at <url>` on stderr, opens the system browser at that URL (authorization code flow with PKCE) and waits for the callback for up to 5 minutes. It exchanges the provider's access token at the server and caches the server's bearer in `<data dir>/tokens/<profile>/human/session.json` (mode 0600, directory 0700; an owner-only ACL on Windows), together with the provider's refresh token when one was issued. The corporate token itself is never stored or logged. The next start reuses the cached bearer until 60 seconds before it expires, then refreshes through the provider's refresh token without the browser, and reopens the browser only when there is none or the provider rejects it. `agentbus2 login -profile P -human` always runs the browser sign-in and prints `logged in as <identity> at <server> (token expires <time>)`.
 
-The sign-in URL is announced only before the screen opens. A bearer the server refuses mid-session is refreshed once; when that needs the browser, the request that triggered it (a screen update, a send) blocks for up to 5 minutes, with nothing shown on the screen, until the sign-in completes or times out. Run `agentbus2 login -human` before that happens if the session is long.
+The sign-in URL is announced only before the screen opens. A bearer the server refuses mid-session is refreshed once; when that needs the browser, the request that triggered it (a screen update, a send) blocks for up to 5 minutes, with nothing shown on the screen, until the sign-in completes or times out. The TUI gives its synchronous bus calls a 10 second deadline; the sign-in ignores that deadline (it still stops on quit), so the browser has the full 5 minutes, but the call that triggered it fails with a timeout and the next one uses the new bearer. Run `agentbus2 login -human` before that happens if the session is long.
 
 ### Terminal
 
