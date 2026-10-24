@@ -756,7 +756,9 @@ paths:
       description: >-
         RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70):
         the client assertion's iss and sub are the identity and its aud is this
-        endpoint.
+        server's issuer URL (the token endpoint URL is still accepted); and the
+        RFC 8693 token exchange of a configured issuer's access token for a
+        human bearer. Errors are RFC 6749 section 5.2 bodies.
       requestBody:
         required: true
         content:

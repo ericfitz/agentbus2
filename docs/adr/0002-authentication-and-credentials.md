@@ -669,3 +669,55 @@ later tasks extend it.
   browser (which blocks that request for up to 5 minutes).
 - **Identity** is the unverified `sub` of the cached bearer (the server
   verifies every request); a bearer without one is an error at save.
+
+### Standards audit (spec 8.7, Task 14)
+
+RFC 6749 (sections 2.3, 3.2, 4.4, 5), 7521, 7523, 8414, 8693, 9068 and OpenID
+Connect Discovery were read against `/v1/auth/token`, `/v1/auth/jwks` and
+both well-known documents. The departures that remain, each checked against
+the running handler (2026-10-24), and why:
+
+1. **The token endpoint URL is still accepted as the assertion `aud`** (Task
+   7). The RFC 7523 revision draft forbids it; shipped clients sent it
+   before this work. Dropped when the draft is published and every shipped
+   client sends the issuer.
+2. **`/.well-known/openid-configuration` is still served**, with the same
+   document as `/.well-known/oauth-authorization-server`. agentbus2 is not
+   an OpenID provider (no authorization endpoint, no ID tokens, no
+   `userinfo`) and the document claims nothing of the kind; it stays so
+   clients built against the old path keep working.
+3. **`audience` and `resource` are single-valued.** RFC 8693 allows
+   several of each; an agentbus2 bearer has one audience, its issuer.
+   A different or repeated value is `invalid_target`.
+4. **`none` is listed in `token_endpoint_auth_methods_supported`** for the
+   exchange's public client. RFC 8414 describes the member per endpoint, not
+   per grant, so the document cannot say that `none` is valid for the token
+   exchange only; the handler enforces it (a `client_credentials` request
+   without a valid assertion is `invalid_client`).
+5. **`GET` (or any non-`POST` method) on `/v1/auth/token` answers 400
+   `invalid_request`**, not 405. The request validator refuses the missing
+   operation before routing, and the token endpoint answers every request the
+   validator, mux or strict handler refuses with the same fixed
+   `invalid_request` body, so that the framework's message never echoes an
+   assertion. RFC 6749 section 3.2 requires `POST` and does not name a
+   status for another method.
+6. **Refusals that happen before the token handler can be reached answer
+   problem+json, not the OAuth body.** These are the 413 from the body limit
+   (`limitBody` wraps the whole handler and runs before the validator and the
+   mux), and the routing-level 404 for a path that is not
+   an operation (for example `/v1/auth/token/`). Neither is a token request.
+7. **The token endpoint's 500 and 503** are not in RFC 6749 section 5.2
+   (plan choice, above); the bodies are still the section 5.2 shape.
+8. **Error descriptions echo the caller's own values.** `assertion.Parse`
+   reports `algorithm "<alg>"` and `typ "<typ>"` in the `invalid_client`
+   description, and an unsupported grant is reported as `grant_type "<g>"`.
+   Accepted, not changed: each is the `%q`-quoted value of a header or
+   parameter the unauthenticated caller just sent, returned to that caller
+   only, so it discloses nothing it did not send; it carries no signature,
+   claim or key material; and it helps a client author find the wrong value.
+   (The assertion refusals are not logged with their description.)
+
+No departure from RFC 7521's client-assertion framing, RFC 7523 section 3
+validation (`iss`, `sub`, `aud`, `exp`, `jti`, signature), RFC 8693 section
+2.2 responses (`issued_token_type`, `token_type: Bearer`), RFC 9068 section
+2.2 required claims or RFC 8414 section 2 required members was found.

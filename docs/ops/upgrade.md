@@ -16,6 +16,10 @@ The database carries a schema version in `schema_meta`. On open:
 
 Each migration step is a transaction of its own that re-reads the version under the lock. A failed step leaves the previous version, and the next start retries from there.
 
+## Schema versions
+
+- Version 5 (federated identity) adds `identities.kind` (every existing identity becomes `agent`), `messages.sender_kind` (every existing message becomes `agent`), the `human_bindings` table and the `access_refs` table (the `users` and `admins` reference lists). Each identity that has the administrator flag also gets an `admins` entry of kind `identity`, so `admins list` shows it and `admins remove -identity NAME` clears the flag as before. Nothing else changes for existing agents. Stop every replica before starting a binary that migrates from version 4 (procedure step 2): an old replica does not know the new columns.
+
 ## Procedure
 
 1. Back up the database (`backup.md`).

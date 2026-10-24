@@ -1096,13 +1096,13 @@ type ClientInterface interface {
 	// TokenWithBody performs a POST /v1/auth/token (the `Token` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this server's issuer URL (the token endpoint URL is still accepted); and the RFC 8693 token exchange of a configured issuer's access token for a human bearer. Errors are RFC 6749 section 5.2 bodies.
 	TokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// TokenWithFormdataBody performs a POST /v1/auth/token (the `Token` operationId) request.
 	// Takes a body of the `application/x-www-form-urlencoded` content type.
 	//
-	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this server's issuer URL (the token endpoint URL is still accepted); and the RFC 8693 token exchange of a configured issuer's access token for a human bearer. Errors are RFC 6749 section 5.2 bodies.
 	TokenWithFormdataBody(ctx context.Context, body TokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListChannels performs a GET /v1/channels (the `ListChannels` operationId) request.
@@ -1430,7 +1430,7 @@ func (c *Client) Register(ctx context.Context, body RegisterJSONRequestBody, req
 // TokenWithBody performs a POST /v1/auth/token (the `Token` operationId) request,
 // with any type of body and a specified content type.
 //
-// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this server's issuer URL (the token endpoint URL is still accepted); and the RFC 8693 token exchange of a configured issuer's access token for a human bearer. Errors are RFC 6749 section 5.2 bodies.
 func (c *Client) TokenWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewTokenRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -1446,7 +1446,7 @@ func (c *Client) TokenWithBody(ctx context.Context, contentType string, body io.
 // TokenWithFormdataBody performs a POST /v1/auth/token (the `Token` operationId) request.
 // Takes a body of the `application/x-www-form-urlencoded` content type.
 //
-// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this server's issuer URL (the token endpoint URL is still accepted); and the RFC 8693 token exchange of a configured issuer's access token for a human bearer. Errors are RFC 6749 section 5.2 bodies.
 func (c *Client) TokenWithFormdataBody(ctx context.Context, body TokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewTokenRequestWithFormdataBody(c.Server, body)
 	if err != nil {
@@ -4301,7 +4301,7 @@ type ClientWithResponsesInterface interface {
 	// TokenWithBodyWithResponse performs a POST /v1/auth/token (the `Token` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this server's issuer URL (the token endpoint URL is still accepted); and the RFC 8693 token exchange of a configured issuer's access token for a human bearer. Errors are RFC 6749 section 5.2 bodies.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	TokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TokenResponse, error)
@@ -4309,7 +4309,7 @@ type ClientWithResponsesInterface interface {
 	// TokenWithFormdataBodyWithResponse performs a POST /v1/auth/token (the `Token` operationId) request.
 	// Takes a body of the `application/x-www-form-urlencoded` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+	// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this server's issuer URL (the token endpoint URL is still accepted); and the RFC 8693 token exchange of a configured issuer's access token for a human bearer. Errors are RFC 6749 section 5.2 bodies.
 	TokenWithFormdataBodyWithResponse(ctx context.Context, body TokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*TokenResponse, error)
 
 	// ListChannelsWithResponse performs a GET /v1/channels (the `ListChannels` operationId) request.
@@ -6645,7 +6645,7 @@ func (c *ClientWithResponses) RegisterWithResponse(ctx context.Context, body Reg
 // TokenWithBodyWithResponse performs a POST /v1/auth/token (the `Token` operationId) request,
 // with any type of body and a specified content type.
 //
-// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this server's issuer URL (the token endpoint URL is still accepted); and the RFC 8693 token exchange of a configured issuer's access token for a human bearer. Errors are RFC 6749 section 5.2 bodies.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) TokenWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*TokenResponse, error) {
@@ -6659,7 +6659,7 @@ func (c *ClientWithResponses) TokenWithBodyWithResponse(ctx context.Context, con
 // TokenWithFormdataBodyWithResponse performs a POST /v1/auth/token (the `Token` operationId) request.
 // Takes a body of the `application/x-www-form-urlencoded` content type, and returns a wrapper object for the known response body format(s).
 //
-// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this endpoint.
+// RFC 7523 private_key_jwt client credentials grant (Decisions 19, 70): the client assertion's iss and sub are the identity and its aud is this server's issuer URL (the token endpoint URL is still accepted); and the RFC 8693 token exchange of a configured issuer's access token for a human bearer. Errors are RFC 6749 section 5.2 bodies.
 func (c *ClientWithResponses) TokenWithFormdataBodyWithResponse(ctx context.Context, body TokenFormdataRequestBody, reqEditors ...RequestEditorFn) (*TokenResponse, error) {
 	rsp, err := c.TokenWithFormdataBody(ctx, body, reqEditors...)
 	if err != nil {
