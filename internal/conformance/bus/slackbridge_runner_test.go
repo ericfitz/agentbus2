@@ -936,7 +936,7 @@ func TestSlackBridgeState(t *testing.T) {
 	})
 }
 
-// transportErr is an error no Slack answer can have produced: a request that
+// errTransport is an error no Slack answer can have produced: a request that
 // may or may not have reached Slack.
 var errTransport = errors.New("read tcp: connection reset by peer")
 
@@ -1191,6 +1191,94 @@ func TestSlackBridgeDuplicateGuards(t *testing.T) {
 			}
 			if _, ok := f.mapBySeq(seq); !ok || f.fake.Calls("Post")-base != 1 || f.acked() != seq {
 				t.Errorf("recorded = %v, Post calls %d, acked %d", ok, f.fake.Calls("Post"), f.acked())
+			}
+		})
+
+		t.Run("search-ignores-other-apps-and-humans", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post")
+			seq := f.sendAs("ours was lost", nil)
+			f.fake.FailNext("Post", errTransport) // nothing reached Slack
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed post")
+			}
+			// Same metadata seq, but another app's bot, and no bot at all.
+			f.fake.SayAsBot(f.sl, "BOTHERAPP", "another app", "", seq)
+			f.fake.SayAsBot(f.sl, "", "a human", "", seq)
+			if err := f.svc.Drain(ctx); err != nil {
+				t.Fatalf("second Drain: %v", err)
+			}
+			if n := f.fake.Calls("Post") - base; n != 2 {
+				t.Errorf("Post called %d times, want 2 (the failed one and one repost)", n)
+			}
+			c, _ := f.fake.Channel(f.sl)
+			row, ok := f.mapBySeq(seq)
+			if !ok || len(c.Messages) == 0 || row.SlackTS != c.Messages[len(c.Messages)-1].TS {
+				t.Errorf("the row must hold the bridge's own repost: %+v %v", row, ok)
+			}
+		})
+
+		t.Run("search-reads-every-page", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post")
+			f.fake.SayAsBot(f.sl, "BOTHERAPP", "filler 1", "", 0)
+			f.fake.SayAsBot(f.sl, "BOTHERAPP", "filler 2", "", 0)
+			seq := f.sendAs("on the second page", nil)
+			f.fake.PostThenFail(errTransport)
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed post")
+			}
+			f.fake.SetPageSize(2)
+			history := f.fake.Calls("History")
+			if err := f.svc.Drain(ctx); err != nil {
+				t.Fatalf("second Drain: %v", err)
+			}
+			if f.fake.Calls("History")-history < 2 {
+				t.Errorf("History called %d times, want at least 2 pages", f.fake.Calls("History")-history)
+			}
+			if n := f.fake.Calls("Post") - base; n != 1 {
+				t.Errorf("Post called %d times, want 1", n)
+			}
+			if _, ok := f.mapBySeq(seq); !ok {
+				t.Error("the found post was not recorded")
+			}
+		})
+
+		t.Run("search-window-excludes-older-posts", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post")
+			seq := f.sendAs("old look-alike", nil)
+			// A post with this seq from before the window (another life of the
+			// bridge): not the lost one.
+			f.fake.SayAsBot(f.sl, "BBOT", "old", "", seq)
+			f.h.clock.Advance(2 * time.Minute)
+			f.fake.FailNext("Post", errTransport)
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed post")
+			}
+			if err := f.svc.Drain(ctx); err != nil {
+				t.Fatalf("second Drain: %v", err)
+			}
+			if n := f.fake.Calls("Post") - base; n != 2 {
+				t.Errorf("Post called %d times, want 2 (an older post is outside the window)", n)
+			}
+		})
+
+		t.Run("archived-bridge-remembers-nothing", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			f.sendAs("racing the archive", nil)
+			f.fake.FailNext("Post", errTransport)
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed post")
+			}
+			if f.svc.PendingPosts() != 1 {
+				t.Fatalf("PendingPosts = %d", f.svc.PendingPosts())
+			}
+			if err := f.svc.ArchiveBridge(ctx, f.bridge(), "test"); err != nil {
+				t.Fatal(err)
+			}
+			if f.svc.PendingPosts() != 0 {
+				t.Errorf("PendingPosts = %d after the archive", f.svc.PendingPosts())
 			}
 		})
 

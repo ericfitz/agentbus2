@@ -97,6 +97,7 @@ type Service struct {
 	// uncertain: a post that failed in a way that may have reached Slack, with
 	// the time of the first such attempt (searched for before posting again).
 	uncertain map[postedKey]time.Time
+	retired   map[int64]bool // archived or removed bridges: nothing is remembered for them
 }
 
 var _ scopes.Archiver = (*Service)(nil)

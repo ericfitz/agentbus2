@@ -94,16 +94,16 @@ func sleep(ctx context.Context, d time.Duration) error {
 //
 //   - posted: Slack answered with a ts. The next drain records that ts instead
 //     of posting again.
-//   - uncertain: the post failed in a way that may still have reached Slack (a
-//     transport error, a timeout, a context end, an HTTP 5xx or 408, or a server-side error code such as
-//     internal_error). The next
-//     drain first searches Slack for a message of this app whose metadata seq
-//     is the message's (History for a top-level post, Replies for a reply into
-//     a thread, from 60 s before the attempt), records the ts it finds and
-//     posts nothing; when it finds none it posts; when the search itself fails
-//     the drain stops with that error and posts nothing blind. A failure that
-//     proves Slack did not post (any other APIError, a 429
-//     after the retries, a channel gone) leaves no memory and posts again.
+//   - uncertain: the post failed in a way that may still have reached Slack
+//     (a transport error, a timeout, a context end, an HTTP 5xx or 408, or a
+//     server-side error code such as internal_error). The next drain first
+//     searches Slack for a message of this app whose metadata seq is the
+//     message's (History for a top-level post, Replies for a reply into a
+//     thread, from 60 s before the attempt), records the ts it finds and posts
+//     nothing; when it finds none it posts; when the search itself fails the
+//     drain stops with that error and posts nothing blind. A failure that
+//     proves Slack did not post (any other APIError, a 429 after the retries,
+//     a channel gone) leaves no memory and posts again.
 //
 // What remains is a duplicate Slack post (never a bus message) when a post
 // reached Slack and its record is lost with this process's memory (a crash, or
@@ -305,6 +305,9 @@ type postedKey struct{ bridge, seq int64 }
 func (s *Service) setPosted(k postedKey, ts string) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.retired[k.bridge] {
+		return // archived or removed while the post was in flight
+	}
 	if s.posted == nil {
 		s.posted = map[postedKey]string{}
 	}
@@ -343,6 +346,9 @@ func (s *Service) clearPosted(k postedKey) {
 func (s *Service) setUncertain(k postedKey, at time.Time) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if s.retired[k.bridge] {
+		return
+	}
 	if s.uncertain == nil {
 		s.uncertain = map[postedKey]time.Time{}
 	}
@@ -365,7 +371,9 @@ func (s *Service) clearUncertain(k postedKey) {
 }
 
 // clearBridgePosted drops every remembered post of one bridge (bridge 0 means
-// all bridges): an archived or removed bridge posts nothing more. It is not
+// all bridges): an archived or removed bridge posts nothing more, so its ID is
+// also marked retired and no later setPosted or setUncertain remembers a post
+// for it (bridge IDs are never reused). It is not
 // called when the runner loses the lock: the memory is per process, another
 // replica never sees it, and record checks the map row before writing.
 func (s *Service) clearBridgePosted(bridge int64) {
@@ -376,6 +384,10 @@ func (s *Service) clearBridgePosted(bridge int64) {
 		clear(s.uncertain)
 		return
 	}
+	if s.retired == nil {
+		s.retired = map[int64]bool{}
+	}
+	s.retired[bridge] = true // a drain still in flight must not remember a post afterwards
 	for k := range s.posted {
 		if k.bridge == bridge {
 			delete(s.posted, k)

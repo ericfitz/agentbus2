@@ -111,3 +111,19 @@ func TestPostUncertain(t *testing.T) {
 		}
 	}
 }
+
+func TestRetiredBridgeRemembersNothing(t *testing.T) {
+	s := &Service{}
+	s.setPosted(postedKey{1, 1}, "t")
+	s.clearBridgePosted(1)
+	// A drain still in flight finishes its post after the archive.
+	s.setPosted(postedKey{1, 2}, "t")
+	s.setUncertain(postedKey{1, 3}, time.Now())
+	if n := s.PendingPosts(); n != 0 {
+		t.Errorf("PendingPosts = %d for an archived bridge", n)
+	}
+	s.setPosted(postedKey{2, 1}, "t")
+	if n := s.PendingPosts(); n != 1 {
+		t.Errorf("another bridge's post was refused: %d", n)
+	}
+}
