@@ -100,7 +100,7 @@ func (s Service) createAgentIdentity(ctx context.Context, admin string, in bus.C
 // ensureAgent creates the keyless agent row or checks the existing one fits.
 func (s Service) ensureAgent(ctx context.Context, tx store.Tx, in bus.CreateAgentIdentityInput) (bool, error) {
 	if in.Scope != "" {
-		if _, err := scopes.RequireOpen(ctx, s.Core, tx, in.Scope); err != nil {
+		if _, err := scopes.RequireOpen(ctx, tx, in.Scope); err != nil {
 			return false, err
 		}
 	}

@@ -21,7 +21,7 @@ type Service struct{ *core.Core }
 // retired text (spec 4.1) and a done one is conflict, since nothing new may
 // join it (spec 4.2). A store error other than ErrNotFound is returned as it
 // came, so the Store's retry loop still sees a retryable engine error.
-func RequireOpen(ctx context.Context, _ *core.Core, tx store.Tx, name string) (store.Scope, error) {
+func RequireOpen(ctx context.Context, tx store.Tx, name string) (store.Scope, error) {
 	sc, err := load(ctx, tx, name)
 	if err != nil {
 		return store.Scope{}, err

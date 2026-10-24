@@ -215,7 +215,7 @@ func (s *Service) reserveTx(ctx context.Context, tx store.Tx, in bus.CreateBridg
 	default:
 		return err
 	}
-	if _, err := scopes.RequireOpen(ctx, s.core, tx, ch.Scope); err != nil {
+	if _, err := scopes.RequireOpen(ctx, tx, ch.Scope); err != nil {
 		return err
 	}
 	acl, err := tx.ACL(ctx, ch.ID)

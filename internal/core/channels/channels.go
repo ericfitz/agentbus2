@@ -72,12 +72,16 @@ func (s Service) Create(ctx context.Context, identity string, in bus.CreateChann
 		scope := creator.Scope
 		if in.Scope != "" {
 			if _, err := s.RequireAdmin(ctx, tx, identity); err != nil {
-				return core.E(bus.CodeForbidden, "only an administrator may name a scope")
+				var be *bus.Error
+				if errors.As(err, &be) && be.Code == bus.CodeForbidden {
+					return core.E(bus.CodeForbidden, "only an administrator may name a scope")
+				}
+				return err
 			}
 			scope = in.Scope
 		}
 		if scope != "" {
-			if _, err := scopes.RequireOpen(ctx, s.Core, tx, scope); err != nil {
+			if _, err := scopes.RequireOpen(ctx, tx, scope); err != nil {
 				return err
 			}
 		}
