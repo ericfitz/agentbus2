@@ -54,6 +54,7 @@ type Tx interface {
 	Tasks
 	EnrollmentTokens
 	Scopes
+	Bridges
 	SigningKeys
 	AssertionReplays
 	References
