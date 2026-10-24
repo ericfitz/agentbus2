@@ -20,6 +20,7 @@ func TestFindPermalinks(t *testing.T) {
 		{"dm channel ignored", "https://corp.slack.com/archives/D0123ABC/p1700000000123456", nil},
 		{"two in order", "https://a.slack.com/archives/C1/p1700000000000001 then https://a.slack.com/archives/C2/p1700000001000002",
 			[]Permalink{{"C1", "1700000000.000001"}, {"C2", "1700000001.000002"}}},
+		{"grid host", "https://corp.enterprise.slack.com/archives/C1/p1700000000000001", []Permalink{{"C1", "1700000000.000001"}}},
 		{"none", "nothing here", nil},
 	}
 	for _, c := range cases {

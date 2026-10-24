@@ -1,6 +1,12 @@
 package slackbridge
 
-import "testing"
+import (
+	"regexp"
+	"strings"
+	"testing"
+
+	"github.com/ericfitz/agentbus2/internal/bus"
+)
 
 func TestMarkdownToMrkdwn(t *testing.T) {
 	cases := []struct{ name, in, want string }{
@@ -11,7 +17,22 @@ func TestMarkdownToMrkdwn(t *testing.T) {
 		{"strike", "~~gone~~", "~gone~"},
 		{"link", "see [t](https://x.y/z?a=1&b=2)", "see <https://x.y/z?a=1&amp;b=2|t>"},
 		{"link inside bold", "**[t](https://x.y)**", "*<https://x.y|t>*"},
-		{"bold inside link text", "[**t**](https://x.y)", "<https://x.y|*t*>"},
+		{"link text is plain", "[**t** <!here>](https://x.y)", "<https://x.y|**t** &lt;!here&gt;>"},
+		{"nested link", "[a [b](http://z)](http://y)", "<http://y|a [b](http://z)>"},
+		{"channel as url", "[x](!channel)", "[x](!channel)"},
+		{"user as url", "[x](@U123)", "[x](@U123)"},
+		{"subteam as url", "[](!subteam^S1)", "[](!subteam^S1)"},
+		{"here as url", "[x](!here)", "[x](!here)"},
+		{"channel ref as url", "[x](#C1)", "[x](#C1)"},
+		{"empty text", "[](https://x.y)", "<https://x.y|>"},
+		{"mixed case scheme", "[x](HTTPS://X.Y)", "<HTTPS://X.Y|x>"},
+		{"mailto", "[m](mailto:a@b.c)", "<mailto:a@b.c|m>"},
+		{"ftp refused", "[x](ftp://a)", "[x](ftp://a)"},
+		{"bare scheme refused", "[x](http://)", "[x](http://)"},
+		{"fence trailing mention", "```a```<!here>\n```", "```a```&lt;!here&gt;\n```"},
+		{"fence leading mention", "``` <!channel>\nx\n```", "``` &lt;!channel&gt;\nx\n```"},
+		{"heading keeps hash", "# Learn C#", "*Learn C#*"},
+		{"heading closing hashes", "## Title ##", "*Title*"},
 		{"h1", "# Title", "*Title*"},
 		{"h3", "### Title **x**", "*Title x*"},
 		{"dash list", "- a\n- b", "• a\n• b"},
@@ -31,7 +52,7 @@ func TestMarkdownToMrkdwn(t *testing.T) {
 		{"user mention", "ping <@U123>", "ping &lt;@U123&gt;"},
 		{"raw link", "<https://x|y>", "&lt;https://x|y&gt;"},
 		{"mention in code", "`<!channel>`\n```\n<@U123>\n```", "`&lt;!channel&gt;`\n```\n&lt;@U123&gt;\n```"},
-		{"mention in link text and url", "[<!here>](<@U1>)", "<&lt;@U1&gt;|&lt;!here&gt;>"},
+		{"mention in link text and url", "[<!here>](<@U1>)", "[&lt;!here&gt;](&lt;@U1&gt;)"},
 		{"pipe in url", "[t](https://x/a|b)", "<https://x/a%7Cb|t>"},
 		{"mention in heading and list", "# <!here>\n- <@U1>", "*&lt;!here&gt;*\n• &lt;@U1&gt;"},
 		{"link needs url", "[t] (x)", "[t] (x)"},
@@ -58,6 +79,8 @@ func TestSlackToMarkdown(t *testing.T) {
 		{"unknown mention", "hi <@U9>", "hi @U9"},
 		{"channel", "in <#C1|general>", "in #general"},
 		{"special", "<!here> now", "@here now"},
+		{"subteam label", "<!subteam^S1|@team> go", "@team go"},
+		{"date label", "<!date^1700000000^{date}|Nov 14>", "Nov 14"},
 		{"entities", "a &lt; b &amp;&amp; c &gt; d", "a < b && c > d"},
 		{"double escaped stays single", "&amp;lt;", "&lt;"},
 		{"entity in link text", "<https://x.y|a &amp; b>", "[a & b](https://x.y)"},
@@ -72,5 +95,34 @@ func TestSlackToMarkdown(t *testing.T) {
 	}
 	if got := SlackToMarkdown("<@U1>", nil); got != "@U1" {
 		t.Errorf("nil name func: %q", got)
+	}
+}
+
+// generatedLink matches the only angle-bracket form the formatter may emit.
+var generatedLink = regexp.MustCompile(`(?i)<(?:https?://|mailto:)[^<>|\s]+\|[^<>]*>`)
+
+func TestNoLiveMarkupFromAgentText(t *testing.T) {
+	parts := []string{
+		"<!channel>", "<!here>", "<@U123>", "<#C1>", "<!subteam^S1>", "<https://x|y>", "<",
+		"[x](!channel)", "[x](@U1)", "[](#C1)", "[a](https://ok.example/p)", "[b [c](!here)](http://z)",
+		"```", "```a```<!here>", "``` <!channel>", "`", "**", "*", "_", "__", "~~", "# ", "- ", "\n", " ",
+		"é", "😀", "(", ")", "[", "]", "|", ">", "&",
+	}
+	seed := uint32(7)
+	for n := range 20000 {
+		var b strings.Builder
+		for range 12 {
+			seed = seed*1664525 + 1013904223
+			b.WriteString(parts[int(seed>>16)%len(parts)])
+		}
+		in := b.String()
+		for _, out := range []string{MarkdownToMrkdwn(in), FormatPost(bus.Message{Seq: 1, Channel: "c", Subject: in, Content: in}, "", 3000, in).Section} {
+			rest := generatedLink.ReplaceAllString(out, "")
+			rest = strings.ReplaceAll(rest, "\n> ", "\n")
+			rest = strings.TrimPrefix(rest, "> ")
+			if strings.ContainsAny(rest, "<>") {
+				t.Fatalf("case %d: live markup in %q from %q", n, out, in)
+			}
+		}
 	}
 }

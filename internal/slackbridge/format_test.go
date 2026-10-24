@@ -300,3 +300,14 @@ func TestFormatPostNeverMentions(t *testing.T) {
 		t.Errorf("section %q, want %q", p.Section, want)
 	}
 }
+
+func TestFormatPostLinkSpecials(t *testing.T) {
+	for _, in := range []string{"[x](!channel)", "[x](@U123)", "[](!subteam^S1)", "[x](!here)", "[x](#C1)", "[](!channel)"} {
+		p := FormatPost(bus.Message{Seq: 1, Channel: "c", Sender: "a", Subject: in, Content: in}, "", 3000, in)
+		for name, got := range map[string]string{"section": p.Section, "fallback": p.Fallback} {
+			if strings.ContainsAny(strings.ReplaceAll(got, "\n> ", ""), "<>") {
+				t.Errorf("%q %s: live markup %q", in, name, got)
+			}
+		}
+	}
+}

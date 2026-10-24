@@ -12,7 +12,7 @@ func escapeSlack(s string) string {
 }
 
 var (
-	headingRE = regexp.MustCompile(`^\s{0,3}#{1,6}\s+(.*?)\s*#*\s*$`)
+	headingRE = regexp.MustCompile(`^\s{0,3}#{1,6}\s+(.*?)(?:\s+#+)?\s*$`)
 	listRE    = regexp.MustCompile(`^(\s*)[-*]\s+`)
 )
 
@@ -31,6 +31,12 @@ func MarkdownToMrkdwn(md string) string {
 	for i, line := range lines {
 		if isFenceLine(line) {
 			inFence = !inFence
+			// keep the indent and the backticks; the rest (a language, or text
+			// an agent put after the marker) is escaped like any other text.
+			rest := strings.TrimLeft(line, " \t")
+			indent := line[:len(line)-len(rest)]
+			ticks := rest[:len(rest)-len(strings.TrimLeft(rest, "`"))]
+			lines[i] = indent + ticks + escapeSlack(rest[len(ticks):])
 			continue
 		}
 		if inFence {
@@ -111,7 +117,12 @@ func inlineToMrkdwn(s string) string {
 			}
 		case '[':
 			if text, url, next, ok := parseLink(r, i); ok {
-				b.WriteString("<" + escapeSlack(strings.ReplaceAll(url, "|", "%7C")) + "|" + inlineToMrkdwn(text) + ">")
+				if safeURL(url) {
+					b.WriteString("<" + escapeSlack(strings.ReplaceAll(url, "|", "%7C")) + "|" + escapeSlack(text) + ">")
+				} else {
+					// not a web or mail link (!channel, @U1, #C1, ...): literal text
+					b.WriteString(escapeSlack(string(r[i:next])))
+				}
 				i = next
 				continue
 			}
@@ -129,6 +140,18 @@ func inlineToMrkdwn(s string) string {
 		i++
 	}
 	return b.String()
+}
+
+// safeURL accepts only the schemes the formatter turns into links; anything
+// else could be a Slack special (<!channel>, <@U1>, <#C1>) once wrapped.
+func safeURL(u string) bool {
+	l := strings.ToLower(u)
+	for _, p := range []string{"http://", "https://", "mailto:"} {
+		if strings.HasPrefix(l, p) && len(l) > len(p) {
+			return true
+		}
+	}
+	return false
 }
 
 // parseLink parses "[text](url)" starting at r[i] == '['. next is the index
@@ -197,6 +220,9 @@ func slackTag(inner string, name func(string) string) string {
 		}
 		return "#" + target[1:]
 	case strings.HasPrefix(target, "!"):
+		if hasLabel && label != "" {
+			return unescapeSlack.Replace(label)
+		}
 		return "@" + strings.TrimPrefix(target, "!")
 	}
 	url := unescapeSlack.Replace(target)

@@ -5,7 +5,7 @@ import "regexp"
 // Permalink names a Slack message by channel ID and timestamp.
 type Permalink struct{ Channel, TS string }
 
-var permalinkRE = regexp.MustCompile(`https://[A-Za-z0-9-]+\.slack\.com/archives/([CG][A-Z0-9]+)/p(\d+)`)
+var permalinkRE = regexp.MustCompile(`https://[A-Za-z0-9.-]+\.slack\.com/archives/([CG][A-Z0-9]+)/p(\d+)`)
 
 // FindPermalinks returns the message permalinks in raw Slack text, in order.
 // Both the bare and the "<url|text>" forms match; a query string is ignored,
