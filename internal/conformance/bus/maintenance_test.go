@@ -365,24 +365,30 @@ func TestMaintenanceEmptyChannels(t *testing.T) {
 		h.channel("empty", ab2store.KindOrdinary, "pat", nil)
 		withMsg := h.channel("with-message", ab2store.KindOrdinary, "pat", nil)
 		withSub := h.channel("with-subscription", ab2store.KindOrdinary, "pat", nil)
+		withLive := h.channel("with-live-subscriber", ab2store.KindOrdinary, "pat", nil)
 		h.channel("memory-empty", ab2store.KindMemory, "pat", nil)
 		h.channel("tasks-empty", ab2store.KindTasks, "pat", nil)
 		h.append(withMsg, "pat", "", "hello")
 		h.ensureIdentity("kim")
 		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
-			// kim has no live session; a subscription of any identity still counts.
+			// kim has no live or resumable session, so the subscription does not
+			// keep the channel (Decision 20).
 			return tx.Subscribe(ctx, "kim", withSub.ID, 0, h.core.NowMs())
+		})
+		h.session("lee", "lee-s") // lee has an open session and subscribes to with-live-subscriber
+		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+			return tx.Subscribe(ctx, "lee", withLive.ID, 0, h.core.NowMs())
 		})
 
 		h.clock.Advance(hours(h.cfg.EmptyChannelReapHours) - time.Minute)
 		h.channel("young", ab2store.KindOrdinary, "pat", nil)
 		h.clock.Advance(2 * time.Minute)
 		// "empty" is now N hours and a minute old; "young" is two minutes old.
-		if n := h.runJob("empty channels"); n != 1 {
-			t.Fatalf("reaped %d, want 1 (empty)", n)
+		if n := h.runJob("empty channels"); n != 2 {
+			t.Fatalf("reaped %d, want 2 (empty, with-subscription)", n)
 		}
 		for name, want := range map[string]bool{
-			"empty": false, "with-message": true, "with-subscription": true, "memory-empty": true,
+			"empty": false, "with-message": true, "with-subscription": false, "with-live-subscriber": true, "memory-empty": true,
 			"tasks-empty": true, "young": true, channels.GeneralChannel: true,
 		} {
 			if got := channelExists(h, name); got != want {

@@ -52,7 +52,7 @@ func (t *tx) PutEnrollmentToken(ctx context.Context, e store.EnrollmentToken) er
 		if err := store.NameRule(e.Identity); err != nil {
 			return fmt.Errorf("%w: enrollment token identity %q %s", store.ErrInvalid, e.Identity, err)
 		}
-		if e.Identity == store.Everyone || e.Identity == store.Admins {
+		if store.ReservedIdentity(e.Identity) {
 			return fmt.Errorf("%w: enrollment token identity %q is reserved", store.ErrInvalid, e.Identity)
 		}
 	}
@@ -150,4 +150,21 @@ func (t *tx) DeleteEnrollmentToken(ctx context.Context, id string) error {
 		return notFoundToken(id)
 	}
 	return nil
+}
+
+// DeleteEnrollmentTokensFor deletes every token bound to identity; 0, nil when
+// there is none (or the name fails TextRule, which no token can carry).
+func (t *tx) DeleteEnrollmentTokensFor(ctx context.Context, identity string) (int, error) {
+	if err := t.writable(); err != nil {
+		return 0, err
+	}
+	if badText(identity) {
+		return 0, nil
+	}
+	res, err := t.execW(ctx, "DELETE FROM enrollment_tokens WHERE identity = ?", identity)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	return int(n), err
 }

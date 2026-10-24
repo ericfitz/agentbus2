@@ -141,6 +141,9 @@ func readRegistry(t *testing.T, h *harness) registryState {
 			return err
 		}
 		for _, id := range ids {
+			if id.Name == ab2store.SlackBridge {
+				continue // the reserved row exists in every store
+			}
 			st.identities[id.Name] = id
 			if id.Kind == ab2store.IdentityHuman {
 				b, err := tx.HumanBinding(ctx, id.Name)

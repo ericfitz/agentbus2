@@ -14,6 +14,7 @@ import (
 type identityRow struct {
 	Name         string `db:"name"`
 	Kind         string `db:"kind"`
+	Scope        string `db:"scope"`
 	Admin        bool   `db:"is_admin"`
 	TagsAckedSeq int64  `db:"tags_acked_seq"`
 	CreatedAt    int64  `db:"created_at"`
@@ -33,10 +34,10 @@ func (t *tx) guardIdentityName(name string) error {
 }
 
 func (r identityRow) identity() store.Identity {
-	return store.Identity{Name: r.Name, Kind: store.IdentityKind(r.Kind), Admin: r.Admin, TagsAckedSeq: r.TagsAckedSeq, CreatedAt: r.CreatedAt}
+	return store.Identity{Name: r.Name, Kind: store.IdentityKind(r.Kind), Scope: r.Scope, Admin: r.Admin, TagsAckedSeq: r.TagsAckedSeq, CreatedAt: r.CreatedAt}
 }
 
-const identityCols = "name, kind, is_admin, tags_acked_seq, created_at"
+const identityCols = "name, kind, COALESCE(scope, '') AS scope, is_admin, tags_acked_seq, created_at"
 
 // identityUpdated maps an UPDATE on identities to ErrNotFound when no row
 // matched.
@@ -54,14 +55,31 @@ func identityUpdated(res sql.Result, err error, name string) error {
 	return nil
 }
 
-// checkIdentityName is the name rule shared by CreateIdentity and
-// CreateHuman: NameRule, then the reserved names.
+// checkIdentityName is the static part of the name rule shared by
+// CreateIdentity, CreateHuman and CreateScopedIdentity: NameRule, then the
+// reserved names.
 func checkIdentityName(name string) error {
 	if err := store.NameRule(name); err != nil {
 		return fmt.Errorf("%w: identity name %q %s", store.ErrInvalid, name, err)
 	}
-	if name == store.Everyone || name == store.Admins {
+	if store.ReservedIdentity(name) {
 		return fmt.Errorf("%w: identity name %q is reserved", store.ErrInvalid, name)
+	}
+	return nil
+}
+
+// checkNewIdentityName is checkIdentityName plus the retired names: a
+// retired name is never reused (ErrConflict).
+func (t *tx) checkNewIdentityName(ctx context.Context, name string) error {
+	if err := checkIdentityName(name); err != nil {
+		return err
+	}
+	retired, err := t.IdentityRetired(ctx, name)
+	if err != nil {
+		return err
+	}
+	if retired {
+		return fmt.Errorf("%w: identity name %q is retired", store.ErrConflict, name)
 	}
 	return nil
 }
@@ -69,7 +87,7 @@ func checkIdentityName(name string) error {
 // CreateIdentity validates the name (NameRule, then the reserved names;
 // Decision (Eric, 2026-10-21): Gate 0 item 1) before the INSERT.
 func (t *tx) CreateIdentity(ctx context.Context, name string, now int64) error {
-	if err := checkIdentityName(name); err != nil {
+	if err := t.checkNewIdentityName(ctx, name); err != nil {
 		return err
 	}
 	_, err := t.execW(ctx, "INSERT INTO identities (name, is_admin, tags_acked_seq, created_at) VALUES (?, FALSE, 0, ?)", name, now)
@@ -148,6 +166,9 @@ func (t *tx) PutPublicKey(ctx context.Context, k store.PublicKey) error {
 	}
 	if err := t.guardIdentityName(k.Identity); err != nil {
 		return err
+	}
+	if k.Identity == store.SlackBridge {
+		return fmt.Errorf("%w: identity %q is reserved and takes no key", store.ErrInvalid, k.Identity)
 	}
 	_, err := t.execW(ctx, `INSERT INTO identity_keys (identity, kid, algorithm, public_key, created_at) VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (identity, kid) DO UPDATE SET algorithm = excluded.algorithm, public_key = excluded.public_key, created_at = excluded.created_at`,

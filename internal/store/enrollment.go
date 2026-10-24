@@ -15,7 +15,7 @@ type EnrollmentToken struct {
 
 type EnrollmentTokens interface {
 	// PutEnrollmentToken: ErrInvalid on an empty ID or TokenHash, UsesLeft < 1,
-	// ExpiresAt <= 0, or a non-empty Identity failing NameRule or reserved;
+	// ExpiresAt <= 0, or a non-empty Identity failing NameRule or reserved (slack-bridge included);
 	// ErrConflict when the ID or TokenHash is taken.
 	PutEnrollmentToken(ctx context.Context, t EnrollmentToken) error
 	// EnrollmentTokenByHash: ErrNotFound.
@@ -28,4 +28,7 @@ type EnrollmentTokens interface {
 	ConsumeEnrollmentToken(ctx context.Context, id string, now int64) (bool, error)
 	// DeleteEnrollmentToken: ErrNotFound.
 	DeleteEnrollmentToken(ctx context.Context, id string) error
+	// DeleteEnrollmentTokensFor deletes every token bound to identity and
+	// returns how many; 0, nil for none.
+	DeleteEnrollmentTokensFor(ctx context.Context, identity string) (int, error)
 }

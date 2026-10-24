@@ -21,11 +21,13 @@ type Meta interface {
 	// and embed_failures cascade), subscriptions, tag_subscriptions
 	// (tag_subscription_tags cascades), sessions, memory_access and receipts.
 	// It keeps schema_meta, seq_counter, leases, signing_keys, identities,
-	// identity_keys, human_bindings, access_refs (the users and admins lists)
-	// and enrollment_tokens. Write transactions only
+	// identity_keys, human_bindings, access_refs (the users and admins lists),
+	// enrollment_tokens, scopes, retired_identities, bridges, bridge_messages,
+	// bridge_dropped and slack_users (a bridge whose channel it removed is
+	// cleaned by the Slack bridge runner). Write transactions only
 	// (ErrReadOnly in Read). Safe to repeat.
 	ResetData(ctx context.Context) error
-	// ResetRegistry deletes every identities row except keep (identity_keys
+	// ResetRegistry deletes every identities row except keep and slack-bridge (identity_keys
 	// cascades; keep "" deletes all; human_bindings cascade with their
 	// identities), every enrollment_tokens row, every users reference and
 	// every admins reference except {admins, identity, "", keep}; it keeps

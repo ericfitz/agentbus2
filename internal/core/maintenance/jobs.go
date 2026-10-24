@@ -195,19 +195,23 @@ func (s Service) taskExpiry(ctx context.Context, now int64) (int, error) {
 }
 
 // emptyChannels deletes every ordinary channel, except `general`, that has no
-// messages and no subscriptions and was created more than
+// messages and no counting subscription and was created more than
 // EmptyChannelReapHours ago (v1 internal/bus/channels.go reapEmptyChannels;
-// Decision (Eric, 2026-10-21), Milestone 3 item 8). Task lists and memory
-// channels are never ordinary, so the Store never offers them. Candidates are
-// listed first and each is deleted by a conditional statement that re-checks
-// emptiness, so a message or subscription landing in between keeps its
-// channel. Idempotent: a second run finds nothing.
+// Decision (Eric, 2026-10-21), Milestone 3 item 8). A subscription counts only
+// when its identity holds a live or resumable session (lease not lapsed past
+// SessionRetentionHours) and is not the Slack bridge's (Decision 20); a
+// channel with a live or creating bridge is never offered. Task lists and
+// memory channels are never ordinary, so the Store never offers them.
+// Candidates are listed first and each is deleted by a conditional statement
+// that re-checks emptiness, so a message or subscription landing in between
+// keeps its channel. Idempotent: a second run finds nothing.
 func (s Service) emptyChannels(ctx context.Context, now int64) (int, error) {
 	cutoff := now - int64(s.Cfg.EmptyChannelReapHours)*hourMs
+	resumableAfter := now - int64(s.Cfg.SessionRetentionHours)*hourMs
 	var cands []store.Channel
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		var err error
-		cands, err = tx.EmptyChannelsBefore(ctx, cutoff)
+		cands, err = tx.EmptyChannelsBefore(ctx, cutoff, resumableAfter)
 		return err
 	})
 	if err != nil {
@@ -224,7 +228,7 @@ func (s Service) emptyChannels(ctx context.Context, now int64) (int, error) {
 		var gone bool
 		err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 			var err error
-			gone, err = tx.DeleteChannelIfEmpty(ctx, ch.ID, cutoff)
+			gone, err = tx.DeleteChannelIfEmpty(ctx, ch.ID, cutoff, resumableAfter)
 			return err
 		})
 		if err != nil {

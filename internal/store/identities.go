@@ -6,6 +6,7 @@ import "context"
 type Identity struct {
 	Name         string
 	Kind         IdentityKind // agent or human; CreateIdentity makes an agent
+	Scope        string       // "" when unscoped
 	Admin        bool
 	TagsAckedSeq int64 // per-identity acked mark for tag-match delivery (plan choice 7)
 	CreatedAt    int64
@@ -49,9 +50,21 @@ const (
 	Admins   = "admins"
 )
 
+// SlackBridge is the reserved identity the Slack bridge acts as. Its row
+// exists from schema version 6; no registration can create it or attach a key
+// to it, and it holds no general subscription.
+const SlackBridge = "slack-bridge"
+
+// ReservedIdentity reports whether name is one of the reserved identity names.
+func ReservedIdentity(name string) bool {
+	return name == Everyone || name == Admins || name == SlackBridge
+}
+
 type Identities interface {
 	// CreateIdentity: ErrInvalid (NameRule, reserved name;
-	// Decision (Eric, 2026-10-21): Gate 0 item 1), ErrConflict.
+	// Decision (Eric, 2026-10-21): Gate 0 item 1), ErrConflict (the name
+	// exists or is retired). CreateHuman and CreateScopedIdentity apply the
+	// same name rules.
 	CreateIdentity(ctx context.Context, name string, now int64) error
 	Identity(ctx context.Context, name string) (Identity, error) // ErrNotFound
 	ListIdentities(ctx context.Context) ([]Identity, error)      // by name, in byte order
@@ -78,8 +91,8 @@ type Identities interface {
 	// another identity; ErrInvalid when exactly one is empty or on text
 	// failing TextRule.
 	SetHumanSubject(ctx context.Context, identity, issuer, subject string) error
-	// PutPublicKey upserts by (identity, kid); ErrInvalid on an unknown
-	// Algorithm, an empty KID or one failing TextRule (not valid UTF-8, or a
+	// PutPublicKey upserts by (identity, kid); ErrInvalid on slack-bridge, an
+	// unknown Algorithm, an empty KID or one failing TextRule (not valid UTF-8, or a
 	// NUL) or an empty Key; ErrNotFound on an unknown identity.
 	PutPublicKey(ctx context.Context, k PublicKey) error
 	// PublicKeys lists by kid in byte order; an unknown identity has none (an

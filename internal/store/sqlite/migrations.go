@@ -23,6 +23,7 @@ func Migrations() []sqlstore.Migration {
 		{Version: 3, Up: runFile("schema/0003_assertion_jti.sql")},
 		{Version: 4, Up: runFile("schema/0004_assertion_jti_identity.sql")},
 		{Version: 5, Up: runFile("schema/0005_human_identity.sql")},
+		{Version: 6, Up: runFile("schema/0006_scopes_bridges.sql")},
 	}
 }
 

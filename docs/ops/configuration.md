@@ -71,7 +71,7 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | `tombstone_min_hours` | `AGENTBUS2_SERVER_TOMBSTONE_MIN_HOURS` | int | `72` | 72 to 720. Minimum age before a tombstone is purged. |
 | `task_expiry_hours` | `AGENTBUS2_SERVER_TASK_EXPIRY_HOURS` | int | `720` | 0 to 87600. 0 disables the rule. |
 | `memory_expiry_hours` | `AGENTBUS2_SERVER_MEMORY_EXPIRY_HOURS` | int | `8760` | 0 to 87600. Memories not accessed for this long are tombstoned; 0 disables the rule. |
-| `empty_channel_reap_hours` | `AGENTBUS2_SERVER_EMPTY_CHANNEL_REAP_HOURS` | int | `24` | 1 to 8760. Age after which an ordinary channel with no messages and no subscriptions is deleted. |
+| `empty_channel_reap_hours` | `AGENTBUS2_SERVER_EMPTY_CHANNEL_REAP_HOURS` | int | `24` | 1 to 8760. Age after which an ordinary channel with no messages and no subscriber that has a live or resumable session is deleted (the Slack bridge's subscription never counts). |
 | `session_lease_seconds` | `AGENTBUS2_SERVER_SESSION_LEASE_SECONDS` | int | `90` | 1 to 86400. A session's lease; open, receive and watch extend it. |
 | `lease_skew_seconds` | `AGENTBUS2_SERVER_LEASE_SKEW_SECONDS` | int | `5` | 0 to 300. Grace added to a lease before the session counts as lapsed. |
 | `watch_max_seconds` | `AGENTBUS2_SERVER_WATCH_MAX_SECONDS` | int | `50` | 1 to 240. Cap on a watch (long-poll) timeout; a proxy must allow at least this long. |

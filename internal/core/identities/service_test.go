@@ -727,7 +727,8 @@ func TestResetEverythingKeepsCaller(t *testing.T) {
 			t.Fatal(err)
 		}
 		got := snap(t, s)
-		if len(got.Identities) != 1 || got.Identities[0].Name != "root" || !got.Identities[0].Admin {
+		// root stays with the reserved slack-bridge row (by name order: root, slack-bridge).
+		if len(got.Identities) != 2 || got.Identities[0].Name != "root" || !got.Identities[0].Admin || got.Identities[1].Name != store.SlackBridge {
 			t.Fatalf("identities = %+v", got.Identities)
 		}
 		if !reflect.DeepEqual(got.Keys["root"], before.Keys["root"]) {
@@ -1467,7 +1468,7 @@ func TestHumanOverlap(t *testing.T) {
 	}
 	tx(t, s, func(ctx context.Context, tx store.Tx) error {
 		ids, err := tx.ListIdentities(ctx)
-		if err != nil || len(ids) != 1 {
+		if err != nil || len(ids) != 2 { // the human and the reserved slack-bridge
 			t.Fatalf("identities = %v, %v", ids, err)
 		}
 		return nil

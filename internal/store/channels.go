@@ -18,6 +18,7 @@ type Channel struct {
 	Name                                    string
 	Kind                                    Kind
 	Creator                                 string
+	Scope                                   string // "" when unscoped
 	CreatedSeq, EvictedBeforeSeq, CreatedAt int64
 }
 
@@ -28,6 +29,7 @@ type ChannelCreate struct {
 	Name                  string
 	Kind                  Kind
 	Creator               string
+	Scope                 string // "" is unscoped (stored NULL); ErrNotFound for an unknown scope
 	ACL                   []ACLEntry
 	CreatedSeq, CreatedAt int64
 }
@@ -45,16 +47,19 @@ type Channels interface {
 	DeleteChannel(ctx context.Context, id int64) error
 	// EmptyChannelsBefore lists the ordinary channels created before
 	// createdBefore that have no message row (tombstones count) and no
-	// subscriptions row (any identity; tag subscriptions do not count), by
-	// name in byte order. It does not know which channel the server protects:
-	// the caller skips `general` (Decision (Eric, 2026-10-21), Milestone 3
-	// item 8; v1 reapEmptyChannels).
-	EmptyChannelsBefore(ctx context.Context, createdBefore int64) ([]Channel, error)
+	// counting subscription, by name in byte order. A subscription counts only
+	// when its identity is not slack-bridge and holds a session that is not
+	// closed and whose lease_expires_at >= resumableAfter (Decision 20); tag
+	// subscriptions do not count. A channel with a bridges row whose state is
+	// not archived is never offered. It does not know which channel the server
+	// protects: the caller skips `general` (Decision (Eric, 2026-10-21),
+	// Milestone 3 item 8; v1 reapEmptyChannels).
+	EmptyChannelsBefore(ctx context.Context, createdBefore, resumableAfter int64) ([]Channel, error)
 	// DeleteChannelIfEmpty deletes the channel when it still satisfies
 	// EmptyChannelsBefore's condition, in one statement, and reports whether
 	// it did. A channel that is gone, not ordinary, too young, or no longer
 	// empty is left alone and is not an error. Cascades like DeleteChannel.
-	DeleteChannelIfEmpty(ctx context.Context, id, createdBefore int64) (bool, error)
+	DeleteChannelIfEmpty(ctx context.Context, id, createdBefore, resumableAfter int64) (bool, error)
 	// SetEvictedBefore sets the mark to max(current, seq).
 	SetEvictedBefore(ctx context.Context, id int64, seq int64) error
 	ACL(ctx context.Context, id int64) ([]ACLEntry, error) // insertion order

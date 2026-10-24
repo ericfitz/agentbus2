@@ -38,6 +38,7 @@ func TestIdentityCreateGetList(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			list = withoutBridge(list)
 			if n := identityNames(list); len(n) != 2 || n[0] != "kim" || n[1] != "pat" {
 				t.Errorf("ListIdentities = %v, want [kim pat]", n)
 			}
@@ -70,6 +71,7 @@ func TestIdentityRejects(t *testing.T) {
 		// The failed duplicate must not have damaged the existing row.
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 			ids, err := tx.ListIdentities(ctx)
+			ids = withoutBridge(ids)
 			if err != nil || len(ids) != 1 {
 				t.Errorf("ListIdentities = %v, %v; want only pat", ids, err)
 			}
@@ -262,6 +264,7 @@ func TestIdentityListIsByteOrder(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			list = withoutBridge(list)
 			if got := identityNames(list); !reflect.DeepEqual(got, byteOrderWant) {
 				t.Errorf("ListIdentities = %q, want byte order %q", got, byteOrderWant)
 			}
@@ -353,6 +356,7 @@ func TestIdentityRejectsWritesInRead(t *testing.T) {
 		}
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 			ids, err := tx.ListIdentities(ctx)
+			ids = withoutBridge(ids)
 			if err != nil || len(ids) != 1 || ids[0] != (ab2store.Identity{Name: "pat", Kind: ab2store.IdentityAgent, CreatedAt: fixedNow}) {
 				t.Errorf("identities after rejected writes = %+v, %v; want only the untouched pat", ids, err)
 			}
@@ -455,7 +459,7 @@ func TestOpenMigratesVersion4Identities(t *testing.T) {
 		}
 		mustRead(t, s2, func(ctx context.Context, tx ab2store.Tx) error {
 			ids, err := tx.ListIdentities(ctx)
-			if err != nil || len(ids) != 2 {
+			if err != nil || len(ids) != 3 { // adm, pat and the reserved slack-bridge
 				t.Fatalf("ListIdentities = %+v, %v", ids, err)
 			}
 			for _, id := range ids {

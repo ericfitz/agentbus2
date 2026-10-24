@@ -58,6 +58,7 @@ func TestHumanCreateAndLookups(t *testing.T) {
 				t.Errorf("Identity(pat) = %+v, %v; want agent", pat, err)
 			}
 			list, err := tx.ListIdentities(ctx)
+			list = withoutBridge(list)
 			if err != nil || len(list) != 2 || list[0].Kind != ab2store.IdentityHuman || list[1].Kind != ab2store.IdentityAgent {
 				t.Errorf("ListIdentities = %+v, %v; want [human agent]", list, err)
 			}
@@ -108,6 +109,7 @@ func TestHumanRejects(t *testing.T) {
 		}
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 			ids, err := tx.ListIdentities(ctx)
+			ids = withoutBridge(ids)
 			if err != nil || len(ids) != 2 {
 				t.Errorf("ListIdentities = %+v, %v; want only eric and pat", ids, err)
 			}

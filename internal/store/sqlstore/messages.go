@@ -168,6 +168,12 @@ func (t *tx) AppendMessage(ctx context.Context, m store.NewMessage) (int64, erro
 	if err != nil {
 		return 0, err
 	}
+	// A message is activity in its channel's scope (an unscoped channel has no
+	// scope row to touch).
+	if _, err := t.execW(ctx, "UPDATE scopes SET last_activity = ? WHERE name = (SELECT scope FROM channels WHERE id = ?) AND last_activity < ?",
+		m.CreatedAt, m.ChannelID, m.CreatedAt); err != nil {
+		return 0, err
+	}
 	tags := slices.Clone(m.Tags)
 	slices.Sort(tags)
 	for _, tag := range slices.Compact(tags) {

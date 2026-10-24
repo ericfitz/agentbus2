@@ -81,6 +81,9 @@ func (s Service) Jobs() []Job {
 		{"tombstone purge", s.tombstonePurge},
 		{"task expiry", s.taskExpiry},
 		{"memory expiry", s.memoryExpiry},
+		// A subscriber counts only with a live or resumable session
+		// (Decision 20), so a channel whose last subscriber's session went
+		// in "lapsed sessions" is reaped on the same terms.
 		{"empty channels", s.emptyChannels},
 		{"budget eviction", s.evictToBudget},
 		{"capacity notices", s.capacityNotice},

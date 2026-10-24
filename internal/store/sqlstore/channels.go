@@ -23,15 +23,16 @@ type channelRow struct {
 	Name             string `db:"name"`
 	Kind             string `db:"kind"`
 	Creator          string `db:"creator"`
+	Scope            string `db:"scope"`
 	CreatedSeq       int64  `db:"created_seq"`
 	EvictedBeforeSeq int64  `db:"evicted_before_seq"`
 	CreatedAt        int64  `db:"created_at"`
 }
 
-const channelCols = "id, name, kind, creator, created_seq, evicted_before_seq, created_at"
+const channelCols = "id, name, kind, creator, COALESCE(scope, '') AS scope, created_seq, evicted_before_seq, created_at"
 
 func (r channelRow) channel() store.Channel {
-	return store.Channel{ID: r.ID, Name: r.Name, Kind: store.Kind(r.Kind), Creator: r.Creator,
+	return store.Channel{ID: r.ID, Name: r.Name, Kind: store.Kind(r.Kind), Creator: r.Creator, Scope: r.Scope,
 		CreatedSeq: r.CreatedSeq, EvictedBeforeSeq: r.EvictedBeforeSeq, CreatedAt: r.CreatedAt}
 }
 
@@ -82,11 +83,21 @@ func (t *tx) CreateChannel(ctx context.Context, c store.ChannelCreate) (store.Ch
 	if err := t.validateACL(ctx, acl); err != nil {
 		return store.Channel{}, err
 	}
+	var scope any
+	if c.Scope != "" {
+		if badText(c.Scope) {
+			return store.Channel{}, fmt.Errorf("%w: scope %q", store.ErrNotFound, c.Scope)
+		}
+		scope = c.Scope
+	}
 	var id int64
-	err := t.getW(ctx, &id, "INSERT INTO channels (name, kind, creator, created_seq, evicted_before_seq, created_at) VALUES (?, ?, ?, ?, 0, ?) RETURNING id",
-		c.Name, string(c.Kind), c.Creator, c.CreatedSeq, c.CreatedAt)
+	err := t.getW(ctx, &id, "INSERT INTO channels (name, kind, creator, scope, created_seq, evicted_before_seq, created_at) VALUES (?, ?, ?, ?, ?, 0, ?) RETURNING id",
+		c.Name, string(c.Kind), c.Creator, scope, c.CreatedSeq, c.CreatedAt)
 	if isConflict(err) {
 		return store.Channel{}, fmt.Errorf("%w: channel %q", store.ErrConflict, c.Name)
+	}
+	if isForeignKey(err) {
+		return store.Channel{}, fmt.Errorf("%w: scope %q", store.ErrNotFound, c.Scope)
 	}
 	if err != nil {
 		return store.Channel{}, err
@@ -185,24 +196,30 @@ func (t *tx) DeleteChannel(ctx context.Context, id int64) error {
 }
 
 // emptyChannelCond is the reaping condition over channels c: ordinary, older
-// than the cutoff, no message rows, no subscription rows (v1
-// reapEmptyChannels' two NOT EXISTS, minus the liveness join: any identity,
-// live or not, keeps a channel).
+// than the cutoff, no message rows, and no counting subscription (Decision
+// 20). A subscription counts only when its identity is not slack-bridge and
+// holds a session that is not closed and whose lease has not lapsed before
+// the resumable cutoff, so idle subscribers (v1 reapEmptyChannels' liveness
+// join, restored with the retention window) do not keep a channel. A channel
+// whose bridge is not archived is never offered (spec 6.1b).
 const emptyChannelCond = `c.kind = 'ordinary' AND c.created_at < ?
 	AND NOT EXISTS (SELECT 1 FROM messages m WHERE m.channel_id = c.id)
-	AND NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.channel_id = c.id)`
+	AND NOT EXISTS (SELECT 1 FROM subscriptions s WHERE s.channel_id = c.id
+		AND s.identity <> '` + store.SlackBridge + `'
+		AND EXISTS (SELECT 1 FROM sessions x WHERE x.identity = s.identity AND x.closed_at = 0 AND x.lease_expires_at >= ?))
+	AND NOT EXISTS (SELECT 1 FROM bridges b WHERE b.channel_id = c.id AND b.state <> 'archived')`
 
-func (t *tx) EmptyChannelsBefore(ctx context.Context, createdBefore int64) ([]store.Channel, error) {
+func (t *tx) EmptyChannelsBefore(ctx context.Context, createdBefore, resumableAfter int64) ([]store.Channel, error) {
 	var rows []channelRow
-	if err := t.sel(ctx, &rows, "SELECT "+channelCols+" FROM channels c WHERE "+emptyChannelCond, createdBefore); err != nil {
+	if err := t.sel(ctx, &rows, "SELECT "+channelCols+" FROM channels c WHERE "+emptyChannelCond, createdBefore, resumableAfter); err != nil {
 		return nil, err
 	}
 	sortByBytes(rows, func(r channelRow) string { return r.Name })
 	return channelsOf(rows), nil
 }
 
-func (t *tx) DeleteChannelIfEmpty(ctx context.Context, id, createdBefore int64) (bool, error) {
-	res, err := t.execW(ctx, "DELETE FROM channels WHERE id = ? AND id IN (SELECT c.id FROM channels c WHERE "+emptyChannelCond+")", id, createdBefore)
+func (t *tx) DeleteChannelIfEmpty(ctx context.Context, id, createdBefore, resumableAfter int64) (bool, error) {
+	res, err := t.execW(ctx, "DELETE FROM channels WHERE id = ? AND id IN (SELECT c.id FROM channels c WHERE "+emptyChannelCond+")", id, createdBefore, resumableAfter)
 	if err != nil {
 		return false, err
 	}

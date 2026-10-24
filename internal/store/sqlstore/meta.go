@@ -19,7 +19,9 @@ var resetDataTables = []string{
 	"sessions", "memory_access", "receipts",
 }
 
-// ResetData: see store.Meta.
+// ResetData: see store.Meta. It deletes an explicit list, so the scopes,
+// retired_identities, bridges, bridge_messages, bridge_dropped and slack_users
+// tables are kept (a bridge whose channel went is cleaned by the runner).
 func (t *tx) ResetData(ctx context.Context) error {
 	if err := t.writable(); err != nil {
 		return err
@@ -32,7 +34,8 @@ func (t *tx) ResetData(ctx context.Context) error {
 	return nil
 }
 
-// ResetRegistry: see store.Meta.
+// ResetRegistry: see store.Meta. The reserved slack-bridge identity stays (its
+// scope-free, key-free row is part of the schema).
 func (t *tx) ResetRegistry(ctx context.Context, keep string) error {
 	if err := t.writable(); err != nil {
 		return err
@@ -40,7 +43,7 @@ func (t *tx) ResetRegistry(ctx context.Context, keep string) error {
 	if err := store.TextRule(keep); err != nil {
 		return fmt.Errorf("%w: keep identity %q %s", store.ErrInvalid, keep, err)
 	}
-	if _, err := t.execW(ctx, "DELETE FROM identities WHERE name <> ?", keep); err != nil {
+	if _, err := t.execW(ctx, "DELETE FROM identities WHERE name <> ? AND name <> ?", keep, store.SlackBridge); err != nil {
 		return err
 	}
 	if _, err := t.execW(ctx, "DELETE FROM enrollment_tokens"); err != nil {

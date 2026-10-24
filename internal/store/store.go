@@ -53,6 +53,7 @@ type Tx interface {
 	Memories
 	Tasks
 	EnrollmentTokens
+	Scopes
 	SigningKeys
 	AssertionReplays
 	References

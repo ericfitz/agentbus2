@@ -106,6 +106,7 @@ func TestResetDataWipesDataKeepsRegistry(t *testing.T) {
 				t.Errorf("SearchText after reset = %v, %v; want none", got, err)
 			}
 			ids, err := tx.ListIdentities(ctx)
+			ids = withoutBridge(ids)
 			if err != nil || len(ids) != 2 || !ids[0].Admin && !ids[1].Admin {
 				t.Errorf("identities = %+v, %v; want two with an admin", ids, err)
 			}
@@ -129,7 +130,7 @@ func TestResetDataWipesDataKeepsRegistry(t *testing.T) {
 
 		wipe() // a second run is a no-op
 		requireCounts(t, db, 0, dataTables...)
-		requireCounts(t, db, 2, "identities")
+		requireCounts(t, db, 3, "identities") // pat, root and the reserved slack-bridge
 	})
 }
 
@@ -152,6 +153,7 @@ func TestResetRegistryKeepsOne(t *testing.T) {
 		check := func() {
 			mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 				ids, err := tx.ListIdentities(ctx)
+				ids = withoutBridge(ids)
 				if err != nil || len(ids) != 1 || ids[0].Name != "root" || !ids[0].Admin {
 					t.Errorf("identities = %+v, %v; want [root admin]", ids, err)
 				}
@@ -180,7 +182,8 @@ func TestResetRegistryKeepsOne(t *testing.T) {
 		if err := reset(""); err != nil {
 			t.Fatal(err)
 		}
-		requireCounts(t, db, 0, "identities", "identity_keys", "enrollment_tokens")
+		requireCounts(t, db, 0, "identity_keys", "enrollment_tokens")
+		requireCounts(t, db, 1, "identities") // only the reserved slack-bridge
 		requireCounts(t, db, 1, "signing_keys")
 
 		err := s.Tx(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
@@ -245,6 +248,7 @@ func TestResetRegistryReferences(t *testing.T) {
 			t.Helper()
 			mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 				ids, err := tx.ListIdentities(ctx)
+				ids = withoutBridge(ids)
 				if err != nil || len(ids) != 1 || ids[0].Name != "pat" {
 					t.Errorf("identities = %+v, %v; want [pat]", ids, err)
 				}
@@ -290,6 +294,7 @@ func TestResetRegistryKeepsHumanAdmittedByGroup(t *testing.T) {
 		})
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 			ids, err := tx.ListIdentities(ctx)
+			ids = withoutBridge(ids)
 			if err != nil || len(ids) != 1 || ids[0].Name != "kim@corp.example" || ids[0].Kind != ab2store.IdentityHuman {
 				t.Errorf("identities = %+v, %v; want [kim human]", ids, err)
 			}

@@ -45,7 +45,7 @@ func (t *tx) CreateHuman(ctx context.Context, b store.HumanBinding, now int64) e
 	if err := t.writable(); err != nil {
 		return err
 	}
-	if err := checkIdentityName(b.Identity); err != nil {
+	if err := t.checkNewIdentityName(ctx, b.Identity); err != nil {
 		return err
 	}
 	if b.ClaimType != store.ClaimEmail {
