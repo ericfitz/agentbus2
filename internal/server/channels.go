@@ -41,7 +41,11 @@ func channelACLToGen(in []bus.ACLEntry) []gen.ACLEntry {
 }
 
 func channelInfoToGen(c bus.ChannelInfo) gen.ChannelInfo {
-	return gen.ChannelInfo{Name: c.Name, Kind: gen.ChannelInfoKind(c.Kind), Creator: c.Creator, CreatedAt: c.CreatedAt}
+	out := gen.ChannelInfo{Name: c.Name, Kind: gen.ChannelInfoKind(c.Kind), Creator: c.Creator, CreatedAt: c.CreatedAt}
+	if c.Scope != "" {
+		out.Scope = &c.Scope
+	}
+	return out
 }
 
 func (a *api) ListChannels(ctx context.Context, _ gen.ListChannelsRequestObject) (gen.ListChannelsResponseObject, error) {
@@ -60,6 +64,9 @@ func (a *api) CreateChannel(ctx context.Context, req gen.CreateChannelRequestObj
 	in := bus.CreateChannelInput{IdempotencyKey: idemKey(req.Params.IdempotencyKey)}
 	if req.Body != nil {
 		in.Name = req.Body.Name
+		if req.Body.Scope != nil {
+			in.Scope = *req.Body.Scope
+		}
 		if req.Body.Kind != nil {
 			in.Kind = bus.Kind(*req.Body.Kind)
 		}

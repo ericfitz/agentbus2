@@ -40,6 +40,27 @@ func (e ACLEntryPermissions) Valid() bool {
 	}
 }
 
+// Defines values for BridgeState.
+const (
+	Archived BridgeState = "archived"
+	Creating BridgeState = "creating"
+	Live     BridgeState = "live"
+)
+
+// Valid indicates whether the value is a known member of the BridgeState enum.
+func (e BridgeState) Valid() bool {
+	switch e {
+	case Archived:
+		return true
+	case Creating:
+		return true
+	case Live:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ChannelKind.
 const (
 	ChannelKindMemory   ChannelKind = "memory"
@@ -97,6 +118,24 @@ func (e CreateChannelRequestKind) Valid() bool {
 	case CreateChannelRequestKindOrdinary:
 		return true
 	case CreateChannelRequestKindTasks:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for DoneScopeRequestRetire.
+const (
+	DoneScopeRequestRetireNormal     DoneScopeRequestRetire = "normal"
+	DoneScopeRequestRetireWithBridge DoneScopeRequestRetire = "with_bridge"
+)
+
+// Valid indicates whether the value is a known member of the DoneScopeRequestRetire enum.
+func (e DoneScopeRequestRetire) Valid() bool {
+	switch e {
+	case DoneScopeRequestRetireNormal:
+		return true
+	case DoneScopeRequestRetireWithBridge:
 		return true
 	default:
 		return false
@@ -229,6 +268,45 @@ func (e RejectedCursorReason) Valid() bool {
 	}
 }
 
+// Defines values for ScopeRetire.
+const (
+	ScopeRetireNormal     ScopeRetire = "normal"
+	ScopeRetireWithBridge ScopeRetire = "with_bridge"
+)
+
+// Valid indicates whether the value is a known member of the ScopeRetire enum.
+func (e ScopeRetire) Valid() bool {
+	switch e {
+	case ScopeRetireNormal:
+		return true
+	case ScopeRetireWithBridge:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for ScopeState.
+const (
+	Done    ScopeState = "done"
+	Open    ScopeState = "open"
+	Retired ScopeState = "retired"
+)
+
+// Valid indicates whether the value is a known member of the ScopeState enum.
+func (e ScopeState) Valid() bool {
+	switch e {
+	case Done:
+		return true
+	case Open:
+		return true
+	case Retired:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for SubscribeRequestFrom.
 const (
 	Now    SubscribeRequestFrom = "now"
@@ -303,6 +381,15 @@ type AccessToken struct {
 	TokenType       string  `json:"token_type"`
 }
 
+// AgentIdentity defines model for AgentIdentity.
+type AgentIdentity struct {
+	Created         bool    `json:"created"`
+	EnrollmentToken string  `json:"enrollment_token"`
+	ExpiresAt       int64   `json:"expires_at"`
+	Identity        string  `json:"identity"`
+	Scope           *string `json:"scope,omitempty"`
+}
+
 // AuthMethod defines model for AuthMethod.
 type AuthMethod struct {
 	BearerFormat *string `json:"bearer_format,omitempty"`
@@ -322,6 +409,37 @@ type AuthorizationServerMetadata struct {
 	TokenEndpointAuthSigningAlgValuesSupported []string `json:"token_endpoint_auth_signing_alg_values_supported"`
 }
 
+// Bridge defines model for Bridge.
+type Bridge struct {
+	ArchivedAt     *int64      `json:"archived_at,omitempty"`
+	Channel        string      `json:"channel"`
+	CreatedAt      int64       `json:"created_at"`
+	Scope          string      `json:"scope"`
+	SlackChannelId *string     `json:"slack_channel_id,omitempty"`
+	SlackName      string      `json:"slack_name"`
+	State          BridgeState `json:"state"`
+}
+
+// BridgeState defines model for Bridge.State.
+type BridgeState string
+
+// BridgeCreated defines model for BridgeCreated.
+type BridgeCreated struct {
+	Bridge     Bridge             `json:"bridge"`
+	NotInvited []BridgeNotInvited `json:"not_invited"`
+}
+
+// BridgeList defines model for BridgeList.
+type BridgeList struct {
+	Bridges []Bridge `json:"bridges"`
+}
+
+// BridgeNotInvited defines model for BridgeNotInvited.
+type BridgeNotInvited struct {
+	Identity string `json:"identity"`
+	Reason   string `json:"reason"`
+}
+
 // Channel defines model for Channel.
 type Channel struct {
 	Kind ChannelKind `json:"kind"`
@@ -337,6 +455,7 @@ type ChannelInfo struct {
 	Creator   string          `json:"creator"`
 	Kind      ChannelInfoKind `json:"kind"`
 	Name      string          `json:"name"`
+	Scope     *string         `json:"scope,omitempty"`
 }
 
 // ChannelInfoKind defines model for ChannelInfo.Kind.
@@ -347,11 +466,24 @@ type ClaimTaskRequest struct {
 	LeasedUntil *int64 `json:"leased_until,omitempty"`
 }
 
+// CreateAgentIdentityRequest defines model for CreateAgentIdentityRequest.
+type CreateAgentIdentityRequest struct {
+	Name  string  `json:"name"`
+	Scope *string `json:"scope,omitempty"`
+}
+
+// CreateBridgeRequest defines model for CreateBridgeRequest.
+type CreateBridgeRequest struct {
+	Channel   string  `json:"channel"`
+	SlackName *string `json:"slack_name,omitempty"`
+}
+
 // CreateChannelRequest defines model for CreateChannelRequest.
 type CreateChannelRequest struct {
-	Acl  *[]ACLEntry               `json:"acl,omitempty"`
-	Kind *CreateChannelRequestKind `json:"kind,omitempty"`
-	Name string                    `json:"name"`
+	Acl   *[]ACLEntry               `json:"acl,omitempty"`
+	Kind  *CreateChannelRequestKind `json:"kind,omitempty"`
+	Name  string                    `json:"name"`
+	Scope *string                   `json:"scope,omitempty"`
 }
 
 // CreateChannelRequestKind defines model for CreateChannelRequest.Kind.
@@ -360,6 +492,11 @@ type CreateChannelRequestKind string
 // CreateIdentityByEmailRequest defines model for CreateIdentityByEmailRequest.
 type CreateIdentityByEmailRequest struct {
 	Email string `json:"email"`
+}
+
+// CreateScopeRequest defines model for CreateScopeRequest.
+type CreateScopeRequest struct {
+	Name string `json:"name"`
 }
 
 // CredentialReset defines model for CredentialReset.
@@ -382,6 +519,14 @@ type Discovery struct {
 	OpenidConfiguration *string `json:"openid_configuration,omitempty"`
 	ServerVersion       string  `json:"server_version"`
 }
+
+// DoneScopeRequest defines model for DoneScopeRequest.
+type DoneScopeRequest struct {
+	Retire DoneScopeRequestRetire `json:"retire"`
+}
+
+// DoneScopeRequestRetire defines model for DoneScopeRequest.Retire.
+type DoneScopeRequestRetire string
 
 // EditMemoryRequest Every field is optional and an omitted field keeps the live revision's value; a present empty subject, type, metadata or tags clears it. Content cannot be cleared (an empty content is a validation error). A request with no field is a validation error.
 type EditMemoryRequest struct {
@@ -565,6 +710,29 @@ type RejectedCursorReason string
 // RenameChannelRequest defines model for RenameChannelRequest.
 type RenameChannelRequest struct {
 	Name string `json:"name"`
+}
+
+// Scope defines model for Scope.
+type Scope struct {
+	Channels     *[]string    `json:"channels,omitempty"`
+	CreatedAt    int64        `json:"created_at"`
+	DoneAt       *int64       `json:"done_at,omitempty"`
+	Identities   *[]string    `json:"identities,omitempty"`
+	LastActivity int64        `json:"last_activity"`
+	Name         string       `json:"name"`
+	Retire       *ScopeRetire `json:"retire,omitempty"`
+	State        ScopeState   `json:"state"`
+}
+
+// ScopeRetire defines model for Scope.Retire.
+type ScopeRetire string
+
+// ScopeState defines model for Scope.State.
+type ScopeState string
+
+// ScopeList defines model for ScopeList.
+type ScopeList struct {
+	Scopes []Scope `json:"scopes"`
 }
 
 // SearchHit defines model for SearchHit.
@@ -756,6 +924,9 @@ type IdParam = int64
 // IdempotencyKeyParam defines model for IdempotencyKeyParam.
 type IdempotencyKeyParam = string
 
+// ScopeParam defines model for ScopeParam.
+type ScopeParam = string
+
 // SessionParam defines model for SessionParam.
 type SessionParam = string
 
@@ -781,6 +952,18 @@ type AdminResetParams struct {
 
 // AdminResetParamsScope defines parameters for AdminReset.
 type AdminResetParamsScope string
+
+// CreateScopeParams defines parameters for CreateScope.
+type CreateScopeParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// DoneScopeParams defines parameters for DoneScope.
+type DoneScopeParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
 
 // CreateChannelParams defines parameters for CreateChannel.
 type CreateChannelParams struct {
@@ -931,8 +1114,20 @@ type ReleaseTaskParams struct {
 	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
 }
 
+// CreateBridgeJSONRequestBody defines body for CreateBridge for application/json ContentType.
+type CreateBridgeJSONRequestBody = CreateBridgeRequest
+
+// CreateAgentIdentityJSONRequestBody defines body for CreateAgentIdentity for application/json ContentType.
+type CreateAgentIdentityJSONRequestBody = CreateAgentIdentityRequest
+
 // CreateIdentityByEmailJSONRequestBody defines body for CreateIdentityByEmail for application/json ContentType.
 type CreateIdentityByEmailJSONRequestBody = CreateIdentityByEmailRequest
+
+// CreateScopeJSONRequestBody defines body for CreateScope for application/json ContentType.
+type CreateScopeJSONRequestBody = CreateScopeRequest
+
+// DoneScopeJSONRequestBody defines body for DoneScope for application/json ContentType.
+type DoneScopeJSONRequestBody = DoneScopeRequest
 
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody = RegisterRequest
@@ -1059,6 +1254,39 @@ type ClientInterface interface {
 	// OpenidConfiguration performs a GET /.well-known/openid-configuration (the `OpenidConfiguration` operationId) request.
 	OpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListBridges performs a GET /v1/admin/bridges (the `ListBridges` operationId) request.
+	ListBridges(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateBridgeWithBody performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+	CreateBridgeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateBridge performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+	CreateBridge(ctx context.Context, body CreateBridgeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RemoveBridge performs a DELETE /v1/admin/bridges/{channel} (the `RemoveBridge` operationId) request.
+	RemoveBridge(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetBridge performs a GET /v1/admin/bridges/{channel} (the `GetBridge` operationId) request.
+	GetBridge(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateAgentIdentityWithBody performs a POST /v1/admin/identities (the `CreateAgentIdentity` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Creates an agent identity, optionally in an open scope, and a one-time enrollment token bound to its name (24 hours, one use). Administrator only. The token is never stored in clear and is not in an idempotency receipt, so the operation takes no idempotency key.
+	CreateAgentIdentityWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateAgentIdentity performs a POST /v1/admin/identities (the `CreateAgentIdentity` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// Creates an agent identity, optionally in an open scope, and a one-time enrollment token bound to its name (24 hours, one use). Administrator only. The token is never stored in clear and is not in an idempotency receipt, so the operation takes no idempotency key.
+	CreateAgentIdentity(ctx context.Context, body CreateAgentIdentityJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// CreateIdentityByEmailWithBody performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request,
 	// with any type of body and a specified content type.
 	CreateIdentityByEmailWithBody(ctx context.Context, params *CreateIdentityByEmailParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1072,6 +1300,28 @@ type ClientInterface interface {
 
 	// AdminReset performs a POST /v1/admin/reset (the `AdminReset` operationId) request.
 	AdminReset(ctx context.Context, params *AdminResetParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListScopes performs a GET /v1/admin/scopes (the `ListScopes` operationId) request.
+	ListScopes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateScopeWithBody performs a POST /v1/admin/scopes (the `CreateScope` operationId) request,
+	// with any type of body and a specified content type.
+	CreateScopeWithBody(ctx context.Context, params *CreateScopeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateScope performs a POST /v1/admin/scopes (the `CreateScope` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateScope(ctx context.Context, params *CreateScopeParams, body CreateScopeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetScope performs a GET /v1/admin/scopes/{scope} (the `GetScope` operationId) request.
+	GetScope(ctx context.Context, scope ScopeParam, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DoneScopeWithBody performs a POST /v1/admin/scopes/{scope}/done (the `DoneScope` operationId) request,
+	// with any type of body and a specified content type.
+	DoneScopeWithBody(ctx context.Context, scope ScopeParam, params *DoneScopeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// DoneScope performs a POST /v1/admin/scopes/{scope}/done (the `DoneScope` operationId) request.
+	// Takes a body of the `application/json` content type.
+	DoneScope(ctx context.Context, scope ScopeParam, params *DoneScopeParams, body DoneScopeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// AdminStatus performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
 	AdminStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1303,6 +1553,109 @@ func (c *Client) OpenidConfiguration(ctx context.Context, reqEditors ...RequestE
 	return c.Client.Do(req)
 }
 
+// ListBridges performs a GET /v1/admin/bridges (the `ListBridges` operationId) request.
+func (c *Client) ListBridges(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListBridgesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateBridgeWithBody performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request,
+// with any type of body and a specified content type.
+//
+// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+func (c *Client) CreateBridgeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateBridgeRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateBridge performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+func (c *Client) CreateBridge(ctx context.Context, body CreateBridgeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateBridgeRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RemoveBridge performs a DELETE /v1/admin/bridges/{channel} (the `RemoveBridge` operationId) request.
+func (c *Client) RemoveBridge(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRemoveBridgeRequest(c.Server, channel)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetBridge performs a GET /v1/admin/bridges/{channel} (the `GetBridge` operationId) request.
+func (c *Client) GetBridge(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetBridgeRequest(c.Server, channel)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateAgentIdentityWithBody performs a POST /v1/admin/identities (the `CreateAgentIdentity` operationId) request,
+// with any type of body and a specified content type.
+//
+// Creates an agent identity, optionally in an open scope, and a one-time enrollment token bound to its name (24 hours, one use). Administrator only. The token is never stored in clear and is not in an idempotency receipt, so the operation takes no idempotency key.
+func (c *Client) CreateAgentIdentityWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAgentIdentityRequestWithBody(c.Server, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateAgentIdentity performs a POST /v1/admin/identities (the `CreateAgentIdentity` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// Creates an agent identity, optionally in an open scope, and a one-time enrollment token bound to its name (24 hours, one use). Administrator only. The token is never stored in clear and is not in an idempotency receipt, so the operation takes no idempotency key.
+func (c *Client) CreateAgentIdentity(ctx context.Context, body CreateAgentIdentityJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateAgentIdentityRequest(c.Server, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // CreateIdentityByEmailWithBody performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request,
 // with any type of body and a specified content type.
 func (c *Client) CreateIdentityByEmailWithBody(ctx context.Context, params *CreateIdentityByEmailParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -1347,6 +1700,88 @@ func (c *Client) ResetCredential(ctx context.Context, identity string, params *R
 // AdminReset performs a POST /v1/admin/reset (the `AdminReset` operationId) request.
 func (c *Client) AdminReset(ctx context.Context, params *AdminResetParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAdminResetRequest(c.Server, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListScopes performs a GET /v1/admin/scopes (the `ListScopes` operationId) request.
+func (c *Client) ListScopes(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListScopesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateScopeWithBody performs a POST /v1/admin/scopes (the `CreateScope` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateScopeWithBody(ctx context.Context, params *CreateScopeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScopeRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateScope performs a POST /v1/admin/scopes (the `CreateScope` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateScope(ctx context.Context, params *CreateScopeParams, body CreateScopeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateScopeRequest(c.Server, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetScope performs a GET /v1/admin/scopes/{scope} (the `GetScope` operationId) request.
+func (c *Client) GetScope(ctx context.Context, scope ScopeParam, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetScopeRequest(c.Server, scope)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DoneScopeWithBody performs a POST /v1/admin/scopes/{scope}/done (the `DoneScope` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) DoneScopeWithBody(ctx context.Context, scope ScopeParam, params *DoneScopeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDoneScopeRequestWithBody(c.Server, scope, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// DoneScope performs a POST /v1/admin/scopes/{scope}/done (the `DoneScope` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) DoneScope(ctx context.Context, scope ScopeParam, params *DoneScopeParams, body DoneScopeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDoneScopeRequest(c.Server, scope, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2128,6 +2563,181 @@ func NewOpenidConfigurationRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListBridgesRequest constructs an http.Request for the ListBridges method
+func NewListBridgesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/bridges")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateBridgeRequest calls the generic CreateBridge builder with application/json body
+func NewCreateBridgeRequest(server string, body CreateBridgeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateBridgeRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateBridgeRequestWithBody constructs an http.Request for the CreateBridge method, with any body, and a specified content type
+func NewCreateBridgeRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/bridges")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewRemoveBridgeRequest constructs an http.Request for the RemoveBridge method
+func NewRemoveBridgeRequest(server string, channel ChannelParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/bridges/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodDelete, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetBridgeRequest constructs an http.Request for the GetBridge method
+func NewGetBridgeRequest(server string, channel ChannelParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "channel", channel, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/bridges/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateAgentIdentityRequest calls the generic CreateAgentIdentity builder with application/json body
+func NewCreateAgentIdentityRequest(server string, body CreateAgentIdentityJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateAgentIdentityRequestWithBody(server, "application/json", bodyReader)
+}
+
+// NewCreateAgentIdentityRequestWithBody constructs an http.Request for the CreateAgentIdentity method, with any body, and a specified content type
+func NewCreateAgentIdentityRequestWithBody(server string, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/identities")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
 // NewCreateIdentityByEmailRequest calls the generic CreateIdentityByEmail builder with application/json body
 func NewCreateIdentityByEmailRequest(server string, params *CreateIdentityByEmailParams, body CreateIdentityByEmailJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
@@ -2282,6 +2892,184 @@ func NewAdminResetRequest(server string, params *AdminResetParams) (*http.Reques
 	if err != nil {
 		return nil, err
 	}
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewListScopesRequest constructs an http.Request for the ListScopes method
+func NewListScopesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/scopes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateScopeRequest calls the generic CreateScope builder with application/json body
+func NewCreateScopeRequest(server string, params *CreateScopeParams, body CreateScopeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateScopeRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewCreateScopeRequestWithBody constructs an http.Request for the CreateScope method, with any body, and a specified content type
+func NewCreateScopeRequestWithBody(server string, params *CreateScopeParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/scopes")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewGetScopeRequest constructs an http.Request for the GetScope method
+func NewGetScopeRequest(server string, scope ScopeParam) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "scope", scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/scopes/%s", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewDoneScopeRequest calls the generic DoneScope builder with application/json body
+func NewDoneScopeRequest(server string, scope ScopeParam, params *DoneScopeParams, body DoneScopeJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewDoneScopeRequestWithBody(server, scope, params, "application/json", bodyReader)
+}
+
+// NewDoneScopeRequestWithBody constructs an http.Request for the DoneScope method, with any body, and a specified content type
+func NewDoneScopeRequestWithBody(server string, scope ScopeParam, params *DoneScopeParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "scope", scope, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/scopes/%s/done", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
 
 	if params != nil {
 
@@ -4262,6 +5050,49 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	OpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpenidConfigurationResponse, error)
 
+	// ListBridgesWithResponse performs a GET /v1/admin/bridges (the `ListBridges` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListBridgesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListBridgesResponse, error)
+
+	// CreateBridgeWithBodyWithResponse performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateBridgeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateBridgeResponse, error)
+
+	// CreateBridgeWithResponse performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+	CreateBridgeWithResponse(ctx context.Context, body CreateBridgeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateBridgeResponse, error)
+
+	// RemoveBridgeWithResponse performs a DELETE /v1/admin/bridges/{channel} (the `RemoveBridge` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RemoveBridgeWithResponse(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*RemoveBridgeResponse, error)
+
+	// GetBridgeWithResponse performs a GET /v1/admin/bridges/{channel} (the `GetBridge` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetBridgeWithResponse(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*GetBridgeResponse, error)
+
+	// CreateAgentIdentityWithBodyWithResponse performs a POST /v1/admin/identities (the `CreateAgentIdentity` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Creates an agent identity, optionally in an open scope, and a one-time enrollment token bound to its name (24 hours, one use). Administrator only. The token is never stored in clear and is not in an idempotency receipt, so the operation takes no idempotency key.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateAgentIdentityWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAgentIdentityResponse, error)
+
+	// CreateAgentIdentityWithResponse performs a POST /v1/admin/identities (the `CreateAgentIdentity` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Creates an agent identity, optionally in an open scope, and a one-time enrollment token bound to its name (24 hours, one use). Administrator only. The token is never stored in clear and is not in an idempotency receipt, so the operation takes no idempotency key.
+	CreateAgentIdentityWithResponse(ctx context.Context, body CreateAgentIdentityJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAgentIdentityResponse, error)
+
 	// CreateIdentityByEmailWithBodyWithResponse performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request,
 	// with any type of body and a specified content type.
 	//
@@ -4281,6 +5112,36 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns a wrapper object for the known response body format(s).
 	AdminResetWithResponse(ctx context.Context, params *AdminResetParams, reqEditors ...RequestEditorFn) (*AdminResetResponse, error)
+
+	// ListScopesWithResponse performs a GET /v1/admin/scopes (the `ListScopes` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListScopesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListScopesResponse, error)
+
+	// CreateScopeWithBodyWithResponse performs a POST /v1/admin/scopes (the `CreateScope` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateScopeWithBodyWithResponse(ctx context.Context, params *CreateScopeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScopeResponse, error)
+
+	// CreateScopeWithResponse performs a POST /v1/admin/scopes (the `CreateScope` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateScopeWithResponse(ctx context.Context, params *CreateScopeParams, body CreateScopeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScopeResponse, error)
+
+	// GetScopeWithResponse performs a GET /v1/admin/scopes/{scope} (the `GetScope` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	GetScopeWithResponse(ctx context.Context, scope ScopeParam, reqEditors ...RequestEditorFn) (*GetScopeResponse, error)
+
+	// DoneScopeWithBodyWithResponse performs a POST /v1/admin/scopes/{scope}/done (the `DoneScope` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	DoneScopeWithBodyWithResponse(ctx context.Context, scope ScopeParam, params *DoneScopeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DoneScopeResponse, error)
+
+	// DoneScopeWithResponse performs a POST /v1/admin/scopes/{scope}/done (the `DoneScope` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	DoneScopeWithResponse(ctx context.Context, scope ScopeParam, params *DoneScopeParams, body DoneScopeJSONRequestBody, reqEditors ...RequestEditorFn) (*DoneScopeResponse, error)
 
 	// AdminStatusWithResponse performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
 	//
@@ -4689,6 +5550,239 @@ func (r OpenidConfigurationResponse) ContentType() string {
 	return ""
 }
 
+type ListBridgesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BridgeList
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListBridgesResponse) GetJSON200() *BridgeList {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListBridgesResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListBridgesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListBridgesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListBridgesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListBridgesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateBridgeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *BridgeCreated
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateBridgeResponse) GetJSON200() *BridgeCreated {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateBridgeResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateBridgeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateBridgeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateBridgeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateBridgeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RemoveBridgeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RemoveBridgeResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RemoveBridgeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RemoveBridgeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RemoveBridgeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RemoveBridgeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetBridgeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Bridge
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetBridgeResponse) GetJSON200() *Bridge {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetBridgeResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetBridgeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetBridgeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetBridgeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetBridgeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateAgentIdentityResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AgentIdentity
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateAgentIdentityResponse) GetJSON200() *AgentIdentity {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateAgentIdentityResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateAgentIdentityResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateAgentIdentityResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateAgentIdentityResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateAgentIdentityResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type CreateIdentityByEmailResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -4820,6 +5914,198 @@ func (r AdminResetResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r AdminResetResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListScopesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *ScopeList
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListScopesResponse) GetJSON200() *ScopeList {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListScopesResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListScopesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListScopesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListScopesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListScopesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateScopeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Scope
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateScopeResponse) GetJSON200() *Scope {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateScopeResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateScopeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateScopeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateScopeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateScopeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetScopeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Scope
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetScopeResponse) GetJSON200() *Scope {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r GetScopeResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetScopeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetScopeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetScopeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetScopeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type DoneScopeResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Scope
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r DoneScopeResponse) GetJSON200() *Scope {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r DoneScopeResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r DoneScopeResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r DoneScopeResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r DoneScopeResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r DoneScopeResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6552,6 +7838,91 @@ func (c *ClientWithResponses) OpenidConfigurationWithResponse(ctx context.Contex
 	return ParseOpenidConfigurationResponse(rsp)
 }
 
+// ListBridgesWithResponse performs a GET /v1/admin/bridges (the `ListBridges` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListBridgesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListBridgesResponse, error) {
+	rsp, err := c.ListBridges(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListBridgesResponse(rsp)
+}
+
+// CreateBridgeWithBodyWithResponse performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request,
+// with any type of body and a specified content type.
+//
+// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateBridgeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateBridgeResponse, error) {
+	rsp, err := c.CreateBridgeWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateBridgeResponse(rsp)
+}
+
+// CreateBridgeWithResponse performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+func (c *ClientWithResponses) CreateBridgeWithResponse(ctx context.Context, body CreateBridgeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateBridgeResponse, error) {
+	rsp, err := c.CreateBridge(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateBridgeResponse(rsp)
+}
+
+// RemoveBridgeWithResponse performs a DELETE /v1/admin/bridges/{channel} (the `RemoveBridge` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RemoveBridgeWithResponse(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*RemoveBridgeResponse, error) {
+	rsp, err := c.RemoveBridge(ctx, channel, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRemoveBridgeResponse(rsp)
+}
+
+// GetBridgeWithResponse performs a GET /v1/admin/bridges/{channel} (the `GetBridge` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetBridgeWithResponse(ctx context.Context, channel ChannelParam, reqEditors ...RequestEditorFn) (*GetBridgeResponse, error) {
+	rsp, err := c.GetBridge(ctx, channel, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetBridgeResponse(rsp)
+}
+
+// CreateAgentIdentityWithBodyWithResponse performs a POST /v1/admin/identities (the `CreateAgentIdentity` operationId) request,
+// with any type of body and a specified content type.
+//
+// Creates an agent identity, optionally in an open scope, and a one-time enrollment token bound to its name (24 hours, one use). Administrator only. The token is never stored in clear and is not in an idempotency receipt, so the operation takes no idempotency key.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateAgentIdentityWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateAgentIdentityResponse, error) {
+	rsp, err := c.CreateAgentIdentityWithBody(ctx, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateAgentIdentityResponse(rsp)
+}
+
+// CreateAgentIdentityWithResponse performs a POST /v1/admin/identities (the `CreateAgentIdentity` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Creates an agent identity, optionally in an open scope, and a one-time enrollment token bound to its name (24 hours, one use). Administrator only. The token is never stored in clear and is not in an idempotency receipt, so the operation takes no idempotency key.
+func (c *ClientWithResponses) CreateAgentIdentityWithResponse(ctx context.Context, body CreateAgentIdentityJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateAgentIdentityResponse, error) {
+	rsp, err := c.CreateAgentIdentity(ctx, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateAgentIdentityResponse(rsp)
+}
+
 // CreateIdentityByEmailWithBodyWithResponse performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request,
 // with any type of body and a specified content type.
 //
@@ -6594,6 +7965,72 @@ func (c *ClientWithResponses) AdminResetWithResponse(ctx context.Context, params
 		return nil, err
 	}
 	return ParseAdminResetResponse(rsp)
+}
+
+// ListScopesWithResponse performs a GET /v1/admin/scopes (the `ListScopes` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListScopesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListScopesResponse, error) {
+	rsp, err := c.ListScopes(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListScopesResponse(rsp)
+}
+
+// CreateScopeWithBodyWithResponse performs a POST /v1/admin/scopes (the `CreateScope` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateScopeWithBodyWithResponse(ctx context.Context, params *CreateScopeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateScopeResponse, error) {
+	rsp, err := c.CreateScopeWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScopeResponse(rsp)
+}
+
+// CreateScopeWithResponse performs a POST /v1/admin/scopes (the `CreateScope` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateScopeWithResponse(ctx context.Context, params *CreateScopeParams, body CreateScopeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateScopeResponse, error) {
+	rsp, err := c.CreateScope(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateScopeResponse(rsp)
+}
+
+// GetScopeWithResponse performs a GET /v1/admin/scopes/{scope} (the `GetScope` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) GetScopeWithResponse(ctx context.Context, scope ScopeParam, reqEditors ...RequestEditorFn) (*GetScopeResponse, error) {
+	rsp, err := c.GetScope(ctx, scope, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetScopeResponse(rsp)
+}
+
+// DoneScopeWithBodyWithResponse performs a POST /v1/admin/scopes/{scope}/done (the `DoneScope` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DoneScopeWithBodyWithResponse(ctx context.Context, scope ScopeParam, params *DoneScopeParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*DoneScopeResponse, error) {
+	rsp, err := c.DoneScopeWithBody(ctx, scope, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDoneScopeResponse(rsp)
+}
+
+// DoneScopeWithResponse performs a POST /v1/admin/scopes/{scope}/done (the `DoneScope` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) DoneScopeWithResponse(ctx context.Context, scope ScopeParam, params *DoneScopeParams, body DoneScopeJSONRequestBody, reqEditors ...RequestEditorFn) (*DoneScopeResponse, error) {
+	rsp, err := c.DoneScope(ctx, scope, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseDoneScopeResponse(rsp)
 }
 
 // AdminStatusWithResponse performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
@@ -7257,6 +8694,167 @@ func ParseOpenidConfigurationResponse(rsp *http.Response) (*OpenidConfigurationR
 	return response, nil
 }
 
+// ParseListBridgesResponse parses an HTTP response from a ListBridgesWithResponse call
+func ParseListBridgesResponse(rsp *http.Response) (*ListBridgesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListBridgesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BridgeList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateBridgeResponse parses an HTTP response from a CreateBridgeWithResponse call
+func ParseCreateBridgeResponse(rsp *http.Response) (*CreateBridgeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateBridgeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest BridgeCreated
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRemoveBridgeResponse parses an HTTP response from a RemoveBridgeWithResponse call
+func ParseRemoveBridgeResponse(rsp *http.Response) (*RemoveBridgeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RemoveBridgeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case rsp.StatusCode == 204:
+		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetBridgeResponse parses an HTTP response from a GetBridgeWithResponse call
+func ParseGetBridgeResponse(rsp *http.Response) (*GetBridgeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetBridgeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Bridge
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateAgentIdentityResponse parses an HTTP response from a CreateAgentIdentityWithResponse call
+func ParseCreateAgentIdentityResponse(rsp *http.Response) (*CreateAgentIdentityResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateAgentIdentityResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentIdentity
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseCreateIdentityByEmailResponse parses an HTTP response from a CreateIdentityByEmailWithResponse call
 func ParseCreateIdentityByEmailResponse(rsp *http.Response) (*CreateIdentityByEmailResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -7339,6 +8937,138 @@ func ParseAdminResetResponse(rsp *http.Response) (*AdminResetResponse, error) {
 	switch {
 	case rsp.StatusCode == 204:
 		break // No content-type
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListScopesResponse parses an HTTP response from a ListScopesWithResponse call
+func ParseListScopesResponse(rsp *http.Response) (*ListScopesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListScopesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest ScopeList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateScopeResponse parses an HTTP response from a CreateScopeWithResponse call
+func ParseCreateScopeResponse(rsp *http.Response) (*CreateScopeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateScopeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Scope
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetScopeResponse parses an HTTP response from a GetScopeWithResponse call
+func ParseGetScopeResponse(rsp *http.Response) (*GetScopeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetScopeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Scope
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseDoneScopeResponse parses an HTTP response from a DoneScopeWithResponse call
+func ParseDoneScopeResponse(rsp *http.Response) (*DoneScopeResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &DoneScopeResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Scope
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Problem
@@ -8547,6 +10277,21 @@ type ServerInterface interface {
 	// (GET /.well-known/openid-configuration)
 	OpenidConfiguration(w http.ResponseWriter, r *http.Request)
 
+	// (GET /v1/admin/bridges)
+	ListBridges(w http.ResponseWriter, r *http.Request)
+
+	// (POST /v1/admin/bridges)
+	CreateBridge(w http.ResponseWriter, r *http.Request)
+
+	// (DELETE /v1/admin/bridges/{channel})
+	RemoveBridge(w http.ResponseWriter, r *http.Request, channel ChannelParam)
+
+	// (GET /v1/admin/bridges/{channel})
+	GetBridge(w http.ResponseWriter, r *http.Request, channel ChannelParam)
+
+	// (POST /v1/admin/identities)
+	CreateAgentIdentity(w http.ResponseWriter, r *http.Request)
+
 	// (POST /v1/admin/identities/by-email)
 	CreateIdentityByEmail(w http.ResponseWriter, r *http.Request, params CreateIdentityByEmailParams)
 
@@ -8555,6 +10300,18 @@ type ServerInterface interface {
 
 	// (POST /v1/admin/reset)
 	AdminReset(w http.ResponseWriter, r *http.Request, params AdminResetParams)
+
+	// (GET /v1/admin/scopes)
+	ListScopes(w http.ResponseWriter, r *http.Request)
+
+	// (POST /v1/admin/scopes)
+	CreateScope(w http.ResponseWriter, r *http.Request, params CreateScopeParams)
+
+	// (GET /v1/admin/scopes/{scope})
+	GetScope(w http.ResponseWriter, r *http.Request, scope ScopeParam)
+
+	// (POST /v1/admin/scopes/{scope}/done)
+	DoneScope(w http.ResponseWriter, r *http.Request, scope ScopeParam, params DoneScopeParams)
 
 	// (GET /v1/admin/status)
 	AdminStatus(w http.ResponseWriter, r *http.Request)
@@ -8716,6 +10473,100 @@ func (siw *ServerInterfaceWrapper) OpenidConfiguration(w http.ResponseWriter, r 
 	handler.ServeHTTP(w, r)
 }
 
+// ListBridges operation middleware
+func (siw *ServerInterfaceWrapper) ListBridges(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListBridges(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateBridge operation middleware
+func (siw *ServerInterfaceWrapper) CreateBridge(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateBridge(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RemoveBridge operation middleware
+func (siw *ServerInterfaceWrapper) RemoveBridge(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RemoveBridge(w, r, channel)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetBridge operation middleware
+func (siw *ServerInterfaceWrapper) GetBridge(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "channel" -------------
+	var channel ChannelParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "channel", r.PathValue("channel"), &channel, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "channel", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetBridge(w, r, channel)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateAgentIdentity operation middleware
+func (siw *ServerInterfaceWrapper) CreateAgentIdentity(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateAgentIdentity(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // CreateIdentityByEmail operation middleware
 func (siw *ServerInterfaceWrapper) CreateIdentityByEmail(w http.ResponseWriter, r *http.Request) {
 
@@ -8852,6 +10703,137 @@ func (siw *ServerInterfaceWrapper) AdminReset(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminReset(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListScopes operation middleware
+func (siw *ServerInterfaceWrapper) ListScopes(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListScopes(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateScope operation middleware
+func (siw *ServerInterfaceWrapper) CreateScope(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateScopeParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateScope(w, r, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// GetScope operation middleware
+func (siw *ServerInterfaceWrapper) GetScope(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "scope" -------------
+	var scope ScopeParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "scope", r.PathValue("scope"), &scope, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.GetScope(w, r, scope)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// DoneScope operation middleware
+func (siw *ServerInterfaceWrapper) DoneScope(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "scope" -------------
+	var scope ScopeParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "scope", r.PathValue("scope"), &scope, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "scope", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params DoneScopeParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.DoneScope(w, r, scope, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10488,6 +12470,15 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/reset", wrapper.AdminReset)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/identities/{identity}/reset-credential", wrapper.ResetCredential)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/identities/by-email", wrapper.CreateIdentityByEmail)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/identities", wrapper.CreateAgentIdentity)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/scopes", wrapper.ListScopes)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/scopes", wrapper.CreateScope)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/scopes/{scope}", wrapper.GetScope)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/scopes/{scope}/done", wrapper.DoneScope)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/bridges", wrapper.ListBridges)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/bridges", wrapper.CreateBridge)
+	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/admin/bridges/{channel}", wrapper.RemoveBridge)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/bridges/{channel}", wrapper.GetBridge)
 
 	return m
 }
@@ -10610,6 +12601,194 @@ func (response OpenidConfigurationdefaultApplicationProblemPlusJSONResponse) Vis
 	return err
 }
 
+type ListBridgesRequestObject struct {
+}
+
+type ListBridgesResponseObject interface {
+	VisitListBridgesResponse(w http.ResponseWriter) error
+}
+
+type ListBridges200JSONResponse BridgeList
+
+func (response ListBridges200JSONResponse) VisitListBridgesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListBridgesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListBridgesdefaultApplicationProblemPlusJSONResponse) VisitListBridgesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBridgeRequestObject struct {
+	Body *CreateBridgeJSONRequestBody
+}
+
+type CreateBridgeResponseObject interface {
+	VisitCreateBridgeResponse(w http.ResponseWriter) error
+}
+
+type CreateBridge200JSONResponse BridgeCreated
+
+func (response CreateBridge200JSONResponse) VisitCreateBridgeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateBridgedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateBridgedefaultApplicationProblemPlusJSONResponse) VisitCreateBridgeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RemoveBridgeRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+}
+
+type RemoveBridgeResponseObject interface {
+	VisitRemoveBridgeResponse(w http.ResponseWriter) error
+}
+
+type RemoveBridge204Response struct {
+}
+
+func (response RemoveBridge204Response) VisitRemoveBridgeResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type RemoveBridgedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RemoveBridgedefaultApplicationProblemPlusJSONResponse) VisitRemoveBridgeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBridgeRequestObject struct {
+	Channel ChannelParam `json:"channel"`
+}
+
+type GetBridgeResponseObject interface {
+	VisitGetBridgeResponse(w http.ResponseWriter) error
+}
+
+type GetBridge200JSONResponse Bridge
+
+func (response GetBridge200JSONResponse) VisitGetBridgeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetBridgedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetBridgedefaultApplicationProblemPlusJSONResponse) VisitGetBridgeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentIdentityRequestObject struct {
+	Body *CreateAgentIdentityJSONRequestBody
+}
+
+type CreateAgentIdentityResponseObject interface {
+	VisitCreateAgentIdentityResponse(w http.ResponseWriter) error
+}
+
+type CreateAgentIdentity200JSONResponse AgentIdentity
+
+func (response CreateAgentIdentity200JSONResponse) VisitCreateAgentIdentityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateAgentIdentitydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateAgentIdentitydefaultApplicationProblemPlusJSONResponse) VisitCreateAgentIdentityResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type CreateIdentityByEmailRequestObject struct {
 	Params CreateIdentityByEmailParams
 	Body   *CreateIdentityByEmailJSONRequestBody
@@ -10712,6 +12891,164 @@ type AdminResetdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response AdminResetdefaultApplicationProblemPlusJSONResponse) VisitAdminResetResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScopesRequestObject struct {
+}
+
+type ListScopesResponseObject interface {
+	VisitListScopesResponse(w http.ResponseWriter) error
+}
+
+type ListScopes200JSONResponse ScopeList
+
+func (response ListScopes200JSONResponse) VisitListScopesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListScopesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListScopesdefaultApplicationProblemPlusJSONResponse) VisitListScopesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScopeRequestObject struct {
+	Params CreateScopeParams
+	Body   *CreateScopeJSONRequestBody
+}
+
+type CreateScopeResponseObject interface {
+	VisitCreateScopeResponse(w http.ResponseWriter) error
+}
+
+type CreateScope200JSONResponse Scope
+
+func (response CreateScope200JSONResponse) VisitCreateScopeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateScopedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateScopedefaultApplicationProblemPlusJSONResponse) VisitCreateScopeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScopeRequestObject struct {
+	Scope ScopeParam `json:"scope"`
+}
+
+type GetScopeResponseObject interface {
+	VisitGetScopeResponse(w http.ResponseWriter) error
+}
+
+type GetScope200JSONResponse Scope
+
+func (response GetScope200JSONResponse) VisitGetScopeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type GetScopedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response GetScopedefaultApplicationProblemPlusJSONResponse) VisitGetScopeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DoneScopeRequestObject struct {
+	Scope  ScopeParam `json:"scope"`
+	Params DoneScopeParams
+	Body   *DoneScopeJSONRequestBody
+}
+
+type DoneScopeResponseObject interface {
+	VisitDoneScopeResponse(w http.ResponseWriter) error
+}
+
+type DoneScope200JSONResponse Scope
+
+func (response DoneScope200JSONResponse) VisitDoneScopeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type DoneScopedefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response DoneScopedefaultApplicationProblemPlusJSONResponse) VisitDoneScopeResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -12167,6 +14504,21 @@ type StrictServerInterface interface {
 	// (GET /.well-known/openid-configuration)
 	OpenidConfiguration(ctx context.Context, request OpenidConfigurationRequestObject) (OpenidConfigurationResponseObject, error)
 
+	// (GET /v1/admin/bridges)
+	ListBridges(ctx context.Context, request ListBridgesRequestObject) (ListBridgesResponseObject, error)
+
+	// (POST /v1/admin/bridges)
+	CreateBridge(ctx context.Context, request CreateBridgeRequestObject) (CreateBridgeResponseObject, error)
+
+	// (DELETE /v1/admin/bridges/{channel})
+	RemoveBridge(ctx context.Context, request RemoveBridgeRequestObject) (RemoveBridgeResponseObject, error)
+
+	// (GET /v1/admin/bridges/{channel})
+	GetBridge(ctx context.Context, request GetBridgeRequestObject) (GetBridgeResponseObject, error)
+
+	// (POST /v1/admin/identities)
+	CreateAgentIdentity(ctx context.Context, request CreateAgentIdentityRequestObject) (CreateAgentIdentityResponseObject, error)
+
 	// (POST /v1/admin/identities/by-email)
 	CreateIdentityByEmail(ctx context.Context, request CreateIdentityByEmailRequestObject) (CreateIdentityByEmailResponseObject, error)
 
@@ -12175,6 +14527,18 @@ type StrictServerInterface interface {
 
 	// (POST /v1/admin/reset)
 	AdminReset(ctx context.Context, request AdminResetRequestObject) (AdminResetResponseObject, error)
+
+	// (GET /v1/admin/scopes)
+	ListScopes(ctx context.Context, request ListScopesRequestObject) (ListScopesResponseObject, error)
+
+	// (POST /v1/admin/scopes)
+	CreateScope(ctx context.Context, request CreateScopeRequestObject) (CreateScopeResponseObject, error)
+
+	// (GET /v1/admin/scopes/{scope})
+	GetScope(ctx context.Context, request GetScopeRequestObject) (GetScopeResponseObject, error)
+
+	// (POST /v1/admin/scopes/{scope}/done)
+	DoneScope(ctx context.Context, request DoneScopeRequestObject) (DoneScopeResponseObject, error)
 
 	// (GET /v1/admin/status)
 	AdminStatus(ctx context.Context, request AdminStatusRequestObject) (AdminStatusResponseObject, error)
@@ -12396,6 +14760,144 @@ func (sh *strictHandler) OpenidConfiguration(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// ListBridges operation middleware
+func (sh *strictHandler) ListBridges(w http.ResponseWriter, r *http.Request) {
+	var request ListBridgesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListBridges(ctx, request.(ListBridgesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListBridges")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListBridgesResponseObject); ok {
+		if err := validResponse.VisitListBridgesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateBridge operation middleware
+func (sh *strictHandler) CreateBridge(w http.ResponseWriter, r *http.Request) {
+	var request CreateBridgeRequestObject
+
+	var body CreateBridgeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateBridge(ctx, request.(CreateBridgeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateBridge")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateBridgeResponseObject); ok {
+		if err := validResponse.VisitCreateBridgeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RemoveBridge operation middleware
+func (sh *strictHandler) RemoveBridge(w http.ResponseWriter, r *http.Request, channel ChannelParam) {
+	var request RemoveBridgeRequestObject
+
+	request.Channel = channel
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RemoveBridge(ctx, request.(RemoveBridgeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RemoveBridge")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RemoveBridgeResponseObject); ok {
+		if err := validResponse.VisitRemoveBridgeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetBridge operation middleware
+func (sh *strictHandler) GetBridge(w http.ResponseWriter, r *http.Request, channel ChannelParam) {
+	var request GetBridgeRequestObject
+
+	request.Channel = channel
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetBridge(ctx, request.(GetBridgeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetBridge")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetBridgeResponseObject); ok {
+		if err := validResponse.VisitGetBridgeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateAgentIdentity operation middleware
+func (sh *strictHandler) CreateAgentIdentity(w http.ResponseWriter, r *http.Request) {
+	var request CreateAgentIdentityRequestObject
+
+	var body CreateAgentIdentityJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateAgentIdentity(ctx, request.(CreateAgentIdentityRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateAgentIdentity")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateAgentIdentityResponseObject); ok {
+		if err := validResponse.VisitCreateAgentIdentityResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // CreateIdentityByEmail operation middleware
 func (sh *strictHandler) CreateIdentityByEmail(w http.ResponseWriter, r *http.Request, params CreateIdentityByEmailParams) {
 	var request CreateIdentityByEmailRequestObject
@@ -12475,6 +14977,123 @@ func (sh *strictHandler) AdminReset(w http.ResponseWriter, r *http.Request, para
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(AdminResetResponseObject); ok {
 		if err := validResponse.VisitAdminResetResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListScopes operation middleware
+func (sh *strictHandler) ListScopes(w http.ResponseWriter, r *http.Request) {
+	var request ListScopesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListScopes(ctx, request.(ListScopesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListScopes")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListScopesResponseObject); ok {
+		if err := validResponse.VisitListScopesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateScope operation middleware
+func (sh *strictHandler) CreateScope(w http.ResponseWriter, r *http.Request, params CreateScopeParams) {
+	var request CreateScopeRequestObject
+
+	request.Params = params
+
+	var body CreateScopeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateScope(ctx, request.(CreateScopeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateScope")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateScopeResponseObject); ok {
+		if err := validResponse.VisitCreateScopeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// GetScope operation middleware
+func (sh *strictHandler) GetScope(w http.ResponseWriter, r *http.Request, scope ScopeParam) {
+	var request GetScopeRequestObject
+
+	request.Scope = scope
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.GetScope(ctx, request.(GetScopeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "GetScope")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(GetScopeResponseObject); ok {
+		if err := validResponse.VisitGetScopeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// DoneScope operation middleware
+func (sh *strictHandler) DoneScope(w http.ResponseWriter, r *http.Request, scope ScopeParam, params DoneScopeParams) {
+	var request DoneScopeRequestObject
+
+	request.Scope = scope
+	request.Params = params
+
+	var body DoneScopeJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.DoneScope(ctx, request.(DoneScopeRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "DoneScope")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(DoneScopeResponseObject); ok {
+		if err := validResponse.VisitDoneScopeResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

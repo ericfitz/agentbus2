@@ -125,6 +125,15 @@ func TestOperationTable(t *testing.T) {
 		"adminReset":                  "POST /v1/admin/reset",
 		"resetCredential":             "POST /v1/admin/identities/{identity}/reset-credential",
 		"createIdentityByEmail":       "POST /v1/admin/identities/by-email",
+		"createAgentIdentity":         "POST /v1/admin/identities",
+		"createScope":                 "POST /v1/admin/scopes",
+		"listScopes":                  "GET /v1/admin/scopes",
+		"getScope":                    "GET /v1/admin/scopes/{scope}",
+		"doneScope":                   "POST /v1/admin/scopes/{scope}/done",
+		"createBridge":                "POST /v1/admin/bridges",
+		"listBridges":                 "GET /v1/admin/bridges",
+		"getBridge":                   "GET /v1/admin/bridges/{channel}",
+		"removeBridge":                "DELETE /v1/admin/bridges/{channel}",
 		"authorizationServerMetadata": "GET /.well-known/oauth-authorization-server",
 	}
 	doc := loadDoc(t)
@@ -156,8 +165,8 @@ func TestOperationTable(t *testing.T) {
 			t.Errorf("unexpected operation %s", id)
 		}
 	}
-	if open != 7 || protected != 35 {
-		t.Fatalf("security: %d open, %d protected; want 7 and 35", open, protected)
+	if open != 7 || protected != 44 {
+		t.Fatalf("security: %d open, %d protected; want 7 and 44", open, protected)
 	}
 }
 

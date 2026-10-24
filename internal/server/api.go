@@ -8,6 +8,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core/delivery"
 	"github.com/ericfitz/agentbus2/internal/core/memories"
 	"github.com/ericfitz/agentbus2/internal/core/messaging"
+	"github.com/ericfitz/agentbus2/internal/core/scopes"
 	"github.com/ericfitz/agentbus2/internal/core/search"
 	"github.com/ericfitz/agentbus2/internal/core/sessions"
 	"github.com/ericfitz/agentbus2/internal/core/tasks"
@@ -27,6 +28,7 @@ type api struct {
 	sessions  sessions.Service
 	delivery  delivery.Service
 	messaging messaging.Service
+	scopes    scopes.Service
 	search    search.Service
 	memories  memories.Service
 	tasks     tasks.Service
@@ -50,6 +52,7 @@ func newAPI(c *core.Core, o Options) *api {
 		sessions:  sess,
 		delivery:  delivery.Service{Core: c, Sessions: sess},
 		messaging: messaging.Service{Core: c},
+		scopes:    scopes.Service{Core: c},
 		search:    search.Service{Core: c},
 		memories:  memories.Service{Core: c},
 		tasks:     tasks.Service{Core: c},

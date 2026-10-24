@@ -884,6 +884,158 @@ paths:
                 $ref: "#/components/schemas/HumanIdentity"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/admin/identities:
+    post:
+      operationId: createAgentIdentity
+      tags: [admin]
+      description: >-
+        Creates an agent identity, optionally in an open scope, and a one-time
+        enrollment token bound to its name (24 hours, one use). Administrator
+        only. The token is never stored in clear and is not in an idempotency
+        receipt, so the operation takes no idempotency key.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateAgentIdentityRequest"
+      responses:
+        "200":
+          description: The identity and its enrollment token.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentIdentity"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/scopes:
+    post:
+      operationId: createScope
+      tags: [admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateScopeRequest"
+      responses:
+        "200":
+          description: The new open scope.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scope"
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: listScopes
+      tags: [admin]
+      responses:
+        "200":
+          description: The open and done scopes, without their members.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScopeList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/scopes/{scope}:
+    parameters:
+      - $ref: "#/components/parameters/ScopeParam"
+    get:
+      operationId: getScope
+      tags: [admin]
+      responses:
+        "200":
+          description: The scope with its channel and identity names.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scope"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/scopes/{scope}/done:
+    post:
+      operationId: doneScope
+      tags: [admin]
+      parameters:
+        - $ref: "#/components/parameters/ScopeParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DoneScopeRequest"
+      responses:
+        "200":
+          description: The scope, now done.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Scope"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/bridges:
+    post:
+      operationId: createBridge
+      tags: [admin]
+      description: >-
+        Bridges a channel to a new private Slack channel. Forbidden with the
+        text "the Slack bridge is not configured" when the server has no Slack
+        bridge.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateBridgeRequest"
+      responses:
+        "200":
+          description: The bridge and every human whom Slack could not invite.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BridgeCreated"
+        default:
+          $ref: "#/components/responses/Problem"
+    get:
+      operationId: listBridges
+      tags: [admin]
+      responses:
+        "200":
+          description: Every bridge.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/BridgeList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/bridges/{channel}:
+    parameters:
+      - $ref: "#/components/parameters/ChannelParam"
+    get:
+      operationId: getBridge
+      tags: [admin]
+      responses:
+        "200":
+          description: The channel's bridge.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Bridge"
+        default:
+          $ref: "#/components/responses/Problem"
+    delete:
+      operationId: removeBridge
+      tags: [admin]
+      responses:
+        "204":
+          description: The bridge is archived.
+        default:
+          $ref: "#/components/responses/Problem"
 components:
   securitySchemes:
     bearerAuth:
@@ -902,6 +1054,12 @@ components:
         type: string
     ChannelParam:
       name: channel
+      in: path
+      required: true
+      schema:
+        type: string
+    ScopeParam:
+      name: scope
       in: path
       required: true
       schema:
@@ -1283,6 +1441,8 @@ components:
           enum: [ordinary, memory, tasks]
         creator:
           type: string
+        scope:
+          type: string
         created_at:
           type: integer
           format: int64
@@ -1310,6 +1470,8 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ACLEntry"
+        scope:
+          type: string
     RenameChannelRequest:
       type: object
       required: [name]
@@ -1753,3 +1915,135 @@ components:
           type: string
         keys_removed:
           type: integer
+    CreateAgentIdentityRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+        scope:
+          type: string
+    AgentIdentity:
+      type: object
+      required: [identity, created, enrollment_token, expires_at]
+      properties:
+        identity:
+          type: string
+        scope:
+          type: string
+        created:
+          type: boolean
+        enrollment_token:
+          type: string
+        expires_at:
+          type: integer
+          format: int64
+    CreateScopeRequest:
+      type: object
+      additionalProperties: false
+      required: [name]
+      properties:
+        name:
+          type: string
+    DoneScopeRequest:
+      type: object
+      additionalProperties: false
+      required: [retire]
+      properties:
+        retire:
+          type: string
+          enum: [with_bridge, normal]
+    Scope:
+      type: object
+      required: [name, state, created_at, last_activity]
+      properties:
+        name:
+          type: string
+        state:
+          type: string
+          enum: [open, done, retired]
+        retire:
+          type: string
+          enum: [with_bridge, normal]
+        created_at:
+          type: integer
+          format: int64
+        done_at:
+          type: integer
+          format: int64
+        last_activity:
+          type: integer
+          format: int64
+        channels:
+          type: array
+          items:
+            type: string
+        identities:
+          type: array
+          items:
+            type: string
+    ScopeList:
+      type: object
+      required: [scopes]
+      properties:
+        scopes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Scope"
+    CreateBridgeRequest:
+      type: object
+      additionalProperties: false
+      required: [channel]
+      properties:
+        channel:
+          type: string
+        slack_name:
+          type: string
+    Bridge:
+      type: object
+      required: [channel, scope, slack_name, state, created_at]
+      properties:
+        channel:
+          type: string
+        scope:
+          type: string
+        slack_channel_id:
+          type: string
+        slack_name:
+          type: string
+        state:
+          type: string
+          enum: [creating, live, archived]
+        created_at:
+          type: integer
+          format: int64
+        archived_at:
+          type: integer
+          format: int64
+    BridgeNotInvited:
+      type: object
+      required: [identity, reason]
+      properties:
+        identity:
+          type: string
+        reason:
+          type: string
+    BridgeCreated:
+      type: object
+      required: [bridge, not_invited]
+      properties:
+        bridge:
+          $ref: "#/components/schemas/Bridge"
+        not_invited:
+          type: array
+          items:
+            $ref: "#/components/schemas/BridgeNotInvited"
+    BridgeList:
+      type: object
+      required: [bridges]
+      properties:
+        bridges:
+          type: array
+          items:
+            $ref: "#/components/schemas/Bridge"

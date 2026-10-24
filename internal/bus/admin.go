@@ -35,6 +35,17 @@ type Admin interface {
 	Reset(ctx context.Context, in ResetInput) error
 	ResetCredential(ctx context.Context, in ResetCredentialInput) (ResetCredentialResult, error)
 	CreateIdentityByEmail(ctx context.Context, in CreateIdentityByEmailInput) (CreateIdentityByEmailResult, error)
+	CreateScope(ctx context.Context, in CreateScopeInput) (Scope, error)
+	ListScopes(ctx context.Context) ([]Scope, error)
+	GetScope(ctx context.Context, name string) (Scope, error)
+	DoneScope(ctx context.Context, in DoneScopeInput) (Scope, error)
+	CreateAgentIdentity(ctx context.Context, in CreateAgentIdentityInput) (AgentIdentity, error)
+	// The bridge operations answer forbidden with BridgeNotConfigured when no
+	// Slack bridge is wired (local mode has none).
+	CreateBridge(ctx context.Context, in CreateBridgeInput) (BridgeCreated, error)
+	ListBridges(ctx context.Context) ([]Bridge, error)
+	GetBridge(ctx context.Context, channel string) (Bridge, error)
+	RemoveBridge(ctx context.Context, in RemoveBridgeInput) error
 }
 
 // ResetScope selects what Reset removes (Milestone 5 choice 12).

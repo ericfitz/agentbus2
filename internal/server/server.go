@@ -43,6 +43,9 @@ type Options struct {
 	// External are the configured external issuers (Decision 57); their
 	// Issuer URLs are what discover lists.
 	External []*token.External
+	// Bridges serves the bridge operations (Slack bridge spec 6.1a). nil:
+	// every one answers forbidden with bus.BridgeNotConfigured.
+	Bridges Bridges
 }
 
 var (

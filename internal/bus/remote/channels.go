@@ -34,6 +34,9 @@ func (b *Bus) CreateChannel(ctx context.Context, in ab2bus.CreateChannelInput) (
 		k := gen.CreateChannelRequestKind(in.Kind)
 		body.Kind = &k
 	}
+	if in.Scope != "" {
+		body.Scope = &in.Scope
+	}
 	if in.ACL != nil { // nil is the configured default; empty is "no entries"
 		acl := make([]gen.ACLEntry, len(in.ACL))
 		for i, e := range in.ACL {
@@ -57,7 +60,7 @@ func (b *Bus) CreateChannel(ctx context.Context, in ab2bus.CreateChannelInput) (
 func fromGenChannelInfo(c gen.ChannelInfo) ab2bus.ChannelInfo {
 	return ab2bus.ChannelInfo{
 		Channel: ab2bus.Channel{Name: c.Name, Kind: ab2bus.Kind(c.Kind)},
-		Creator: c.Creator, CreatedAt: c.CreatedAt,
+		Creator: c.Creator, Scope: deref(c.Scope), CreatedAt: c.CreatedAt,
 	}
 }
 

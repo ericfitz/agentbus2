@@ -348,7 +348,7 @@ func TestRunRejectsUnopenableStore(t *testing.T) {
 func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 	r := runServer(t, "-listen", "127.0.0.1:0", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"))
 	doc := server.Spec()
-	subst := strings.NewReplacer("{channel}", "dev", "{session}", "s", "{id}", "1", "{patterns}", "deploy", "{identity}", "pat")
+	subst := strings.NewReplacer("{channel}", "dev", "{session}", "s", "{id}", "1", "{patterns}", "deploy", "{identity}", "pat", "{scope}", "job1")
 	wantOpen := map[string]int{
 		"token": 400, "register": 400, "jwks": 200, "discover": 200, "wellKnown": 200, "openidConfiguration": 200, "authorizationServerMetadata": 200,
 	}
@@ -407,8 +407,8 @@ func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 			}
 		}
 	}
-	if protected != 35 || open != 7 || protected+open != 42 {
-		t.Fatalf("operations: %d protected, %d open; want 35 and 7", protected, open)
+	if protected != 44 || open != 7 || protected+open != 51 {
+		t.Fatalf("operations: %d protected, %d open; want 44 and 7", protected, open)
 	}
 }
 
