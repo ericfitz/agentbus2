@@ -7,7 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
+	"mime"
 	"net/http"
+	"net/url"
+	"slices"
 	"sync"
 
 	"github.com/getkin/kin-openapi/openapi3"
@@ -119,7 +123,7 @@ func New(c *core.Core, o Options) http.Handler {
 	})
 
 	limit := int64(c.Cfg.MaxMessageKiB)*1024 + 1<<20
-	return limitBody(authenticate(o.Auth, validator(mux)), limit)
+	return limitBody(rejectRepeatedTokenParams(authenticate(o.Auth, validator(mux))), limit)
 }
 
 // authenticate never refuses by itself. It always writes the identity key
@@ -178,4 +182,34 @@ func tokenRequestError(w http.ResponseWriter, r *http.Request) bool {
 	writeOAuthError(w, oauthFail(http.StatusBadRequest, "invalid_request",
 		"the request is not a well-formed application/x-www-form-urlencoded token request with a grant_type"))
 	return true
+}
+
+// rejectRepeatedTokenParams answers a token request that repeats a form
+// parameter with invalid_request (RFC 6749 sections 3.2 and 5.2: a parameter
+// is included once). The binder would otherwise take the first value, so
+// audience=http://inproc&audience=https://other would pass the audience
+// check. The description names the parameter, never a value. limitBody has
+// already buffered the body, so it is read here and put back.
+func rejectRepeatedTokenParams(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost && r.URL.Path == tokenPath && r.Body != nil && r.Body != http.NoBody {
+			mt, _, _ := mime.ParseMediaType(r.Header.Get("Content-Type"))
+			if mt == "application/x-www-form-urlencoded" {
+				b, err := io.ReadAll(r.Body)
+				_ = r.Body.Close()
+				if err == nil {
+					if vals, perr := url.ParseQuery(string(b)); perr == nil {
+						for _, k := range slices.Sorted(maps.Keys(vals)) {
+							if len(vals[k]) > 1 {
+								writeOAuthError(w, oauthFail(http.StatusBadRequest, "invalid_request", "parameter %q is repeated", k))
+								return
+							}
+						}
+					}
+				}
+				r.Body = io.NopCloser(bytes.NewReader(b))
+			}
+		}
+		next.ServeHTTP(w, r)
+	})
 }

@@ -74,7 +74,8 @@ func (a *api) clientCredentials(ctx context.Context, iss *token.Issuer, b *gen.T
 	if err != nil {
 		return refuse("client assertion: %s", err)
 	}
-	if b.ClientId != nil && *b.ClientId != p.Identity {
+	// An empty client_id is omitted (RFC 6749 section 3.2).
+	if b.ClientId != nil && *b.ClientId != "" && *b.ClientId != p.Identity {
 		return refuse("client_id does not match the assertion issuer")
 	}
 	pub, _, err := identities.Service{Core: a.core}.PublicKey(ctx, p.Identity, p.KID)

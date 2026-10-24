@@ -709,3 +709,60 @@ func TestOtherEndpointsKeepProblemJSON(t *testing.T) {
 	resp = e.do("POST", "/v1/auth/register", "application/json", "", `{}`)
 	_ = readProblem(t, resp)
 }
+
+// A repeated form parameter is invalid_request (RFC 6749 sections 3.2, 5.2)
+// on both grants; the description names the parameter and never a value. An
+// empty client_id or scope is omitted (section 3.2).
+func TestTokenRepeatedAndEmptyParams(t *testing.T) {
+	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
+	key := genKey(t, keys.EdDSA)
+	e.mustRegister("pat", key)
+	const formCT = "application/x-www-form-urlencoded"
+	a := e.assertionFor("pat", key, "http://inproc", 0)
+	base := func() url.Values {
+		return url.Values{"grant_type": {"client_credentials"}, "client_assertion_type": {assertion.Type}, "client_assertion": {a}}
+	}
+	post := func(v url.Values) *http.Response {
+		return e.do("POST", "/v1/auth/token", formCT, "", v.Encode())
+	}
+
+	for _, tc := range []struct {
+		name  string
+		build func() url.Values
+		param string
+	}{
+		{"audience", func() url.Values {
+			v := base()
+			v["audience"] = []string{"http://inproc", "https://evil.example"}
+			return v
+		}, "audience"},
+		{"client_assertion", func() url.Values {
+			v := base()
+			v["client_assertion"] = []string{a, "second-secret-value"}
+			return v
+		}, "client_assertion"},
+		{"exchange resource", func() url.Values {
+			return url.Values{"grant_type": {"urn:ietf:params:oauth:grant-type:token-exchange"}, "subject_token": {"x"},
+				"resource": {"http://inproc", "https://evil.example"}}
+		}, "resource"},
+	} {
+		resp := post(tc.build())
+		body := readBody(t, resp)
+		if resp.StatusCode != 400 || !strings.Contains(body, `"invalid_request"`) || !strings.Contains(body, tc.param) {
+			t.Errorf("%s: %d %s", tc.name, resp.StatusCode, body)
+		}
+		for _, leak := range []string{a, "evil.example", "second-secret-value"} {
+			if strings.Contains(body, leak) {
+				t.Errorf("%s: body echoes %q: %s", tc.name, leak, body)
+			}
+		}
+	}
+
+	// Empty client_id and scope are treated as omitted.
+	v := base()
+	v.Set("client_id", "")
+	v.Set("scope", "")
+	if resp := post(v); resp.StatusCode != 200 {
+		t.Fatalf("empty client_id: %d %s", resp.StatusCode, readBody(t, resp))
+	}
+}

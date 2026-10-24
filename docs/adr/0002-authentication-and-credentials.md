@@ -688,7 +688,11 @@ the running handler (2026-10-24), and why:
    clients built against the old path keep working.
 3. **`audience` and `resource` are single-valued.** RFC 8693 allows
    several of each; an agentbus2 bearer has one audience, its issuer.
-   A different or repeated value is `invalid_target`.
+   A different value is `invalid_target`. A repeated parameter of any name is
+   `invalid_request` (RFC 6749 sections 3.2 and 5.2; the description names the
+   parameter, never its value), checked before the handler on both grants;
+   a parameter sent with an empty value (`client_id=`, `scope=`) is treated as
+   omitted (section 3.2).
 4. **`none` is listed in `token_endpoint_auth_methods_supported`** for the
    exchange's public client. RFC 8414 describes the member per endpoint, not
    per grant, so the document cannot say that `none` is valid for the token

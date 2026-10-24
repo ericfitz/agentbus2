@@ -174,6 +174,8 @@ Consequences for this record:
   the same URL and lists the configured external issuers. The server
   therefore serves an OpenID discovery document, which Milestone 4 adds
   beside `GET /v1/discover`.
+  Superseded by the federated identity addendum in ADR 0002: the
+  `openIdConnect` scheme is gone and the document is RFC 8414 metadata.
 - The ogen alternative would have been harder under Decision 65, since
   ogen rejects `openIdConnect`; the choice of oapi-codegen stands.
 
@@ -196,7 +198,9 @@ Resolved on 2026-10-20:
   `internal/gen/spec` (`spec.GetSwagger()`), imported by `internal/server`
   only. The validator is the security enforcement point: the `Authenticator`
   seam feeds its `AuthenticationFunc`. Its router answers an unknown path and
-  a wrong method as 404. `internal/bus/remote` never imports `internal/gen/spec`
+  a wrong method as 404 (a wrong method on `/v1/auth/token` is now the OAuth
+  `invalid_request` body: ADR 0002 federated identity addendum).
+  `internal/bus/remote` never imports `internal/gen/spec`
   or kin-openapi, so the MCP server and CLI of Milestone 6 do not link them;
   `scripts/m4-exit-checks.sh` enforces the Decision 47 import rule
   (`--deps-only` runs it alone, in CI). Measured on the tree:

@@ -61,8 +61,8 @@ paths:
       responses:
         "200":
           description: >-
-            The same document as /.well-known/oauth-authorization-server,
-            kept for existing clients. The server is not an OpenID Provider.
+            The same document as /.well-known/oauth-authorization-server. It
+            is kept for existing clients. The server is not an OpenID Provider.
           content:
             application/json:
               schema:
