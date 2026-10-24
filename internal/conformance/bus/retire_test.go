@@ -285,7 +285,7 @@ func TestScopeRetirementRules(t *testing.T) {
 					t.Fatalf("tick %d: %d warnings, want %d:\n%s", i, got, i, logs.String())
 				}
 			}
-			for _, want := range []string{"scope=job4", "slack_channel=G4"} {
+			for _, want := range []string{"scope=job4", "slack_channels=G4"} {
 				if !strings.Contains(logs.String(), want) {
 					t.Errorf("warning lacks %q:\n%s", want, logs.String())
 				}
@@ -302,6 +302,9 @@ func TestScopeRetirementRules(t *testing.T) {
 // running it, and passes every other call through.
 type failNthTx struct {
 	ab2store.Store
+	// before, when set, runs ahead of every Tx call with its 1-based number
+	// since arm (outside the lock, before the call reaches the Store).
+	before func(n int)
 	mu     sync.Mutex
 	n, cnt int
 }
@@ -316,7 +319,11 @@ func (f *failNthTx) Tx(ctx context.Context, fn func(context.Context, ab2store.Tx
 	f.mu.Lock()
 	f.cnt++
 	hit := f.n != 0 && f.cnt == f.n
+	cnt := f.cnt
 	f.mu.Unlock()
+	if f.before != nil {
+		f.before(cnt)
+	}
 	if hit {
 		return errors.New("injected transaction fault")
 	}
@@ -490,10 +497,12 @@ func TestScopeRetirementIdempotent(t *testing.T) {
 		var wg sync.WaitGroup
 		var mu sync.Mutex
 		ranCount, retired := 0, 0
+		start := make(chan struct{})
 		for _, svc := range ms {
 			wg.Add(1)
 			go func() {
 				defer wg.Done()
+				<-start
 				ran, rep := svc.Tick(context.Background())
 				mu.Lock()
 				defer mu.Unlock()
@@ -507,6 +516,7 @@ func TestScopeRetirementIdempotent(t *testing.T) {
 				}
 			}()
 		}
+		close(start)
 		wg.Wait()
 		if ranCount != 1 || retired != 1 {
 			t.Fatalf("ran = %d, retired = %d, want 1 and 1", ranCount, retired)
@@ -586,5 +596,92 @@ func TestRetiredScopePurged(t *testing.T) {
 		if !strings.Contains(msgOf(err), "does not exist") {
 			t.Errorf("error after purge %q", msgOf(err))
 		}
+	})
+}
+
+func TestScopeRetirementRaces(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		// build is a maintenance service over a failNthTx store.
+		build := func(h *harness, a *fakeArchiver) (*failNthTx, maintenance.Service) {
+			fs := &failNthTx{Store: h.raw}
+			c, err := core.New(fs, h.cfg, core.Options{Now: h.clock.Now, Notifier: h.notifier})
+			if err != nil {
+				t.Fatal(err)
+			}
+			m := maintenance.New(c)
+			if a != nil {
+				m.Archiver = a
+			}
+			return fs, m
+		}
+
+		t.Run("bridge goes live after the due read", func(t *testing.T) {
+			h := newHarness(t, e, harnessOptions{})
+			a := &fakeArchiver{h: h}
+			fs, m := build(h, a)
+			h.rtScope("job1")
+			ch := h.rtChannel("job1", "job1-chat", ab2store.KindOrdinary)
+			h.clock.Advance(h.idleFor())
+			var b ab2store.Bridge
+			fs.arm(0)
+			fs.before = func(n int) {
+				if n == 1 { // RetireDue found no bridge; Retire's first transaction is next
+					b = h.rtBridge(ch, "job1", "G1")
+				}
+			}
+			if _, err := m.RunJob(context.Background(), retireJob); err == nil {
+				t.Fatal("the active bridge was deleted or the conflict swallowed")
+			}
+			if st := h.rtState("job1"); st != ab2store.ScopeOpen {
+				t.Fatalf("state = %q, want open", st)
+			}
+			if rows, mapRow := h.rtBridgeRows("job1", b.ID); rows != 1 || !mapRow {
+				t.Fatalf("bridge rows = %d, map row = %v, want both intact", rows, mapRow)
+			}
+			fs.before = nil
+			if n := h.retireRun(m); n != 1 {
+				t.Fatalf("next run retired %d, want 1", n)
+			}
+			if len(a.calls) != 1 || a.calls[0].Reason != "idle" {
+				t.Fatalf("archiver calls = %+v, want one idle archive", a.calls)
+			}
+		})
+
+		t.Run("channel joins before the final step", func(t *testing.T) {
+			h := newHarness(t, e, harnessOptions{})
+			fs, m := build(h, nil)
+			h.rtScope("job1")
+			h.rtChannel("job1", "job1-a", ab2store.KindOrdinary)
+			h.clock.Advance(h.idleFor())
+			fs.arm(0)
+			fs.before = func(n int) {
+				if n == 3 { // 1 bridges, 2 the channel, 3 the retired mark
+					h.rtChannel("job1", "job1-late", ab2store.KindOrdinary)
+				}
+			}
+			if _, err := m.RunJob(context.Background(), retireJob); err == nil {
+				t.Fatal("the final step retired a scope that gained a channel")
+			}
+			if st := h.rtState("job1"); st != ab2store.ScopeOpen {
+				t.Fatalf("state = %q, want open", st)
+			}
+			if chs, _ := h.rtMembers("job1"); len(chs) != 1 || chs[0] != "job1-late" {
+				t.Fatalf("channels = %v, want [job1-late]", chs)
+			}
+			fs.before = nil
+			if n := h.retireRun(m); n != 1 {
+				t.Fatalf("next run retired %d, want 1", n)
+			}
+			if chs, _ := h.rtMembers("job1"); len(chs) != 0 {
+				t.Fatalf("channels left: %v", chs)
+			}
+			// Retire on a retired or unknown scope is (false, nil).
+			sv := scopes.Service{Core: h.core}
+			for _, name := range []string{"job1", "nope"} {
+				if ok, err := sv.Retire(context.Background(), name, h.core.NowMs()); ok || err != nil {
+					t.Errorf("Retire(%q) = %v, %v; want false, nil", name, ok, err)
+				}
+			}
+		})
 	})
 }

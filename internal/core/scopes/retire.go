@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
@@ -110,12 +111,16 @@ scopes:
 			errs = append(errs, err)
 			break
 		}
-		for _, b := range d.bridges {
-			if a == nil {
-				s.Log.Warn("scope retirement held: the Slack bridge is not configured and a bridge is still active",
-					"scope", d.name, "slack_channel", b.SlackChannelID, "state", string(b.State))
-				continue scopes
+		if a == nil && len(d.bridges) > 0 {
+			ids := make([]string, len(d.bridges))
+			for i, b := range d.bridges {
+				ids[i] = b.SlackChannelID
 			}
+			s.Log.Warn("scope retirement held: the Slack bridge is not configured and a bridge is still active",
+				"scope", d.name, "bridges", len(ids), "slack_channels", strings.Join(ids, ","))
+			continue
+		}
+		for _, b := range d.bridges {
 			if err := a.ArchiveBridge(ctx, b, d.reason); err != nil {
 				errs = append(errs, fmt.Errorf("scope %q: archive bridge of %q: %w", d.name, b.ChannelName, err))
 				continue scopes
@@ -176,6 +181,15 @@ func (s Service) Retire(ctx context.Context, name string, now int64) (bool, erro
 		bridges, err := tx.ScopeBridges(ctx, name)
 		if err != nil {
 			return err
+		}
+		for _, b := range bridges {
+			// RetireDue archived the active ones; one that went creating or
+			// live since would lose its row while its Slack channel stays
+			// open with humans in it. The scope stays; the next tick
+			// archives it.
+			if b.State == store.BridgeCreating || b.State == store.BridgeLive {
+				return core.E(bus.CodeConflict, "scope %q has an active bridge on %q; the next run archives it", name, b.ChannelName)
+			}
 		}
 		for _, b := range bridges {
 			if err := tx.DeleteBridge(ctx, b.ID); err != nil && !errors.Is(err, store.ErrNotFound) {
