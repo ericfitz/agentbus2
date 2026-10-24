@@ -142,6 +142,7 @@ import_check() {
 	check_importers github.com/slack-go/slack "$MOD/internal/slackapi/slackgo"
 	check_deps ./internal/slackapi internal/core internal/store internal/server internal/bus github.com/slack-go/slack
 	check_deps ./internal/slackapi/slackfake internal/core internal/store internal/server internal/bus github.com/slack-go/slack
+	check_deps ./internal/slackbridge internal/server internal/gen internal/slackapi/slackgo github.com/slack-go/slack
 	local p
 	for p in './internal/core/...' './internal/bus/...' ./internal/cli ./internal/mcpserver ./internal/client ./internal/server; do
 		check_deps "$p" internal/slackapi internal/slackbridge github.com/slack-go/slack
