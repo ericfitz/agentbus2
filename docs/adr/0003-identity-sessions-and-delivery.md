@@ -275,12 +275,15 @@ never claimed by trust-on-first-use; `Register` answers `forbidden`
 flag can still be claimed in `open` mode. Milestone 5 item 5: an external
 issuer's subject gets its row from `server admin create-identity` or, in
 `open` mode only, from its first valid external token (never admin).
+Superseded by Decision 10 (federated identity, 2026-10-23): direct
+acceptance and the auto-create are removed.
 
 ## Milestone 5 addendum (2026-10-21)
 
 - **Decision 77's mechanism.** `identities.Service.Register`,
   `RegisterLocal` and `CreateIdentity`, and the open-mode auto-create of an
-  external subject (which calls `CreateIdentity`), each create the identity
+  external subject (which calls `CreateIdentity`; superseded by Decision 10,
+  federated identity, 2026-10-23: removed), each create the identity
   row and subscribe it to `general` in one transaction; `Reset` subscribes
   every remaining identity to the recreated `general`.
 - **Choice 12 and item 1, admin reset scope (Decision (Eric, 2026-10-21)).**

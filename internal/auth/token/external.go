@@ -295,8 +295,10 @@ func (e *External) Verify(ctx context.Context, raw string) (Federated, error) {
 		if !isStr {
 			return Federated{}, invalid("%s claim must be a string", name)
 		}
-		f.ClientID = s
-		break
+		if s != "" {
+			f.ClientID = s
+			break
+		}
 	}
 	return f, nil
 }

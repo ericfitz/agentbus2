@@ -205,7 +205,8 @@ addendum restates the item with its test when it lands.
   subject: `agentbus2 server admin create-identity NAME` creates the row
   and its `general` subscription, and the first valid external token for an
   unmapped name auto-creates the row, but only when the registration mode is
-  `open`; an auto-created row is never admin.
+  `open`; an auto-created row is never admin. Superseded by Decision 10
+  (federated identity, 2026-10-23): the auto-create is removed.
 - **Milestone 5 item 7.** `Register` refuses trust-on-first-use (no
   enrollment token) on a keyless identity row whose admin flag is set:
   `forbidden` "identity %q requires an enrollment token". A non-admin
@@ -336,7 +337,10 @@ Each line: the answer, the test that encodes it, and
   `reset-credential-keeps-token` of `TestAuthEndToEnd`.
 - **Item 5, both mechanisms for external subjects.**
   `TestAdminCreateIdentity`, `TestExternalIssuerBearer`,
-  `TestRunWiresExternalIssuers`.
+  `TestRunWiresExternalIssuers`. Superseded by Decision 10 (federated
+  identity, 2026-10-23): `TestExternalIssuerBearer` is deleted (replaced by
+  `TestBearerRefusesCorporateToken`) and `TestRunWiresExternalIssuers` now
+  asserts that a corporate bearer is refused.
 - **Item 6, `register` takes no `Idempotency-Key`.** A spec 3.4 exemption,
   listed there. `TestRegisterOpenTOFU` (same key twice).
 

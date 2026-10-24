@@ -192,8 +192,9 @@ func (c Config) Validate() error {
 	if c.JWKSRefreshSeconds < 10 || c.JWKSRefreshSeconds > 86400 {
 		return fmt.Errorf("jwks_refresh_seconds must be between 10 and 86400, got %d", c.JWKSRefreshSeconds)
 	}
-	// The Verifier routes a token by exact iss: the own issuer first, then
-	// the first matching entry, so an entry equal to either is never used.
+	// The Verifier accepts only the own issuer's tokens, and the token
+	// endpoint picks the entry by exact iss, so an entry equal to the own
+	// issuer or to another entry would be ambiguous or unreachable.
 	// An unset Issuer is the bound address, known only at Run.
 	first := map[string]int{}
 	names := map[string]int{}

@@ -449,6 +449,7 @@ func TestExternalClientIDOrAzp(t *testing.T) {
 		{"both", map[string]any{"client_id": "c1", "azp": "z1"}, "c1"},
 		{"azp", map[string]any{"azp": "z1"}, "z1"},
 		{"neither", map[string]any{}, ""},
+		{"empty client_id falls to azp", map[string]any{"client_id": "", "azp": "z1"}, "z1"},
 	} {
 		c.extra["email"] = email
 		f, err := e.Verify(context.Background(), extTokenWith(t, k, c.extra))
@@ -460,6 +461,10 @@ func TestExternalClientIDOrAzp(t *testing.T) {
 	if !errors.Is(err, ErrInvalid) {
 		t.Errorf("non-string client_id: %v, want ErrInvalid", err)
 	}
+	_, err = e.Verify(context.Background(), extTokenWith(t, k, map[string]any{"email": email, "azp": 5}))
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("non-string azp without client_id: %v, want ErrInvalid", err)
+	}
 }
 
 func TestExternalJWKSDownIsUnavailable(t *testing.T) {
@@ -469,6 +474,21 @@ func TestExternalJWKSDownIsUnavailable(t *testing.T) {
 	e := newExternal(s, &clock{t: t0})
 	if _, err := e.Verify(context.Background(), extToken(t, k, nil)); !errors.Is(err, ErrJWKSUnavailable) {
 		t.Errorf("500: %v, want ErrJWKSUnavailable", err)
+	}
+	// A 200 with a body that is no key set, and one over the size limit.
+	for name, body := range map[string]string{"garbage": "not json", "oversize": strings.Repeat("x", maxJWKSBytes+10)} {
+		bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
+		eb := newExternal(&jwksServer{Server: bad}, &clock{t: t0})
+		if _, err := eb.Verify(context.Background(), extToken(t, k, nil)); !errors.Is(err, ErrJWKSUnavailable) {
+			t.Errorf("%s body: %v, want ErrJWKSUnavailable", name, err)
+		}
+		bad.Close()
+	}
+	// A malformed JWKS URI fails before any request.
+	eu := newExternal(s, &clock{t: t0})
+	eu.JWKSURI = "http://[::1"
+	if _, err := eu.Verify(context.Background(), extToken(t, k, nil)); !errors.Is(err, ErrJWKSUnavailable) {
+		t.Errorf("bad uri: %v, want ErrJWKSUnavailable", err)
 	}
 	// Unreachable: the server is closed before the first fetch.
 	s2 := newJWKS(t, k)
