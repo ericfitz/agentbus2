@@ -119,6 +119,9 @@ Anti-goals (a failure even if it works):
     `users`, `admins` and human bindings. `everything` also wipes human
     identities, their bindings and `users`, and reduces `admins` to the
     calling administrator's own `{identity: NAME}` entry.
+13. **A `users` miss is `invalid_request` (decided 2026-10-23, after
+    the plan review).** A person whose token matches no `users` entry gets
+    `invalid_request` (RFC 8693 section 2.2.2), not `access_denied`.
 
 ## 4. Identities
 
@@ -218,8 +221,8 @@ exchange.
 The server: verifies the token against the matching issuer (signature,
 `iss`, `aud` = the configured audience, `exp`, `nbf`, algorithm allowlist);
 reads the email, groups and subject through `claims`; evaluates `users`;
-refuses with `access_denied` when nothing matches (no identity row is
-created); resolves or creates the human identity (4.2, 4.3); evaluates
+refuses with `invalid_request` when nothing matches (Decision 13; no
+identity row is created); resolves or creates the human identity (4.2, 4.3); evaluates
 `admins` and writes the identity's admin flag (6.2); issues a bearer with
 `human_token_lifetime_seconds`. The response follows RFC 8693 section 2.2:
 `access_token`, `issued_token_type`
@@ -314,8 +317,8 @@ ADR 0002.
 1. **Token endpoint errors (RFC 6749 section 5.2).** The token endpoint,
    and only it, answers with the OAuth error body (`error`,
    `error_description`; `invalid_request`, `invalid_client`,
-   `invalid_grant`, `unsupported_grant_type`, `invalid_target`,
-   `access_denied`), status 400, or 401 for `invalid_client`. Every other
+   `invalid_grant`, `unsupported_grant_type`, `invalid_target`),
+   status 400, or 401 for `invalid_client`. Every other
    endpoint keeps problem+json (Decision 46). Supersedes ADR 0002
    addendum item 3.
 2. **Authorization server metadata (RFC 8414).** Serve
