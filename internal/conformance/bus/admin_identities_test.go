@@ -122,3 +122,125 @@ func TestAdminIdentitiesResetAndResetCredential(t *testing.T) {
 		}
 	})
 }
+
+type registryState struct {
+	identities map[string]ab2store.Identity
+	bindings   []ab2store.HumanBinding
+	users      []ab2store.Reference
+	admins     []ab2store.Reference
+}
+
+func readRegistry(t *testing.T, h *harness) registryState {
+	t.Helper()
+	st := registryState{identities: map[string]ab2store.Identity{}}
+	h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+		ids, err := tx.ListIdentities(ctx)
+		if err != nil {
+			return err
+		}
+		for _, id := range ids {
+			st.identities[id.Name] = id
+			if id.Kind == ab2store.IdentityHuman {
+				b, err := tx.HumanBinding(ctx, id.Name)
+				if err != nil {
+					return err
+				}
+				st.bindings = append(st.bindings, b)
+			}
+		}
+		if st.users, err = tx.ListReferences(ctx, ab2store.ListUsers); err != nil {
+			return err
+		}
+		st.admins, err = tx.ListReferences(ctx, ab2store.ListAdmins)
+		return err
+	})
+	return st
+}
+
+func idRefs(t *testing.T, refs []ab2store.Reference, want ...string) {
+	t.Helper()
+	if len(refs) != len(want) {
+		t.Fatalf("refs = %+v, want identity refs %v", refs, want)
+	}
+	for i, r := range refs {
+		if r.Kind != ab2store.RefIdentity || r.Value != want[i] {
+			t.Fatalf("refs = %+v, want identity refs %v", refs, want)
+		}
+	}
+}
+
+func TestResetScopesHumans(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx := context.Background()
+		h := newHarness(t, e, harnessOptions{})
+		adm := h.admin("adm").(ab2bus.Admin)
+		h.human("eric@corp.example")
+		h.human("kim@corp.example")
+		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+			for _, r := range []ab2store.Reference{
+				{List: ab2store.ListUsers, Kind: ab2store.RefGroup, Issuer: "corp", Value: "pai-users", CreatedAt: h.core.NowMs()},
+				{List: ab2store.ListAdmins, Kind: ab2store.RefGroup, Issuer: "corp", Value: "pai-admins", CreatedAt: h.core.NowMs()},
+				{List: ab2store.ListAdmins, Kind: ab2store.RefIdentity, Value: "adm", CreatedAt: h.core.NowMs()},
+			} {
+				if _, err := tx.AddReference(ctx, r); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		before := readRegistry(t, h)
+
+		// data keeps identities, bindings and both lists.
+		if err := adm.Reset(ctx, ab2bus.ResetInput{Scope: ab2bus.ResetData}); err != nil {
+			t.Fatal(err)
+		}
+		after := readRegistry(t, h)
+		if len(after.identities) != 3 || len(after.bindings) != 2 || len(after.users) != 1 || len(after.admins) != 2 {
+			t.Fatalf("data reset changed the registry: before %+v after %+v", before, after)
+		}
+
+		// everything leaves the caller, no bindings, no users, admins exactly {identity adm}; twice.
+		for i := 0; i < 2; i++ {
+			if err := adm.Reset(ctx, ab2bus.ResetInput{Scope: ab2bus.ResetEverything}); err != nil {
+				t.Fatalf("everything #%d: %v", i, err)
+			}
+			st := readRegistry(t, h)
+			if len(st.identities) != 1 || !st.identities["adm"].Admin || len(st.bindings) != 0 || len(st.users) != 0 {
+				t.Fatalf("everything #%d: %+v", i, st)
+			}
+			idRefs(t, st.admins, "adm")
+		}
+	})
+}
+
+// TestResetScopesHumansCallerKim: the caller is a human whose flag came only
+// from a group reference (Decision 12): after everything she remains, with
+// her binding, and the lists are exactly {admins identity kim}.
+func TestResetScopesHumansCallerKim(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx := context.Background()
+		h := newHarness(t, e, harnessOptions{})
+		h.human("eric@corp.example")
+		h.human("kim@corp.example")
+		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+			if _, err := tx.AddReference(ctx, ab2store.Reference{List: ab2store.ListAdmins, Kind: ab2store.RefGroup, Issuer: "corp", Value: "pai-admins", CreatedAt: h.core.NowMs()}); err != nil {
+				return err
+			}
+			if _, err := tx.AddReference(ctx, ab2store.Reference{List: ab2store.ListUsers, Kind: ab2store.RefGroup, Issuer: "corp", Value: "pai-users", CreatedAt: h.core.NowMs()}); err != nil {
+				return err
+			}
+			return tx.SetAdmin(ctx, "kim@corp.example", true)
+		})
+		kim := newBus(h, "kim@corp.example").(ab2bus.Admin)
+		for i := 0; i < 2; i++ {
+			if err := kim.Reset(ctx, ab2bus.ResetInput{Scope: ab2bus.ResetEverything}); err != nil {
+				t.Fatalf("everything #%d: %v", i, err)
+			}
+			st := readRegistry(t, h)
+			if len(st.identities) != 1 || !st.identities["kim@corp.example"].Admin || len(st.bindings) != 1 || st.bindings[0].Value != "kim@corp.example" || len(st.users) != 0 {
+				t.Fatalf("everything #%d: %+v", i, st)
+			}
+			idRefs(t, st.admins, "kim@corp.example")
+		}
+	})
+}

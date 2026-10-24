@@ -14,7 +14,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
-const adminSubcommands = "users and admins (add, remove, list), reset-credential, create-identity, enrollment (create, list, revoke)"
+const adminSubcommands = "users and admins (add, remove, list), reset-credential, create-identity, create-human, enrollment (create, list, revoke)"
 
 const makeAdminReplaced = "make-admin was replaced by: admins add -identity NAME (admins remove -identity NAME)"
 
@@ -79,6 +79,8 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 		run, code, done = resetCredentialCommand(subArgs, stdout, stderr)
 	case "create-identity":
 		run, code, done = createIdentityCommand(subArgs, stdout, stderr)
+	case "create-human":
+		run, code, done = createHumanCommand(subArgs, stdout, stderr)
 	case "enrollment":
 		run, code, done = enrollmentCommand(subArgs, stdout, stderr)
 	default:
@@ -222,6 +224,31 @@ func createIdentityCommand(args []string, stdout, stderr io.Writer) (adminAction
 	return func(ctx context.Context, e hostEnv, w io.Writer) error {
 		s := e.Svc
 		created, err := s.CreateIdentity(ctx, name)
+		if err != nil {
+			return err
+		}
+		if created {
+			_, _ = fmt.Fprintf(w, "%s created\n", name)
+		} else {
+			_, _ = fmt.Fprintf(w, "%s already exists\n", name)
+		}
+		return nil
+	}, 0, false
+}
+
+func createHumanCommand(args []string, stdout, stderr io.Writer) (adminAction, int, bool) {
+	fs, buf := subFlags("create-human")
+	pos, code, done := parseInterleaved(fs, buf, args, stdout, stderr)
+	if done {
+		return nil, code, true
+	}
+	if len(pos) != 1 {
+		_, _ = fmt.Fprintln(stderr, "usage: agentbus2 server admin create-human EMAIL")
+		return nil, 2, true
+	}
+	email := pos[0]
+	return func(ctx context.Context, e hostEnv, w io.Writer) error {
+		name, created, err := e.Svc.CreateIdentityByEmail(ctx, email)
 		if err != nil {
 			return err
 		}

@@ -91,6 +91,9 @@ func (s Service) registerTx(ctx context.Context, tx store.Tx, mode Mode, in Regi
 	}
 	var existing []store.PublicKey
 	if exists {
+		if id.Kind == store.IdentityHuman {
+			return core.E(bus.CodeForbidden, "identity %q is a human; humans sign in through the corporate provider", in.Identity)
+		}
 		if existing, err = tx.PublicKeys(ctx, in.Identity); err != nil {
 			return err
 		}
@@ -172,6 +175,24 @@ func createWithGeneral(ctx context.Context, tx store.Tx, name string, now int64)
 		return err
 	}
 	return tx.Subscribe(ctx, name, gen.ID, seq, now)
+}
+
+// createHumanWithGeneral creates the human identity row with its binding and
+// subscribes it to general at the current MaxSeq. Any error must roll the
+// transaction back: CreateHuman inserts the identity before the binding.
+func createHumanWithGeneral(ctx context.Context, tx store.Tx, b store.HumanBinding, now int64) error {
+	if err := tx.CreateHuman(ctx, b, now); err != nil {
+		return err
+	}
+	gen, err := tx.ChannelByName(ctx, channels.GeneralChannel)
+	if err != nil {
+		return err
+	}
+	seq, err := tx.MaxSeq(ctx)
+	if err != nil {
+		return err
+	}
+	return tx.Subscribe(ctx, b.Identity, gen.ID, seq, now)
 }
 
 // RegisterLocal creates a keyless identity row with its general

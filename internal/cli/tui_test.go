@@ -20,6 +20,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/profile"
 	"github.com/ericfitz/agentbus2/internal/server/cmd"
+	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/tui"
 )
 
@@ -329,5 +330,33 @@ func TestRunTUIHostnameFallback(t *testing.T) {
 	tuiSessionUp(t, sam.Bus, "eric/tui")
 	if code := r.quit(t); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, r.stderr.String())
+	}
+}
+
+// TestRunTUIOSUserWithKeys: an OS-login identity that holds keys cannot be
+// the TUI's human identity; exit 2 names the identity and the -identity flag.
+func TestRunTUIOSUserWithKeys(t *testing.T) {
+	prev := currentUser
+	currentUser = func() (*user.User, error) { return &user.User{Username: "eric"}, nil }
+	t.Cleanup(func() { currentUser = prev })
+	e := newTestEnv(t)
+	e.writeProfile(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}) // no identity
+	c := e.conn(t, "eric")
+	k, err := keys.Generate(keys.EdDSA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, _ := keys.MarshalPublic(k.Public())
+	kid, _ := keys.KID(k.Public())
+	err = c.Core.Store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
+		return tx.PutPublicKey(ctx, store.PublicKey{Identity: "eric", KID: kid, Algorithm: string(keys.EdDSA), Key: der, CreatedAt: 1})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out, errb syncBuf
+	code := RunTUI(context.Background(), nil, e.Environ, strings.NewReader(""), &out, &errb)
+	if code != 2 || !strings.Contains(errb.String(), `identity "eric" holds keys`) || !strings.Contains(errb.String(), "pass -identity") {
+		t.Fatalf("code %d stderr %q, want 2 and the holds-keys error", code, errb.String())
 	}
 }

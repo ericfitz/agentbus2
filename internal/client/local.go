@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/bus/remote"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/channels"
@@ -80,7 +81,17 @@ func openLocal(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 	if err := (channels.Service{Core: c}).EnsureGeneral(ctx); err != nil {
 		return nil, fmt.Errorf("creating the general channel: %w", err)
 	}
-	if err := (identities.Service{Core: c}).RegisterLocal(ctx, r.Identity); err != nil {
+	ids := identities.Service{Core: c}
+	if o.HumanIdentity && r.IdentitySource == "os-user" {
+		// The TUI's OS-login identity is a human (spec 4.4); an identity the
+		// user named is never turned human.
+		if err := ids.RegisterLocalHuman(ctx, r.Identity); err != nil {
+			if bus.CodeOf(err) == bus.CodeConflict {
+				return nil, resolveErr(fmt.Errorf("identity %q holds keys, so it cannot be the TUI's human identity; pass -identity", r.Identity))
+			}
+			return nil, fmt.Errorf("registering %q: %w", r.Identity, err)
+		}
+	} else if err := ids.RegisterLocal(ctx, r.Identity); err != nil {
 		return nil, fmt.Errorf("registering %q: %w", r.Identity, err)
 	}
 

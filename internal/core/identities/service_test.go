@@ -1272,3 +1272,221 @@ func TestEnsureIdentity(t *testing.T) {
 		t.Fatal("EnsureIdentity accepted an invalid name")
 	}
 }
+
+func identityOf(t *testing.T, s Service, name string) store.Identity {
+	t.Helper()
+	var id store.Identity
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		id, err = tx.Identity(ctx, name)
+		return err
+	})
+	return id
+}
+
+func bindingOf(t *testing.T, s Service, name string) store.HumanBinding {
+	t.Helper()
+	var b store.HumanBinding
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		b, err = tx.HumanBinding(ctx, name)
+		return err
+	})
+	return b
+}
+
+func TestCreateIdentityByEmail(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	id, created, err := s.CreateIdentityByEmail(ctx, "Eric@Corp.Example")
+	if err != nil || id != "eric@corp.example" || !created {
+		t.Fatalf("first = %q, %v, %v", id, created, err)
+	}
+	id, created, err = s.CreateIdentityByEmail(ctx, " eric@corp.example ")
+	if err != nil || id != "eric@corp.example" || created {
+		t.Fatalf("second = %q, %v, %v", id, created, err)
+	}
+	if got := identityOf(t, s, id); got.Kind != store.IdentityHuman || got.Admin {
+		t.Fatalf("identity = %+v", got)
+	}
+	if b := bindingOf(t, s, id); b.Issuer != "" || b.ProviderSubject != "" || b.Value != id || b.ClaimType != store.ClaimEmail {
+		t.Fatalf("binding = %+v", b)
+	}
+	if n := generalSubscriptions(t, s, id); n != 1 {
+		t.Fatalf("general subscriptions = %d", n)
+	}
+
+	if _, err := s.CreateIdentity(ctx, "pat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, created, err := s.CreateIdentityByEmail(ctx, "pat@x"); err != nil || !created {
+		t.Fatalf("pat@x = %v, %v", created, err)
+	}
+	if _, err := s.CreateIdentity(ctx, "kim@corp.example"); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err = s.CreateIdentityByEmail(ctx, "kim@corp.example")
+	wantCode(t, err, bus.CodeConflict)
+	wantDetail(t, err, `identity "kim@corp.example" is an agent`)
+	for _, bad := range []string{"not-an-email", "", "everyone", "a@b@c"} {
+		_, _, err = s.CreateIdentityByEmail(ctx, bad)
+		wantCode(t, err, bus.CodeValidation)
+	}
+}
+
+func TestCreateIdentityByEmailAs(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	for _, n := range []string{"root", "pat"} {
+		if err := s.RegisterLocal(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.MakeAdmin(ctx, "root", true); err != nil {
+		t.Fatal(err)
+	}
+	_, _, err := s.CreateIdentityByEmailAs(ctx, "pat", "a@b.c", "k1")
+	wantCode(t, err, bus.CodeForbidden)
+	id, created, err := s.CreateIdentityByEmailAs(ctx, "root", "A@b.c", "k1")
+	if err != nil || id != "a@b.c" || !created {
+		t.Fatalf("first = %q %v %v", id, created, err)
+	}
+	// The same key replays the first answer; a new key sees the existing row.
+	id, created, err = s.CreateIdentityByEmailAs(ctx, "root", "A@b.c", "k1")
+	if err != nil || id != "a@b.c" || !created {
+		t.Fatalf("replay = %q %v %v", id, created, err)
+	}
+	if _, created, err = s.CreateIdentityByEmailAs(ctx, "root", "a@b.c", "k2"); err != nil || created {
+		t.Fatalf("second key = %v %v", created, err)
+	}
+	_, _, err = s.CreateIdentityByEmailAs(ctx, "root", "nope", "k3")
+	wantCode(t, err, bus.CodeValidation)
+}
+
+func TestLookupHumanByEmail(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	if _, _, err := s.CreateIdentityByEmail(ctx, "eric@corp.example"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.LookupHumanByEmail(ctx, " ERIC@corp.example")
+	if err != nil || got != "eric@corp.example" {
+		t.Fatalf("lookup = %q, %v", got, err)
+	}
+	_, err = s.LookupHumanByEmail(ctx, "nobody@corp.example")
+	wantCode(t, err, bus.CodeNotFound)
+	if _, err := s.CreateIdentity(ctx, "agent@corp.example"); err != nil {
+		t.Fatal(err)
+	}
+	_, err = s.LookupHumanByEmail(ctx, "agent@corp.example")
+	wantCode(t, err, bus.CodeNotFound)
+	_, err = s.LookupHumanByEmail(ctx, "bad")
+	wantCode(t, err, bus.CodeValidation)
+}
+
+func TestRegisterRefusesHuman(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	if _, _, err := s.CreateIdentityByEmail(ctx, "eric@corp.example"); err != nil {
+		t.Fatal(err)
+	}
+	tok, row := newToken(t, s, TokenInput{})
+	for _, in := range []RegisterInput{
+		{Identity: "eric@corp.example", Key: genKey(t)},
+		{Identity: "eric@corp.example", Key: genKey(t), EnrollmentToken: tok},
+	} {
+		_, err := s.Register(ctx, ModeOpen, in)
+		wantCode(t, err, bus.CodeForbidden)
+		wantDetail(t, err, `identity "eric@corp.example" is a human; humans sign in through the corporate provider`)
+	}
+	_, err := s.Register(ctx, ModeEnrollment, RegisterInput{Identity: "eric@corp.example", Key: genKey(t)})
+	wantCode(t, err, bus.CodeForbidden)
+	wantDetail(t, err, "is a human")
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		ks, err := tx.PublicKeys(ctx, "eric@corp.example")
+		if err != nil || len(ks) != 0 {
+			t.Fatalf("keys = %v, %v", ks, err)
+		}
+		return nil
+	})
+	if got := tokenRow(t, s, row.ID); got.UsesLeft != row.UsesLeft {
+		t.Fatalf("token consumed: %+v", got)
+	}
+}
+
+func TestResetCredentialHumanClearsSubject(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	if _, _, err := s.CreateIdentityByEmail(ctx, "eric@corp.example"); err != nil {
+		t.Fatal(err)
+	}
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		return tx.SetHumanSubject(ctx, "eric@corp.example", "https://idp.example", "sub-1")
+	})
+	n, err := s.ResetCredential(ctx, "eric@corp.example")
+	if err != nil || n != 1 {
+		t.Fatalf("reset = %d, %v", n, err)
+	}
+	if b := bindingOf(t, s, "eric@corp.example"); b.Issuer != "" || b.ProviderSubject != "" || b.Value != "eric@corp.example" {
+		t.Fatalf("binding = %+v", b)
+	}
+	if n, err = s.ResetCredential(ctx, "eric@corp.example"); err != nil || n != 0 {
+		t.Fatalf("repeat = %d, %v", n, err)
+	}
+}
+
+func TestRegisterLocalHuman(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	for i := 0; i < 2; i++ {
+		if err := s.RegisterLocalHuman(ctx, "eric"); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := identityOf(t, s, "eric"); got.Kind != store.IdentityHuman {
+		t.Fatalf("kind = %q", got.Kind)
+	}
+	if n := generalSubscriptions(t, s, "eric"); n != 1 {
+		t.Fatalf("general subscriptions = %d", n)
+	}
+	// An existing keyless agent row is marked; one holding keys is conflict.
+	if err := s.RegisterLocal(ctx, "pat"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.RegisterLocalHuman(ctx, "pat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Register(ctx, ModeOpen, RegisterInput{Identity: "kim", Key: genKey(t)}); err != nil {
+		t.Fatal(err)
+	}
+	wantCode(t, s.RegisterLocalHuman(ctx, "kim"), bus.CodeConflict)
+	if got := identityOf(t, s, "kim"); got.Kind != store.IdentityAgent {
+		t.Fatalf("kim kind = %q", got.Kind)
+	}
+}
+
+// TestKeyStoringPathsRefuseHuman: Register is the only core path that stores
+// a key (PutPublicKey), and it refuses a human; create-identity and
+// reset-credential store none.
+func TestKeyStoringPathsRefuseHuman(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	if err := s.RegisterLocalHuman(ctx, "eric"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := s.Register(ctx, ModeOpen, RegisterInput{Identity: "eric", Key: genKey(t)})
+	wantCode(t, err, bus.CodeForbidden)
+	created, err := s.CreateIdentity(ctx, "eric")
+	if err != nil || created {
+		t.Fatalf("CreateIdentity = %v, %v", created, err)
+	}
+	if _, err := s.ResetCredential(ctx, "eric"); err != nil {
+		t.Fatal(err)
+	}
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		if ks, err := tx.PublicKeys(ctx, "eric"); err != nil || len(ks) != 0 {
+			t.Fatalf("keys = %v, %v", ks, err)
+		}
+		return nil
+	})
+}

@@ -5,9 +5,11 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
@@ -383,5 +385,67 @@ func TestLocalMaintenanceReleasesLockOnClose(t *testing.T) {
 	}
 	if !held {
 		t.Fatal("the maintenance lock is still held after the holder closed")
+	}
+}
+
+func identityKind(t *testing.T, c *Conn, name string) store.IdentityKind {
+	t.Helper()
+	var k store.IdentityKind
+	err := c.Core.Store.Read(context.Background(), func(ctx context.Context, tx store.Tx) error {
+		id, err := tx.Identity(ctx, name)
+		k = id.Kind
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return k
+}
+
+func TestOpenLocalMarksOSUserHuman(t *testing.T) {
+	e := localEnv(t)
+	human := func(o *Options) { o.Identity, o.FallbackIdentity, o.HumanIdentity = "", "eric", true }
+	for i := 0; i < 2; i++ { // a second open changes nothing
+		c := e.openAs(t, "", human)
+		if c.Resolved.IdentitySource != "os-user" {
+			t.Fatalf("source = %q", c.Resolved.IdentitySource)
+		}
+		if k := identityKind(t, c, "eric"); k != store.IdentityHuman {
+			t.Fatalf("OS-login kind = %q, want human", k)
+		}
+	}
+	// A named identity is never turned human, even for the TUI.
+	c := e.openAs(t, "agentx", func(o *Options) { o.FallbackIdentity, o.HumanIdentity = "eric", true })
+	if k := identityKind(t, c, "agentx"); k != store.IdentityAgent {
+		t.Fatalf("agentx kind = %q, want agent", k)
+	}
+	// Without HumanIdentity the fallback is an ordinary agent.
+	c = e.openAs(t, "", func(o *Options) { o.Identity, o.FallbackIdentity = "", "plain" })
+	if k := identityKind(t, c, "plain"); k != store.IdentityAgent {
+		t.Fatalf("plain kind = %q, want agent", k)
+	}
+}
+
+func TestOpenLocalOSUserWithKeysRefused(t *testing.T) {
+	e := localEnv(t)
+	c := e.openAs(t, "eric")
+	pub, err := keys.Generate(keys.EdDSA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	der, _ := keys.MarshalPublic(pub.Public())
+	kid, _ := keys.KID(pub.Public())
+	err = c.Core.Store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
+		return tx.PutPublicKey(ctx, store.PublicKey{Identity: "eric", KID: kid, Algorithm: string(keys.EdDSA), Key: der, CreatedAt: 1})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = c.Close()
+	o := Options{Environ: e.environ, Cwd: t.TempDir(), FallbackIdentity: "eric", HumanIdentity: true, PollInterval: 50 * time.Millisecond, Config: noMerge()}
+	_, err = Open(context.Background(), o)
+	var re *ResolveError
+	if !errors.As(err, &re) || !strings.Contains(err.Error(), `identity "eric" holds keys`) || !strings.Contains(err.Error(), "pass -identity") {
+		t.Fatalf("Open = %v, want a ResolveError naming eric", err)
 	}
 }

@@ -371,3 +371,35 @@ func TestAdminFlagSet(t *testing.T) {
 		t.Fatalf("unopenable store: code %d, want 1", code)
 	}
 }
+
+func TestAdminCreateHuman(t *testing.T) {
+	e := newAdminEnv(t)
+	code, out, _ := e.run("create-human", "Eric@Corp.Example")
+	if code != 0 || strings.TrimSpace(out) != "eric@corp.example created" {
+		t.Fatalf("first create: code %d out %q", code, out)
+	}
+	code, out, _ = e.run("create-human", "eric@corp.example")
+	if code != 0 || strings.TrimSpace(out) != "eric@corp.example already exists" {
+		t.Fatalf("second create: code %d out %q", code, out)
+	}
+	_, st := e.service()
+	id := readStore(t, st, func(ctx context.Context, tx store.Tx) (store.Identity, error) {
+		return tx.Identity(ctx, "eric@corp.example")
+	})
+	if id.Kind != store.IdentityHuman || id.Admin {
+		t.Fatalf("identity = %+v", id)
+	}
+	code, _, errOut := e.run("create-human", "bad")
+	if code != 1 || !strings.Contains(errOut, "one '@'") {
+		t.Fatalf("create-human bad: code %d stderr %q", code, errOut)
+	}
+	if code, _, _ := e.run("create-human"); code != 2 {
+		t.Fatalf("create-human without an argument: code %d, want 2", code)
+	}
+	if code, _, _ := e.run("create-identity", "kim@corp.example"); code != 0 {
+		t.Fatal("create-identity failed")
+	}
+	if code, _, errOut := e.run("create-human", "kim@corp.example"); code != 1 || !strings.Contains(errOut, "is an agent") {
+		t.Fatalf("create-human over an agent: code %d stderr %q", code, errOut)
+	}
+}

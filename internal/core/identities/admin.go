@@ -69,6 +69,25 @@ func resetCredential(ctx context.Context, tx store.Tx, name string) (int, error)
 	if err := requireRegistered(ctx, tx, name); err != nil {
 		return 0, err
 	}
+	id, err := tx.Identity(ctx, name)
+	if err != nil {
+		return 0, err
+	}
+	if id.Kind == store.IdentityHuman {
+		// A human holds no keys: the reset clears the recorded provider
+		// subject, so the next sign-in binds afresh (spec 6.3).
+		b, err := tx.HumanBinding(ctx, name)
+		if errors.Is(err, store.ErrNotFound) || (err == nil && b.ProviderSubject == "") {
+			return 0, nil
+		}
+		if err != nil {
+			return 0, err
+		}
+		if err := tx.SetHumanSubject(ctx, name, "", ""); err != nil {
+			return 0, err
+		}
+		return 1, nil
+	}
 	return tx.DeletePublicKeys(ctx, name)
 }
 
@@ -137,7 +156,9 @@ type resetPayload struct {
 // from v1 internal/bus/admin.go Reset). Scope data (or "") keeps identities,
 // keys, tokens and the signing key; everything also removes the other
 // identities with their keys and every token, keeping the caller and the
-// signing key. general is recreated and every remaining identity subscribed.
+// signing key; it also empties the users list and restarts the admins list as
+// exactly {identity caller} (Decision 12), while data touches neither list
+// nor any human binding. general is recreated and every remaining identity subscribed.
 //
 // State (Definition of Done D): a second run gives the same empty state; the
 // receipt is stored after the wipe, so the same key replays.
@@ -160,6 +181,11 @@ func (s Service) Reset(ctx context.Context, admin string, key string, scope bus.
 			}
 			if scope == bus.ResetEverything {
 				if err := tx.ResetRegistry(ctx, admin); err != nil {
+					return err
+				}
+				// Decision 12: the lists restart as exactly {admins
+				// identity admin}, so the caller stays an administrator.
+				if _, err := addReference(ctx, tx, store.Reference{List: store.ListAdmins, Kind: store.RefIdentity, Value: admin}, s.NowMs()); err != nil {
 					return err
 				}
 			}
