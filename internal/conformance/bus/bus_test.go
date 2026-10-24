@@ -139,7 +139,7 @@ func TestHarnessFaultStore(t *testing.T) {
 		runs := 0
 		err := h.store.Append(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
 			runs++
-			_, _, err := h.core.Append(ctx, tx, core.AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "x"})
+			_, _, err := h.core.Append(ctx, tx, core.AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: ab2store.IdentityAgent, Content: "x"})
 			return err
 		})
 		var max int64

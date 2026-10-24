@@ -39,7 +39,8 @@ func (s Service) Send(ctx context.Context, identity string, in bus.SendInput) (b
 	)
 	err := s.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {
 		res, replayed, size, chanID, kind = bus.SendResult{}, false, 0, 0, ""
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		who, err := s.RequireIdentity(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
 		// validateSendShape without the DM branch.
@@ -92,7 +93,7 @@ func (s Service) Send(ctx context.Context, identity string, in bus.SendInput) (b
 			}
 			ai := core.AppendInput{
 				ChannelID: ch.ID, Channel: ch.Name, Display: display, Kind: ch.Kind,
-				Sender: identity, SessionID: in.Session, Type: in.Type, Subject: subject,
+				Sender: identity, SenderKind: who.Kind, SessionID: in.Session, Type: in.Type, Subject: subject,
 				Content: in.Content, ReplyTo: in.ReplyTo, Metadata: metadata, Tags: tags,
 			}
 			n, err := s.EnvelopeSize(ai, identity)

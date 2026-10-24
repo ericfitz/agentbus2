@@ -35,7 +35,7 @@ func (b *Bus) GetMemory(ctx context.Context, id int64) (ab2bus.Message, error) {
 	if err := mtCheck(ctx, r, err, func(r *gen.GetMemoryResponse) bool { return r.JSON200 != nil }); err != nil {
 		return ab2bus.Message{}, err
 	}
-	return fromGenMessage(*r.JSON200), nil
+	return fromGenMessage(*r.JSON200)
 }
 
 func (b *Bus) Edit(ctx context.Context, in ab2bus.EditMemoryInput) (ab2bus.EditResult, error) {
@@ -63,7 +63,9 @@ func (b *Bus) Revisions(ctx context.Context, id int64) ([]ab2bus.Message, error)
 	}
 	out := make([]ab2bus.Message, len(*r.JSON200))
 	for i, m := range *r.JSON200 {
-		out[i] = fromGenMessage(m)
+		if out[i], err = fromGenMessage(m); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }

@@ -83,7 +83,7 @@ func (s Service) reclaimAbandoned(ctx context.Context, tx store.Tx, ch store.Cha
 			continue
 		}
 		t.Status, t.Owner, t.LeasedUntil = "pending", "", 0
-		if _, err := s.writeRevision(ctx, tx, ch, "", t, "reclaimed", fx); err != nil {
+		if _, err := s.writeRevision(ctx, tx, ch, "", store.IdentityAgent, t, "reclaimed", fx); err != nil {
 			return n, err
 		}
 		n++

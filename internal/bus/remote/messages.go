@@ -57,7 +57,9 @@ func (b *Bus) History(ctx context.Context, in ab2bus.HistoryInput) ([]ab2bus.Mes
 	}
 	out := make([]ab2bus.Message, len(*resp.JSON200))
 	for i, m := range *resp.JSON200 {
-		out[i] = fromGenMessage(m)
+		if out[i], err = fromGenMessage(m); err != nil {
+			return nil, err
+		}
 	}
 	return out, nil
 }
@@ -90,7 +92,11 @@ func (b *Bus) Search(ctx context.Context, in ab2bus.SearchInput) (ab2bus.SearchR
 		Hits: make([]ab2bus.SearchHit, len(resp.JSON200.Hits)),
 	}
 	for i, h := range resp.JSON200.Hits {
-		out.Hits[i] = ab2bus.SearchHit{Message: fromGenMessage(h.Message), Score: h.Score}
+		m, err := fromGenMessage(h.Message)
+		if err != nil {
+			return ab2bus.SearchResult{}, err
+		}
+		out.Hits[i] = ab2bus.SearchHit{Message: m, Score: h.Score}
 	}
 	return out, nil
 }

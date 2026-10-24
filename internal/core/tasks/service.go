@@ -92,8 +92,8 @@ func (s Service) ownerKnown(ctx context.Context, tx store.Tx) func(string) (bool
 // writeRevision tombstones t's live revision and appends the next one,
 // returning t with seq, Revision, UpdatedAt and UpdatedBy updated (v1
 // writeTaskRevision). It runs inside the caller's Store.Append transaction.
-// as is "" for the reclaim.
-func (s Service) writeRevision(ctx context.Context, tx store.Tx, ch store.Channel, as string, t task, typ string, fx *effects) (task, error) {
+// as is "" for the reclaim, which is marked agent: a system write.
+func (s Service) writeRevision(ctx context.Context, tx store.Tx, ch store.Channel, as string, kind store.IdentityKind, t task, typ string, fx *effects) (task, error) {
 	doc, err := taskContent(t.Task)
 	if err != nil {
 		return task{}, err
@@ -103,7 +103,7 @@ func (s Service) writeRevision(ctx context.Context, tx store.Tx, ch store.Channe
 		return task{}, core.FromStore(err)
 	}
 	seq, _, err := s.Append(ctx, tx, core.AppendInput{
-		ChannelID: ch.ID, Channel: ch.Name, Kind: store.KindTasks, Sender: as,
+		ChannelID: ch.ID, Channel: ch.Name, Kind: store.KindTasks, Sender: as, SenderKind: kind,
 		Type: typ, Subject: t.Subject, Content: doc, TaskRow: true,
 	})
 	if err != nil {

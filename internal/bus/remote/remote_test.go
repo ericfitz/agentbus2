@@ -173,15 +173,15 @@ func TestRemoteConvertRoundTrips(t *testing.T) {
 	mem := int64(9)
 	rev := int64(2)
 	m := ab2bus.Message{
-		Seq: 1, Channel: "c", Sender: "s", Session: "sess", Display: "d", CreatedAt: 5,
+		Seq: 1, Channel: "c", Sender: "s", SenderKind: ab2bus.IdentityHuman, Session: "sess", Display: "d", CreatedAt: 5,
 		Type: "t", Subject: "sub", Content: "body", ReplyTo: &reply,
 		Metadata: map[string]string{"k": "v"}, MemoryID: &mem, Revision: &rev,
 		Tags: []string{"a"}, MatchedTags: []string{"a"},
 	}
-	if got := fromGenMessage(toGenMessage(m)); !reflect.DeepEqual(got, m) {
+	if got, err := fromGenMessage(toGenMessage(m)); err != nil || !reflect.DeepEqual(got, m) {
 		t.Fatalf("message: %+v != %+v", got, m)
 	}
-	if got := fromGenMessage(toGenMessage(ab2bus.Message{Content: "x"})); got.Content != "x" || got.Session != "" || got.Tags != nil {
+	if got, err := fromGenMessage(toGenMessage(ab2bus.Message{Content: "x", SenderKind: ab2bus.IdentityAgent})); err != nil || got.Content != "x" || got.Session != "" || got.Tags != nil {
 		t.Fatalf("minimal message: %+v", got)
 	}
 	e := ab2bus.ACLEntry{Identity: "i", Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermAdmin}}

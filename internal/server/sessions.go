@@ -112,7 +112,7 @@ func (a *api) ListIdentities(ctx context.Context, _ gen.ListIdentitiesRequestObj
 	}
 	out := make(gen.ListIdentities200JSONResponse, 0, len(ids))
 	for _, i := range ids {
-		g := gen.Identity{Name: i.Name, Admin: i.Admin, Sessions: make([]gen.SessionInfo, 0, len(i.Sessions))}
+		g := gen.Identity{Name: i.Name, Kind: gen.IdentityKind(i.Kind), Admin: i.Admin, Sessions: make([]gen.SessionInfo, 0, len(i.Sessions))}
 		for _, s := range i.Sessions {
 			g.Sessions = append(g.Sessions, gen.SessionInfo{Id: s.ID, Identity: s.Identity, DisplayName: s.DisplayName, OpenedAt: s.OpenedAt})
 		}

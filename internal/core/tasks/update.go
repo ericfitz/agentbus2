@@ -240,13 +240,13 @@ func (s Service) Update(ctx context.Context, identity string, p bus.TaskPatch) (
 	)
 	err := s.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {
 		out, fx, replayed = bus.TaskUpdateResult{}, effects{}, false
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		who, err := s.RequireIdentity(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
-		var err error
 		replayed, err = s.WithReceipt(ctx, tx, identity, key, p, &out, func() error {
 			var err error
-			out, err = s.update(ctx, tx, identity, p, &fx)
+			out, err = s.update(ctx, tx, identity, who.Kind, p, &fx)
 			return err
 		})
 		return err
@@ -260,7 +260,7 @@ func (s Service) Update(ctx context.Context, identity string, p bus.TaskPatch) (
 	return out, nil
 }
 
-func (s Service) update(ctx context.Context, tx store.Tx, identity string, p bus.TaskPatch, fx *effects) (bus.TaskUpdateResult, error) {
+func (s Service) update(ctx context.Context, tx store.Tx, identity string, kind store.IdentityKind, p bus.TaskPatch, fx *effects) (bus.TaskUpdateResult, error) {
 	ch, err := s.taskChannelOf(ctx, tx, p.ID)
 	if err != nil {
 		return bus.TaskUpdateResult{}, err
@@ -285,7 +285,7 @@ func (s Service) update(ctx context.Context, tx store.Tx, identity string, p bus
 	if errors.As(err, &rc) {
 		// Corrupt equal sibling ranks: renumber them in this transaction, then
 		// redo the patch against the reloaded list.
-		if ts, err = s.rerankSiblings(ctx, tx, ch, identity, ts, rc.parent, fx); err != nil {
+		if ts, err = s.rerankSiblings(ctx, tx, ch, identity, kind, ts, rc.parent, fx); err != nil {
 			return bus.TaskUpdateResult{}, err
 		}
 		if cur = taskByID(ts, p.ID); cur == nil {
@@ -310,7 +310,7 @@ func (s Service) update(ctx context.Context, tx store.Tx, identity string, p bus
 			if err := s.rateCheck(identity, size, fx); err != nil {
 				return bus.TaskUpdateResult{}, err
 			}
-			marker, err := s.writeRevision(ctx, tx, ch, identity, *cur, "forced", fx)
+			marker, err := s.writeRevision(ctx, tx, ch, identity, kind, *cur, "forced", fx)
 			if err != nil {
 				return bus.TaskUpdateResult{}, err
 			}
@@ -343,7 +343,7 @@ func (s Service) update(ctx context.Context, tx store.Tx, identity string, p bus
 	if err := s.rateCheck(identity, size, fx); err != nil {
 		return bus.TaskUpdateResult{}, err
 	}
-	newTask, err := s.writeRevision(ctx, tx, ch, identity, patched, typ, fx)
+	newTask, err := s.writeRevision(ctx, tx, ch, identity, kind, patched, typ, fx)
 	if err != nil {
 		return bus.TaskUpdateResult{}, err
 	}

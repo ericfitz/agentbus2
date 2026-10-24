@@ -1090,7 +1090,7 @@ components:
           format: int64
     Message:
       type: object
-      required: [seq, channel, sender, display, created_at, type, subject, content]
+      required: [seq, channel, sender, sender_kind, display, created_at, type, subject, content]
       properties:
         seq:
           type: integer
@@ -1099,6 +1099,9 @@ components:
           type: string
         sender:
           type: string
+        sender_kind:
+          type: string
+          enum: [agent, human]
         session:
           type: string
         display:
@@ -1170,10 +1173,13 @@ components:
           format: int64
     Identity:
       type: object
-      required: [name, admin, sessions]
+      required: [name, kind, admin, sessions]
       properties:
         name:
           type: string
+        kind:
+          type: string
+          enum: [agent, human]
         admin:
           type: boolean
         sessions:

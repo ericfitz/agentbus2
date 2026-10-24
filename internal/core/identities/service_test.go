@@ -573,7 +573,7 @@ func fixture(t *testing.T, s Service) {
 		if err := tx.Subscribe(ctx, "kim", ch.ID, 0, startMs); err != nil {
 			return err
 		}
-		_, _, err = s.Append(ctx, tx, core.AppendInput{ChannelID: ch.ID, Channel: "dev", Kind: ch.Kind, Sender: "pat", Content: "hi"})
+		_, _, err = s.Append(ctx, tx, core.AppendInput{ChannelID: ch.ID, Channel: "dev", Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "hi"})
 		return err
 	})
 	if err != nil {

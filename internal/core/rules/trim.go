@@ -65,6 +65,11 @@ func EnvelopeUpperBound(m bus.Message, memoryKind bool) int {
 	// Seq and CreatedAt are always-present fields; the zero value already
 	// contributes one digit ("0") each, so add the rest of their worst-case width.
 	size += (upperBoundSeqDigits - 1) + (upperBoundCreatedAtDigits - 1)
+	// sender_kind is always present and sized as the longer kind, so a message
+	// from a human fits whatever the caller put in m.
+	if n := len(bus.IdentityHuman) - len(m.SenderKind); n > 0 {
+		size += n
+	}
 	if memoryKind {
 		size += len(`,"memory_id":`) + upperBoundSeqDigits
 		size += len(`,"revision":`) + upperBoundSeqDigits

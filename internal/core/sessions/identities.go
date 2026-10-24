@@ -29,7 +29,7 @@ func (s Service) Identities(ctx context.Context, identity string) ([]bus.Identit
 			if len(live) == 0 {
 				continue
 			}
-			info := bus.IdentityInfo{Name: id.Name, Admin: id.Admin}
+			info := bus.IdentityInfo{Name: id.Name, Kind: bus.IdentityKind(id.Kind), Admin: id.Admin}
 			for _, row := range live {
 				info.Sessions = append(info.Sessions, bus.SessionInfo{
 					ID: row.ID, Identity: row.Identity, DisplayName: row.DisplayName, OpenedAt: row.OpenedAt,

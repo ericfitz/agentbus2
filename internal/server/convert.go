@@ -18,7 +18,7 @@ func derefOr[T any](p *T) T {
 
 func toGenMessage(m bus.Message) gen.Message {
 	out := gen.Message{
-		Seq: m.Seq, Channel: m.Channel, Sender: m.Sender, Display: m.Display,
+		Seq: m.Seq, Channel: m.Channel, Sender: m.Sender, SenderKind: gen.MessageSenderKind(m.SenderKind), Display: m.Display,
 		CreatedAt: m.CreatedAt, Type: m.Type, Subject: m.Subject, Content: m.Content,
 		ReplyTo: m.ReplyTo, MemoryId: m.MemoryID, Revision: m.Revision,
 	}

@@ -103,6 +103,42 @@ func (e CreateChannelRequestKind) Valid() bool {
 	}
 }
 
+// Defines values for IdentityKind.
+const (
+	IdentityKindAgent IdentityKind = "agent"
+	IdentityKindHuman IdentityKind = "human"
+)
+
+// Valid indicates whether the value is a known member of the IdentityKind enum.
+func (e IdentityKind) Valid() bool {
+	switch e {
+	case IdentityKindAgent:
+		return true
+	case IdentityKindHuman:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for MessageSenderKind.
+const (
+	MessageSenderKindAgent MessageSenderKind = "agent"
+	MessageSenderKindHuman MessageSenderKind = "human"
+)
+
+// Valid indicates whether the value is a known member of the MessageSenderKind enum.
+func (e MessageSenderKind) Valid() bool {
+	switch e {
+	case MessageSenderKindAgent:
+		return true
+	case MessageSenderKindHuman:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ProblemCode.
 const (
 	Conflict        ProblemCode = "conflict"
@@ -386,9 +422,13 @@ type Gap struct {
 // Identity defines model for Identity.
 type Identity struct {
 	Admin    bool          `json:"admin"`
+	Kind     IdentityKind  `json:"kind"`
 	Name     string        `json:"name"`
 	Sessions []SessionInfo `json:"sessions"`
 }
+
+// IdentityKind defines model for Identity.Kind.
+type IdentityKind string
 
 // JWK defines model for JWK.
 type JWK map[string]interface{}
@@ -410,12 +450,16 @@ type Message struct {
 	ReplyTo     *int64             `json:"reply_to,omitempty"`
 	Revision    *int64             `json:"revision,omitempty"`
 	Sender      string             `json:"sender"`
+	SenderKind  MessageSenderKind  `json:"sender_kind"`
 	Seq         int64              `json:"seq"`
 	Session     *string            `json:"session,omitempty"`
 	Subject     string             `json:"subject"`
 	Tags        *[]string          `json:"tags,omitempty"`
 	Type        string             `json:"type"`
 }
+
+// MessageSenderKind defines model for Message.SenderKind.
+type MessageSenderKind string
 
 // Notice defines model for Notice.
 type Notice struct {

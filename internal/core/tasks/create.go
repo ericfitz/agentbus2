@@ -31,13 +31,13 @@ func (s Service) Create(ctx context.Context, identity string, in bus.TaskCreateI
 	)
 	err := s.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {
 		out, fx, replayed = bus.Task{}, effects{}, false
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		who, err := s.RequireIdentity(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
-		var err error
 		replayed, err = s.WithReceipt(ctx, tx, identity, key, in, &out, func() error {
 			var err error
-			out, err = s.create(ctx, tx, identity, in, &fx)
+			out, err = s.create(ctx, tx, identity, who.Kind, in, &fx)
 			return err
 		})
 		return err
@@ -51,7 +51,7 @@ func (s Service) Create(ctx context.Context, identity string, in bus.TaskCreateI
 	return out, nil
 }
 
-func (s Service) create(ctx context.Context, tx store.Tx, identity string, in bus.TaskCreateInput, fx *effects) (bus.Task, error) {
+func (s Service) create(ctx context.Context, tx store.Tx, identity string, kind store.IdentityKind, in bus.TaskCreateInput, fx *effects) (bus.Task, error) {
 	ch, err := s.taskChannel(ctx, tx, in.Channel)
 	if err != nil {
 		return bus.Task{}, err
@@ -73,7 +73,7 @@ func (s Service) create(ctx context.Context, tx store.Tx, identity string, in bu
 	rank, err := placeRank(ts, 0, in.Parent, in.Before, in.After)
 	var rc *rankCollision
 	if errors.As(err, &rc) {
-		if ts, err = s.rerankSiblings(ctx, tx, ch, identity, ts, rc.parent, fx); err != nil {
+		if ts, err = s.rerankSiblings(ctx, tx, ch, identity, kind, ts, rc.parent, fx); err != nil {
 			return bus.Task{}, err
 		}
 		rank, err = placeRank(ts, 0, in.Parent, in.Before, in.After)
@@ -94,7 +94,7 @@ func (s Service) create(ctx context.Context, tx store.Tx, identity string, in bu
 		return bus.Task{}, err
 	}
 	seq, _, err := s.Append(ctx, tx, core.AppendInput{
-		ChannelID: ch.ID, Channel: ch.Name, Kind: store.KindTasks, Sender: identity,
+		ChannelID: ch.ID, Channel: ch.Name, Kind: store.KindTasks, Sender: identity, SenderKind: kind,
 		Subject: t.Subject, Content: doc, TaskRow: true,
 	})
 	if err != nil {
@@ -116,7 +116,7 @@ func (s Service) create(ctx context.Context, tx store.Tx, identity string, in bu
 // returns the reloaded list. Only tasks whose rank changes get a "reranked"
 // revision. It repairs an already corrupt list and is not rate-charged; the
 // revisions carry the caller's name though it may not own the task.
-func (s Service) rerankSiblings(ctx context.Context, tx store.Tx, ch store.Channel, as string, ts []task, parent int64, fx *effects) ([]task, error) {
+func (s Service) rerankSiblings(ctx context.Context, tx store.Tx, ch store.Channel, as string, kind store.IdentityKind, ts []task, parent int64, fx *effects) ([]task, error) {
 	var sib []task
 	for _, t := range ts {
 		if effectiveParent(ts, t.Parent) == parent {
@@ -135,7 +135,7 @@ func (s Service) rerankSiblings(ctx context.Context, tx store.Tx, ch store.Chann
 			continue
 		}
 		t.Rank = rank
-		if _, err := s.writeRevision(ctx, tx, ch, as, t, "reranked", fx); err != nil {
+		if _, err := s.writeRevision(ctx, tx, ch, as, kind, t, "reranked", fx); err != nil {
 			return nil, err
 		}
 	}

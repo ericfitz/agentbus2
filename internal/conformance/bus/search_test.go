@@ -45,7 +45,7 @@ func (h *harness) appendRow(ch ab2store.Channel, r searchRow) int64 {
 	err := h.raw.Append(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
 		var err error
 		seq, _, err = h.core.Append(ctx, tx, core.AppendInput{
-			ChannelID: ch.ID, Channel: ch.Name, Kind: ch.Kind, Sender: sender,
+			ChannelID: ch.ID, Channel: ch.Name, Kind: ch.Kind, Sender: sender, SenderKind: ab2store.IdentityAgent,
 			Subject: r.subject, Content: r.content, ReplyTo: reply, Tags: r.tags,
 			TaskRow: ch.Kind == ab2store.KindTasks,
 		})
@@ -166,7 +166,7 @@ func TestSearchTextCapKeepsNewestMatches(t *testing.T) {
 		err := h.raw.Append(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
 			for i := 0; i <= rules.SearchPageMax; i++ {
 				seq, _, err := h.core.Append(ctx, tx, core.AppendInput{
-					ChannelID: ch.ID, Channel: ch.Name, Kind: ch.Kind, Sender: "pat", Content: "rate " + strconv.Itoa(i),
+					ChannelID: ch.ID, Channel: ch.Name, Kind: ch.Kind, Sender: "pat", SenderKind: ab2store.IdentityAgent, Content: "rate " + strconv.Itoa(i),
 				})
 				if err != nil {
 					return err

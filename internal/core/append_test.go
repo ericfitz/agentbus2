@@ -26,7 +26,7 @@ func TestAppendMemoryKindSetsMemoryAndAccess(t *testing.T) {
 	c, _ := newTestCore(t, nil)
 	mustIdentity(t, c, "pat", false)
 	ch := mustChannel(t, c, store.ChannelCreate{Name: "mem", Kind: store.KindMemory, Creator: "pat"})
-	seq, memID, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "x"})
+	seq, memID, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "x"})
 	if err != nil || memID == nil || *memID != seq {
 		t.Fatalf("Append = %d, %v, %v; want memory_id == seq", seq, memID, err)
 	}
@@ -61,7 +61,7 @@ func TestAppendTaskRowSkipsAccess(t *testing.T) {
 			c, _ := newTestCore(t, nil)
 			mustIdentity(t, c, "pat", false)
 			ch := mustChannel(t, c, store.ChannelCreate{Name: "mem", Kind: store.KindMemory, Creator: "pat"})
-			seq, memID, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: store.KindMemory, Sender: "pat", Content: "{}", TaskRow: tc.taskRow})
+			seq, memID, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: store.KindMemory, Sender: "pat", SenderKind: store.IdentityAgent, Content: "{}", TaskRow: tc.taskRow})
 			if err != nil || memID == nil || *memID != seq {
 				t.Fatalf("Append = %d, %v, %v; want memory_id == seq either way", seq, memID, err)
 			}
@@ -78,7 +78,7 @@ func TestAppendTaskRowSkipsAccess(t *testing.T) {
 	c, _ := newTestCore(t, nil)
 	mustIdentity(t, c, "pat", false)
 	ch := mustChannel(t, c, store.ChannelCreate{Name: "todo", Kind: store.KindTasks, Creator: "pat"})
-	seq, memID, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "{}", TaskRow: true})
+	seq, memID, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "{}", TaskRow: true})
 	if err != nil || memID == nil || *memID != seq {
 		t.Fatalf("tasks-kind Append = %d, %v, %v", seq, memID, err)
 	}
@@ -88,11 +88,11 @@ func TestAppendOrdinaryHasNoMemory(t *testing.T) {
 	c, _ := newTestCore(t, nil)
 	mustIdentity(t, c, "pat", false)
 	ch := mustChannel(t, c, store.ChannelCreate{Name: "chat", Kind: store.KindOrdinary, Creator: "pat"})
-	seq, memID, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "hi", Tags: []string{"a"}})
+	seq, memID, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "hi", Tags: []string{"a"}})
 	if err != nil || memID != nil || seq == 0 {
 		t.Fatalf("Append = %d, %v, %v", seq, memID, err)
 	}
-	if _, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: store.Kind("dm"), Sender: "pat", Content: "x"}); bus.CodeOf(err) != bus.CodeInternal {
+	if _, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: store.Kind("dm"), Sender: "pat", SenderKind: store.IdentityAgent, Content: "x"}); bus.CodeOf(err) != bus.CodeInternal {
 		// An unknown kind is a programming error; it must not append silently as ordinary.
 		t.Errorf("unknown kind = %v, want internal", err)
 	}
@@ -105,7 +105,7 @@ func TestAppendUnknownKindWritesNothing(t *testing.T) {
 	mustIdentity(t, c, "pat", false)
 	ch := mustChannel(t, c, store.ChannelCreate{Name: "chat", Kind: store.KindOrdinary, Creator: "pat"})
 	err := c.Store.Append(context.Background(), func(ctx context.Context, tx store.Tx) error {
-		if _, _, e := c.Append(ctx, tx, AppendInput{ChannelID: ch.ID, Kind: store.Kind("dm"), Sender: "pat", Content: "x"}); bus.CodeOf(e) != bus.CodeInternal {
+		if _, _, e := c.Append(ctx, tx, AppendInput{ChannelID: ch.ID, Kind: store.Kind("dm"), Sender: "pat", SenderKind: store.IdentityAgent, Content: "x"}); bus.CodeOf(e) != bus.CodeInternal {
 			t.Errorf("unknown kind = %v, want internal", e)
 		}
 		return nil // commit anyway
@@ -124,7 +124,7 @@ func TestAppendUnknownKindWritesNothing(t *testing.T) {
 
 func TestAppendRejectsOversizedEnvelope(t *testing.T) {
 	c, _ := newTestCore(t, func(cfg *Config) { cfg.MaxMessageKiB = 1 })
-	in := AppendInput{Channel: "chat", Kind: store.KindOrdinary, Sender: "pat", Content: strings.Repeat("x", 2048)}
+	in := AppendInput{Channel: "chat", Kind: store.KindOrdinary, Sender: "pat", SenderKind: store.IdentityAgent, Content: strings.Repeat("x", 2048)}
 	_, err := c.EnvelopeSize(in, "pat")
 	if bus.CodeOf(err) != bus.CodeValidation || !strings.Contains(err.Error(), "envelope exceeds max_message_kib (1 KiB)") {
 		t.Fatalf("EnvelopeSize = %v, want validation envelope exceeds max_message_kib (1 KiB)", err)
@@ -147,7 +147,7 @@ func TestAppendRejectsOversizedEnvelope(t *testing.T) {
 // (an unresolved display falls back to the sender on the wire).
 func TestEnvelopeSizeCountsDisplay(t *testing.T) {
 	c, _ := newTestCore(t, func(cfg *Config) { cfg.MaxMessageKiB = 1 })
-	in := AppendInput{Channel: "chat", Kind: store.KindOrdinary, Sender: "pat", Content: strings.Repeat("x", 600)}
+	in := AppendInput{Channel: "chat", Kind: store.KindOrdinary, Sender: "pat", SenderKind: store.IdentityAgent, Content: strings.Repeat("x", 600)}
 	base, err := c.EnvelopeSize(in, "pat")
 	if err != nil {
 		t.Fatal(err)
@@ -175,15 +175,15 @@ func TestAppendRejectsUnknownReplyTo(t *testing.T) {
 	mustIdentity(t, c, "pat", false)
 	ch := mustChannel(t, c, store.ChannelCreate{Name: "chat", Kind: store.KindOrdinary, Creator: "pat"})
 	missing := int64(999)
-	_, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "x", ReplyTo: &missing})
+	_, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "x", ReplyTo: &missing})
 	if bus.CodeOf(err) != bus.CodeNotFound || !strings.Contains(err.Error(), "reply_to 999 does not exist") {
 		t.Fatalf("err = %v, want not_found reply_to 999 does not exist", err)
 	}
-	first, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "x"})
+	first, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "y", ReplyTo: &first}); err != nil {
+	if _, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "y", ReplyTo: &first}); err != nil {
 		t.Fatalf("reply to an existing message: %v", err)
 	}
 }
@@ -255,7 +255,7 @@ func TestMemoryHelpers(t *testing.T) {
 	c, _ := newTestCore(t, nil)
 	mustIdentity(t, c, "pat", false)
 	ch := mustChannel(t, c, store.ChannelCreate{Name: "mem", Kind: store.KindMemory, Creator: "pat"})
-	seq, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "x"})
+	seq, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -295,14 +295,14 @@ func TestTombstoneMemoryDropsAccessRow(t *testing.T) {
 	c, _ := newTestCore(t, nil)
 	mustIdentity(t, c, "pat", false)
 	ch := mustChannel(t, c, store.ChannelCreate{Name: "mem", Kind: store.KindMemory, Creator: "pat"})
-	seq1, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "x"})
+	seq1, _, err := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	var seq2 int64
 	err = c.Store.Append(context.Background(), func(ctx context.Context, tx store.Tx) error {
 		var e error
-		if seq2, e = tx.AppendMessage(ctx, store.NewMessage{ChannelID: ch.ID, Sender: "pat", CreatedAt: c.NowMs(), Content: "y"}); e != nil {
+		if seq2, e = tx.AppendMessage(ctx, store.NewMessage{ChannelID: ch.ID, Sender: "pat", SenderKind: store.IdentityAgent, CreatedAt: c.NowMs(), Content: "y"}); e != nil {
 			return e
 		}
 		return tx.SetMemory(ctx, seq2, seq1, 2)
@@ -384,9 +384,9 @@ func TestToBusMessagesResolvesNames(t *testing.T) {
 	mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
 		return tx.OpenSession(ctx, store.Session{ID: "s1", Identity: "pat", DisplayName: "pat-display", ResumeTokenHash: "h", OpenedAt: startMs, LeaseExpiresAt: startMs + 1000})
 	})
-	s1, _, _ := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SessionID: "s1", Content: "a"})
-	s2, _, _ := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SessionID: "gone", Content: "b"})
-	s3, _, _ := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", Content: "c"})
+	s1, _, _ := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, SessionID: "s1", Content: "a"})
+	s2, _, _ := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, SessionID: "gone", Content: "b"})
+	s3, _, _ := appendOne(t, c, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "c"})
 	mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
 		ms, err := tx.MessagesBySeqs(ctx, []int64{s1, s2, s3})
 		if err != nil {
@@ -403,4 +403,30 @@ func TestToBusMessagesResolvesNames(t *testing.T) {
 		}
 		return nil
 	})
+}
+
+// The sender kind is checked before the row is written: "" and an unknown
+// kind answer internal and leave nothing behind, even when the caller commits.
+func TestAppendRefusesEmptySenderKind(t *testing.T) {
+	for _, kind := range []store.IdentityKind{"", "robot"} {
+		c, _ := newTestCore(t, nil)
+		mustIdentity(t, c, "pat", false)
+		ch := mustChannel(t, c, store.ChannelCreate{Name: "chat", Kind: store.KindOrdinary, Creator: "pat"})
+		err := c.Store.Append(context.Background(), func(ctx context.Context, tx store.Tx) error {
+			if _, _, e := c.Append(ctx, tx, AppendInput{ChannelID: ch.ID, Kind: ch.Kind, Sender: "pat", SenderKind: kind, Content: "x"}); bus.CodeOf(e) != bus.CodeInternal {
+				t.Errorf("SenderKind %q = %v, want internal", kind, e)
+			}
+			return nil // commit anyway
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
+			ms, err := tx.MessagesAfter(ctx, ch.ID, 0, store.MessageFilter{}, 10)
+			if err != nil || len(ms) != 0 {
+				t.Errorf("SenderKind %q: MessagesAfter = %v, %v; want nothing written", kind, ms, err)
+			}
+			return nil
+		})
+	}
 }

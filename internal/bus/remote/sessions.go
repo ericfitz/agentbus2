@@ -85,7 +85,11 @@ func (b *Bus) Receive(ctx context.Context, in ab2bus.ReceiveInput) (ab2bus.Recei
 		Notice: deref(w.Notice), Instruction: deref(w.Instruction),
 	}
 	for _, m := range w.Messages {
-		out.Messages = append(out.Messages, fromGenMessage(m))
+		msg, err := fromGenMessage(m)
+		if err != nil {
+			return ab2bus.ReceiveResult{}, err
+		}
+		out.Messages = append(out.Messages, msg)
 	}
 	for _, g := range w.Gaps {
 		out.Gaps = append(out.Gaps, ab2bus.Gap{Channel: g.Channel, From: g.From, To: g.To})
@@ -131,7 +135,11 @@ func (b *Bus) Identities(ctx context.Context) ([]ab2bus.IdentityInfo, error) {
 	}
 	out := make([]ab2bus.IdentityInfo, 0, len(*r.JSON200))
 	for _, i := range *r.JSON200 {
-		info := ab2bus.IdentityInfo{Name: i.Name, Admin: i.Admin}
+		kind, err := fromGenIdentityKind("kind", string(i.Kind))
+		if err != nil {
+			return nil, err
+		}
+		info := ab2bus.IdentityInfo{Name: i.Name, Kind: kind, Admin: i.Admin}
 		for _, s := range i.Sessions {
 			info.Sessions = append(info.Sessions, ab2bus.SessionInfo{ID: s.Id, Identity: s.Identity, DisplayName: s.DisplayName, OpenedAt: s.OpenedAt})
 		}

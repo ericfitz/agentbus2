@@ -239,6 +239,22 @@ func (h *harness) as(identity string) ab2bus.Bus {
 	return newBus(h, identity)
 }
 
+// human returns a Bus for the human identity named email (created through
+// Tx.CreateHuman with an email binding when missing). The identity name is
+// the email.
+func (h *harness) human(email string) ab2bus.Bus {
+	h.t.Helper()
+	h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+		if _, err := tx.Identity(ctx, email); err == nil {
+			return nil
+		} else if !errors.Is(err, ab2store.ErrNotFound) {
+			return err
+		}
+		return tx.CreateHuman(ctx, ab2store.HumanBinding{Identity: email, ClaimType: ab2store.ClaimEmail, Value: email}, h.core.NowMs())
+	})
+	return newBus(h, email)
+}
+
 // admin is as plus the administrator flag.
 func (h *harness) admin(identity string) ab2bus.Bus {
 	h.t.Helper()
@@ -277,7 +293,7 @@ func (h *harness) append(ch ab2store.Channel, sender, session, content string, t
 	err := h.raw.Append(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
 		var err error
 		seq, _, err = h.core.Append(ctx, tx, core.AppendInput{
-			ChannelID: ch.ID, Channel: ch.Name, Kind: ch.Kind, Sender: sender, SessionID: session,
+			ChannelID: ch.ID, Channel: ch.Name, Kind: ch.Kind, Sender: sender, SenderKind: ab2store.IdentityAgent, SessionID: session,
 			Content: content, Tags: tags, TaskRow: ch.Kind == ab2store.KindTasks,
 		})
 		return err

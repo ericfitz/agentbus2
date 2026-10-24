@@ -17,9 +17,12 @@ type AppendInput struct {
 	// Display is the sender's session display name (<identity>/<hint>-N),
 	// used only to size the envelope. Empty means no session resolves, and
 	// the wire display falls back to the sender, which EnvelopeSize sizes.
-	Display                string
-	Kind                   store.Kind
-	Sender, SessionID      string
+	Display           string
+	Kind              store.Kind
+	Sender, SessionID string
+	// SenderKind is the sender's identity kind (agent or human). Append
+	// answers internal for anything else, "" included.
+	SenderKind             store.IdentityKind
 	Type, Subject, Content string
 	ReplyTo                *int64
 	Metadata               map[string]string
@@ -61,6 +64,10 @@ func (c *Core) Append(ctx context.Context, tx store.Tx, in AppendInput) (int64, 
 		// A programming error; checked before the write so nothing is left behind.
 		return 0, nil, E(bus.CodeInternal, "append on unknown channel kind %q", in.Kind)
 	}
+	if !store.ValidIdentityKind(in.SenderKind) {
+		// A programming error: every writer holds the RequireIdentity result.
+		return 0, nil, E(bus.CodeInternal, "append with sender kind %q", in.SenderKind)
+	}
 	if in.ReplyTo != nil {
 		if _, err := tx.Message(ctx, *in.ReplyTo); err != nil {
 			if errors.Is(err, store.ErrNotFound) {
@@ -71,7 +78,7 @@ func (c *Core) Append(ctx context.Context, tx store.Tx, in AppendInput) (int64, 
 	}
 	now := c.NowMs()
 	seq, err := tx.AppendMessage(ctx, store.NewMessage{
-		ChannelID: in.ChannelID, Sender: in.Sender, SessionID: in.SessionID, CreatedAt: now,
+		ChannelID: in.ChannelID, Sender: in.Sender, SenderKind: in.SenderKind, SessionID: in.SessionID, CreatedAt: now,
 		Type: in.Type, Subject: in.Subject, Content: in.Content, ReplyTo: in.ReplyTo,
 		Metadata: in.Metadata, Tags: in.Tags,
 	})

@@ -1,6 +1,7 @@
 package remote
 
 import (
+	"fmt"
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/gen"
 )
@@ -46,19 +47,34 @@ func deref[T any](p *T) T {
 	return *p
 }
 
-func fromGenMessage(m gen.Message) ab2bus.Message {
+// fromGenIdentityKind maps a wire identity kind; anything but agent and
+// human is an internal error naming the field (a server speaking another
+// protocol).
+func fromGenIdentityKind(field, k string) (ab2bus.IdentityKind, error) {
+	switch ab2bus.IdentityKind(k) {
+	case ab2bus.IdentityAgent, ab2bus.IdentityHuman:
+		return ab2bus.IdentityKind(k), nil
+	}
+	return "", &ab2bus.Error{Code: ab2bus.CodeInternal, Message: fmt.Sprintf("server sent unknown %s %q", field, k)}
+}
+
+func fromGenMessage(m gen.Message) (ab2bus.Message, error) {
+	kind, err := fromGenIdentityKind("sender_kind", string(m.SenderKind))
+	if err != nil {
+		return ab2bus.Message{}, err
+	}
 	return ab2bus.Message{
-		Seq: m.Seq, Channel: m.Channel, Sender: m.Sender, Session: deref(m.Session),
+		Seq: m.Seq, Channel: m.Channel, Sender: m.Sender, SenderKind: kind, Session: deref(m.Session),
 		Display: m.Display, CreatedAt: m.CreatedAt, Type: m.Type, Subject: m.Subject,
 		Content: m.Content, ReplyTo: m.ReplyTo, Metadata: deref(m.Metadata),
 		MemoryID: m.MemoryId, Revision: m.Revision, Tags: deref(m.Tags),
 		MatchedTags: deref(m.MatchedTags),
-	}
+	}, nil
 }
 
 func toGenMessage(m ab2bus.Message) gen.Message {
 	return gen.Message{
-		Seq: m.Seq, Channel: m.Channel, Sender: m.Sender, Session: strPtr(m.Session),
+		Seq: m.Seq, Channel: m.Channel, Sender: m.Sender, SenderKind: gen.MessageSenderKind(m.SenderKind), Session: strPtr(m.Session),
 		Display: m.Display, CreatedAt: m.CreatedAt, Type: m.Type, Subject: m.Subject,
 		Content: m.Content, ReplyTo: m.ReplyTo, Metadata: mapPtr(m.Metadata),
 		MemoryId: m.MemoryID, Revision: m.Revision, Tags: slicePtr(m.Tags),

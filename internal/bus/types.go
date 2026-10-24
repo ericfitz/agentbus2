@@ -41,23 +41,34 @@ type ChannelInfo struct {
 	CreatedAt int64
 }
 
+// IdentityKind is what an identity is: an agent or a human. Every other
+// value is refused.
+type IdentityKind string
+
+const (
+	IdentityAgent IdentityKind = "agent"
+	IdentityHuman IdentityKind = "human"
+)
+
 // Message is a delivered, read or searched message. Sender is the identity;
 // Session the sending session id ("" when none); Display the sending
 // session's display name, or Sender when its row is gone.
 type Message struct {
-	Seq       int64             `json:"seq"`
-	Channel   string            `json:"channel"`
-	Sender    string            `json:"sender"`
-	Session   string            `json:"session,omitempty"`
-	Display   string            `json:"display,omitempty"`
-	CreatedAt int64             `json:"created_at"`
-	Type      string            `json:"type,omitempty"`
-	Subject   string            `json:"subject,omitempty"`
-	Content   string            `json:"content"`
-	ReplyTo   *int64            `json:"reply_to,omitempty"`
-	Metadata  map[string]string `json:"metadata,omitempty"`
-	MemoryID  *int64            `json:"memory_id,omitempty"`
-	Revision  *int64            `json:"revision,omitempty"`
+	Seq     int64  `json:"seq"`
+	Channel string `json:"channel"`
+	Sender  string `json:"sender"`
+	// SenderKind marks the sender as an agent or a human; always present.
+	SenderKind IdentityKind      `json:"sender_kind"`
+	Session    string            `json:"session,omitempty"`
+	Display    string            `json:"display,omitempty"`
+	CreatedAt  int64             `json:"created_at"`
+	Type       string            `json:"type,omitempty"`
+	Subject    string            `json:"subject,omitempty"`
+	Content    string            `json:"content"`
+	ReplyTo    *int64            `json:"reply_to,omitempty"`
+	Metadata   map[string]string `json:"metadata,omitempty"`
+	MemoryID   *int64            `json:"memory_id,omitempty"`
+	Revision   *int64            `json:"revision,omitempty"`
 	// Tags is the message's lowercase tag set, sorted.
 	Tags []string `json:"tags,omitempty"`
 	// MatchedTags is set on a delivery through a tag subscription: the tags

@@ -63,7 +63,7 @@ func newCore(t *testing.T, emb core.Embedder) (*core.Core, store.Channel) {
 func addMemory(t *testing.T, c *core.Core, ch store.Channel, content string) {
 	t.Helper()
 	err := c.Store.Append(context.Background(), func(ctx context.Context, tx store.Tx) error {
-		_, _, err := c.Append(ctx, tx, core.AppendInput{ChannelID: ch.ID, Channel: ch.Name, Kind: ch.Kind, Sender: "pat", Content: content})
+		_, _, err := c.Append(ctx, tx, core.AppendInput{ChannelID: ch.ID, Channel: ch.Name, Kind: ch.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: content})
 		return err
 	})
 	if err != nil {

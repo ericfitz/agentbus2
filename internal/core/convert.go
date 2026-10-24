@@ -42,7 +42,7 @@ func (c *Core) ToBusMessages(ctx context.Context, tx store.Tx, ms []store.Messag
 			}
 		}
 		out = append(out, bus.Message{
-			Seq: m.Seq, Channel: name, Sender: m.Sender, Session: m.SessionID, Display: d,
+			Seq: m.Seq, Channel: name, Sender: m.Sender, SenderKind: bus.IdentityKind(m.SenderKind), Session: m.SessionID, Display: d,
 			CreatedAt: m.CreatedAt, Type: m.Type, Subject: m.Subject, Content: m.Content,
 			ReplyTo: m.ReplyTo, Metadata: m.Metadata, MemoryID: m.MemoryID, Revision: m.Revision,
 			Tags: m.Tags,

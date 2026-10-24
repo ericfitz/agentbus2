@@ -120,6 +120,7 @@ type SessionInfo struct {
 // IdentityInfo describes an identity and its live sessions.
 type IdentityInfo struct {
 	Name     string
+	Kind     IdentityKind
 	Admin    bool
 	Sessions []SessionInfo
 }

@@ -122,10 +122,10 @@ func (s Service) Edit(ctx context.Context, identity string, in bus.EditMemoryInp
 	)
 	err := s.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {
 		res, size, chanID, replayed = bus.EditResult{}, 0, 0, false // fn may run again (Decision 26)
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		who, err := s.RequireIdentity(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
-		var err error
 		replayed, err = s.WithReceipt(ctx, tx, identity, key, in, &res, func() error {
 			old, ch, err := s.LiveRevision(ctx, tx, in.ID)
 			if err != nil {
@@ -162,7 +162,7 @@ func (s Service) Edit(ctx context.Context, identity string, in bus.EditMemoryInp
 				tags = in.Tags
 			}
 			ai := core.AppendInput{
-				ChannelID: ch.ID, Channel: ch.Name, Kind: store.KindMemory, Sender: identity,
+				ChannelID: ch.ID, Channel: ch.Name, Kind: store.KindMemory, Sender: identity, SenderKind: who.Kind,
 				Type: mtype, Subject: subject, Content: content, Metadata: meta, Tags: tags,
 			}
 			size, err = s.EnvelopeSize(ai, identity)
