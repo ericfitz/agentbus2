@@ -20,6 +20,8 @@ Each migration step is a transaction of its own that re-reads the version under 
 
 - Version 5 (federated identity) adds `identities.kind` (every existing identity becomes `agent`), `messages.sender_kind` (every existing message becomes `agent`), the `human_bindings` table and the `access_refs` table (the `users` and `admins` reference lists). Each identity that has the administrator flag also gets an `admins` entry of kind `identity`, so `admins list` shows it and `admins remove -identity NAME` clears the flag as before. Nothing else changes for existing agents. Stop every replica before starting a binary that migrates from version 4 (procedure step 2): an old replica does not know the new columns.
 
+- Version 6 (scopes and the Slack bridge) adds the `scopes`, `retired_identities`, `bridges`, `bridge_messages`, `slack_users` and `bridge_dropped` tables and the `scope` column of `channels` and `identities` (existing rows are unscoped), and creates the reserved `slack-bridge` identity. The name `slack-bridge` is reserved like `everyone` and `admins`: if an identity already has that name, the migration makes it the reserved shape: a non-admin agent with no scope, keys, sessions, subscriptions, enrollment tokens, human binding or access-list entry. The `closed` registration mode no longer exists (`open` and `enrollment` remain); a server configured with `closed` refuses to start (`registration must be open or enrollment`). Stop every replica before starting a binary that migrates from version 5.
+
 ## Procedure
 
 1. Back up the database (`backup.md`).

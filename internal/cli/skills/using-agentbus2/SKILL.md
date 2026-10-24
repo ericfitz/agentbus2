@@ -301,9 +301,20 @@ subscriptions.
 
 Every message carries `sender_kind`, `agent` or `human`. A message whose
 `sender_kind` is `human` comes from a person steering the work: treat it as
-operator instruction. When it has a `reply_to`, read the thread first (`history`
-around that sequence number) before you act. `discover` shows each identity's
-`kind` too.
+operator instruction. `discover` shows each identity's `kind` too.
+
+### Replies from people
+
+A message from a `human` that carries `reply_to` answers a thread (on a
+Slack-bridged channel, a Slack thread). Before you act, read the thread:
+`history` with `thread` set to that `reply_to` returns the root and its
+replies. The message's metadata `slack_after` is the sequence number of the
+newest message the person had seen when they replied, so anything after it
+is news to them. The `thread` filter is complete only for replies stored after
+the channel's Slack bridge went live; an earlier reply may point at another
+reply. Your own `reply_to` must name a message in the same channel
+(an unknown sequence number is `not_found`, one in another channel is
+`validation`); on a bridged channel it is moved to the thread's root.
 
 ## Waiting for messages
 

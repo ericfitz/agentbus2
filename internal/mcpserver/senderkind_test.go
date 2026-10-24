@@ -84,3 +84,35 @@ func TestReceiveCarriesSenderKind(t *testing.T) {
 		t.Fatalf("receive: %v", got)
 	}
 }
+
+// TestToolDescriptionsThreadReplies pins the agent text for a human's thread
+// reply (Slack bridge spec 7): receive names reply_to, slack_after and the
+// history thread read, and send says reply_to must stay in the channel.
+func TestToolDescriptionsThreadReplies(t *testing.T) {
+	e := newTestEnv(t)
+	r := startServer(t, e, newFakeTable(), "test-client")
+	res, err := r.CS.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]string{
+		"receive": {"reply_to", "human", "slack_after", "history", "thread"},
+		"send":    {"reply_to must name a message in the same channel"},
+	}
+	seen := 0
+	for _, tl := range res.Tools {
+		words, ok := want[tl.Name]
+		if !ok {
+			continue
+		}
+		seen++
+		for _, w := range words {
+			if !strings.Contains(tl.Description, w) {
+				t.Errorf("%s description lacks %q: %s", tl.Name, w, tl.Description)
+			}
+		}
+	}
+	if seen != len(want) {
+		t.Fatalf("saw %d of %d tools", seen, len(want))
+	}
+}

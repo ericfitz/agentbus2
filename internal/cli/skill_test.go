@@ -80,3 +80,13 @@ func TestSkillNamesHumanSender(t *testing.T) {
 		}
 	}
 }
+
+// TestSkillThreadReplies pins the "Replies from people" paragraph: the
+// slack_after hint, the history thread read and the same-channel rule.
+func TestSkillThreadReplies(t *testing.T) {
+	for _, said := range []string{"`slack_after`", "same channel", "`thread`"} {
+		if !bytes.Contains(SkillMD, []byte(said)) {
+			t.Errorf("the skill lacks %q", said)
+		}
+	}
+}
