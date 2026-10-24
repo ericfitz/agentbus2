@@ -31,13 +31,21 @@ func (s *Service) needsCheck(id int64) bool {
 	return !ok || gen != s.connGen
 }
 
-func (s *Service) markChecked(id int64) {
+func (s *Service) generation() uint64 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.connGen
+}
+
+// markChecked stamps the generation read before the Members call, so a
+// reconnect during the check leaves the bridge due for another.
+func (s *Service) markChecked(id int64, gen uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.checked == nil {
 		s.checked = map[int64]uint64{}
 	}
-	s.checked[id] = s.connGen
+	s.checked[id] = gen
 }
 
 // Lifecycle applies the archive rules of spec 6.5 and 6.1b to every live
@@ -111,6 +119,7 @@ func (s *Service) lifecycleOne(ctx context.Context, b store.Bridge) error {
 	if scGone || sc.State == store.ScopeRetired {
 		return nil
 	}
+	gen := s.generation()
 	now := s.core.NowMs()
 	switch {
 	case sc.State == store.ScopeDone && now >= sc.DoneAt+s.cfg.ArchiveAfterDone.Milliseconds():
@@ -118,7 +127,7 @@ func (s *Service) lifecycleOne(ctx context.Context, b store.Bridge) error {
 	case sc.LastActivity < now-int64(s.core.Cfg.ScopeIdleHours)*hourMs:
 		return s.ArchiveBridge(ctx, b, scopes.ReasonIdle)
 	case sc.State == store.ScopeDone && s.needsCheck(b.ID):
-		return s.checkMembers(ctx, b)
+		return s.checkMembers(ctx, b, gen)
 	}
 	return nil
 }
@@ -126,7 +135,7 @@ func (s *Service) lifecycleOne(ctx context.Context, b store.Bridge) error {
 // checkMembers archives the bridge when no human remains in its Slack
 // channel: the members minus the app and minus bots and deleted users. A
 // failed check is not marked, so the next pass repeats it.
-func (s *Service) checkMembers(ctx context.Context, b store.Bridge) error {
+func (s *Service) checkMembers(ctx context.Context, b store.Bridge, gen uint64) error {
 	self, err := s.requireReady()
 	if err != nil {
 		return err
@@ -152,7 +161,7 @@ func (s *Service) checkMembers(ctx context.Context, b store.Bridge) error {
 		if u.IsBot || u.Deleted {
 			continue
 		}
-		s.markChecked(b.ID)
+		s.markChecked(b.ID, gen)
 		return nil
 	}
 	return s.ArchiveBridge(ctx, b, scopes.ReasonNoHumans)
@@ -187,5 +196,5 @@ func (s *Service) memberLeft(ctx context.Context, slackChannel string) error {
 	if b.State != store.BridgeLive || !done {
 		return nil
 	}
-	return s.checkMembers(ctx, b)
+	return s.checkMembers(ctx, b, s.generation())
 }

@@ -75,22 +75,30 @@ func (s *Service) user(ctx context.Context, id string) (slackapi.User, error) {
 	return u, nil
 }
 
-// HandleEvent handles one Socket Mode event once, without a runner: a message
-// event is processed (a retry outcome is left to the next catch-up) and a
-// member_left_channel event runs the membership check of a done scope. Every
-// other kind is ignored here. The runner does not call it: its worker owns
-// the retries of a retry outcome (runner.go).
+// HandleEvent handles one Socket Mode event once, without a runner: see
+// Dispatch. A retry outcome is left to the next catch-up. The runner does not
+// call it: its worker owns the retries (runner.go).
 func (s *Service) HandleEvent(ctx context.Context, ev slackapi.Event) {
+	if s.Dispatch(ctx, ev) {
+		s.log.Warn("slack message left to the next catch-up", "slack_user", ev.Message.User, "slack_channel", ev.Channel)
+	}
+}
+
+// Dispatch handles one Socket Mode event and reports whether it needs a
+// retry: a message event is processed (a retry outcome reports true) and a
+// member_left_channel event runs the membership check of a done scope. Every
+// other kind, EventConnected included (the runner's worker catches up on it),
+// is ignored. HandleEvent and the worker both go through it.
+func (s *Service) Dispatch(ctx context.Context, ev slackapi.Event) (retry bool) {
 	switch ev.Kind {
 	case slackapi.EventMessage:
-		if s.ProcessEvent(ctx, ev) == OutcomeRetry {
-			s.log.Warn("slack message left to the next catch-up", "slack_user", ev.Message.User, "slack_channel", ev.Channel)
-		}
+		return s.ProcessEvent(ctx, ev) == OutcomeRetry
 	case slackapi.EventMemberLeft:
 		if err := s.memberLeft(ctx, ev.Channel); err != nil && ctx.Err() == nil {
 			s.log.Warn("slack member check failed", "slack_channel", ev.Channel, "code", bus.CodeOf(err))
 		}
 	}
+	return false
 }
 
 // ProcessEvent handles one message event and answers the outcome.

@@ -6,7 +6,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/slackapi"
 )
 
@@ -144,6 +143,9 @@ func (s *Service) startSession(parent context.Context) *runSession {
 				case events <- ev:
 				default:
 					s.log.Warn("slack bridge: event queue full; catch-up requested", "kind", string(ev.Kind))
+					if ev.Kind == slackapi.EventMemberLeft {
+						s.markConnected() // the next lifecycle pass rechecks every done scope
+					}
 					request()
 				}
 			})
@@ -234,19 +236,15 @@ func (s *Service) worker(ctx context.Context, events <-chan slackapi.Event, catc
 		}
 		select {
 		case <-ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
 			return
 		case ev := <-events:
-			switch ev.Kind {
-			case slackapi.EventConnected:
+			if ev.Kind == slackapi.EventConnected {
 				runCatchUp()
-			case slackapi.EventMessage:
-				if s.ProcessEvent(ctx, ev) == OutcomeRetry {
-					schedule(ev, 1)
-				}
-			case slackapi.EventMemberLeft:
-				if err := s.memberLeft(ctx, ev.Channel); err != nil && ctx.Err() == nil {
-					s.log.Warn("slack member check failed", "slack_channel", ev.Channel, "code", bus.CodeOf(err))
-				}
+			} else if s.Dispatch(ctx, ev) {
+				schedule(ev, 1)
 			}
 		case <-catchup:
 			runCatchUp()
@@ -256,7 +254,7 @@ func (s *Service) worker(ctx context.Context, events <-chan slackapi.Event, catc
 			pending = slices.DeleteFunc(pending, func(r retry) bool { return !r.due.After(now) })
 			for _, r := range ready {
 				if ctx.Err() != nil {
-					return
+					return // the timer has fired
 				}
 				if s.ProcessEvent(ctx, r.ev) == OutcomeRetry {
 					schedule(r.ev, r.attempt+1)

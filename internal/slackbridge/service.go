@@ -90,9 +90,10 @@ type Service struct {
 	mu      sync.Mutex
 	ready   bool
 	self    slackapi.Self
-	bridged map[int64]bool   // bus channels with a live bridge, for the drain wake
-	connGen uint64           // bumped on every Socket Mode (re)connect
-	checked map[int64]uint64 // bridge ID to the connGen of its last membership check
+	bridged map[int64]bool       // bus channels with a live bridge, for the drain wake
+	connGen uint64               // bumped on every Socket Mode (re)connect
+	checked map[int64]uint64     // bridge ID to the connGen of its last membership check
+	posted  map[postedKey]string // posted but not yet recorded: Slack ts by (bridge, seq)
 }
 
 var _ scopes.Archiver = (*Service)(nil)

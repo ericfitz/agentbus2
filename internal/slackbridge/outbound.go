@@ -22,6 +22,10 @@ const (
 	// writeAttempts is how often the map-and-mark transaction after a
 	// successful post is tried before the bridge stops until the next drain.
 	writeAttempts = 3
+	// recordTimeout bounds the record step, recordBackoff is its pause
+	// between attempts (times the attempt number).
+	recordTimeout = 5 * time.Second
+	recordBackoff = 50 * time.Millisecond
 	// reasonSlackGone is the logged reason of a bridge archived by hand.
 	reasonSlackGone = "archived in Slack"
 )
@@ -209,6 +213,7 @@ func (s *Service) drainOne(ctx context.Context, b store.Bridge, ch store.Channel
 		return true, err
 	}
 	if skip {
+		s.clearPosted(postedKey{b.ID, m.Seq})
 		return false, s.core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 			return tx.AdvanceAckedMark(ctx, store.SlackBridge, b.ChannelID, m.Seq)
 		})
@@ -218,40 +223,91 @@ func (s *Service) drainOne(ctx context.Context, b store.Bridge, ch store.Channel
 		Seq: m.Seq, Channel: b.ChannelName, Sender: m.Sender, Type: m.Type, Subject: m.Subject, Content: m.Content, Tags: m.Tags,
 	}, b.Scope, s.cfg.MaxMessageChars, quote)
 	in.Channel, in.ThreadTS = b.SlackChannelID, thread
-	ts, err := s.post(ctx, in)
-	if errors.Is(err, slackapi.ErrChannelGone) {
-		s.log.Warn("slack bridge: channel gone in Slack", "channel", b.ChannelName, "slack_channel", b.SlackChannelID)
-		return true, s.ArchiveBridge(ctx, cur, reasonSlackGone)
-	}
-	if err != nil {
-		return true, fmt.Errorf("posting seq %d: %w", m.Seq, slackErr(err))
+	key := postedKey{b.ID, m.Seq}
+	ts, again := s.takePosted(key)
+	if !again {
+		var err error
+		ts, err = s.post(ctx, in)
+		if errors.Is(err, slackapi.ErrChannelGone) {
+			s.log.Warn("slack bridge: channel gone in Slack", "channel", b.ChannelName, "slack_channel", b.SlackChannelID)
+			return true, s.ArchiveBridge(ctx, cur, reasonSlackGone)
+		}
+		if err != nil {
+			return true, fmt.Errorf("posting seq %d: %w", m.Seq, slackErr(err))
+		}
 	}
 	root := thread
 	if root == "" {
 		root = ts
 	}
+	// The post happened: remember it until its map row is stored, so a failed
+	// record (or a stop in the middle of it) is finished by the next drain
+	// instead of posting the message again.
+	s.setPosted(key, ts)
+	if err := s.record(ctx, b, m.Seq, ts, root); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			s.clearPosted(key)
+			return true, nil // the bridge was removed after the post
+		}
+		return true, fmt.Errorf("recording seq %d: %w", m.Seq, err)
+	}
+	s.clearPosted(key)
+	return false, nil
+}
+
+// postedKey names a bus message of a bridge.
+type postedKey struct{ bridge, seq int64 }
+
+func (s *Service) setPosted(k postedKey, ts string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.posted == nil {
+		s.posted = map[postedKey]string{}
+	}
+	s.posted[k] = ts
+}
+
+func (s *Service) takePosted(k postedKey) (string, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ts, ok := s.posted[k]
+	return ts, ok
+}
+
+func (s *Service) clearPosted(k postedKey) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.posted, k)
+}
+
+// record stores the map row of a posted message (unless an overlapping runner
+// already did) and advances the acked mark, in one transaction. It runs on a
+// context that outlives a stop or shutdown, bounded by recordTimeout, and
+// backs off between attempts, because a post that is not recorded is posted
+// again by the next drain of a runner that does not remember it.
+func (s *Service) record(ctx context.Context, b store.Bridge, seq int64, ts, root string) error {
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), recordTimeout)
+	defer cancel()
+	var err error
 	for attempt := 1; ; attempt++ {
-		err = s.core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-			_, err := tx.BridgeMessageBySeq(ctx, b.ID, m.Seq)
+		err = s.core.Store.Tx(rctx, func(ctx context.Context, tx store.Tx) error {
+			_, err := tx.BridgeMessageBySeq(ctx, b.ID, seq)
 			if errors.Is(err, store.ErrNotFound) {
 				// An overlapping runner has not written it: write it. (Never
 				// swallow a failed insert; on Postgres it ends the transaction.)
-				if err := tx.PutBridgeMessage(ctx, store.BridgeMessage{BridgeID: b.ID, Seq: m.Seq, SlackTS: ts, RootTS: root, CreatedAt: s.core.NowMs()}); err != nil {
+				if err := tx.PutBridgeMessage(ctx, store.BridgeMessage{BridgeID: b.ID, Seq: seq, SlackTS: ts, RootTS: root, CreatedAt: s.core.NowMs()}); err != nil {
 					return err
 				}
 			} else if err != nil {
 				return err
 			}
-			return tx.AdvanceAckedMark(ctx, store.SlackBridge, b.ChannelID, m.Seq)
+			return tx.AdvanceAckedMark(ctx, store.SlackBridge, b.ChannelID, seq)
 		})
-		if err == nil {
-			return false, nil
+		if err == nil || errors.Is(err, store.ErrNotFound) || attempt >= writeAttempts {
+			return err
 		}
-		if errors.Is(err, store.ErrNotFound) {
-			return true, nil // the bridge was removed after the post
-		}
-		if attempt >= writeAttempts || ctx.Err() != nil {
-			return true, fmt.Errorf("recording seq %d: %w", m.Seq, err)
+		if sleep(rctx, time.Duration(attempt)*recordBackoff) != nil {
+			return err
 		}
 	}
 }

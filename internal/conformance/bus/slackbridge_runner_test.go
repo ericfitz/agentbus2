@@ -697,3 +697,191 @@ func TestSlackBridgeLifecycle(t *testing.T) {
 		})
 	})
 }
+
+// faultyStore steers the runner's Store calls: it can refuse the lock, fail
+// the map-row insert a number of times and run a hook at the start of the
+// next write transaction (another runner getting there first).
+type faultyStore struct {
+	ab2store.Store
+	mu        sync.Mutex
+	denyLock  bool
+	failPuts  int
+	puts      int // PutBridgeMessage calls that reached the Store
+	nextTxHok func(context.Context, ab2store.Tx) error
+}
+
+func (s *faultyStore) TryLock(ctx context.Context, name, owner string, now, until int64) (bool, error) {
+	s.mu.Lock()
+	deny := s.denyLock
+	s.mu.Unlock()
+	if deny {
+		return false, nil
+	}
+	return s.Store.TryLock(ctx, name, owner, now, until)
+}
+
+func (s *faultyStore) set(fn func()) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	fn()
+}
+
+func (s *faultyStore) Tx(ctx context.Context, fn func(context.Context, ab2store.Tx) error) error {
+	return s.Store.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+		s.mu.Lock()
+		hook := s.nextTxHok
+		s.nextTxHok = nil
+		s.mu.Unlock()
+		if hook != nil {
+			if err := hook(ctx, tx); err != nil {
+				return err
+			}
+		}
+		return fn(ctx, faultyTx{tx, s})
+	})
+}
+
+type faultyTx struct {
+	ab2store.Tx
+	s *faultyStore
+}
+
+func (t faultyTx) PutBridgeMessage(ctx context.Context, m ab2store.BridgeMessage) error {
+	t.s.mu.Lock()
+	t.s.puts++
+	fail := t.s.failPuts > 0
+	if fail {
+		t.s.failPuts--
+	}
+	t.s.mu.Unlock()
+	if fail {
+		return errors.New("injected record failure")
+	}
+	return t.Tx.PutBridgeMessage(ctx, m)
+}
+
+// faulty builds a second Service over the same database through a faultyStore.
+func (f *inFix) faulty() (*faultyStore, *slackbridge.Service) {
+	f.h.t.Helper()
+	fs := &faultyStore{Store: f.h.raw}
+	c, err := core.New(fs, f.h.cfg, core.Options{Now: f.h.clock.Now, Notifier: f.h.notifier})
+	if err != nil {
+		f.h.t.Fatal(err)
+	}
+	cfg := slackbridge.Config{ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, Logger: f.svcLogger()}
+	bridgeCfg(&cfg)
+	svc, err := slackbridge.New(context.Background(), c, f.fake, cfg)
+	if err != nil {
+		f.h.t.Fatal(err)
+	}
+	return fs, svc
+}
+
+func TestSlackBridgeState(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx := context.Background()
+
+		t.Run("record-retried-without-repost", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			fs, svc := f.faulty()
+			seq := f.send("job1-coder", ab2bus.SendInput{Content: "once"})
+			fs.set(func() { fs.failPuts = 1000 })
+			if err := svc.Drain(ctx); err == nil {
+				t.Error("Drain hid the failed record")
+			}
+			if n := len(f.bridged()); n != 1 {
+				t.Fatalf("posts = %d, want 1", n)
+			}
+			if _, ok := f.mapBySeq(seq); ok || f.acked() >= seq {
+				t.Errorf("recorded despite the failure: acked %d", f.acked())
+			}
+			fs.set(func() { fs.failPuts = 0 })
+			if err := svc.Drain(ctx); err != nil {
+				t.Fatalf("second Drain: %v", err)
+			}
+			posts := f.bridged()
+			row, ok := f.mapBySeq(seq)
+			if len(posts) != 1 || !ok || row.SlackTS == "" || f.acked() != seq {
+				t.Errorf("posts = %d, row = %+v %v, acked = %d", len(posts), row, ok, f.acked())
+			}
+			if c, _ := f.fake.Channel(f.sl); len(c.Messages) == 0 || row.SlackTS != c.Messages[len(c.Messages)-1].TS {
+				t.Errorf("map row ts %s is not the posted message", row.SlackTS)
+			}
+		})
+
+		t.Run("overlap-row-already-written", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			fs, svc := f.faulty()
+			seq := f.send("job1-coder", ab2bus.SendInput{Content: "shared"})
+			bid := f.bridge().ID
+			fs.set(func() {
+				fs.nextTxHok = func(ctx context.Context, tx ab2store.Tx) error {
+					// A second runner recorded the same message first.
+					return tx.PutBridgeMessage(ctx, ab2store.BridgeMessage{BridgeID: bid, Seq: seq, SlackTS: "1700000500.000001", RootTS: "1700000500.000001", CreatedAt: 1})
+				}
+			})
+			if err := svc.Drain(ctx); err != nil {
+				t.Fatalf("Drain: %v", err)
+			}
+			row, ok := f.mapBySeq(seq)
+			if !ok || row.SlackTS != "1700000500.000001" {
+				t.Errorf("map row = %+v, %v; the other runner's row must stay", row, ok)
+			}
+			fs.mu.Lock()
+			puts := fs.puts
+			fs.mu.Unlock()
+			if puts != 0 { // the hook wrote the row below the wrapper; the bridge must not write
+				t.Errorf("the bridge wrote %d map rows over the other runner's", puts)
+			}
+			if f.acked() != seq {
+				t.Errorf("acked = %d, want %d", f.acked(), seq)
+			}
+		})
+
+		t.Run("lock-loss-stops-and-resumes", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			fs, svc := f.faulty()
+			runBridge(t, svc)
+			waitFor(t, 10*time.Second, "the socket", func() bool { return f.fake.MaxConcurrentSockets() == 1 })
+			f.send("job1-coder", ab2bus.SendInput{Content: "before"})
+			waitFor(t, 10*time.Second, "the first post", func() bool { return len(f.bridged()) == 1 })
+
+			fs.set(func() { fs.denyLock = true })
+			select {
+			case <-f.fake.SocketDone():
+			case <-time.After(5 * time.Second):
+				t.Fatal("the socket outlived the lock")
+			}
+			n := f.fake.Calls("Post")
+			second := f.send("job1-coder", ab2bus.SendInput{Content: "during"})
+			time.Sleep(300 * time.Millisecond)
+			if f.fake.Calls("Post") != n || len(f.bridged()) != 1 {
+				t.Fatalf("posted without the lock: %+v", f.bridged())
+			}
+
+			fs.set(func() { fs.denyLock = false })
+			waitFor(t, 10*time.Second, "the resumed post", func() bool { return len(f.bridged()) == 2 })
+			time.Sleep(200 * time.Millisecond)
+			got := f.bridged()
+			if len(got) != 2 || got[1].Seq != second || f.acked() != second {
+				t.Errorf("posts = %+v, acked = %d", got, f.acked())
+			}
+		})
+
+		t.Run("crash-repair-before-drain", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			// A runner posted the message and died before its map row.
+			seq := f.send("job1-coder", ab2bus.SendInput{Content: "posted before the crash"})
+			f.fake.SayAsBot(f.sl, "BBOT", "posted before the crash", "", seq)
+			before := f.fake.Calls("Post")
+			h2 := f.h.sibling(harnessOptions{})
+			svc2 := f.newService(h2, nil)
+			runBridge(t, svc2)
+			waitFor(t, 10*time.Second, "the repair", func() bool { _, ok := f.mapBySeq(seq); return ok && f.acked() >= seq })
+			time.Sleep(300 * time.Millisecond)
+			if f.fake.Calls("Post") != before || len(f.bridged()) != 0 {
+				t.Errorf("the repaired message was posted again: %+v", f.bridged())
+			}
+		})
+	})
+}
