@@ -24,9 +24,9 @@ func TestEnvName(t *testing.T) {
 }
 
 const (
-	issuersA = `[{"issuer":"https://a.example","jwks_uri":"https://a.example/j","audience":"x","algorithms":["ES256"],"subjects":{"s":"pat"}}]`
-	issuersB = `[{"issuer":"https://b.example","jwks_uri":"https://b.example/j","audience":"y","algorithms":["EdDSA"],"subjects":{"s":"sam"}}]`
-	issuersC = `[{"issuer":"https://c.example","jwks_uri":"https://c.example/j","audience":"z","algorithms":["RS256"],"subjects":{"s":"lee"}}]`
+	issuersA = `[{"name":"a","issuer":"https://a.example","jwks_uri":"https://a.example/j","audience":"x","algorithms":["ES256"]}]`
+	issuersB = `[{"name":"b","issuer":"https://b.example","jwks_uri":"https://b.example/j","audience":"y","algorithms":["EdDSA"]}]`
+	issuersC = `[{"name":"c","issuer":"https://c.example","jwks_uri":"https://c.example/j","audience":"z","algorithms":["RS256"]}]`
 	aclA     = `[{"identity":"everyone","permissions":["read"]}]`
 	aclB     = `[{"identity":"admins","permissions":["admin"]}]`
 	aclC     = `[{"identity":"everyone","permissions":["write"]}]`
@@ -113,9 +113,9 @@ func TestLoadFileRules(t *testing.T) {
 		{"bound", `{"sqlite":"x","max_message_kib":0}`, "max_message_kib must be between 1 and 1024, got 0"},
 		{"member case", `{"sqlite":"x","Listen":"a:1"}`, `unknown member "Listen"`},
 		{"member repeated", `{"sqlite":"x","listen":"a:1","listen":"b:2"}`, `member "listen" repeated`},
-		{"nested member case", `{"sqlite":"x","issuers":[{"issuer":"https://i","JWKS_URI":"https://i/j","audience":"a","subjects":{"s":"pat"}}]}`, `issuers[0]: unknown member "JWKS_URI"`},
+		{"nested member case", `{"sqlite":"x","issuers":[{"name":"n","issuer":"https://i","JWKS_URI":"https://i/j","audience":"a"}]}`, `issuers[0]: unknown member "JWKS_URI"`},
 		{"nested member repeated", `{"sqlite":"x","default_acl":[{"identity":"everyone","identity":"pat","permissions":["read"]}]}`, `default_acl[0]: member "identity" repeated`},
-		{"subject repeated", `{"sqlite":"x","issuers":[{"issuer":"https://i","jwks_uri":"https://i/j","audience":"a","subjects":{"s":"pat","s":"kim"}}]}`, `issuers[0].subjects: key "s" repeated`},
+		{"claims member repeated", `{"sqlite":"x","issuers":[{"name":"n","issuer":"https://i","jwks_uri":"https://i/j","audience":"a","claims":{"email":"a","email":"b"}}]}`, `issuers[0].claims: member "email" repeated`},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -162,7 +162,7 @@ func TestRejectsUnknownAndMalformed(t *testing.T) {
 	if err == nil {
 		t.Error("unknown key inside issuers accepted")
 	}
-	_, err = Load("", []string{"AGENTBUS2_SERVER_ISSUERS=" + `[{"Issuer":"https://i","jwks_uri":"https://i/j","audience":"a","subjects":{"s":"pat"}}]`}, base)
+	_, err = Load("", []string{"AGENTBUS2_SERVER_ISSUERS=" + `[{"Issuer":"https://i","jwks_uri":"https://i/j","audience":"a"}]`}, base)
 	if err == nil || !strings.Contains(err.Error(), `[0]: unknown member "Issuer"`) {
 		t.Errorf("case-insensitive member inside issuers: %v", err)
 	}
@@ -170,7 +170,7 @@ func TestRejectsUnknownAndMalformed(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), `[0]: member "permissions" repeated`) || !strings.Contains(err.Error(), "flag") {
 		t.Errorf("repeated member inside default_acl: %v", err)
 	}
-	_, err = Load("", nil, Overrides{"sqlite": "x", "issuers": `[{"issuer":"https://i","jwks_uri":"https://i/j","audience":"a","subjects":{"s":"pat"}},{"issuer":"https://k","jwks_uri":"https://i/j","audience":"a","subjects":{"s":"pat"}}]`})
+	_, err = Load("", nil, Overrides{"sqlite": "x", "issuers": `[{"name":"i","issuer":"https://i","jwks_uri":"https://i/j","audience":"a"},{"name":"k","issuer":"https://k","jwks_uri":"https://i/j","audience":"a"}]`})
 	if err != nil {
 		t.Errorf("two well-formed issuers rejected: %v", err)
 	}
@@ -186,5 +186,15 @@ func TestRejectsUnknownAndMalformed(t *testing.T) {
 	c, err = Load("", nil, Overrides{"sqlite": "x", "embedding_query_timeout_seconds": "2.5"})
 	if err != nil || c.EmbeddingQueryTimeoutSeconds != 2.5 {
 		t.Errorf("float setting: %v %v", c.EmbeddingQueryTimeoutSeconds, err)
+	}
+}
+
+// TestIssuerSubjectsRefused: the subjects member is gone (Decision 10); the
+// strict load names it.
+func TestIssuerSubjectsRefused(t *testing.T) {
+	body := `{"sqlite":"x","issuers":[{"name":"n","issuer":"https://i","jwks_uri":"https://i/j","audience":"a","subjects":{"s":"pat"}}]}`
+	_, err := Load(writeFile(t, body), nil, nil)
+	if err == nil || !strings.Contains(err.Error(), `unknown field "subjects"`) {
+		t.Fatalf("Load = %v, want an unknown field \"subjects\"", err)
 	}
 }

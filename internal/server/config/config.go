@@ -13,13 +13,26 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
-// Issuer is one external token issuer (Decision 84).
+// Issuer is one external token issuer (Decision 57, spec 5.1): a corporate
+// identity provider whose tokens are exchanged for own bearers.
 type Issuer struct {
-	Issuer     string            `json:"issuer"`
-	JWKSURI    string            `json:"jwks_uri"`
-	Audience   string            `json:"audience"`
-	Algorithms []string          `json:"algorithms"`
-	Subjects   map[string]string `json:"subjects"`
+	Name       string       `json:"name"` // the handle `users add -issuer` and the bindings use
+	Issuer     string       `json:"issuer"`
+	JWKSURI    string       `json:"jwks_uri"`
+	Audience   string       `json:"audience"`
+	Algorithms []string     `json:"algorithms"`
+	Claims     IssuerClaims `json:"claims"`
+	// HumanTokenLifetimeSeconds is the lifetime of the human bearer minted
+	// for this issuer; 0 means 900.
+	HumanTokenLifetimeSeconds int `json:"human_token_lifetime_seconds"`
+}
+
+// IssuerClaims names the provider claims that carry the email, the groups and
+// the subject; "" means the default (email, groups, sub).
+type IssuerClaims struct {
+	Email   string `json:"email"`
+	Groups  string `json:"groups"`
+	Subject string `json:"subject"`
 }
 
 // Config is the server configuration (Decision 85, spec 6.5).
@@ -183,6 +196,7 @@ func (c Config) Validate() error {
 	// the first matching entry, so an entry equal to either is never used.
 	// An unset Issuer is the bound address, known only at Run.
 	first := map[string]int{}
+	names := map[string]int{}
 	for i, is := range c.Issuers {
 		if err := validateIssuer(is); err != nil {
 			return fmt.Errorf("issuers: entry %d: %w", i, err)
@@ -194,6 +208,10 @@ func (c Config) Validate() error {
 			return fmt.Errorf("issuers: entry %d: issuer %q repeats entry %d", i, is.Issuer, j)
 		}
 		first[is.Issuer] = i
+		if j, ok := names[is.Name]; ok {
+			return fmt.Errorf("issuers: entry %d: name %q repeats entry %d", i, is.Name, j)
+		}
+		names[is.Name] = i
 	}
 	cc, err := c.Core()
 	if err != nil {
@@ -251,6 +269,15 @@ func absoluteURL(s string) bool {
 }
 
 func validateIssuer(is Issuer) error {
+	if is.Name == "" {
+		return errors.New("name is required")
+	}
+	if err := store.NameRule(is.Name); err != nil {
+		return fmt.Errorf("name %q %s", is.Name, err)
+	}
+	if is.Name == store.Everyone || is.Name == store.Admins {
+		return fmt.Errorf("name %q is reserved", is.Name)
+	}
 	if !absoluteURL(is.Issuer) {
 		return fmt.Errorf("issuer must be an absolute URL, got %q", is.Issuer)
 	}
@@ -265,16 +292,8 @@ func validateIssuer(is Issuer) error {
 			return fmt.Errorf("algorithm %q is not one of EdDSA, ES256, RS256", a)
 		}
 	}
-	if len(is.Subjects) == 0 {
-		return errors.New("subjects must not be empty")
-	}
-	for sub, name := range is.Subjects {
-		if err := store.NameRule(name); err != nil {
-			return fmt.Errorf("subjects: identity %q for subject %q %s", name, sub, err)
-		}
-		if name == store.Everyone || name == store.Admins {
-			return fmt.Errorf("subjects: identity %q for subject %q is reserved", name, sub)
-		}
+	if is.HumanTokenLifetimeSeconds < 0 || is.HumanTokenLifetimeSeconds > 86400 {
+		return fmt.Errorf("human_token_lifetime_seconds must be 0 (the default, 900) or between 1 and 86400, got %d", is.HumanTokenLifetimeSeconds)
 	}
 	return nil
 }

@@ -23,7 +23,7 @@ var unmarshaler = reflect.TypeFor[json.Unmarshaler]()
 // own UnmarshalJSON, an interface and json.RawMessage are opaque. Check
 // judges nothing else (types, null, unknown names are the decoder's job),
 // except that a value for a struct t must be an object. Errors name the path
-// to the offending member, as `issuers[1].subjects: key "s" repeated`.
+// to the offending member, as `issuers[1].claims: member "email" repeated`.
 func Check(b []byte, t reflect.Type) error {
 	dec := json.NewDecoder(bytes.NewReader(b))
 	dec.UseNumber()

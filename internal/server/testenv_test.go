@@ -77,8 +77,7 @@ type envOptions struct {
 	// time.Hour, clock.Now) and, unless auth is set, Bearer over it.
 	issuer       bool
 	registration identities.Mode
-	external     []*token.External // sets Bearer.Verifier.External when issuer is set
-	autoCreate   bool              // sets Bearer.AutoCreate to CreateIdentity
+	external     []*token.External // Options.External (the discovery list)
 
 	// dbPath opens this SQLite file instead of a fresh one, so two envs
 	// model two replicas over one database.
@@ -111,7 +110,7 @@ func newEnv(t *testing.T, o envOptions) *env {
 		}
 		e.opts = Options{Registration: o.registration, Issuer: e.issuer, External: o.external}
 		if o.auth == nil {
-			b := Bearer{Verifier: token.Verifier{Own: e.issuer, External: o.external}, Now: e.clock.Now}
+			b := Bearer{Verifier: token.Verifier{Own: e.issuer}, Now: e.clock.Now}
 			e.auth = b
 		}
 	} else {
@@ -132,13 +131,6 @@ func newEnv(t *testing.T, o envOptions) *env {
 		t.Fatalf("core.New: %v", err)
 	}
 	e.core = c
-	if b, ok := e.auth.(Bearer); ok && o.autoCreate {
-		b.AutoCreate = func(ctx context.Context, name string) error {
-			_, err := identities.Service{Core: c}.CreateIdentity(ctx, name)
-			return err
-		}
-		e.auth = b
-	}
 	return e
 }
 

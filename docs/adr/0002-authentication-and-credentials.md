@@ -303,7 +303,8 @@ the choice numbers below are its.
 11. **External issuers** are configuration (`issuers`), not rows. A subject
     gets its row from `server admin create-identity` or, in `open` mode only,
     from its first valid external token (never admin): Decision (Eric,
-    2026-10-21), Milestone 5 item 5.
+    2026-10-21), Milestone 5 item 5. Superseded: direct acceptance is gone
+    (federated identity addendum, Decision 10).
 13. **`reset-credential`** deletes an identity's keys. Minted bearers stay
     valid until `exp`: Decision (Eric, 2026-10-21), Milestone 5 item 4, as
     planned.
@@ -583,3 +584,28 @@ later tasks extend it.
   `scope` is ignored; `client_id`, when present, must equal the assertion's
   `iss`. `AccessToken.issued_token_type` is optional. The exchange
   parameters are consumed in Task 11.
+
+### Decision 10 and the issuers entry (Task 9)
+
+- **Direct acceptance removed.** `token.Verifier.External`,
+  `server.Bearer.AutoCreate`, `identities.Service.EnsureIdentity`,
+  `token.ErrUnmappedSubject` and the `subjects` member of an `issuers` entry
+  are deleted. `Verifier` verifies the own issuer only; a provider token
+  presented as a bearer is `unknown issuer` (401). A configured issuer's
+  token is useful only at the token endpoint, which exchanges it.
+  This supersedes Milestone 5 item 5 (both mechanisms for external subjects)
+  and item 11 above; `Options.External` stays only to list the issuer URLs
+  in `Discover`.
+- **Entry fields (spec 5.1).** `name` (required, a valid identity name, not
+  `everyone` or `admins`, unique), `issuer`, `jwks_uri`, `audience`,
+  `algorithms`, `claims` (`email`, `groups`, `subject`; empty means `email`,
+  `groups`, `sub`) and `human_token_lifetime_seconds` (0 means 900; 1 to
+  86400). The entry names are what `users add -issuer` accepts.
+- **Provider token claims.** `token.External.Verify` returns
+  `token.Federated` (issuer, entry name, email, groups, subject, client id):
+  the email claim must be a non-empty string (`ErrNoEmail`, also
+  `ErrInvalid`); groups may be absent, a string or an array of strings; the
+  subject claim must be a non-empty string; `client_id` (else `azp`) must be
+  a string when present. A JWKS fetch that fails and leaves no usable key is
+  `ErrJWKSUnavailable`, so the exchange can answer
+  `temporarily_unavailable` rather than blame the token.

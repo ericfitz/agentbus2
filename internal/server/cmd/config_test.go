@@ -184,7 +184,7 @@ func (p *extIDP) token(t *testing.T, k crypto.Signer, aud, sub string) string {
 }
 
 func (p *extIDP) issuersJSON() string {
-	return `[{"issuer":"` + p.URL + `","jwks_uri":"` + p.URL + `/jwks","audience":"agentbus2","algorithms":["ES256"],"subjects":{"sub-1":"pat","sub-2":"kim"}}]`
+	return `[{"name":"corp","issuer":"` + p.URL + `","jwks_uri":"` + p.URL + `/jwks","audience":"agentbus2","algorithms":["ES256"]}]`
 }
 
 func identityRow(t *testing.T, file, name string) (store.Identity, bool) {
@@ -222,17 +222,15 @@ func TestRunWiresExternalIssuers(t *testing.T) {
 			r := startRun(t, environ, args...)
 			get := func(tok string) (int, []byte) { return httpDo(t, nil, "GET", r.base()+"/v1/channels", tok) }
 
-			if code, body := get(idp.token(t, idp.es, "agentbus2", "sub-1")); code != 200 {
-				t.Fatalf("ES256 sub-1: %d %s", code, body)
-			}
-			if code, _ := get(idp.token(t, idp.ed, "agentbus2", "sub-1")); code != 401 {
-				t.Fatalf("Ed25519 token where algorithms is [ES256]: %d, want 401", code)
-			}
-			if code, _ := get(idp.token(t, idp.es, "agentbus2", "sub-9")); code != 401 {
-				t.Fatalf("unmapped sub: %d, want 401", code)
-			}
-			if code, _ := get(idp.token(t, idp.es, "other", "sub-1")); code != 401 {
-				t.Fatalf("wrong audience: %d, want 401", code)
+			// A corporate token is no bearer (Decision 10): 401 for every one.
+			for _, tok := range []string{
+				idp.token(t, idp.es, "agentbus2", "sub-1"),
+				idp.token(t, idp.ed, "agentbus2", "sub-1"),
+				idp.token(t, idp.es, "other", "sub-1"),
+			} {
+				if code, body := get(tok); code != 401 || !strings.Contains(string(body), "unknown issuer") {
+					t.Fatalf("corporate token as a bearer: %d %s, want 401 unknown issuer", code, body)
+				}
 			}
 			code, body := httpDo(t, nil, "GET", r.base()+"/v1/discover", "")
 			var d struct {
@@ -242,18 +240,12 @@ func TestRunWiresExternalIssuers(t *testing.T) {
 				t.Fatalf("discover issuers: %d %s", code, body)
 			}
 
-			// Open mode creates the identity of a valid external token.
+			// Nothing was created and the provider was never asked for keys.
 			if _, ok := identityRow(t, db, "kim"); ok {
-				t.Fatal("kim exists before any token")
+				t.Fatal("kim exists after a corporate bearer")
 			}
-			if code, body := get(idp.token(t, idp.es, "agentbus2", "sub-2")); code != 200 {
-				t.Fatalf("open mode, sub-2: %d %s", code, body)
-			}
-			if row, ok := identityRow(t, db, "kim"); !ok || row.Admin {
-				t.Fatalf("kim row %+v exists %v, want a non-admin identity", row, ok)
-			}
-			if n := idp.fetches.Load(); n != 1 {
-				t.Fatalf("JWKS fetched %d times, want 1 (jwks_refresh_seconds holds the cache)", n)
+			if n := idp.fetches.Load(); n != 0 {
+				t.Fatalf("JWKS fetched %d times by bearer authentication, want 0", n)
 			}
 		})
 	}
@@ -264,11 +256,12 @@ func TestRunWiresExternalIssuers(t *testing.T) {
 		r := startRun(t, nil, "-listen", "127.0.0.1:0", "-registration", "enrollment", "-sqlite", db, "-set", "issuers="+idp.issuersJSON())
 		tok := idp.token(t, idp.es, "agentbus2", "sub-2")
 		code, body := httpDo(t, nil, "GET", r.base()+"/v1/channels", tok)
-		if code != 403 || problemCode(t, body) != "not_registered" {
-			t.Fatalf("enrollment mode, unregistered: %d %s", code, body)
+		if code != 401 || problemCode(t, body) != "unauthenticated" {
+			t.Fatalf("enrollment mode, corporate bearer: %d %s", code, body)
 		}
+		// Creating the identity does not make a corporate token a bearer.
 		adminOnce(t, db, "create-identity", "kim")
-		if code, body := httpDo(t, nil, "GET", r.base()+"/v1/channels", tok); code != 200 {
+		if code, body := httpDo(t, nil, "GET", r.base()+"/v1/channels", tok); code != 401 {
 			t.Fatalf("after create-identity: %d %s", code, body)
 		}
 	})
@@ -321,7 +314,7 @@ func genBearer(token string) gen.ClientOption {
 func TestRunWarnsOnPlainHTTPJWKS(t *testing.T) {
 	db := filepath.Join(t.TempDir(), "ab2.db")
 	uri := "http://idp.example/jwks"
-	issuers := `[{"issuer":"https://idp.example","jwks_uri":"` + uri + `","audience":"a","subjects":{"s":"pat"}}]`
+	issuers := `[{"name":"corp","issuer":"https://idp.example","jwks_uri":"` + uri + `","audience":"a"}]`
 	r := runServer(t, "-listen", "127.0.0.1:0", "-sqlite", db, "-set", "issuers="+issuers)
 	if got := r.stderr.String(); !strings.Contains(got, "level=WARN") || !strings.Contains(got, "issuers: entry 0") || !strings.Contains(got, uri) {
 		t.Fatalf("stderr lacks the jwks_uri warning: %q", got)

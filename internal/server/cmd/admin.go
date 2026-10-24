@@ -20,17 +20,14 @@ const makeAdminReplaced = "make-admin was replaced by: admins add -identity NAME
 
 const createIdentityUsage = `usage: agentbus2 server admin create-identity NAME
 
-Creates a keyless row for an identity whose credential is an external issuer
-(in open registration mode the server also creates such a row on the first
-valid external token); in open mode any registrant may bind a key to a keyless
-name that is not an administrator, while a keyless administrator can only be
-claimed with an enrollment token bound to its name (enrollment create
--identity NAME).
+Creates a keyless row for an identity that will register a key later; in open
+mode any registrant may bind a key to a keyless name that is not an
+administrator, while a keyless administrator can only be claimed with an
+enrollment token bound to its name (enrollment create -identity NAME).
 `
 
 // hostEnv is what a host command runs against: the identities service and the
-// names of the configured issuers (nil until the issuer settings land, so
-// every claim-kind add is refused).
+// names of the configured issuers (none: every claim-kind add is refused).
 type hostEnv struct {
 	Svc     identities.Service
 	Issuers []string
@@ -91,7 +88,7 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 		return code
 	}
 
-	_, st, cc, err := openFromConfig(ctx, &f, fs, environ, stderr)
+	cfg, st, cc, err := openFromConfig(ctx, &f, fs, environ, stderr)
 	if err != nil {
 		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin: %v\n", err)
 		var ce *configError
@@ -106,7 +103,11 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin: %v\n", err)
 		return 1
 	}
-	if err := run(ctx, hostEnv{Svc: identities.Service{Core: c}}, stdout); err != nil {
+	env := hostEnv{Svc: identities.Service{Core: c}}
+	for _, is := range cfg.Issuers {
+		env.Issuers = append(env.Issuers, is.Name)
+	}
+	if err := run(ctx, env, stdout); err != nil {
 		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin %s: %v\n", sub, err)
 		return 1
 	}

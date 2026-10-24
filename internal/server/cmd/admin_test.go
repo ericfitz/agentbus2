@@ -403,3 +403,25 @@ func TestAdminCreateHuman(t *testing.T) {
 		t.Fatalf("create-human over an agent: code %d stderr %q", code, errOut)
 	}
 }
+
+// TestAdminUsersAddKnownIssuer: the issuers entry names are the references'
+// issuer handles (spec 5.1); an unconfigured name is refused and the error
+// names the configured ones.
+func TestAdminUsersAddKnownIssuer(t *testing.T) {
+	e := newAdminEnv(t)
+	issuers := `[{"name":"corp","issuer":"https://idp.example","jwks_uri":"https://idp.example/jwks","audience":"agentbus2"}]`
+	set := []string{"-set", "issuers=" + issuers}
+	run := func(args ...string) (int, string, string) {
+		return e.run(append(set, args...)...)
+	}
+	for i, want := range []string{"added", "already present"} {
+		code, out, errOut := run("users", "add", "-issuer", "corp", "-group", "pai-users")
+		if code != 0 || strings.TrimSpace(out) != want {
+			t.Fatalf("users add %d: code %d out %q stderr %q, want %q", i, code, out, errOut, want)
+		}
+	}
+	code, _, errOut := run("users", "add", "-issuer", "nope", "-group", "pai-users")
+	if code != 1 || !strings.Contains(errOut, "unknown issuer") || !strings.Contains(errOut, "nope") || !strings.Contains(errOut, "configured: corp") {
+		t.Fatalf("unknown issuer: code %d stderr %q, want exit 1 naming corp", code, errOut)
+	}
+}

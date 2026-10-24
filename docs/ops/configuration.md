@@ -44,7 +44,7 @@ AGENTBUS2_SERVER_DEFAULT_ACL='[{"identity":"everyone","permissions":["read"]},{"
 ```
 
 ```sh
-AGENTBUS2_SERVER_ISSUERS='[{"issuer":"https://idp.example.com","jwks_uri":"https://idp.example.com/keys","audience":"agentbus2","algorithms":["ES256"],"subjects":{"subject-id-from-the-idp":"alice"}}]'
+AGENTBUS2_SERVER_ISSUERS='[{"name":"corp","issuer":"https://idp.example.com","jwks_uri":"https://idp.example.com/keys","audience":"agentbus2","algorithms":["ES256"],"claims":{"email":"email","groups":"groups","subject":"sub"},"human_token_lifetime_seconds":900}]'
 ```
 
 ## Settings
@@ -60,7 +60,7 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | `issuer` | `AGENTBUS2_SERVER_ISSUER` | string | `(unset)` | Absolute `http` or `https` URL with no path, query, fragment or trailing slash. Unset means `http://<bound address>`, which is wrong behind a proxy or in a container: set it on every non-local server. Required for a unix socket. Replicas must share it. |
 | `token_lifetime_seconds` | `AGENTBUS2_SERVER_TOKEN_LIFETIME_SECONDS` | int | `3600` | 1 to 86400. Lifetime of a bearer token the server issues. |
 | `jwks_refresh_seconds` | `AGENTBUS2_SERVER_JWKS_REFRESH_SECONDS` | int | `300` | 10 to 86400. How long an external issuer's key set is cached. |
-| `issuers` | `AGENTBUS2_SERVER_ISSUERS` | JSON list | `(see below)` | External token issuers (Decision 84). Per entry: `issuer` and `jwks_uri` (absolute URLs), `audience` (required), `algorithms` (any of `EdDSA`, `ES256`, `RS256`; empty means all three), `subjects` (required; token subject to identity name). |
+| `issuers` | `AGENTBUS2_SERVER_ISSUERS` | JSON list | `(see below)` | Corporate token issuers, whose tokens are exchanged for agentbus2 bearers (Decision 57, federated identity spec 5.1). Per entry: `name` (required, unique; the handle `users add -issuer` uses), `issuer` and `jwks_uri` (absolute URLs), `audience` (required), `algorithms` (any of `EdDSA`, `ES256`, `RS256`; empty means all three), `claims` (optional object `email`, `groups`, `subject` naming the token claims to read; defaults `email`, `groups`, `sub`), `human_token_lifetime_seconds` (0 or unset means 900; 1 to 86400). |
 | `default_acl` | `AGENTBUS2_SERVER_DEFAULT_ACL` | JSON list | `(see below)` | ACL of a new channel when its creator gives none (Decision 88). |
 | `channel_creation` | `AGENTBUS2_SERVER_CHANNEL_CREATION` | string | `"open"` | `open` (any registered identity) or `admins` (Decision 93). |
 | `receipt_retention_minutes` | `AGENTBUS2_SERVER_RECEIPT_RETENTION_MINUTES` | int | `60` | 1 to 1440. How long the idempotency receipt of a mutation is kept. |
@@ -92,7 +92,7 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 
 ### Defaults of the two lists
 
-`issuers` defaults to the empty list. Rules: an entry whose `issuer` equals the server's own `issuer`, or repeats another entry's `issuer`, is rejected. A `jwks_uri` that is plain `http` on a host other than `localhost` or a loopback address starts the server with a warning (anyone on the path can substitute the key set); use `https`. Each name in `subjects` must be a valid identity name (1 to 128 bytes, no `/`, no control characters) and not `everyone` or `admins`. In `open` registration an external subject's identity is created on its first valid token; in the other modes create it with `agentbus2 server admin create-identity`.
+`issuers` defaults to the empty list. Rules: an entry whose `issuer` equals the server's own `issuer`, or repeats another entry's `issuer`, is rejected. A `jwks_uri` that is plain `http` on a host other than `localhost` or a loopback address starts the server with a warning (anyone on the path can substitute the key set); use `https`. Each `name` must be a valid identity name (1 to 128 bytes, no `/`, no control characters), not `everyone` or `admins`, and unique across entries. The old `subjects` member is gone and an entry that has it fails to load. A token from an issuer is never accepted directly as a bearer; the token endpoint exchanges it for an agentbus2 bearer, and a human's identity is created at the first sign-in in every registration mode.
 
 `default_acl` defaults to three entries, in this order: `everyone` with `read` and `write`; `<creator>` with `read`, `write` and `admin`; `admins` with `admin`. Only `everyone`, `admins` and the placeholder `<creator>` are accepted as identities, each with a non-empty list of distinct `read`, `write` or `admin`. `<creator>` stands for the identity that creates the channel and is dropped when there is none (the `general` channel at start, and after a reset). Setting a list equal to the default changes nothing.
 

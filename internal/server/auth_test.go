@@ -478,7 +478,10 @@ func TestIssuerIsConfiguredNotRequestHost(t *testing.T) {
 	wantOAuthError(t, n.exchange("x.y.z", ""), 503, "temporarily_unavailable", "token issuer not configured", "")
 }
 
-func TestExternalIssuerBearer(t *testing.T) {
+// TestBearerRefusesCorporateToken: a provider token that the configured
+// External would accept is no bearer (Decision 10), even in open registration,
+// and it creates no identity.
+func TestBearerRefusesCorporateToken(t *testing.T) {
 	extKey := genKey(t, keys.ES256)
 	jwk, err := keys.ToJWK(extKey.Public(), kidOf(t, extKey))
 	if err != nil {
@@ -489,34 +492,30 @@ func TestExternalIssuerBearer(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(set)
 	}))
 	t.Cleanup(srv.Close)
-	ext := &token.External{
-		Issuer: "https://idp.example", JWKSURI: srv.URL, Audience: "agentbus2",
-		Subjects: map[string]string{"sub-1": "pat", "sub-2": "kim"},
+	ext := &token.External{Name: "corp", Issuer: "https://idp.example", JWKSURI: srv.URL, Audience: "agentbus2"}
+	sg, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: extKey},
+		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kidOf(t, extKey)))
+	if err != nil {
+		t.Fatal(err)
 	}
-	mint := func(sub, aud string) string {
-		s, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: extKey},
-			(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kidOf(t, extKey)))
-		if err != nil {
-			t.Fatal(err)
-		}
-		raw, err := jwt.Signed(s).Claims(jwt.Claims{
-			Issuer: ext.Issuer, Subject: sub, Audience: jwt.Audience{aud}, ID: "j-" + sub,
-			Expiry: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-		}).Serialize()
-		if err != nil {
-			t.Fatal(err)
-		}
-		return raw
+	raw, err := jwt.Signed(sg).Claims(jwt.Claims{
+		Issuer: ext.Issuer, Subject: "sub-1", Audience: jwt.Audience{"agentbus2"}, ID: "j",
+		Expiry: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+	}).Claims(map[string]any{"email": "pat@corp.example"}).Serialize()
+	if err != nil {
+		t.Fatal(err)
 	}
-	bearer := func(sub, aud string) string { return "Bearer " + mint(sub, aud) }
+	// The token verifies against the External, so only the bearer path refuses it.
+	if f, err := ext.Verify(context.Background(), raw); err != nil || f.Email != "pat@corp.example" {
+		t.Fatalf("External.Verify = %+v, %v", f, err)
+	}
 
-	e := newEnv(t, envOptions{issuer: true, external: []*token.External{ext}})
-	e.identity("pat", false)
-	if resp := e.do("GET", "/v1/channels", "", bearer("sub-1", "agentbus2"), ""); resp.StatusCode != 200 {
-		t.Fatalf("mapped subject: %d %s", resp.StatusCode, readBody(t, resp))
+	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen, external: []*token.External{ext}})
+	before := identityCount(t, e)
+	wantAuthProblem(t, e.do("GET", "/v1/channels", "", "Bearer "+raw, ""), 401, "unauthenticated", "unknown issuer")
+	if after := identityCount(t, e); after != before {
+		t.Fatalf("identities %d -> %d: a corporate bearer created a row", before, after)
 	}
-	wantAuthProblem(t, e.do("GET", "/v1/channels", "", bearer("sub-9", "agentbus2"), ""), 401, "unauthenticated", "unmapped subject")
-	wantAuthProblem(t, e.do("GET", "/v1/channels", "", bearer("sub-1", "elsewhere"), ""), 401, "unauthenticated", "wrong audience")
 
 	resp := e.do("GET", "/v1/discover", "", "", "")
 	var d gen.Discovery
@@ -526,62 +525,20 @@ func TestExternalIssuerBearer(t *testing.T) {
 	if len(d.Issuers) != 1 || d.Issuers[0] != ext.Issuer {
 		t.Errorf("issuers %v", d.Issuers)
 	}
+}
 
-	hasRow := func(env *env, name string) bool {
-		_, err := identityRow(env, name)
-		return err == nil
-	}
-
-	// AutoCreate nil (enrollment and closed modes): no row appears.
-	wantAuthProblem(t, e.do("GET", "/v1/channels", "", bearer("sub-2", "agentbus2"), ""), 403, "not_registered", "")
-	if hasRow(e, "kim") {
-		t.Fatal("kim was created without AutoCreate")
-	}
-
-	// AutoCreate set (open mode): the row appears once, without admin, with the general subscription.
-	o := newEnv(t, envOptions{issuer: true, external: []*token.External{ext}, autoCreate: true})
-	for i := 0; i < 2; i++ {
-		if resp := o.do("GET", "/v1/channels", "", bearer("sub-2", "agentbus2"), ""); resp.StatusCode != 200 {
-			t.Fatalf("auto-create run %d: %d %s", i, resp.StatusCode, readBody(t, resp))
-		}
-	}
-	row, err := identityRow(o, "kim")
-	if err != nil || row.Admin {
-		t.Fatalf("kim row %+v err %v", row, err)
-	}
-	subs, err := subscriptionsOf(o, "kim")
-	if err != nil || len(subs) != 1 {
-		t.Fatalf("kim subscriptions %v err %v", subs, err)
-	}
-	// An own-issuer token for a missing identity is never auto-created.
-	ghost, _, err := o.issuer.Mint(token.MintInput{Identity: "ghost", Kind: token.KindAgent})
+func identityCount(t *testing.T, e *env) int {
+	t.Helper()
+	var n int
+	err := e.store.Read(context.Background(), func(ctx context.Context, tx store.Tx) error {
+		ids, err := tx.ListIdentities(ctx)
+		n = len(ids)
+		return err
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantAuthProblem(t, o.do("GET", "/v1/channels", "", "Bearer "+ghost, ""), 403, "not_registered", "")
-	if hasRow(o, "ghost") {
-		t.Fatal("ghost was created from an own-issuer token")
-	}
-}
-
-func identityRow(e *env, name string) (store.Identity, error) {
-	var out store.Identity
-	err := e.store.Read(context.Background(), func(ctx context.Context, tx store.Tx) error {
-		var err error
-		out, err = tx.Identity(ctx, name)
-		return err
-	})
-	return out, err
-}
-
-func subscriptionsOf(e *env, name string) ([]store.Subscription, error) {
-	var out []store.Subscription
-	err := e.store.Read(context.Background(), func(ctx context.Context, tx store.Tx) error {
-		var err error
-		out, err = tx.Subscriptions(ctx, name)
-		return err
-	})
-	return out, err
+	return n
 }
 
 func TestInProcessStillWorks(t *testing.T) {

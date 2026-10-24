@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"fmt"
 	"io"
@@ -116,7 +117,7 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 	}
 
 	// The signing key is a Store row (Milestone 5 choice 6). This Core exists
-	// only for it and for AutoCreate; Serve builds its own over the same Store.
+	// only for it; Serve builds its own over the same Store.
 	c, err := core.New(st, cc, core.Options{Now: time.Now, Logger: logger})
 	if err != nil {
 		return fail(1, "%v", err)
@@ -145,15 +146,6 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		embedder = embed.NewHTTP(cfg.EmbeddingEndpoint, cfg.EmbeddingModel, apiKey, nil)
 	}
 
-	// External subjects are created on first use in open mode only (Decision
-	// (Eric, 2026-10-21), item 5); in every other mode a mapped but unknown
-	// name is 403 not_registered until `admin create-identity`.
-	// EnsureIdentity writes only when the row is missing.
-	var autoCreate func(context.Context, string) error
-	if mode == identities.ModeOpen {
-		autoCreate = svc.EnsureIdentity
-	}
-
 	notifier, closeNotifier := storeNotifier(ctx, cfg, logger)
 	defer closeNotifier()
 
@@ -166,7 +158,7 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		Listener:     ln,
 		Store:        st,
 		Notifier:     notifier,
-		Auth:         server.Bearer{Verifier: token.Verifier{Own: issuer, External: ext}, AutoCreate: autoCreate, Logger: logger},
+		Auth:         server.Bearer{Verifier: token.Verifier{Own: issuer}},
 		Cfg:          &cc,
 		Logger:       logger,
 		Registration: mode,
@@ -227,9 +219,14 @@ func logLevel(s string) slog.Level {
 	return slog.LevelInfo
 }
 
-// externalIssuers maps cfg.Issuers onto token.External. Validate has already
-// limited algorithms to EdDSA, ES256 and RS256; an empty list keeps the
-// verifier's default of all three.
+// defaultHumanTokenLifetimeSeconds is the human bearer lifetime of an issuers
+// entry that sets none (spec 5.1).
+const defaultHumanTokenLifetimeSeconds = 900
+
+// externalIssuers maps cfg.Issuers onto token.External, filling the claim name
+// and human lifetime defaults (spec 5.1). Validate has already limited
+// algorithms to EdDSA, ES256 and RS256; an empty list keeps the verifier's
+// default of all three.
 func externalIssuers(cfg config.Config) []*token.External {
 	var out []*token.External
 	for _, i := range cfg.Issuers {
@@ -237,10 +234,20 @@ func externalIssuers(cfg config.Config) []*token.External {
 		for _, a := range i.Algorithms {
 			algs = append(algs, jose.SignatureAlgorithm(a))
 		}
+		life := i.HumanTokenLifetimeSeconds
+		if life == 0 {
+			life = defaultHumanTokenLifetimeSeconds
+		}
 		out = append(out, &token.External{
-			Issuer: i.Issuer, JWKSURI: i.JWKSURI, Audience: i.Audience,
-			Algorithms: algs, Subjects: i.Subjects,
-			TTL: time.Duration(cfg.JWKSRefreshSeconds) * time.Second,
+			Name: i.Name, Issuer: i.Issuer, JWKSURI: i.JWKSURI, Audience: i.Audience,
+			Algorithms: algs,
+			Claims: token.ClaimNames{
+				Email:   cmp.Or(i.Claims.Email, "email"),
+				Groups:  cmp.Or(i.Claims.Groups, "groups"),
+				Subject: cmp.Or(i.Claims.Subject, "sub"),
+			},
+			HumanLifetime: time.Duration(life) * time.Second,
+			TTL:           time.Duration(cfg.JWKSRefreshSeconds) * time.Second,
 		})
 	}
 	return out

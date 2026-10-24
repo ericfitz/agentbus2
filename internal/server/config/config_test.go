@@ -18,8 +18,8 @@ func valid() Config {
 
 func goodIssuer() Issuer {
 	return Issuer{
-		Issuer: "https://idp.example", JWKSURI: "https://idp.example/jwks", Audience: "agentbus",
-		Algorithms: []string{"ES256"}, Subjects: map[string]string{"sub1": "pat"},
+		Name: "corp", Issuer: "https://idp.example", JWKSURI: "https://idp.example/jwks", Audience: "agentbus",
+		Algorithms: []string{"ES256"},
 	}
 }
 
@@ -78,17 +78,16 @@ func TestValidateRejects(t *testing.T) {
 		{"jwks refresh", func(c *Config) { c.JWKSRefreshSeconds = 5 }, "jwks_refresh_seconds"},
 		{"no audience", func(c *Config) { i := goodIssuer(); i.Audience = ""; c.Issuers = []Issuer{i} }, "audience"},
 		{"bad algorithm", func(c *Config) { i := goodIssuer(); i.Algorithms = []string{"HS256"}; c.Issuers = []Issuer{i} }, "algorithm"},
-		{"subject everyone", func(c *Config) {
-			i := goodIssuer()
-			i.Subjects = map[string]string{"s": "everyone"}
-			c.Issuers = []Issuer{i}
-		}, "subjects"},
-		{"subject slash", func(c *Config) {
-			i := goodIssuer()
-			i.Subjects = map[string]string{"s": "a/b"}
-			c.Issuers = []Issuer{i}
-		}, "subjects"},
-		{"no subjects", func(c *Config) { i := goodIssuer(); i.Subjects = nil; c.Issuers = []Issuer{i} }, "subjects"},
+		{"no name", func(c *Config) { i := goodIssuer(); i.Name = ""; c.Issuers = []Issuer{i} }, "name is required"},
+		{"name slash", func(c *Config) { i := goodIssuer(); i.Name = "a/b"; c.Issuers = []Issuer{i} }, "name"},
+		{"name everyone", func(c *Config) { i := goodIssuer(); i.Name = "everyone"; c.Issuers = []Issuer{i} }, "reserved"},
+		{"duplicate name", func(c *Config) {
+			i, j := goodIssuer(), goodIssuer()
+			j.Issuer = "https://other.example"
+			c.Issuers = []Issuer{i, j}
+		}, `issuers: entry 1: name "corp" repeats entry 0`},
+		{"lifetime negative", func(c *Config) { i := goodIssuer(); i.HumanTokenLifetimeSeconds = -1; c.Issuers = []Issuer{i} }, "human_token_lifetime_seconds"},
+		{"lifetime too long", func(c *Config) { i := goodIssuer(); i.HumanTokenLifetimeSeconds = 86401; c.Issuers = []Issuer{i} }, "human_token_lifetime_seconds"},
 		{"jwks uri", func(c *Config) { i := goodIssuer(); i.JWKSURI = "jwks"; c.Issuers = []Issuer{i} }, "jwks_uri"},
 		{"duplicate issuer", func(c *Config) {
 			i, j := goodIssuer(), goodIssuer()
@@ -196,5 +195,25 @@ func TestCoreMapsDefaultACL(t *testing.T) {
 	// The shipped default and store.DefaultACL agree, so nil is faithful.
 	if got := DefaultACLFunc(shippedDefault())("pat"); !reflect.DeepEqual(got, store.DefaultACL("pat")) {
 		t.Errorf("shipped literal %v differs from store.DefaultACL %v", got, store.DefaultACL("pat"))
+	}
+}
+
+// TestIssuerValidation: the entry name and the human lifetime (spec 5.1).
+func TestIssuerValidation(t *testing.T) {
+	for _, n := range []int{0, 1, 900, 86400} {
+		c := valid()
+		i := goodIssuer()
+		i.HumanTokenLifetimeSeconds = n
+		c.Issuers = []Issuer{i}
+		if err := c.Validate(); err != nil {
+			t.Errorf("lifetime %d rejected: %v", n, err)
+		}
+	}
+	c := valid()
+	i := goodIssuer()
+	i.Claims = IssuerClaims{Email: "mail", Groups: "roles", Subject: "user_id"}
+	c.Issuers = []Issuer{i}
+	if err := c.Validate(); err != nil {
+		t.Errorf("custom claims rejected: %v", err)
 	}
 }

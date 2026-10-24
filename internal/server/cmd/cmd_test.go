@@ -22,6 +22,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/auth/assertion"
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentbus2/internal/auth/token"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/bus/remote"
 	"github.com/ericfitz/agentbus2/internal/core/notify/pgnotify"
@@ -611,24 +612,28 @@ func TestRunOverUnixSocket(t *testing.T) {
 	}
 }
 
-// externalIssuers carries algorithms and jwks_refresh_seconds into
-// token.External; the 300 s default of both sides would hide a dropped TTL.
+// externalIssuers carries the name, algorithms, claim names, the human
+// lifetime and jwks_refresh_seconds into token.External; the 300 s default of
+// the TTL would hide a dropped value.
 func TestExternalIssuersMapping(t *testing.T) {
 	cfg := config.Default()
 	cfg.JWKSRefreshSeconds = 42
 	cfg.Issuers = []config.Issuer{
-		{Issuer: "https://a", JWKSURI: "https://a/jwks", Audience: "x", Algorithms: []string{"ES256", "RS256"}, Subjects: map[string]string{"s": "pat"}},
-		{Issuer: "https://b", JWKSURI: "https://b/jwks", Audience: "y", Subjects: map[string]string{"t": "kim"}},
+		{Name: "a", Issuer: "https://a", JWKSURI: "https://a/jwks", Audience: "x", Algorithms: []string{"ES256", "RS256"},
+			Claims: config.IssuerClaims{Email: "mail", Subject: "user_id"}, HumanTokenLifetimeSeconds: 600},
+		{Name: "b", Issuer: "https://b", JWKSURI: "https://b/jwks", Audience: "y"},
 	}
 	got := externalIssuers(cfg)
 	if len(got) != 2 {
 		t.Fatalf("%d externals, want 2", len(got))
 	}
-	if a := got[0]; a.Issuer != "https://a" || a.JWKSURI != "https://a/jwks" || a.Audience != "x" || a.Subjects["s"] != "pat" ||
-		a.TTL != 42*time.Second || len(a.Algorithms) != 2 || a.Algorithms[0] != jose.ES256 || a.Algorithms[1] != jose.RS256 {
+	if a := got[0]; a.Name != "a" || a.Issuer != "https://a" || a.JWKSURI != "https://a/jwks" || a.Audience != "x" ||
+		a.TTL != 42*time.Second || len(a.Algorithms) != 2 || a.Algorithms[0] != jose.ES256 || a.Algorithms[1] != jose.RS256 ||
+		a.Claims != (token.ClaimNames{Email: "mail", Groups: "groups", Subject: "user_id"}) || a.HumanLifetime != 600*time.Second {
 		t.Fatalf("first external %+v", a)
 	}
-	if b := got[1]; b.Algorithms != nil || b.TTL != 42*time.Second {
-		t.Fatalf("second external %+v: want nil algorithms (the verifier's default) and the TTL", b)
+	if b := got[1]; b.Name != "b" || b.Algorithms != nil || b.TTL != 42*time.Second ||
+		b.Claims != (token.ClaimNames{Email: "email", Groups: "groups", Subject: "sub"}) || b.HumanLifetime != 900*time.Second {
+		t.Fatalf("second external %+v: want nil algorithms (the verifier's default), the TTL, default claims and 900 s", b)
 	}
 }

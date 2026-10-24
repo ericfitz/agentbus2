@@ -31,11 +31,14 @@ var (
 	ErrInvalid = errors.New("token: invalid")
 	// ErrUnknownKey marks a bearer whose kid names no key of its issuer.
 	ErrUnknownKey = errors.New("token: unknown key")
-	// ErrUnknownIssuer marks a bearer whose iss is neither the own issuer nor a configured one.
+	// ErrUnknownIssuer marks a bearer whose iss is not the own issuer.
 	ErrUnknownIssuer = errors.New("token: unknown issuer")
-	// ErrUnmappedSubject marks an external bearer whose sub has no identity
-	// mapping; it is wrapped alongside ErrInvalid.
-	ErrUnmappedSubject = errors.New("token: unmapped subject")
+	// ErrNoEmail marks a provider token without a usable email claim; it is
+	// wrapped alongside ErrInvalid.
+	ErrNoEmail = errors.New("token: no email claim")
+	// ErrJWKSUnavailable marks a provider key set that could not be fetched
+	// and left no usable key (the provider is down, not the token bad).
+	ErrJWKSUnavailable = errors.New("token: issuer key set unavailable")
 )
 
 var serverAlgorithms = []jose.SignatureAlgorithm{jose.EdDSA, jose.ES256}

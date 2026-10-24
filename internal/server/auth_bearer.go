@@ -1,10 +1,8 @@
 package server
 
 import (
-	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -16,25 +14,14 @@ import (
 )
 
 // Bearer authenticates a request by its Authorization: Bearer token (Decisions
-// 57, 70): a token the own Issuer minted or one a configured External issuer
-// signed. It attaches the identity the token names and judges nothing about
-// the identity's registration: the core answers not_registered (Milestone 5
-// choice 5).
+// 57, 70): a token the own Issuer minted. A provider token is never accepted
+// here (Decision 10); it is exchanged at the token endpoint. Bearer attaches
+// the identity the token names and judges nothing about the identity's
+// registration: the core answers not_registered (Milestone 5 choice 5).
 type Bearer struct {
 	Verifier token.Verifier
 	// Now is the clock for own bearers; nil keeps Verifier.Now.
 	Now func() time.Time
-	// AutoCreate, when non-nil, is called with the identity of a bearer an
-	// External issuer verified (never one the own Issuer verified, so a
-	// deleted identity's own token stays 403 not_registered). Run sets it to
-	// identities.Service.EnsureIdentity (CreateIdentity behind a read, so a
-	// known name costs no write transaction) only in open registration mode
-	// (Decision (Eric, 2026-10-21), item 5). It is idempotent; its error is
-	// logged and the request goes on to the core, which answers
-	// not_registered.
-	AutoCreate func(ctx context.Context, name string) error
-	// Logger receives AutoCreate errors; nil discards them.
-	Logger *slog.Logger
 }
 
 // Authenticate implements Authenticator. No header gives "" and nil; a header
@@ -56,18 +43,9 @@ func (b Bearer) Authenticate(r *http.Request) (string, error) {
 	if b.Now != nil {
 		v.Now = b.Now
 	}
-	id, external, err := v.Verify(r.Context(), raw)
+	id, err := v.Verify(r.Context(), raw)
 	if err != nil {
 		return "", fmt.Errorf("invalid bearer token: %s", verifyReason(err))
-	}
-	if external && b.AutoCreate != nil {
-		if err := b.AutoCreate(r.Context(), id); err != nil {
-			log := b.Logger
-			if log == nil {
-				log = slog.New(slog.DiscardHandler)
-			}
-			log.Error("auto-creating the identity of an external subject", "identity", id, "err", err)
-		}
 	}
 	return id, nil
 }
@@ -88,9 +66,7 @@ func bearerToken(h string) (string, bool) {
 }
 
 // verifyReason maps a verification error to one of the fixed reasons; the
-// default is malformed. A JWKS fetch failure of an external issuer also lands
-// on malformed: the closed reason list has no better word, and the request is
-// refused either way.
+// default is malformed.
 func verifyReason(err error) string {
 	switch {
 	case errors.Is(err, token.ErrUnknownIssuer), errors.Is(err, jwt.ErrInvalidIssuer):
@@ -103,8 +79,6 @@ func verifyReason(err error) string {
 		return "wrong audience"
 	case errors.Is(err, jose.ErrCryptoFailure):
 		return "bad signature"
-	case errors.Is(err, token.ErrUnmappedSubject):
-		return "unmapped subject"
 	}
 	return "malformed"
 }

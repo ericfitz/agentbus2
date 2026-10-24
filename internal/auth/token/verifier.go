@@ -29,42 +29,27 @@ func IssuerOf(raw string) (string, error) {
 	return iss, nil
 }
 
-// Verifier routes a bearer to the own issuer or a configured external one by its iss.
+// Verifier verifies a bearer against the own issuer. A provider token is never
+// a bearer (Decision 10): it is exchanged at the token endpoint for an own one.
 type Verifier struct {
-	Own      *Issuer // nil: no own issuer
-	External []*External
-	// Now is the clock for own bearers only (nil: time.Now). It does not reach
-	// External: each External judges its claims and its JWKS cache by its own
-	// Now, so a caller that injects a clock sets External.Now as well.
+	Own *Issuer // nil: no own issuer
+	// Now is the clock for own bearers (nil: time.Now).
 	Now func() time.Time
 }
 
-// Verify returns the identity of a valid bearer and whether an external issuer
-// vouched for it. An iss that is empty or matches no issuer is ErrUnknownIssuer.
-func (v Verifier) Verify(ctx context.Context, raw string) (string, bool, error) {
+// Verify returns the identity of a valid own bearer. An iss that is empty or
+// not the own issuer's is ErrUnknownIssuer.
+func (v Verifier) Verify(_ context.Context, raw string) (string, error) {
 	iss, err := IssuerOf(raw)
 	if err != nil {
-		return "", false, err
+		return "", err
 	}
-	if iss == "" {
-		return "", false, ErrUnknownIssuer
+	if iss == "" || v.Own == nil || iss != v.Own.URL() {
+		return "", ErrUnknownIssuer
 	}
 	now := time.Now
 	if v.Now != nil {
 		now = v.Now
 	}
-	if v.Own != nil && iss == v.Own.URL() {
-		id, err := v.Own.Verify(raw, now())
-		return id, false, err
-	}
-	for _, e := range v.External {
-		if e != nil && e.Issuer == iss {
-			id, err := e.Verify(ctx, raw)
-			if err != nil {
-				return "", false, err
-			}
-			return id, true, nil
-		}
-	}
-	return "", false, ErrUnknownIssuer
+	return v.Own.Verify(raw, now())
 }

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -131,14 +132,48 @@ func extToken(t *testing.T, k crypto.Signer, mut func(*jwt.Claims)) string {
 	if mut != nil {
 		mut(&c)
 	}
-	return signRaw(t, k, kid, c)
+	return extSign(t, k, kid, c, map[string]any{"email": "alice@corp.example"})
+}
+
+// extSign signs c plus extra claims (a nil value drops the key).
+func extSign(t *testing.T, k crypto.Signer, kid string, c jwt.Claims, extra map[string]any) string {
+	t.Helper()
+	alg := jose.EdDSA
+	if a, _ := keys.AlgorithmOf(k.Public()); a == keys.ES256 {
+		alg = jose.ES256
+	}
+	sg, err := jose.NewSigner(jose.SigningKey{Algorithm: alg, Key: k}, (&jose.SignerOptions{}).WithHeader("kid", kid))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for key, v := range extra {
+		if v == nil {
+			delete(extra, key)
+		}
+	}
+	raw, err := jwt.Signed(sg).Claims(c).Claims(extra).Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
+
+// extTokenWith is extToken with extra claims; the default email is dropped unless extra sets it.
+func extTokenWith(t *testing.T, k crypto.Signer, extra map[string]any) string {
+	t.Helper()
+	kid, _ := keys.KID(k.Public())
+	c := jwt.Claims{
+		Issuer: extIss, Subject: "idp-user-1", Audience: jwt.Audience{extAud}, ID: "j",
+		IssuedAt: jwt.NewNumericDate(t0), Expiry: jwt.NewNumericDate(t0.Add(time.Hour)),
+	}
+	return extSign(t, k, kid, c, extra)
 }
 
 func newExternal(s *jwksServer, clk *clock) *External {
 	return &External{
 		Issuer: extIss, JWKSURI: s.URL, Audience: extAud,
-		Subjects: map[string]string{"idp-user-1": "alice"},
-		Now:      clk.Now,
+		Name: "corp",
+		Now:  clk.Now,
 	}
 }
 
@@ -151,14 +186,15 @@ func genRSA(t *testing.T) *rsa.PrivateKey {
 	return k
 }
 
-func TestExternalVerifyMapsSubject(t *testing.T) {
+func TestExternalVerifyClaims(t *testing.T) {
 	for _, alg := range bothAlgs {
 		k := genKey(t, alg)
 		s := newJWKS(t, k)
 		e := newExternal(s, &clock{t: t0})
-		id, err := e.Verify(context.Background(), extToken(t, k, nil))
-		if err != nil || id != "alice" {
-			t.Fatalf("%s: %q, %v", alg, id, err)
+		f, err := e.Verify(context.Background(), extToken(t, k, nil))
+		want := Federated{Issuer: extIss, Name: "corp", Email: "alice@corp.example", Subject: "idp-user-1"}
+		if err != nil || !reflect.DeepEqual(f, want) {
+			t.Fatalf("%s: %+v, %v, want %+v", alg, f, err, want)
 		}
 		// The cache serves a second token without another fetch.
 		if _, err := e.Verify(context.Background(), extToken(t, k, nil)); err != nil {
@@ -184,13 +220,13 @@ func TestExternalRS256(t *testing.T) {
 		t.Fatal(err)
 	}
 	raw, err := jwt.Signed(sg).Claims(jwt.Claims{Issuer: extIss, Subject: "idp-user-1", Audience: jwt.Audience{extAud},
-		Expiry: jwt.NewNumericDate(t0.Add(time.Hour))}).Serialize()
+		Expiry: jwt.NewNumericDate(t0.Add(time.Hour))}).Claims(map[string]any{"email": "alice@corp.example"}).Serialize()
 	if err != nil {
 		t.Fatal(err)
 	}
 	e := newExternal(s, &clock{t: t0})
-	if id, err := e.Verify(context.Background(), raw); err != nil || id != "alice" {
-		t.Fatalf("%q %v", id, err)
+	if f, err := e.Verify(context.Background(), raw); err != nil || f.Email != "alice@corp.example" {
+		t.Fatalf("%+v %v", f, err)
 	}
 	// Restricting the list to EdDSA refuses it.
 	e2 := newExternal(s, &clock{t: t0})
@@ -248,7 +284,7 @@ func TestExternalRefetchOnUnknownKidOnce(t *testing.T) {
 	}
 }
 
-func TestExternalRefusesUnmappedAndWrongAudience(t *testing.T) {
+func TestExternalRefusesBadClaims(t *testing.T) {
 	k := genKey(t, keys.EdDSA)
 	s := newJWKS(t, k)
 	e := newExternal(s, &clock{t: t0})
@@ -258,7 +294,6 @@ func TestExternalRefusesUnmappedAndWrongAudience(t *testing.T) {
 		mut   func(*jwt.Claims)
 		cause error
 	}{
-		"unmapped": {func(c *jwt.Claims) { c.Subject = "stranger" }, nil},
 		"audience": {func(c *jwt.Claims) { c.Audience = jwt.Audience{"someone-else"} }, jwt.ErrInvalidAudience},
 		"issuer":   {func(c *jwt.Claims) { c.Issuer = "https://evil.example" }, jwt.ErrInvalidIssuer},
 		"expired":  {func(c *jwt.Claims) { c.Expiry = jwt.NewNumericDate(t0.Add(-5 * time.Minute)) }, jwt.ErrExpired},
@@ -272,9 +307,6 @@ func TestExternalRefusesUnmappedAndWrongAudience(t *testing.T) {
 		}
 		if c.cause != nil && !errors.Is(err, c.cause) {
 			t.Errorf("%s: %v, want %v in the chain", name, err, c.cause)
-		}
-		if name == "unmapped" && (!errors.Is(err, ErrUnmappedSubject) || !strings.Contains(err.Error(), `subject "stranger" is not mapped`)) {
-			t.Errorf("unmapped text: %v", err)
 		}
 	}
 	// A forged signature under a known kid.
@@ -300,41 +332,150 @@ func TestExternalRefusesUnmappedAndWrongAudience(t *testing.T) {
 
 func TestVerifierRoutesByIssuer(t *testing.T) {
 	ek := genKey(t, keys.ES256)
-	s := newJWKS(t, ek)
 	clk := &clock{t: t0}
 	own := newIssuer(t, keys.EdDSA, issURL, nil)
-	v := Verifier{Own: own, External: []*External{newExternal(s, clk)}, Now: clk.Now}
+	v := Verifier{Own: own, Now: clk.Now}
 	ctx := context.Background()
 
 	raw, _, _ := own.Mint(MintInput{Identity: "bob", Kind: KindAgent})
-	id, ext, err := v.Verify(ctx, raw)
-	if err != nil || id != "bob" || ext {
-		t.Errorf("own: %q %v %v", id, ext, err)
+	id, err := v.Verify(ctx, raw)
+	if err != nil || id != "bob" {
+		t.Errorf("own: %q %v", id, err)
 	}
-	id, ext, err = v.Verify(ctx, extToken(t, ek, nil))
-	if err != nil || id != "alice" || !ext {
-		t.Errorf("external: %q %v %v", id, ext, err)
+	// A corporate token is never accepted as a bearer (Decision 10).
+	if _, err := v.Verify(ctx, extToken(t, ek, nil)); !errors.Is(err, ErrUnknownIssuer) {
+		t.Errorf("external: %v", err)
 	}
 	other := genKey(t, keys.EdDSA)
-	if _, _, err := v.Verify(ctx, extToken(t, other, func(c *jwt.Claims) { c.Issuer = "https://unknown.example" })); !errors.Is(err, ErrUnknownIssuer) {
+	if _, err := v.Verify(ctx, extToken(t, other, func(c *jwt.Claims) { c.Issuer = "https://unknown.example" })); !errors.Is(err, ErrUnknownIssuer) {
 		t.Errorf("unknown: %v", err)
 	}
-	if _, _, err := v.Verify(ctx, extToken(t, other, func(c *jwt.Claims) { c.Issuer = "" })); !errors.Is(err, ErrUnknownIssuer) {
+	if _, err := v.Verify(ctx, extToken(t, other, func(c *jwt.Claims) { c.Issuer = "" })); !errors.Is(err, ErrUnknownIssuer) {
 		t.Errorf("no iss: %v", err)
 	}
 	for _, bad := range []string{"", "abc", "a.b.c", "a.!!.c"} {
-		if _, _, err := v.Verify(ctx, bad); err == nil {
+		if _, err := v.Verify(ctx, bad); err == nil {
 			t.Errorf("accepted %q", bad)
 		}
 	}
 	// No own issuer: its tokens have an unknown issuer.
-	v2 := Verifier{External: v.External, Now: clk.Now}
-	if _, _, err := v2.Verify(ctx, raw); !errors.Is(err, ErrUnknownIssuer) {
+	if _, err := (Verifier{Now: clk.Now}).Verify(ctx, raw); !errors.Is(err, ErrUnknownIssuer) {
 		t.Errorf("no own: %v", err)
 	}
-	// A token for the own issuer is never routed to an external one that names the same URL.
 	if iss, err := IssuerOf(raw); err != nil || iss != issURL {
 		t.Errorf("IssuerOf = %q, %v", iss, err)
+	}
+}
+
+func TestExternalGroupsShapes(t *testing.T) {
+	k := genKey(t, keys.EdDSA)
+	s := newJWKS(t, k)
+	cases := []struct {
+		name    string
+		groups  any
+		want    []string
+		invalid bool
+	}{
+		{"absent", nil, nil, false},
+		{"string", "pai-users", []string{"pai-users"}, false},
+		{"array", []any{"a", "b"}, []string{"a", "b"}, false},
+		{"array with number", []any{"a", 1}, nil, true},
+		{"object", map[string]any{"a": "b"}, nil, true},
+		{"number", 7, nil, true},
+	}
+	for _, c := range cases {
+		e := newExternal(s, &clock{t: t0})
+		f, err := e.Verify(context.Background(), extTokenWith(t, k, map[string]any{"email": "a@corp.example", "groups": c.groups}))
+		if c.invalid {
+			if !errors.Is(err, ErrInvalid) {
+				t.Errorf("%s: %v, want ErrInvalid", c.name, err)
+			}
+			continue
+		}
+		if err != nil || !reflect.DeepEqual(f.Groups, c.want) {
+			t.Errorf("%s: %v %v, want %v", c.name, f.Groups, err, c.want)
+		}
+	}
+}
+
+func TestExternalNoEmailRefused(t *testing.T) {
+	k := genKey(t, keys.EdDSA)
+	s := newJWKS(t, k)
+	for name, email := range map[string]any{"absent": nil, "empty": "", "number": 5, "object": map[string]any{}} {
+		e := newExternal(s, &clock{t: t0})
+		_, err := e.Verify(context.Background(), extTokenWith(t, k, map[string]any{"email": email}))
+		if !errors.Is(err, ErrNoEmail) || !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: %v, want ErrNoEmail and ErrInvalid", name, err)
+		}
+	}
+}
+
+func TestExternalCustomClaimNames(t *testing.T) {
+	k := genKey(t, keys.EdDSA)
+	s := newJWKS(t, k)
+	e := newExternal(s, &clock{t: t0})
+	e.Claims = ClaimNames{Email: "mail", Groups: "roles", Subject: "user_id"}
+	raw := extTokenWith(t, k, map[string]any{"mail": "b@corp.example", "roles": []string{"x"}, "user_id": "u-9", "email": "wrong@corp.example"})
+	f, err := e.Verify(context.Background(), raw)
+	want := Federated{Issuer: extIss, Name: "corp", Email: "b@corp.example", Groups: []string{"x"}, Subject: "u-9"}
+	if err != nil || !reflect.DeepEqual(f, want) {
+		t.Fatalf("%+v, %v, want %+v", f, err, want)
+	}
+}
+
+func TestExternalNoSubjectRefused(t *testing.T) {
+	k := genKey(t, keys.EdDSA)
+	s := newJWKS(t, k)
+	e := newExternal(s, &clock{t: t0})
+	e.Claims.Subject = "user_id"
+	for name, v := range map[string]any{"absent": nil, "empty": "", "number": 3} {
+		_, err := e.Verify(context.Background(), extTokenWith(t, k, map[string]any{"email": "a@corp.example", "user_id": v}))
+		if !errors.Is(err, ErrInvalid) {
+			t.Errorf("%s: %v, want ErrInvalid", name, err)
+		}
+	}
+}
+
+func TestExternalClientIDOrAzp(t *testing.T) {
+	k := genKey(t, keys.EdDSA)
+	s := newJWKS(t, k)
+	e := newExternal(s, &clock{t: t0})
+	email := "a@corp.example"
+	for _, c := range []struct {
+		name  string
+		extra map[string]any
+		want  string
+	}{
+		{"both", map[string]any{"client_id": "c1", "azp": "z1"}, "c1"},
+		{"azp", map[string]any{"azp": "z1"}, "z1"},
+		{"neither", map[string]any{}, ""},
+	} {
+		c.extra["email"] = email
+		f, err := e.Verify(context.Background(), extTokenWith(t, k, c.extra))
+		if err != nil || f.ClientID != c.want {
+			t.Errorf("%s: %q %v, want %q", c.name, f.ClientID, err, c.want)
+		}
+	}
+	_, err := e.Verify(context.Background(), extTokenWith(t, k, map[string]any{"email": email, "client_id": 5}))
+	if !errors.Is(err, ErrInvalid) {
+		t.Errorf("non-string client_id: %v, want ErrInvalid", err)
+	}
+}
+
+func TestExternalJWKSDownIsUnavailable(t *testing.T) {
+	k := genKey(t, keys.EdDSA)
+	s := newJWKS(t, k)
+	s.setStatus(500)
+	e := newExternal(s, &clock{t: t0})
+	if _, err := e.Verify(context.Background(), extToken(t, k, nil)); !errors.Is(err, ErrJWKSUnavailable) {
+		t.Errorf("500: %v, want ErrJWKSUnavailable", err)
+	}
+	// Unreachable: the server is closed before the first fetch.
+	s2 := newJWKS(t, k)
+	e2 := newExternal(s2, &clock{t: t0})
+	s2.Close()
+	if _, err := e2.Verify(context.Background(), extToken(t, k, nil)); !errors.Is(err, ErrJWKSUnavailable) {
+		t.Errorf("unreachable: %v, want ErrJWKSUnavailable", err)
 	}
 }
 
@@ -363,8 +504,8 @@ func TestExternalServesCachedSetWhenRefreshFails(t *testing.T) {
 	s.setStatus(500)
 	clk.Add(10 * time.Minute)
 	for i := 0; i < 4; i++ {
-		if id, err := e.Verify(ctx, extToken(t, k, nil)); err != nil || id != "alice" {
-			t.Fatalf("outage %d: %q, %v", i, id, err)
+		if f, err := e.Verify(ctx, extToken(t, k, nil)); err != nil || f.Email != "alice@corp.example" {
+			t.Fatalf("outage %d: %+v, %v", i, f, err)
 		}
 	}
 	if n := s.fetches.Load(); n != 2 {
@@ -422,8 +563,8 @@ func TestExternalFailedFirstFetchBacksOff(t *testing.T) {
 	}
 	s.setStatus(200)
 	clk.Add(2 * time.Minute)
-	if id, err := e.Verify(ctx, extToken(t, k, nil)); err != nil || id != "alice" {
-		t.Fatalf("after recovery: %q, %v", id, err)
+	if f, err := e.Verify(ctx, extToken(t, k, nil)); err != nil || f.Email != "alice@corp.example" {
+		t.Fatalf("after recovery: %+v, %v", f, err)
 	}
 }
 
@@ -550,8 +691,8 @@ func TestExternalCanceledRequestDoesNotFailTheFetch(t *testing.T) {
 	}
 	// The fetch the canceled request started still lands; the next request uses it and does not fetch again.
 	release()
-	if id, err := e.Verify(context.Background(), extToken(t, k, nil)); err != nil || id != "alice" {
-		t.Fatalf("after cancellation: %q, %v", id, err)
+	if f, err := e.Verify(context.Background(), extToken(t, k, nil)); err != nil || f.Email != "alice@corp.example" {
+		t.Fatalf("after cancellation: %+v, %v", f, err)
 	}
 	if n := s.fetches.Load(); n != 1 {
 		t.Fatalf("fetches = %d, want 1", n)
