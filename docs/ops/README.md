@@ -5,6 +5,7 @@ One binary, `agentbus2`, provides the server (`agentbus2 server`) and its host-s
 - [deploy.md](deploy.md): one host over SQLite, the Docker image, Postgres with two replicas, proxies, health.
 - [configuration.md](configuration.md): precedence, flags, and every setting with its environment variable, default and bounds. Checked against the code by `go test ./internal/server/config/`.
 - [admin-bootstrap.md](admin-bootstrap.md): `server admin` commands, enrollment tokens, the first administrator, the admin API.
+- [slack-bridge.md](slack-bridge.md): the Slack app, the token files, creating, removing and archiving a bridge, and what happens when a create fails.
 - [backup.md](backup.md): what to back up, how, and what a restore loses.
 - [upgrade.md](upgrade.md): versions and what happens to the database at start.
 

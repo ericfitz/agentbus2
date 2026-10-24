@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"cmp"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -22,6 +23,9 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core/notify/pgnotify"
 	"github.com/ericfitz/agentbus2/internal/server"
 	"github.com/ericfitz/agentbus2/internal/server/config"
+	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentbus2/internal/slackapi/slackgo"
+	"github.com/ericfitz/agentbus2/internal/slackbridge"
 )
 
 // Run is `agentbus2 server` (Decision 85): the configuration comes from the
@@ -95,6 +99,13 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		logger.Warn(w)
 	}
 
+	// The Slack tokens are read before the store is opened, so a bad file
+	// changes nothing.
+	slackClient, err := slackClientFor(cfg, logger)
+	if err != nil {
+		return fail(2, "%v", err)
+	}
+
 	st, err := openStore(ctx, cfg, logger)
 	if err != nil {
 		return fail(1, "%v", err)
@@ -165,6 +176,12 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		Issuer:       issuer,
 		External:     ext,
 		Embedder:     embedder,
+		Slack:        slackClient,
+		SlackCfg: slackbridge.Config{
+			ArchiveAfterDone: time.Duration(cfg.SlackArchiveAfterDoneHours) * time.Hour,
+			MaxMessageChars:  cfg.SlackMaxMessageChars,
+			Logger:           logger,
+		},
 		Ready: func(a net.Addr) {
 			_, _ = fmt.Fprintf(stdout, "agentbus2 server listening on %s (%s, registration %s, issuer %s, kid %s)\n",
 				a, engine, mode, issuer.URL(), issuer.KID())
@@ -278,4 +295,34 @@ func embeddingKey(cfg config.Config, environ []string) (string, error) {
 		return strings.TrimSpace(val), nil
 	}
 	return "", nil
+}
+
+// slackClientFor reads the two Slack token files and builds the adapter; nil
+// when no Slack setting is present (the bridge is off). Validate has already
+// required both files or neither. An error names the setting, never a token or
+// any file content.
+func slackClientFor(cfg config.Config, logger *slog.Logger) (slackapi.Client, error) {
+	if cfg.SlackAppTokenFile == "" {
+		return nil, nil
+	}
+	read := func(setting, path string) (string, error) {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			var pe *os.PathError
+			if errors.As(err, &pe) {
+				err = pe.Err // the path is the operator's own; the reason is enough
+			}
+			return "", fmt.Errorf("%s: %w", setting, err)
+		}
+		return strings.TrimSpace(string(b)), nil
+	}
+	app, err := read("slack_app_token_file", cfg.SlackAppTokenFile)
+	if err != nil {
+		return nil, err
+	}
+	bot, err := read("slack_bot_token_file", cfg.SlackBotTokenFile)
+	if err != nil {
+		return nil, err
+	}
+	return slackgo.New(app, bot, slackgo.Options{Logger: logger})
 }

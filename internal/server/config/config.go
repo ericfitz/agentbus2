@@ -78,6 +78,12 @@ type Config struct {
 	EmbeddingAPIKeyEnv           string  `json:"embedding_api_key_env"`
 	EmbeddingQueryTimeoutSeconds float64 `json:"embedding_query_timeout_seconds"`
 
+	// The Slack bridge (Slack bridge spec 5.1). Both token files or neither.
+	SlackAppTokenFile          string `json:"slack_app_token_file"`
+	SlackBotTokenFile          string `json:"slack_bot_token_file"`
+	SlackArchiveAfterDoneHours int    `json:"slack_archive_after_done_hours"`
+	SlackMaxMessageChars       int    `json:"slack_max_message_chars"`
+
 	LogLevel string `json:"log_level"`
 }
 
@@ -90,6 +96,9 @@ func Default() Config {
 		DefaultACL:           shippedDefault(),
 		ChannelCreation:      d.ChannelCreation,
 		LogLevel:             "info",
+
+		SlackArchiveAfterDoneHours: 168,
+		SlackMaxMessageChars:       3000,
 
 		ReceiptRetentionMinutes:      d.ReceiptRetentionMinutes,
 		SessionRetentionHours:        d.SessionRetentionHours,
@@ -239,6 +248,15 @@ func (c Config) Validate() error {
 	}
 	if c.EmbeddingAPIKeyFile != "" && c.EmbeddingAPIKeyEnv != "" {
 		return errors.New("at most one of embedding_api_key_file and embedding_api_key_env may be set")
+	}
+	if (c.SlackAppTokenFile == "") != (c.SlackBotTokenFile == "") {
+		return errors.New("slack_app_token_file and slack_bot_token_file must be set together")
+	}
+	if c.SlackArchiveAfterDoneHours < 1 || c.SlackArchiveAfterDoneHours > 8760 {
+		return fmt.Errorf("slack_archive_after_done_hours must be between 1 and 8760, got %d", c.SlackArchiveAfterDoneHours)
+	}
+	if c.SlackMaxMessageChars < 200 || c.SlackMaxMessageChars > 3000 {
+		return fmt.Errorf("slack_max_message_chars must be between 200 and 3000, got %d", c.SlackMaxMessageChars)
 	}
 	return nil
 }

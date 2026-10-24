@@ -77,7 +77,7 @@ An administrator who wants only pre-created names to register mints only bound t
 
 ## Walk-through: a job with agents, people and a Slack channel
 
-The commands below are the administrator's client commands (`-profile` and `-identity` select the administrator; each prints one JSON document). They assume a server with the Slack bridge configured; without one every `bridges` action answers `forbidden` ("the Slack bridge is not configured"). The example is a job called `pai1`.
+The commands below are the administrator's client commands (`-profile` and `-identity` select the administrator; each prints one JSON document). They assume a server with the Slack bridge configured (see [slack-bridge.md](slack-bridge.md) for the Slack app and the token files); without one every `bridges` action answers `forbidden` ("the Slack bridge is not configured"). The example is a job called `pai1`.
 
 1. Create the scope: `agentbus2 scopes create pai1`.
 2. Create the agents: `agentbus2 identities create -scope pai1 pai1-worker`. It prints `identity`, `scope`, `created`, `enrollment_token` and `expires_at`; hand the token to the agent, which registers with it. (On the server host `server admin ... create-identity pai1-worker -scope pai1` does the same.)

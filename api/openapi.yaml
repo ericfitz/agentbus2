@@ -1033,7 +1033,7 @@ paths:
       tags: [admin]
       responses:
         "204":
-          description: The bridge is archived.
+          description: The Slack channel is archived and the bridge is deleted.
         default:
           $ref: "#/components/responses/Problem"
 components:

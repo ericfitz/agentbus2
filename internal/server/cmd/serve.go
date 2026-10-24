@@ -18,8 +18,14 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core/maintenance"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/server"
+	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentbus2/internal/slackbridge"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
+
+// The Slack bridge serves the server's bridge operations structurally
+// (internal/server imports no Slack package).
+var _ server.Bridges = (*slackbridge.Service)(nil)
 
 // Config is what Serve needs.
 type Config struct {
@@ -41,6 +47,12 @@ type Config struct {
 	Issuer       *token.Issuer     // nil: local mode, the token endpoint answers 503
 	External     []*token.External // configured external issuers (Decision 57)
 	Embedder     core.Embedder     // nil: text search only; embed.Install when set
+
+	// Slack is the Slack Web API and Socket Mode client; nil: the Slack bridge
+	// is off and bridge calls answer forbidden. SlackCfg configures the bridge
+	// built over it.
+	Slack    slackapi.Client
+	SlackCfg slackbridge.Config
 
 	// OnTick, when non-nil, is called after every maintenance Tick from the
 	// maintenance goroutine.
@@ -111,10 +123,36 @@ func Serve(ctx context.Context, c Config) error {
 		return fmt.Errorf("server: creating the general channel: %w", err)
 	}
 
+	// Only invalid_auth fails start-up (a wrong token is an operator error);
+	// a Slack that cannot be reached leaves the bridge not ready, and Run
+	// below retries.
+	var bridges server.Bridges
+	var br *slackbridge.Service
+	if c.Slack != nil {
+		scfg := c.SlackCfg
+		if scfg.Logger == nil {
+			scfg.Logger = c.Logger
+		}
+		if br, err = slackbridge.New(ctx, cr, c.Slack, scfg); err != nil {
+			return fmt.Errorf("server: Slack bridge (slack_bot_token_file, slack_archive_after_done_hours, slack_max_message_chars): %w", err)
+		}
+		bridges = br
+	}
+
 	mctx, stopMaint := context.WithCancel(ctx)
 	var wg sync.WaitGroup
 	defer func() { stopMaint(); wg.Wait() }()
 	m := maintenance.New(cr)
+	if br != nil {
+		m.Archiver = br
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := br.Run(mctx); err != nil {
+				cr.Log.Error("slack bridge", "err", err)
+			}
+		}()
+	}
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -154,7 +192,7 @@ func Serve(ctx context.Context, c Config) error {
 	if c.Ready != nil {
 		c.Ready(ln.Addr())
 	}
-	srv := httpServer(c, server.New(cr, server.Options{Auth: c.Auth, Logger: c.Logger, Registration: c.Registration, Issuer: c.Issuer, External: c.External}))
+	srv := httpServer(c, server.New(cr, server.Options{Auth: c.Auth, Logger: c.Logger, Registration: c.Registration, Issuer: c.Issuer, External: c.External, Bridges: bridges}))
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()

@@ -223,3 +223,39 @@ func TestIssuerValidation(t *testing.T) {
 		t.Errorf("custom claims rejected: %v", err)
 	}
 }
+
+func TestSlackSettings(t *testing.T) {
+	d := Default()
+	if d.SlackArchiveAfterDoneHours != 168 || d.SlackMaxMessageChars != 3000 || d.SlackAppTokenFile != "" || d.SlackBotTokenFile != "" {
+		t.Errorf("Slack defaults = %+v", d)
+	}
+	cases := []struct {
+		name string
+		mut  func(*Config)
+		want string // "" accepted
+	}{
+		{"neither file", func(*Config) {}, ""},
+		{"both files", func(c *Config) { c.SlackAppTokenFile, c.SlackBotTokenFile = "/a", "/b" }, ""},
+		{"app file alone", func(c *Config) { c.SlackAppTokenFile = "/a" }, "slack_app_token_file and slack_bot_token_file must be set together"},
+		{"bot file alone", func(c *Config) { c.SlackBotTokenFile = "/b" }, "slack_app_token_file and slack_bot_token_file must be set together"},
+		{"hours 0", func(c *Config) { c.SlackArchiveAfterDoneHours = 0 }, "slack_archive_after_done_hours"},
+		{"hours 1", func(c *Config) { c.SlackArchiveAfterDoneHours = 1 }, ""},
+		{"hours 8760", func(c *Config) { c.SlackArchiveAfterDoneHours = 8760 }, ""},
+		{"hours 8761", func(c *Config) { c.SlackArchiveAfterDoneHours = 8761 }, "slack_archive_after_done_hours"},
+		{"chars 199", func(c *Config) { c.SlackMaxMessageChars = 199 }, "slack_max_message_chars"},
+		{"chars 200", func(c *Config) { c.SlackMaxMessageChars = 200 }, ""},
+		{"chars 3000", func(c *Config) { c.SlackMaxMessageChars = 3000 }, ""},
+		{"chars 3001", func(c *Config) { c.SlackMaxMessageChars = 3001 }, "slack_max_message_chars"},
+	}
+	for _, tc := range cases {
+		c := valid()
+		tc.mut(&c)
+		err := c.Validate()
+		switch {
+		case tc.want == "" && err != nil:
+			t.Errorf("%s: %v", tc.name, err)
+		case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
+			t.Errorf("%s: err = %v, want %q", tc.name, err, tc.want)
+		}
+	}
+}

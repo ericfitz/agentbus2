@@ -38,5 +38,6 @@ type BridgeCreated struct {
 	NotInvited []BridgeNotInvited
 }
 
-// RemoveBridgeInput names the channel whose bridge is archived.
+// RemoveBridgeInput names the channel whose bridge is removed: its Slack
+// channel is archived and the bridge row is deleted.
 type RemoveBridgeInput struct{ Channel string }

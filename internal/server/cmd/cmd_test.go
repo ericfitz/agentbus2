@@ -11,6 +11,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -646,4 +647,81 @@ func TestExternalIssuersMapping(t *testing.T) {
 		b.Claims != (token.ClaimNames{Email: "email", Groups: "groups", Subject: "sub"}) || b.HumanLifetime != 900*time.Second {
 		t.Fatalf("second external %+v: want nil algorithms (the verifier's default), the TTL, default claims and 900 s", b)
 	}
+}
+
+// TestRunSlackTokenFiles: the Slack token files are read before the store is
+// opened; a missing file or a token of the wrong shape exits 2 naming the
+// setting and never echoing file content, and valid files reach Serve as a
+// client and a bridge Config.
+func TestRunSlackTokenFiles(t *testing.T) {
+	dir := t.TempDir()
+	write := func(name, content string) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, []byte(content), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	app := write("app", "xapp-1-SECRETAPP\n")
+	bot := write("bot", " xoxb-SECRETBOT \n")
+	badApp := write("badapp", "xoxb-SECRETWRONGAPP")
+	badBot := write("badbot", "xapp-SECRETWRONGBOT")
+	missing := filepath.Join(dir, "absent")
+	base := func() []string {
+		return []string{"-listen", "127.0.0.1:0", "-sqlite", filepath.Join(t.TempDir(), "ab2.db")}
+	}
+	set := func(kv ...string) []string {
+		a := base()
+		for _, x := range kv {
+			a = append(a, "-set", x)
+		}
+		return a
+	}
+
+	for _, tc := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"missing bot file", set("slack_app_token_file="+app, "slack_bot_token_file="+missing), "slack_bot_token_file"},
+		{"missing app file", set("slack_app_token_file="+missing, "slack_bot_token_file="+bot), "slack_app_token_file"},
+		{"app token without xapp-", set("slack_app_token_file="+badApp, "slack_bot_token_file="+bot), "slack_app_token_file"},
+		{"bot token without xoxb-", set("slack_app_token_file="+app, "slack_bot_token_file="+badBot), "slack_bot_token_file"},
+		{"one file alone", set("slack_app_token_file=" + app), "slack_app_token_file and slack_bot_token_file must be set together"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			served := false
+			var out, errb bytes.Buffer
+			code := run(context.Background(), tc.args, nil, &out, &errb, func(context.Context, Config) error { served = true; return nil })
+			if code != 2 || served || !strings.Contains(errb.String(), tc.want) {
+				t.Fatalf("exit %d (served %v), stderr %q; want exit 2 naming %q", code, served, errb.String(), tc.want)
+			}
+			if strings.Contains(errb.String()+out.String(), "SECRET") {
+				t.Errorf("output echoes file content: %q %q", out.String(), errb.String())
+			}
+		})
+	}
+
+	t.Run("valid files", func(t *testing.T) {
+		var got Config
+		var out, errb bytes.Buffer
+		code := run(context.Background(), set("slack_app_token_file="+app, "slack_bot_token_file="+bot, "slack_archive_after_done_hours=5", "slack_max_message_chars=500"),
+			nil, &out, &errb, func(_ context.Context, c Config) error { got = c; return nil })
+		if code != 0 {
+			t.Fatalf("exit %d, stderr %q", code, errb.String())
+		}
+		if got.Slack == nil || got.SlackCfg.ArchiveAfterDone != 5*time.Hour || got.SlackCfg.MaxMessageChars != 500 {
+			t.Errorf("Config = %+v", got)
+		}
+	})
+	t.Run("no Slack settings", func(t *testing.T) {
+		var got Config
+		var out, errb bytes.Buffer
+		if code := run(context.Background(), base(), nil, &out, &errb, func(_ context.Context, c Config) error { got = c; return nil }); code != 0 {
+			t.Fatalf("exit %d, stderr %q", code, errb.String())
+		}
+		if got.Slack != nil {
+			t.Error("a Slack client was built without settings")
+		}
+	})
 }

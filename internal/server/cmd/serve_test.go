@@ -17,6 +17,9 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/maintenance"
+	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentbus2/internal/slackapi/slackfake"
+	"github.com/ericfitz/agentbus2/internal/slackbridge"
 	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/store/sqlite"
 )
@@ -431,4 +434,45 @@ func TestServeReleasesLockOnShutdown(t *testing.T) {
 	if err := stopB(); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// A wrong Slack token stops Serve before it listens, naming the setting and no
+// token; a Slack that cannot be reached starts the server with the bridge not
+// yet ready, and Run (started by Serve) makes it ready once Slack answers.
+func TestServeSlackBridge(t *testing.T) {
+	scfg := slackbridge.Config{ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, LockRenew: 5 * time.Millisecond}
+
+	t.Run("invalid_auth stops the start", func(t *testing.T) {
+		f := slackfake.New(slackapi.Self{UserID: "UBOT"})
+		f.FailNext("AuthTest", &slackapi.APIError{Method: "AuthTest", Code: "invalid_auth"})
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		err = Serve(context.Background(), Config{
+			Store: openSQLite(t, filepath.Join(t.TempDir(), "s.db")), Listener: ln, Registration: identities.ModeOpen,
+			Slack: f, SlackCfg: scfg,
+		})
+		if err == nil || !strings.Contains(err.Error(), "slack_bot_token_file") || !strings.Contains(err.Error(), "invalid_auth") {
+			t.Fatalf("Serve = %v", err)
+		}
+	})
+
+	t.Run("unreachable Slack starts the server and Run recovers", func(t *testing.T) {
+		f := slackfake.New(slackapi.Self{UserID: "UBOT"})
+		f.FailNext("AuthTest", errors.New("network down"))
+		_, stop := startServe(t, Config{
+			Store: openSQLite(t, filepath.Join(t.TempDir(), "s.db")), Slack: f, SlackCfg: scfg,
+		})
+		deadline := time.Now().Add(10 * time.Second)
+		for f.Calls("AuthTest") < 2 {
+			if time.Now().After(deadline) {
+				t.Fatalf("Run did not retry AuthTest (calls %d)", f.Calls("AuthTest"))
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if err := stop(); err != nil {
+			t.Fatalf("Serve: %v", err)
+		}
+	})
 }
