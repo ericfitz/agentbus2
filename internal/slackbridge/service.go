@@ -84,9 +84,15 @@ type Service struct {
 
 	users userCache // users.info answers, 10 minutes
 
-	mu    sync.Mutex
-	ready bool
-	self  slackapi.Self
+	pace    pacer      // post spacing per Slack channel
+	drainMu sync.Mutex // one Drain at a time in this process
+
+	mu      sync.Mutex
+	ready   bool
+	self    slackapi.Self
+	bridged map[int64]bool   // bus channels with a live bridge, for the drain wake
+	connGen uint64           // bumped on every Socket Mode (re)connect
+	checked map[int64]uint64 // bridge ID to the connGen of its last membership check
 }
 
 var _ scopes.Archiver = (*Service)(nil)
@@ -142,26 +148,6 @@ func (s *Service) requireReady() (slackapi.Self, error) {
 		return slackapi.Self{}, core.E(bus.CodeUnavailable, "%s", notReady)
 	}
 	return self, nil
-}
-
-// Run retries AuthTest every LockRenew until it succeeds or ctx ends, then
-// returns nil. (The runner that competes for the lock follows it.)
-func (s *Service) Run(ctx context.Context) error {
-	for {
-		if _, ok := s.Self(); ok {
-			return nil
-		}
-		t := time.NewTimer(s.cfg.LockRenew)
-		select {
-		case <-ctx.Done():
-			t.Stop()
-			return nil
-		case <-t.C:
-		}
-		if err := s.authenticate(ctx); err != nil {
-			s.log.Warn("slack bridge: auth.test failed; the bridge is not ready", "err", err)
-		}
-	}
 }
 
 // requireAdmin refuses a caller that is not a server administrator.

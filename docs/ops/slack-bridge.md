@@ -35,7 +35,7 @@ Everything starts with a scope (the walk-through is in [admin-bootstrap.md](admi
 4. Makes the bridge `live`, adds `{slack-bridge, [read]}` to the channel's ACL and subscribes the bridge at the channel's current end (earlier messages are not posted).
 5. When `not_invited` is not empty, posts a notice in the Slack channel and sends a `notice` message from `slack-bridge` on the bus channel, naming those identities and the reasons. Failing to post the notice is logged and does not fail the create.
 
-Invitations happen once, here. Later ACL changes still decide who may write from Slack, but they do not invite or remove anyone in Slack.
+Invitations happen once, here. Later ACL changes still decide who may write from Slack (the ACL is read for every Slack message, so a human whose `write` entry is removed is dropped from then on, though still in the Slack channel), but they do not invite or remove anyone in Slack.
 
 ### If a create fails
 
@@ -48,16 +48,18 @@ Any failure leaves the row `creating` and returns an error: a Slack rate limit (
 The Slack channel is also archived, and the bridge stops in both directions, at the earliest of:
 
 - `slack_archive_after_done_hours` after the scope is marked done;
-- after the scope is done, when no human remains in the Slack channel (a human who never joined counts as not remaining);
+- after the scope is done, when no human remains in the Slack channel: the members of the Slack channel minus the app, bots and deleted users (a human who never joined counts as not remaining). The check runs when a `member_left_channel` event arrives for a done scope, on the first lifecycle pass after the scope is marked done, and again after every Socket Mode reconnect, because Slack does not replay an event missed while disconnected;
 - `scope_idle_hours` without traffic on the scope.
 
-A channel someone archived by hand in Slack is treated the same way: the bridge is marked `archived`. Archiving is idempotent: a second run, or an overlapping replica, finds the channel already archived and succeeds. Retiring a scope deletes its bridge rows. A scope that is idle or done but whose Slack settings were removed is held, not retired, until the settings return or the bridge is removed; the server logs a warning on every maintenance tick naming it, so a Slack channel with people in it is never orphaned.
+The runner applies these rules every minute (it also reads Slack's history for messages it missed, see below). The Slack channel gets the final line before it is archived. A bridge whose bus channel has disappeared is archived in Slack and its row deleted.
+
+A channel someone archived by hand in Slack is treated the same way: the bridge is marked `archived` as soon as the runner next posts to it or checks its members (a channel nobody posts to and that is not done stays marked `live` until then). Archiving is idempotent: a second run, or an overlapping replica, finds the channel already archived and succeeds. Retiring a scope deletes its bridge rows. A scope that is idle or done but whose Slack settings were removed is held, not retired, until the settings return or the bridge is removed; the server logs a warning on every maintenance tick naming it, so a Slack channel with people in it is never orphaned.
 
 ## Running it
 
-One replica runs the bridge: the replicas compete for a lease in the database, the holder keeps the single Socket Mode connection, and a replica that loses the lease stops. Every replica still needs the token files, because any replica may serve a `bridges` call or archive a bridge during maintenance.
+One replica runs the bridge. The replicas compete for a Store lock named `slack-bridge`, renewed every 10 seconds: on SQLite it is a row with a 30-second expiry, on Postgres an advisory lock held by a pinned connection. The holder keeps the single Socket Mode connection, reads Slack's history on every connect and every minute, and posts the bus messages the bridge has not yet acked (it is woken by new messages and also polls every 5 seconds). A replica that loses the lock, or cannot renew it, stops all of that before its next attempt. When the holder shuts down it releases the lock; if it dies, another replica takes the lock after the expiry (SQLite) or when Postgres drops the dead session, connects, catches up and posts each unacked message once. A replica that vanishes without closing its database connection (a network partition, a frozen host) can keep a Postgres advisory lock, the runner's or a `bridges create` lock, until the server notices the dead connection; the TCP keepalive settings in [deploy.md](deploy.md) bound that wait. Every replica still needs the token files, because any replica may serve a `bridges` call or archive a bridge during maintenance.
 
-The crash repair reads message metadata back through `conversations.history` with `include_all_metadata`, which the fact check of the bot scopes did not cover: Slack names `message_metadata:read` only for events. Before relying on it, verify on a real workspace that the bot can read its own message metadata with the scopes above. Treat the repair as best effort: without it, a crash between a post and its map row can duplicate one Slack post, never a bus message.
+The crash repair reads message metadata back through `conversations.history` with `include_all_metadata`, which the fact check of the bot scopes did not cover: Slack names `message_metadata:read` only for events. Before relying on it, verify on a real workspace that the bot can read its own message metadata with the scopes above. Treat the repair as best effort: without it, a crash between a post and its map row can duplicate one Slack post (the next runner posts that bus message again), never a bus message.
 
 ## Logging
 

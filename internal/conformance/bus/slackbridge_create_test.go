@@ -759,13 +759,17 @@ func TestSlackBridgeNotReady(t *testing.T) {
 		defer cancel()
 		done := make(chan error, 1)
 		go func() { done <- svc.Run(rctx) }()
+		// Run retries AuthTest until Slack answers, then goes on to compete for
+		// the runner lock; it returns nil only when its context ends.
+		waitFor(t, 10*time.Second, "the bridge to become ready", func() bool { _, ok := svc.Self(); return ok })
+		cancel()
 		select {
 		case err := <-done:
 			if err != nil {
 				t.Fatalf("Run: %v", err)
 			}
 		case <-time.After(10 * time.Second):
-			t.Fatal("Run did not become ready")
+			t.Fatal("Run did not return after its context ended")
 		}
 		if n := f.Calls("AuthTest"); n != 3 {
 			t.Errorf("AuthTest calls = %d, want 3", n)

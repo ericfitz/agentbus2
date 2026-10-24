@@ -740,22 +740,6 @@ func TestSlackBridgeInbound(t *testing.T) {
 				t.Errorf("messages = %+v", got)
 			}
 		})
-
-		t.Run("rate-limited-requeued", func(t *testing.T) {
-			cfg := core0()
-			f := newInFixOpts(t, e, harnessOptions{cfg: &cfg}, func(c *slackbridge.Config) { c.RetryBase = 5 * time.Millisecond })
-			f.svc.HandleEvent(ctx, f.event(f.fake.Say(f.sl, "U1", "one", "")))
-			f.svc.HandleEvent(ctx, f.event(f.fake.Say(f.sl, "U1", "two", "")))
-			f.h.clock.Advance(2 * time.Second)
-			deadline := time.Now().Add(5 * time.Second)
-			for len(f.human()) < 2 && time.Now().Before(deadline) {
-				time.Sleep(10 * time.Millisecond)
-			}
-			got := f.human()
-			if len(got) != 2 || got[1].Content != "two" {
-				t.Fatalf("messages = %+v", got)
-			}
-		})
 	})
 }
 

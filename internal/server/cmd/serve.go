@@ -145,6 +145,9 @@ func Serve(ctx context.Context, c Config) error {
 	m := maintenance.New(cr)
 	if br != nil {
 		m.Archiver = br
+		// The runner competes for the slack-bridge lock beside maintenance and
+		// releases it (bounded by its own timeout) when mctx ends; Serve's wait
+		// group holds shutdown until then.
 		wg.Add(1)
 		go func() {
 			defer wg.Done()

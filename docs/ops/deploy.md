@@ -60,7 +60,7 @@ What replicas must share:
 
 - the database: it holds the data, the signing key and the single-use record of client assertions, so a token endpoint on any replica refuses an assertion another replica accepted;
 - `issuer`: the one setting that must be identical;
-- the Slack bridge settings, when it is used: the files named by `slack_app_token_file` and `slack_bot_token_file` must exist on every replica (any replica may serve a `bridges` call or archive a bridge), and `slack_archive_after_done_hours` and `slack_max_message_chars` should match. One replica at a time runs the Socket Mode connection; see [slack-bridge.md](slack-bridge.md).
+- the Slack bridge settings, when it is used: the files named by `slack_app_token_file` and `slack_bot_token_file` must exist on every replica (any replica may serve a `bridges` call or archive a bridge), and `slack_archive_after_done_hours` and `slack_max_message_chars` should match. One replica at a time runs the Socket Mode connection, under the `slack-bridge` lock; if its host vanishes without closing the database connection, Postgres can keep that lock (and a `bridges create` lock) until the server notices the dead connection, so the TCP keepalive settings below bound the wait. See [slack-bridge.md](slack-bridge.md).
 
 They need no session affinity: any replica serves any request.
 

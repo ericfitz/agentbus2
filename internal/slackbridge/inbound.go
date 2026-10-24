@@ -34,7 +34,7 @@ const (
 
 	userCacheTTL = 10 * time.Minute
 
-	// requeueAttempts is how many times HandleEvent requeues a retry
+	// requeueAttempts is how many times the runner's worker requeues a retry
 	// outcome before leaving the message to the next catch-up; the delay
 	// starts at Config.RetryBase and doubles to requeueMax.
 	requeueAttempts = 5
@@ -75,17 +75,25 @@ func (s *Service) user(ctx context.Context, id string) (slackapi.User, error) {
 	return u, nil
 }
 
-// HandleEvent handles one Socket Mode event (the runner calls it serially):
-// a message event is processed; a retry outcome is requeued with a doubling
-// backoff and left to the next catch-up after requeueAttempts. Every other
-// event kind is ignored here.
+// HandleEvent handles one Socket Mode event once, without a runner: a message
+// event is processed (a retry outcome is left to the next catch-up) and a
+// member_left_channel event runs the membership check of a done scope. Every
+// other kind is ignored here. The runner does not call it: its worker owns
+// the retries of a retry outcome (runner.go).
 func (s *Service) HandleEvent(ctx context.Context, ev slackapi.Event) {
-	if s.ProcessEvent(ctx, ev) == OutcomeRetry {
-		s.requeue(context.WithoutCancel(ctx), ev, 1)
+	switch ev.Kind {
+	case slackapi.EventMessage:
+		if s.ProcessEvent(ctx, ev) == OutcomeRetry {
+			s.log.Warn("slack message left to the next catch-up", "slack_user", ev.Message.User, "slack_channel", ev.Channel)
+		}
+	case slackapi.EventMemberLeft:
+		if err := s.memberLeft(ctx, ev.Channel); err != nil && ctx.Err() == nil {
+			s.log.Warn("slack member check failed", "slack_channel", ev.Channel, "code", bus.CodeOf(err))
+		}
 	}
 }
 
-// ProcessEvent is HandleEvent without the requeue: it answers the outcome.
+// ProcessEvent handles one message event and answers the outcome.
 // Only EventMessage is handled; every other kind (a closed set: an unknown
 // one too) is ignored.
 func (s *Service) ProcessEvent(ctx context.Context, ev slackapi.Event) string {
@@ -94,19 +102,6 @@ func (s *Service) ProcessEvent(ctx context.Context, ev slackapi.Event) string {
 	}
 	out, _ := s.handleMessage(ctx, ev.Channel, ev.Message, false)
 	return out
-}
-
-func (s *Service) requeue(ctx context.Context, ev slackapi.Event, attempt int) {
-	if attempt > requeueAttempts {
-		s.log.Warn("slack message left to the next catch-up", "slack_user", ev.Message.User, "slack_channel", ev.Channel)
-		return
-	}
-	delay := min(s.cfg.RetryBase<<(attempt-1), requeueMax)
-	time.AfterFunc(delay, func() {
-		if s.ProcessEvent(ctx, ev) == OutcomeRetry {
-			s.requeue(ctx, ev, attempt+1)
-		}
-	})
 }
 
 // refusal names why a Slack user may not post, or "" when it may.
