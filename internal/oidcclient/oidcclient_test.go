@@ -101,7 +101,10 @@ func TestSignInPKCE(t *testing.T) {
 	if err != nil {
 		t.Fatalf("access token is not a JWT: %v", err)
 	}
-	_ = parsed
+	var claims map[string]any
+	if err := parsed.UnsafeClaimsWithoutVerification(&claims); err != nil || claims["email"] != "a@b.example" {
+		t.Errorf("access token claims = %v (%v), want the provider's email", claims, err)
+	}
 	opened := <-b.opened
 	if announced != opened {
 		t.Errorf("announced %q, opened %q", announced, opened)
@@ -342,5 +345,53 @@ func TestOpenBrowserRefusesNonHTTP(t *testing.T) {
 		if err := OpenBrowser(u); err == nil {
 			t.Errorf("OpenBrowser(%q) = nil, want a refusal", u)
 		}
+	}
+}
+
+func TestParseExpiresIn(t *testing.T) {
+	for in, want := range map[string]int64{
+		``: 0, `300`: 300, `"300"`: 300, `300.9`: 300, `" 60 "`: 60, `0`: 0, `-5`: 0, `"abc"`: 0, `true`: 0, `null`: 0,
+		`1e30`: maxExpiresIn, `"99999999999999999999"`: maxExpiresIn,
+	} {
+		if got := parseExpiresIn([]byte(in)); got != want {
+			t.Errorf("parseExpiresIn(%s) = %d, want %d", in, got, want)
+		}
+	}
+}
+
+func TestSignInExpiresInString(t *testing.T) {
+	var base string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/.well-known/openid-configuration":
+			_, _ = fmt.Fprintf(w, `{"authorization_endpoint":%q,"token_endpoint":%q}`, base+"/authorize", base+"/token")
+		case "/authorize":
+			q := r.URL.Query()
+			http.Redirect(w, r, q.Get("redirect_uri")+"?code=c&state="+q.Get("state"), http.StatusFound)
+		case "/token":
+			_, _ = io.WriteString(w, `{"access_token":"a","token_type":"bearer","expires_in":"1800"}`)
+		}
+	}))
+	defer srv.Close()
+	base = srv.URL
+	tok, err := SignIn(context.Background(), Config{Issuer: srv.URL, ClientID: "cid", RedirectPort: freePort(t),
+		OpenBrowser: newBrowser(nil).open, Timeout: 5 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if d := time.Until(tok.ExpiresAt); d < 29*time.Minute || d > 31*time.Minute {
+		t.Errorf("ExpiresAt in %v, want about 30 minutes", d)
+	}
+}
+
+// TestSignInFailurePageDelivered: the browser sees the failure page, not a reset.
+func TestSignInFailurePageDelivered(t *testing.T) {
+	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid", AuthorizeError: "access_denied"})
+	b := newBrowser(nil)
+	if _, err := SignIn(context.Background(), config(p, freePort(t), b)); err == nil {
+		t.Fatal("want an error")
+	}
+	if page := <-b.page; !strings.Contains(page, "Sign-in failed") || !strings.Contains(page, "access_denied") {
+		t.Errorf("page = %q", page)
 	}
 }

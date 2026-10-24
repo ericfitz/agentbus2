@@ -184,8 +184,14 @@ func SignIn(ctx context.Context, c Config) (Tokens, error) {
 	srv := &http.Server{Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() { _ = srv.Serve(ln) }()
 	defer func() {
-		// Close, not Shutdown: the browser's keep-alive connection must not hold the port.
-		_ = srv.Close()
+		// Shutdown lets the callback response flush to the browser; Close ends
+		// whatever a keep-alive connection still holds after the grace period.
+		sctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		if srv.Shutdown(sctx) != nil {
+			_ = srv.Close()
+		}
+		_ = ln.Close() // free the port even if Serve never ran
 	}()
 
 	q := url.Values{
@@ -298,10 +304,10 @@ func tokenRequest(ctx context.Context, c Config, endpoint string, form url.Value
 		return Tokens{}, fmt.Errorf("oidcclient: token endpoint answered %d %q", resp.StatusCode, clip(e.Error))
 	}
 	var out struct {
-		AccessToken  string  `json:"access_token"`
-		TokenType    string  `json:"token_type"`
-		RefreshToken string  `json:"refresh_token"`
-		ExpiresIn    float64 `json:"expires_in"`
+		AccessToken  string          `json:"access_token"`
+		TokenType    string          `json:"token_type"`
+		RefreshToken string          `json:"refresh_token"`
+		ExpiresIn    json.RawMessage `json:"expires_in"`
 	}
 	if err := json.Unmarshal(body, &out); err != nil {
 		return Tokens{}, errors.New("oidcclient: token response is not JSON")
@@ -316,8 +322,35 @@ func tokenRequest(ctx context.Context, c Config, endpoint string, form url.Value
 	if t.RefreshToken == "" {
 		t.RefreshToken = keepRefresh
 	}
-	if out.ExpiresIn > 0 {
-		t.ExpiresAt = time.Now().Add(time.Duration(out.ExpiresIn * float64(time.Second)))
+	if secs := parseExpiresIn(out.ExpiresIn); secs > 0 {
+		t.ExpiresAt = time.Now().Add(time.Duration(secs) * time.Second)
 	}
 	return t, nil
+}
+
+// maxExpiresIn bounds expires_in (one year) so a huge value cannot overflow a Duration.
+const maxExpiresIn = 365 * 24 * 3600
+
+// parseExpiresIn reads expires_in as a JSON number or numeric string, in whole
+// seconds, clamped to maxExpiresIn. Anything else yields 0 (no expiry known).
+func parseExpiresIn(raw json.RawMessage) int64 {
+	if len(raw) == 0 {
+		return 0
+	}
+	str := strings.TrimSpace(string(raw))
+	if str != "" && str[0] == '"' {
+		var v string
+		if json.Unmarshal(raw, &v) != nil {
+			return 0
+		}
+		str = strings.TrimSpace(v)
+	}
+	f, err := strconv.ParseFloat(str, 64)
+	if err != nil || f != f || f <= 0 {
+		return 0
+	}
+	if f > maxExpiresIn {
+		return maxExpiresIn
+	}
+	return int64(f)
 }
