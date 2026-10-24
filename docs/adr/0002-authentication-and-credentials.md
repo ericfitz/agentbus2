@@ -554,3 +554,32 @@ later tasks extend it.
   (`openid_configuration` is gone from `AuthMethod`); the `bearerAuth`
   description names the RFC 8414 document. Supersedes the `openIdConnect`
   scheme of Decision 91 and ADR 0007.
+- **Item 8.1, token endpoint errors (RFC 6749 section 5.2).** Only
+  `/v1/auth/token` answers `{"error", "error_description"}` as
+  `application/json` (with the section 5.1 cache headers): status 400, or
+  401 for `invalid_client`. Every other endpoint keeps problem+json
+  (Decision 46). This supersedes Milestone 5 addendum item 3, which put
+  problem+json on the token endpoint. A request the validator, mux or strict
+  handler refuses before the handler runs (no `grant_type`, a JSON body)
+  is `invalid_request` with a fixed description, because the framework's own
+  message echoes the offending values and so possibly the assertion.
+  `client_credentials` failures of the assertion (type, absence, parse, key,
+  verification, replay, a `client_id` that is not the assertion's `iss`)
+  are `invalid_client`; any other grant is `unsupported_grant_type`. Plan
+  choice: an unconfigured issuer is 503 `temporarily_unavailable` and an
+  internal failure is 500 `server_error` (RFC 6749 lists neither status; the
+  description of a 500 is fixed). The client (`remote.Token`) maps
+  `invalid_client` and `invalid_grant` to unauthenticated, `access_denied` to
+  forbidden, `invalid_request`, `unsupported_grant_type`, `invalid_target`
+  and `invalid_scope` to validation, `temporarily_unavailable` to
+  unavailable (retryable) and `server_error` or an unrecognized code to
+  internal.
+- **Item 8.5, standard parameters.** `TokenRequest` declares `grant_type`
+  (a plain string, so an unsupported grant is `unsupported_grant_type`, not
+  a schema failure) and optionally `client_assertion_type`,
+  `client_assertion`, `client_id`, `scope`, `subject_token`,
+  `subject_token_type`, `requested_token_type`, `audience`, `resource`,
+  `actor_token` and `actor_token_type`; the schema allows unknown members.
+  `scope` is ignored; `client_id`, when present, must equal the assertion's
+  `iss`. `AccessToken.issued_token_type` is optional. The exchange
+  parameters are consumed in Task 11.

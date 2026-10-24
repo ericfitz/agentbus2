@@ -71,21 +71,66 @@ type AccessToken struct {
 
 // Token exchanges a signed client assertion for a bearer (private_key_jwt).
 func Token(ctx context.Context, c *gen.ClientWithResponses, clientAssertion string) (AccessToken, error) {
+	assertionType := assertion.Type
 	r, err := c.TokenWithFormdataBodyWithResponse(ctx, gen.TokenFormdataRequestBody{
-		GrantType:           gen.ClientCredentials,
-		ClientAssertionType: gen.TokenRequestClientAssertionType(assertion.Type),
-		ClientAssertion:     clientAssertion,
+		GrantType:           "client_credentials",
+		ClientAssertionType: &assertionType,
+		ClientAssertion:     &clientAssertion,
 	})
 	if err != nil {
 		return AccessToken{}, errorOf(ctx, 0, nil, nil, err)
 	}
-	if err := errorOf(ctx, r.StatusCode(), r.ApplicationproblemJSONDefault, r.Body, nil); err != nil {
-		return AccessToken{}, err
+	if r.StatusCode() >= 300 {
+		if e := oauthErrorOf(r); e != nil {
+			return AccessToken{}, e
+		}
+		return AccessToken{}, errorOf(ctx, r.StatusCode(), nil, r.Body, nil)
 	}
 	if r.JSON200 == nil {
 		return AccessToken{}, unparsable(r.StatusCode())
 	}
 	return AccessToken{Token: r.JSON200.AccessToken, ExpiresIn: time.Duration(r.JSON200.ExpiresIn) * time.Second}, nil
+}
+
+// oauthErrorOf maps the RFC 6749 section 5.2 body of a refused token request
+// to a bus error, or returns nil when the response carries none (a proxy's
+// page, a problem body), which the caller maps by status.
+func oauthErrorOf(r *gen.TokenResponse) error {
+	var o *gen.OAuthError
+	switch {
+	case r.JSON400 != nil:
+		o = r.JSON400
+	case r.JSON401 != nil:
+		o = r.JSON401
+	case r.JSON500 != nil:
+		o = r.JSON500
+	case r.JSON503 != nil:
+		o = r.JSON503
+	}
+	if o == nil || o.Error == "" {
+		return nil
+	}
+	msg := o.Error
+	if o.ErrorDescription != nil && *o.ErrorDescription != "" {
+		msg = *o.ErrorDescription
+	}
+	e := &ab2bus.Error{Message: ab2bus.TruncateErrorMessage(msg)}
+	switch o.Error {
+	case "invalid_client", "invalid_grant":
+		e.Code = ab2bus.CodeUnauthenticated
+	case "access_denied":
+		e.Code = ab2bus.CodeForbidden
+	case "invalid_request", "unsupported_grant_type", "invalid_target", "invalid_scope":
+		e.Code = ab2bus.CodeValidation
+	case "temporarily_unavailable":
+		e.Code, e.Retryable = ab2bus.CodeUnavailable, true
+	case "server_error":
+		e.Code = ab2bus.CodeInternal
+	default:
+		e.Code = ab2bus.CodeInternal
+		e.Message = ab2bus.TruncateErrorMessage(fmt.Sprintf("unrecognized OAuth error %q: %s", o.Error, msg))
+	}
+	return e
 }
 
 // WithBearer sets Authorization: Bearer <token> on every request.

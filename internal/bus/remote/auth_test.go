@@ -3,10 +3,12 @@ package remote
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 
@@ -155,13 +157,58 @@ func TestRemoteTokenSendsForm(t *testing.T) {
 		t.Fatalf("form = %v", form)
 	}
 
-	c = newRecClient(t, &recorder{status: 401, ctype: "application/problem+json", body: unauthProblem})
+	c = newRecClient(t, &recorder{status: 401, ctype: "application/json", body: `{"error":"invalid_client","error_description":"unknown identity or key"}`})
 	if _, err := Token(context.Background(), c, "a.b.c"); ab2bus.CodeOf(err) != ab2bus.CodeUnauthenticated {
 		t.Fatalf("err = %v, want unauthenticated", err)
 	}
 	c = newRecClient(t, &recorder{status: 200, ctype: "text/plain", body: `[]`})
 	if _, err := Token(context.Background(), c, "a.b.c"); ab2bus.CodeOf(err) != ab2bus.CodeInternal {
 		t.Fatalf("err = %v, want internal", err)
+	}
+}
+
+func TestTokenMapsOAuthErrors(t *testing.T) {
+	cases := []struct {
+		status    int
+		code      string
+		desc      string
+		want      ab2bus.Code
+		retryable bool
+		msg       string
+	}{
+		{401, "invalid_client", "bad key", ab2bus.CodeUnauthenticated, false, "bad key"},
+		{400, "invalid_grant", "", ab2bus.CodeUnauthenticated, false, "invalid_grant"},
+		{400, "access_denied", "nope", ab2bus.CodeForbidden, false, "nope"},
+		{400, "invalid_request", "missing grant_type", ab2bus.CodeValidation, false, "missing grant_type"},
+		{400, "unsupported_grant_type", "x", ab2bus.CodeValidation, false, "x"},
+		{400, "invalid_target", "x", ab2bus.CodeValidation, false, "x"},
+		{400, "invalid_scope", "x", ab2bus.CodeValidation, false, "x"},
+		{503, "temporarily_unavailable", "later", ab2bus.CodeUnavailable, true, "later"},
+		{500, "server_error", "boom", ab2bus.CodeInternal, false, "boom"},
+		{400, "weird", "", ab2bus.CodeInternal, false, `unrecognized OAuth error "weird"`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.code, func(t *testing.T) {
+			body := map[string]string{"error": tc.code}
+			if tc.desc != "" {
+				body["error_description"] = tc.desc
+			}
+			raw, _ := json.Marshal(body)
+			c := newRecClient(t, &recorder{status: tc.status, ctype: "application/json", body: string(raw)})
+			_, err := Token(context.Background(), c, "a.b.c")
+			var be *ab2bus.Error
+			if !errors.As(err, &be) {
+				t.Fatalf("err = %v, want *bus.Error", err)
+			}
+			if be.Code != tc.want || be.Retryable != tc.retryable || !strings.Contains(be.Message, tc.msg) {
+				t.Fatalf("got %+v, want code %s retryable %v message containing %q", be, tc.want, tc.retryable, tc.msg)
+			}
+		})
+	}
+	// A non-OAuth failure (a proxy's problem body) still maps through errorOf.
+	c := newRecClient(t, &recorder{status: 401, ctype: "application/problem+json", body: unauthProblem})
+	if _, err := Token(context.Background(), c, "a.b.c"); ab2bus.CodeOf(err) != ab2bus.CodeUnauthenticated {
+		t.Fatalf("err = %v, want unauthenticated", err)
 	}
 }
 

@@ -770,8 +770,14 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/AccessToken"
-        default:
-          $ref: "#/components/responses/Problem"
+        "400":
+          $ref: "#/components/responses/OAuthError"
+        "401":
+          $ref: "#/components/responses/OAuthError"
+        "500":
+          $ref: "#/components/responses/OAuthError"
+        "503":
+          $ref: "#/components/responses/OAuthError"
   /v1/auth/jwks:
     get:
       operationId: jwks
@@ -911,6 +917,14 @@ components:
         application/problem+json:
           schema:
             $ref: "#/components/schemas/Problem"
+    OAuthError:
+      description: >-
+        RFC 6749 section 5.2 error; only the token endpoint answers it (spec
+        8.1).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/OAuthError"
   schemas:
     Problem:
       type: object
@@ -1619,15 +1633,45 @@ components:
           description: The capacity notice text, when one is set.
     TokenRequest:
       type: object
-      required: [grant_type, client_assertion_type, client_assertion]
+      description: >-
+        RFC 6749 section 4.4.2 and RFC 8693 section 2.1 token request. The
+        grant is a plain string so that an unsupported one answers
+        unsupported_grant_type (RFC 6749 section 5.2) rather than failing
+        validation; the handler checks which parameters each grant needs.
+      required: [grant_type]
       properties:
         grant_type:
           type: string
-          enum: [client_credentials]
         client_assertion_type:
           type: string
-          enum: ["urn:ietf:params:oauth:client-assertion-type:jwt-bearer"]
         client_assertion:
+          type: string
+        client_id:
+          type: string
+        scope:
+          type: string
+        subject_token:
+          type: string
+        subject_token_type:
+          type: string
+        requested_token_type:
+          type: string
+        audience:
+          type: string
+        resource:
+          type: string
+        actor_token:
+          type: string
+        actor_token_type:
+          type: string
+    OAuthError:
+      type: object
+      description: RFC 6749 section 5.2 error body.
+      required: [error]
+      properties:
+        error:
+          type: string
+        error_description:
           type: string
     AccessToken:
       type: object
@@ -1640,6 +1684,8 @@ components:
         expires_in:
           type: integer
           format: int64
+        issued_token_type:
+          type: string
     JWK:
       type: object
       additionalProperties: true

@@ -247,36 +247,6 @@ func (e SubscribeRequestFrom) Valid() bool {
 	}
 }
 
-// Defines values for TokenRequestClientAssertionType.
-const (
-	UrnIetfParamsOauthClientAssertionTypeJwtBearer TokenRequestClientAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-)
-
-// Valid indicates whether the value is a known member of the TokenRequestClientAssertionType enum.
-func (e TokenRequestClientAssertionType) Valid() bool {
-	switch e {
-	case UrnIetfParamsOauthClientAssertionTypeJwtBearer:
-		return true
-	default:
-		return false
-	}
-}
-
-// Defines values for TokenRequestGrantType.
-const (
-	ClientCredentials TokenRequestGrantType = "client_credentials"
-)
-
-// Valid indicates whether the value is a known member of the TokenRequestGrantType enum.
-func (e TokenRequestGrantType) Valid() bool {
-	switch e {
-	case ClientCredentials:
-		return true
-	default:
-		return false
-	}
-}
-
 // Defines values for AdminResetParamsScope.
 const (
 	Data       AdminResetParamsScope = "data"
@@ -327,9 +297,10 @@ type ACLEntryPermissions string
 
 // AccessToken defines model for AccessToken.
 type AccessToken struct {
-	AccessToken string `json:"access_token"`
-	ExpiresIn   int64  `json:"expires_in"`
-	TokenType   string `json:"token_type"`
+	AccessToken     string  `json:"access_token"`
+	ExpiresIn       int64   `json:"expires_in"`
+	IssuedTokenType *string `json:"issued_token_type,omitempty"`
+	TokenType       string  `json:"token_type"`
 }
 
 // AuthMethod defines model for AuthMethod.
@@ -492,6 +463,12 @@ type Notice struct {
 	Kind    string `json:"kind"`
 	Message string `json:"message"`
 	SetAt   int64  `json:"set_at"`
+}
+
+// OAuthError RFC 6749 section 5.2 error body.
+type OAuthError struct {
+	Error            string  `json:"error"`
+	ErrorDescription *string `json:"error_description,omitempty"`
 }
 
 // OfferedCursor defines model for OfferedCursor.
@@ -732,18 +709,21 @@ type TaskUpdateResult struct {
 	Task     Task  `json:"task"`
 }
 
-// TokenRequest defines model for TokenRequest.
+// TokenRequest RFC 6749 section 4.4.2 and RFC 8693 section 2.1 token request. The grant is a plain string so that an unsupported one answers unsupported_grant_type (RFC 6749 section 5.2) rather than failing validation; the handler checks which parameters each grant needs.
 type TokenRequest struct {
-	ClientAssertion     string                          `json:"client_assertion"`
-	ClientAssertionType TokenRequestClientAssertionType `json:"client_assertion_type"`
-	GrantType           TokenRequestGrantType           `json:"grant_type"`
+	ActorToken          *string `json:"actor_token,omitempty"`
+	ActorTokenType      *string `json:"actor_token_type,omitempty"`
+	Audience            *string `json:"audience,omitempty"`
+	ClientAssertion     *string `json:"client_assertion,omitempty"`
+	ClientAssertionType *string `json:"client_assertion_type,omitempty"`
+	ClientId            *string `json:"client_id,omitempty"`
+	GrantType           string  `json:"grant_type"`
+	RequestedTokenType  *string `json:"requested_token_type,omitempty"`
+	Resource            *string `json:"resource,omitempty"`
+	Scope               *string `json:"scope,omitempty"`
+	SubjectToken        *string `json:"subject_token,omitempty"`
+	SubjectTokenType    *string `json:"subject_token_type,omitempty"`
 }
-
-// TokenRequestClientAssertionType defines model for TokenRequest.ClientAssertionType.
-type TokenRequestClientAssertionType string
-
-// TokenRequestGrantType defines model for TokenRequest.GrantType.
-type TokenRequestGrantType string
 
 // Usage defines model for Usage.
 type Usage struct {
@@ -5028,8 +5008,14 @@ type TokenResponse struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *AccessToken
-	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
-	ApplicationproblemJSONDefault *Problem
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *OAuthError
+	// JSON401 the response for an HTTP 401 `application/json` response
+	JSON401 *OAuthError
+	// JSON500 the response for an HTTP 500 `application/json` response
+	JSON500 *OAuthError
+	// JSON503 the response for an HTTP 503 `application/json` response
+	JSON503 *OAuthError
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
@@ -5037,9 +5023,24 @@ func (r TokenResponse) GetJSON200() *AccessToken {
 	return r.JSON200
 }
 
-// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
-func (r TokenResponse) GetApplicationproblemJSONDefault() *Problem {
-	return r.ApplicationproblemJSONDefault
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r TokenResponse) GetJSON400() *OAuthError {
+	return r.JSON400
+}
+
+// GetJSON401 returns the response for an HTTP 401 `application/json` response
+func (r TokenResponse) GetJSON401() *OAuthError {
+	return r.JSON401
+}
+
+// GetJSON500 returns the response for an HTTP 500 `application/json` response
+func (r TokenResponse) GetJSON500() *OAuthError {
+	return r.JSON500
+}
+
+// GetJSON503 returns the response for an HTTP 503 `application/json` response
+func (r TokenResponse) GetJSON503() *OAuthError {
+	return r.JSON503
 }
 
 // GetBody returns the raw response body bytes
@@ -7489,12 +7490,33 @@ func ParseTokenResponse(rsp *http.Response) (*TokenResponse, error) {
 		}
 		response.JSON200 = &dest
 
-	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
-		var dest Problem
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest OAuthError
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
-		response.ApplicationproblemJSONDefault = &dest
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 401:
+		var dest OAuthError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON401 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 500:
+		var dest OAuthError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON500 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 503:
+		var dest OAuthError
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON503 = &dest
 
 	}
 
@@ -10442,6 +10464,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	return m
 }
 
+type OAuthErrorJSONResponse OAuthError
+
 type ProblemApplicationProblemPlusJSONResponse Problem
 
 type WellKnownRequestObject struct {
@@ -10846,19 +10870,58 @@ func (response Token200JSONResponse) VisitTokenResponse(w http.ResponseWriter) e
 	return err
 }
 
-type TokendefaultApplicationProblemPlusJSONResponse struct {
-	Body       Problem
-	StatusCode int
-}
+type Token400JSONResponse struct{ OAuthErrorJSONResponse }
 
-func (response TokendefaultApplicationProblemPlusJSONResponse) VisitTokenResponse(w http.ResponseWriter) error {
+func (response Token400JSONResponse) VisitTokenResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
-	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
 		return err
 	}
-	w.Header().Set("Content-Type", "application/problem+json")
-	w.WriteHeader(response.StatusCode)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(400)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Token401JSONResponse OAuthError
+
+func (response Token401JSONResponse) VisitTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(401)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Token500JSONResponse OAuthError
+
+func (response Token500JSONResponse) VisitTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(500)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type Token503JSONResponse OAuthError
+
+func (response Token503JSONResponse) VisitTokenResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(503)
 	_, err := buf.WriteTo(w)
 	return err
 }

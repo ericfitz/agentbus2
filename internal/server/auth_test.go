@@ -250,32 +250,32 @@ func TestTokenRefusesForeignKeyAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantAuthProblem(t, e.exchange(foreign, ""), 401, "unauthenticated", "unknown identity or key")
+	wantOAuthError(t, e.exchange(foreign, ""), 401, "invalid_client", "unknown identity or key", "")
 
 	// Replay.
 	a := e.assertionFor("pat", pat, aud, 0)
 	if resp := e.exchange(a, ""); resp.StatusCode != 200 {
 		t.Fatalf("first use: %d", resp.StatusCode)
 	}
-	wantAuthProblem(t, e.exchange(a, ""), 401, "unauthenticated", "assertion replayed")
+	wantOAuthError(t, e.exchange(a, ""), 401, "invalid_client", "assertion replayed", "")
 
 	// Any audience but the issuer and the token endpoint is refused.
-	wantAuthProblem(t, e.exchange(e.assertionFor("pat", pat, "http://evil.example", 0), ""), 401, "unauthenticated", "audience")
+	wantOAuthError(t, e.exchange(e.assertionFor("pat", pat, "http://evil.example", 0), ""), 401, "invalid_client", "audience", "")
 	// A signature by the right identity's key but a wrong kid.
 	wrongKID, err := assertion.Sign(assertion.Input{Identity: "pat", Audience: aud, Key: pat, KID: "nope", Now: e.clock.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantAuthProblem(t, e.exchange(wrongKID, ""), 401, "unauthenticated", "unknown identity or key")
+	wantOAuthError(t, e.exchange(wrongKID, ""), 401, "invalid_client", "unknown identity or key", "")
 	// Expired by more than the leeway.
 	stale, err := assertion.Sign(assertion.Input{Identity: "pat", Audience: aud, Key: pat, KID: kidOf(t, pat), Now: e.clock.Now().Add(-10 * time.Minute)})
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantAuthProblem(t, e.exchange(stale, ""), 401, "unauthenticated", "")
+	wantOAuthError(t, e.exchange(stale, ""), 401, "invalid_client", "", "")
 	// A lifetime above the cap cannot be signed by the client library, so forge one.
 	long := forgedAssertion(t, pat, "pat", aud, e.clock.Now(), 20*time.Minute)
-	wantAuthProblem(t, e.exchange(long, ""), 401, "unauthenticated", "")
+	wantOAuthError(t, e.exchange(long, ""), 401, "invalid_client", "", "")
 
 	// HS256 is refused as malformed.
 	hs, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.HS256, Key: []byte("0123456789abcdef0123456789abcdef")},
@@ -287,15 +287,15 @@ func TestTokenRefusesForeignKeyAndReplay(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantAuthProblem(t, e.exchange(raw, ""), 400, "validation", "client assertion")
-	wantAuthProblem(t, e.exchange("not-a-jwt", ""), 400, "validation", "client assertion")
+	wantOAuthError(t, e.exchange(raw, ""), 401, "invalid_client", "client assertion", "")
+	wantOAuthError(t, e.exchange("not-a-jwt", ""), 401, "invalid_client", "client assertion", "")
 
 	// Validator-level refusals.
 	form := url.Values{"grant_type": {"password"}, "client_assertion_type": {assertion.Type}, "client_assertion": {a}}
-	wantAuthProblem(t, e.do("POST", "/v1/auth/token", "application/x-www-form-urlencoded", "", form.Encode()), 400, "validation", "")
-	wantAuthProblem(t, e.do("POST", "/v1/auth/token", "application/json", "", `{"client_assertion":"x"}`), 400, "validation", "")
+	wantOAuthError(t, e.do("POST", "/v1/auth/token", "application/x-www-form-urlencoded", "", form.Encode()), 400, "unsupported_grant_type", "", "")
+	wantOAuthError(t, e.do("POST", "/v1/auth/token", "application/json", "", `{"client_assertion":"x"}`), 400, "invalid_request", "", "")
 	form = url.Values{"grant_type": {"client_credentials"}, "client_assertion_type": {"urn:ietf:params:oauth:client-assertion-type:saml2-bearer"}, "client_assertion": {a}}
-	wantAuthProblem(t, e.do("POST", "/v1/auth/token", "application/x-www-form-urlencoded", "", form.Encode()), 400, "validation", "")
+	wantOAuthError(t, e.do("POST", "/v1/auth/token", "application/x-www-form-urlencoded", "", form.Encode()), 401, "invalid_client", "", "")
 }
 
 // forgedAssertion signs an assertion whose lifetime assertion.Sign would refuse.
@@ -475,7 +475,7 @@ func TestIssuerIsConfiguredNotRequestHost(t *testing.T) {
 		t.Errorf("without an issuer: %+v", c)
 	}
 	wantAuthProblem(t, n.do("GET", "/v1/auth/jwks", "", "", ""), 503, "unavailable", "token issuer not configured")
-	wantAuthProblem(t, n.exchange("x.y.z", ""), 503, "unavailable", "token issuer not configured")
+	wantOAuthError(t, n.exchange("x.y.z", ""), 503, "temporarily_unavailable", "token issuer not configured", "")
 }
 
 func TestExternalIssuerBearer(t *testing.T) {
@@ -605,7 +605,7 @@ func TestTokenReplayInsideLeeway(t *testing.T) {
 		t.Fatalf("first use: %d %s", resp.StatusCode, readBody(t, resp))
 	}
 	e.clock.Advance(time.Minute + token.Leeway/2) // past exp, inside the leeway
-	wantAuthProblem(t, e.exchange(a, ""), 401, "unauthenticated", "assertion replayed")
+	wantOAuthError(t, e.exchange(a, ""), 401, "invalid_client", "assertion replayed", "")
 
 	// The last accepted instant, exp + Leeway exactly, is still a replay.
 	b := e.assertionFor("pat", pat, "http://inproc/v1/auth/token", time.Minute)
@@ -622,13 +622,13 @@ func TestTokenReplayInsideLeeway(t *testing.T) {
 	if n, err := maintenance.New(e.core).RunJob(context.Background(), "assertion replay expiry"); err != nil || n != 1 {
 		t.Fatalf("expiry job at exp+Leeway: %d, %v; want 1 (a's row only)", n, err)
 	}
-	wantAuthProblem(t, e.exchange(b, ""), 401, "unauthenticated", "assertion replayed")
+	wantOAuthError(t, e.exchange(b, ""), 401, "invalid_client", "assertion replayed", "")
 	// Past the retention the row goes, and Verify refuses b as expired.
 	e.clock.Advance(time.Second + time.Millisecond)
 	if n, err := maintenance.New(e.core).RunJob(context.Background(), "assertion replay expiry"); err != nil || n != 1 {
 		t.Fatalf("expiry job past retention: %d, %v; want 1", n, err)
 	}
-	wantAuthProblem(t, e.exchange(b, ""), 401, "unauthenticated", "expired")
+	wantOAuthError(t, e.exchange(b, ""), 401, "invalid_client", "expired", "")
 }
 
 // TestTokenReplayIsShared: two server instances (replicas) over one database
@@ -643,6 +643,112 @@ func TestTokenReplayIsShared(t *testing.T) {
 	if resp := e1.exchange(a, ""); resp.StatusCode != 200 {
 		t.Fatalf("first replica: %d %s", resp.StatusCode, readBody(t, resp))
 	}
-	wantAuthProblem(t, e2.exchange(a, ""), 401, "unauthenticated", "assertion replayed")
-	wantAuthProblem(t, e1.exchange(a, ""), 401, "unauthenticated", "assertion replayed")
+	wantOAuthError(t, e2.exchange(a, ""), 401, "invalid_client", "assertion replayed", "")
+	wantOAuthError(t, e1.exchange(a, ""), 401, "invalid_client", "assertion replayed", "")
+}
+
+// wantOAuthError checks a token endpoint refusal: RFC 6749 section 5.2 body
+// (error and error_description only), application/json, and no assertion
+// text in the description.
+func wantOAuthError(t *testing.T, resp *http.Response, status int, code, detail, secret string) {
+	t.Helper()
+	b := readBody(t, resp)
+	if ct := resp.Header.Get("Content-Type"); ct != "application/json" {
+		t.Fatalf("content type %q, body %q", ct, b)
+	}
+	if resp.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("Cache-Control = %q", resp.Header.Get("Cache-Control"))
+	}
+	var m map[string]any
+	if err := json.Unmarshal([]byte(b), &m); err != nil {
+		t.Fatalf("body %q: %v", b, err)
+	}
+	for k := range m {
+		if k != "error" && k != "error_description" {
+			t.Fatalf("unexpected member %q in %q", k, b)
+		}
+	}
+	if resp.StatusCode != status || m["error"] != code {
+		t.Fatalf("got %d %v, want %d %q (body %q)", resp.StatusCode, m["error"], status, code, b)
+	}
+	if d, _ := m["error_description"].(string); detail != "" && !strings.Contains(d, detail) {
+		t.Fatalf("error_description %q does not contain %q", d, detail)
+	}
+	if secret != "" && strings.Contains(b, secret) {
+		t.Fatalf("error body carries assertion text: %q", b)
+	}
+}
+
+func TestTokenOAuthErrors(t *testing.T) {
+	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
+	key := genKey(t, keys.EdDSA)
+	e.mustRegister("pat", key)
+	const aud = "http://inproc"
+	const formCT = "application/x-www-form-urlencoded"
+	a := e.assertionFor("pat", key, aud, 0)
+
+	post := func(v url.Values) *http.Response {
+		return e.do("POST", "/v1/auth/token", formCT, "", v.Encode())
+	}
+	cc := func(extra map[string]string) url.Values {
+		v := url.Values{"grant_type": {"client_credentials"}, "client_assertion_type": {assertion.Type}, "client_assertion": {a}}
+		for k, s := range extra {
+			v.Set(k, s)
+		}
+		return v
+	}
+
+	wantOAuthError(t, post(url.Values{"client_assertion": {a}}), 400, "invalid_request", "", a)
+	wantOAuthError(t, post(url.Values{"grant_type": {""}, "client_assertion": {a}}), 400, "invalid_request", "", a)
+	wantOAuthError(t, post(cc(map[string]string{"grant_type": "password"})), 400, "unsupported_grant_type", "", a)
+	wantOAuthError(t, e.do("POST", "/v1/auth/token", "application/json", "", `{"grant_type":"client_credentials","client_assertion":"x"}`), 400, "invalid_request", "", "")
+	wantOAuthError(t, post(cc(map[string]string{"client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:saml2-bearer"})), 401, "invalid_client", "", a)
+	missing := cc(nil)
+	missing.Del("client_assertion")
+	wantOAuthError(t, post(missing), 401, "invalid_client", "", "")
+	wantOAuthError(t, post(cc(map[string]string{"client_assertion": "not-a-jwt.at.all"})), 401, "invalid_client", "", "not-a-jwt.at.all")
+	wantOAuthError(t, post(cc(map[string]string{"client_id": "kim"})), 401, "invalid_client", "", a)
+
+	// Replay: the first use mints, the second is refused.
+	if resp := post(cc(nil)); resp.StatusCode != 200 {
+		t.Fatalf("first use: %d %s", resp.StatusCode, readBody(t, resp))
+	}
+	wantOAuthError(t, post(cc(nil)), 401, "invalid_client", "", a)
+
+	// An unconfigured issuer is 503 temporarily_unavailable.
+	off := newEnv(t, envOptions{registration: identities.ModeOpen})
+	resp := off.do("POST", "/v1/auth/token", formCT, "", cc(nil).Encode())
+	wantOAuthError(t, resp, 503, "temporarily_unavailable", "", a)
+}
+
+func TestTokenAcceptsClientIDAndScope(t *testing.T) {
+	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
+	key := genKey(t, keys.EdDSA)
+	e.mustRegister("pat", key)
+	form := url.Values{
+		"grant_type":            {"client_credentials"},
+		"client_assertion_type": {assertion.Type},
+		"client_assertion":      {e.assertionFor("pat", key, "http://inproc", 0)},
+		"client_id":             {"pat"},
+		"scope":                 {"anything at all"},
+	}
+	resp := e.do("POST", "/v1/auth/token", "application/x-www-form-urlencoded", "", form.Encode())
+	if resp.StatusCode != 200 {
+		t.Fatalf("%d %s", resp.StatusCode, readBody(t, resp))
+	}
+}
+
+func TestOtherEndpointsKeepProblemJSON(t *testing.T) {
+	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
+	key := genKey(t, keys.EdDSA)
+	e.mustRegister("pat", key)
+	bearer := "Bearer " + e.token("pat", key)
+	resp := e.do("POST", "/v1/channels", "application/json", bearer, `{not json`)
+	p := readProblem(t, resp)
+	if resp.StatusCode != 400 || p.Code != "validation" {
+		t.Fatalf("%d %+v", resp.StatusCode, p)
+	}
+	// The register endpoint is not the token endpoint either.
+	resp = e.do("POST", "/v1/auth/register", "application/json", "", `{}`)
+	_ = readProblem(t, resp)
 }

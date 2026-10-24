@@ -177,7 +177,9 @@ type stub struct {
 func (s *stub) Token(_ context.Context, r gen.TokenRequestObject) (gen.TokenResponseObject, error) {
 	s.mu.Lock()
 	s.called++
-	s.assertion = r.Body.ClientAssertion
+	if r.Body.ClientAssertion != nil {
+		s.assertion = *r.Body.ClientAssertion
+	}
 	s.mu.Unlock()
 	return gen.Token200JSONResponse{AccessToken: "t", TokenType: "Bearer", ExpiresIn: 3600}, nil
 }
@@ -320,12 +322,18 @@ func TestValidatorOnRealDocument(t *testing.T) {
 	if rec := do(t, h, "POST", "/v1/auth/token", grant+"&client_assertion=a.b.c", form); rec.Code != 200 || s.assertion != "a.b.c" {
 		t.Fatalf("token: status %d assertion %q: %s", rec.Code, s.assertion, rec.Body)
 	}
+	// Only a missing grant_type is a schema failure now; an unsupported grant
+	// or a missing assertion is the handler's to refuse (RFC 6749 section 5.2).
+	before = s.called
+	if rec := do(t, h, "POST", "/v1/auth/token", "client_assertion=a.b.c", form); rec.Code != 400 || s.called != before {
+		t.Fatalf("token without grant_type: status %d called %d: %s", rec.Code, s.called-before, rec.Body)
+	}
 	for name, body := range map[string]string{
-		"no assertion": grant,
-		"password":     "grant_type=password&client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-bearer&client_assertion=a.b.c",
+		"no assertion": "grant_type=client_credentials",
+		"password":     "grant_type=password&client_assertion=a.b.c",
 	} {
 		before = s.called
-		if rec := do(t, h, "POST", "/v1/auth/token", body, form); rec.Code != 400 || s.called != before {
+		if rec := do(t, h, "POST", "/v1/auth/token", body, form); rec.Code != 200 || s.called != before+1 {
 			t.Fatalf("token %s: status %d called %d: %s", name, rec.Code, s.called-before, rec.Body)
 		}
 	}

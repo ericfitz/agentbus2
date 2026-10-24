@@ -75,6 +75,9 @@ func New(c *core.Core, o Options) http.Handler {
 
 	strict := gen.NewStrictHandlerWithOptions(a, nil, gen.StrictHTTPServerOptions{
 		RequestErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			if tokenRequestError(w, r) {
+				return
+			}
 			WriteProblem(w, r, http.StatusBadRequest, bus.CodeValidation, err.Error(), false)
 		},
 		ResponseErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
@@ -88,6 +91,9 @@ func New(c *core.Core, o Options) http.Handler {
 	mux := gen.HandlerWithOptions(strict, gen.StdHTTPServerOptions{
 		BaseRouter: http.NewServeMux(),
 		ErrorHandlerFunc: func(w http.ResponseWriter, r *http.Request, err error) {
+			if tokenRequestError(w, r) {
+				return
+			}
 			WriteProblem(w, r, http.StatusBadRequest, bus.CodeValidation, err.Error(), false)
 		},
 	})
@@ -105,6 +111,9 @@ func New(c *core.Core, o Options) http.Handler {
 			},
 		},
 		ErrorHandlerWithOpts: func(_ context.Context, err error, w http.ResponseWriter, r *http.Request, opts nethttpmiddleware.ErrorHandlerOpts) {
+			if tokenRequestError(w, r) {
+				return
+			}
 			WriteProblem(w, r, opts.StatusCode, validatorCode(opts.StatusCode), err.Error(), false)
 		},
 	})
@@ -155,4 +164,18 @@ func limitBody(next http.Handler, limit int64) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// tokenRequestError answers a request the validator, the mux or the strict
+// handler refused before the token handler ran: on the token endpoint, and
+// only there, it is an invalid_request OAuth error (spec 8.1). The text is
+// fixed because the framework's own message echoes the offending values,
+// which may be a client assertion. It reports whether it wrote.
+func tokenRequestError(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != tokenPath {
+		return false
+	}
+	writeOAuthError(w, oauthFail(http.StatusBadRequest, "invalid_request",
+		"the request is not a well-formed application/x-www-form-urlencoded token request with a grant_type"))
+	return true
 }

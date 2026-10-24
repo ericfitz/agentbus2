@@ -33,30 +33,58 @@ func (r noStoreToken) VisitTokenResponse(w http.ResponseWriter) error {
 	return r.Token200JSONResponse.VisitTokenResponse(w)
 }
 
-// Token exchanges a private_key_jwt client assertion for a bearer (Decisions
-// 19, 70, 84).
+// Token is the token endpoint (RFC 6749 section 3.2). Every refusal is an
+// oauthError response (spec 8.1), never an error: only this endpoint answers
+// the OAuth body. client_credentials is private_key_jwt (Decisions 19, 70,
+// 84).
 func (a *api) Token(ctx context.Context, req gen.TokenRequestObject) (gen.TokenResponseObject, error) {
 	iss := a.opts.Issuer
 	if iss == nil {
-		return nil, issuerUnavailable()
+		return oauthFromBus(issuerUnavailable(), false), nil
 	}
 	if req.Body == nil {
-		return nil, core.E(bus.CodeValidation, "request body is required")
+		return oauthFail(http.StatusBadRequest, "invalid_request", "request body is required"), nil
 	}
-	p, err := assertion.Parse(req.Body.ClientAssertion)
+	switch req.Body.GrantType {
+	case "":
+		return oauthFail(http.StatusBadRequest, "invalid_request", "grant_type is required"), nil
+	case "client_credentials":
+		return a.clientCredentials(ctx, iss, req.Body), nil
+	default:
+		return oauthFail(http.StatusBadRequest, "unsupported_grant_type", "grant_type %q is not supported", req.Body.GrantType), nil
+	}
+}
+
+// clientCredentials is the RFC 7523 private_key_jwt grant. Every failure of
+// the assertion is invalid_client; scope is ignored and client_id, when
+// sent, must be the assertion's issuer.
+func (a *api) clientCredentials(ctx context.Context, iss *token.Issuer, b *gen.TokenRequest) gen.TokenResponseObject {
+	refuse := func(format string, args ...any) gen.TokenResponseObject {
+		return oauthFail(http.StatusUnauthorized, "invalid_client", format, args...)
+	}
+	if b.ClientAssertionType == nil || *b.ClientAssertionType != assertion.Type {
+		return refuse("client_assertion_type must be %s", assertion.Type)
+	}
+	if b.ClientAssertion == nil || *b.ClientAssertion == "" {
+		return refuse("client_assertion is required")
+	}
+	p, err := assertion.Parse(*b.ClientAssertion)
 	if err != nil {
-		return nil, core.E(bus.CodeValidation, "client assertion: %s", err)
+		return refuse("client assertion: %s", err)
+	}
+	if b.ClientId != nil && *b.ClientId != p.Identity {
+		return refuse("client_id does not match the assertion issuer")
 	}
 	pub, _, err := identities.Service{Core: a.core}.PublicKey(ctx, p.Identity, p.KID)
 	if err != nil {
 		if bus.CodeOf(err) == bus.CodeNotFound {
-			return nil, core.E(bus.CodeUnauthenticated, "unknown identity or key")
+			return refuse("unknown identity or key")
 		}
-		return nil, err
+		return oauthFromBus(err, false)
 	}
 	now := a.core.Now()
 	if err := p.Verify(pub, []string{iss.URL(), iss.TokenEndpoint()}, now, token.Leeway); err != nil {
-		return nil, core.E(bus.CodeUnauthenticated, "%s", err)
+		return refuse("%s", err)
 	}
 	// Verify accepts the assertion until exp plus the leeway inclusive, and
 	// the expiry job deletes rows with expires_at < now, so the jti is kept
@@ -70,20 +98,20 @@ func (a *api) Token(ctx context.Context, req gen.TokenRequestObject) (gen.TokenR
 		return tx.PutAssertionJTI(ctx, p.Identity, p.JTI, keepUntil)
 	})
 	if errors.Is(err, store.ErrConflict) {
-		return nil, core.E(bus.CodeUnauthenticated, "assertion replayed")
+		return refuse("assertion replayed")
 	}
 	if err != nil {
-		return nil, core.FromStore(err)
+		return oauthFromBus(core.FromStore(err), false)
 	}
 	raw, _, err := iss.Mint(token.MintInput{Identity: p.Identity, Kind: token.KindAgent})
 	if err != nil {
-		return nil, bus.Internal(err)
+		return oauthFromBus(bus.Internal(err), false)
 	}
 	return noStoreToken{gen.Token200JSONResponse{
 		AccessToken: raw,
 		TokenType:   "Bearer",
 		ExpiresIn:   int64(iss.Lifetime().Seconds()),
-	}}, nil
+	}}
 }
 
 // Jwks serves the own issuer's public key set.
