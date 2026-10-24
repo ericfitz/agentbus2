@@ -2,6 +2,7 @@ package channels
 
 import (
 	"context"
+	"errors"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
@@ -108,6 +109,34 @@ func (s Service) adminChannel(ctx context.Context, tx store.Tx, identity, name s
 	return ch, nil
 }
 
+// liveBridge reports whether the channel has a bridge in state creating or
+// live (Decision 12, spec 6.1b): such a bridge pins the channel's ACL, name
+// and existence. An archived bridge or none leaves the ordinary rules. The
+// guard is a rule here, not in the Store, so the bridge's own transactions
+// are unaffected.
+func liveBridge(ctx context.Context, tx store.Tx, channelID int64) (bool, error) {
+	b, err := tx.BridgeByChannel(ctx, channelID)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return b.State == store.BridgeCreating || b.State == store.BridgeLive, nil
+}
+
+// refuseBridged is the Delete and Rename guard.
+func refuseBridged(ctx context.Context, tx store.Tx, ch store.Channel) error {
+	pinned, err := liveBridge(ctx, tx, ch.ID)
+	if err != nil {
+		return err
+	}
+	if pinned {
+		return core.E(bus.CodeConflict, "channel %q has a live Slack bridge; run bridges remove first", ch.Name)
+	}
+	return nil
+}
+
 func protected(ch store.Channel, what string) error {
 	if ch.Name == GeneralChannel {
 		return core.E(bus.CodeValidation, "the %s channel cannot be %s", GeneralChannel, what)
@@ -129,6 +158,9 @@ func (s Service) Delete(ctx context.Context, identity string, in bus.DeleteChann
 		if err := protected(ch, "deleted"); err != nil {
 			return err
 		}
+		if err := refuseBridged(ctx, tx, ch); err != nil {
+			return err
+		}
 		return tx.DeleteChannel(ctx, ch.ID)
 	})
 }
@@ -144,6 +176,9 @@ func (s Service) Rename(ctx context.Context, identity string, in bus.RenameChann
 			return err
 		}
 		if err := protected(ch, "renamed"); err != nil {
+			return err
+		}
+		if err := refuseBridged(ctx, tx, ch); err != nil {
 			return err
 		}
 		return tx.RenameChannel(ctx, ch.ID, in.NewName)
@@ -196,6 +231,18 @@ func (s Service) SetACL(ctx context.Context, identity string, in bus.SetACLInput
 		ch, err := s.adminChannel(ctx, tx, identity, in.Channel)
 		if err != nil {
 			return err
+		}
+		pinned, err := liveBridge(ctx, tx, ch.ID)
+		if err != nil {
+			return err
+		}
+		if pinned {
+			if _, err := s.RequireAdmin(ctx, tx, identity); err != nil {
+				return core.E(bus.CodeForbidden, "only a server administrator may change the ACL of a bridged channel")
+			}
+			if err := scopes.CheckBridgeACL(entries); err != nil {
+				return err
+			}
 		}
 		if err := tx.SetACL(ctx, ch.ID, entries); err != nil {
 			return err
