@@ -27,12 +27,24 @@ var peekAlgorithms = []jose.SignatureAlgorithm{
 	jose.EdDSA, jose.ES256, jose.ES384, jose.ES512, jose.RS256, jose.RS384, jose.RS512, jose.PS256, jose.PS384, jose.PS512,
 }
 
+// maxLogged bounds any logged string that derives from the request.
+const maxLogged = 200
+
+// clip cuts s to maxLogged bytes (on a rune boundary) so a hostile token
+// cannot inflate the log.
+func clip(s string) string {
+	if len(s) <= maxLogged {
+		return s
+	}
+	return strings.ToValidUTF8(s[:maxLogged], "") + "..."
+}
+
 // refuseExchange logs a refused exchange (issuer, reason and identity when
 // known; never a token) and builds its response.
 func (a *api) refuseExchange(issuer string, e oauthError, reason, identity string) gen.TokenResponseObject {
-	attrs := []any{"issuer", issuer, "reason", reason, "code", e.Code}
+	attrs := []any{"issuer", clip(issuer), "reason", clip(reason), "code", e.Code}
 	if identity != "" {
-		attrs = append(attrs, "identity", identity)
+		attrs = append(attrs, "identity", clip(identity))
 	}
 	a.log.Warn("token exchange refused", attrs...)
 	return e
@@ -110,7 +122,7 @@ func (a *api) tokenExchange(ctx context.Context, b *gen.TokenFormdataRequestBody
 	if clientID == "" {
 		clientID = fed.Subject
 	}
-	raw, _, err = iss.Mint(token.MintInput{Identity: res.Identity, Kind: token.KindHuman, ClientID: clientID, Lifetime: ext.HumanLifetime})
+	raw, exp, err := iss.Mint(token.MintInput{Identity: res.Identity, Kind: token.KindHuman, ClientID: clientID, Lifetime: ext.HumanLifetime})
 	if err != nil {
 		return a.refuseExchange(ext.Name, oauthFromBus(bus.Internal(err), true), "mint failed", res.Identity)
 	}
@@ -119,7 +131,7 @@ func (a *api) tokenExchange(ctx context.Context, b *gen.TokenFormdataRequestBody
 	return noStoreToken{gen.Token200JSONResponse{
 		AccessToken:     raw,
 		TokenType:       "Bearer",
-		ExpiresIn:       int64(ext.HumanLifetime.Seconds()),
+		ExpiresIn:       int64(exp.Sub(a.core.Now()).Seconds()),
 		IssuedTokenType: &typ,
 	}}
 }

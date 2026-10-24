@@ -10,6 +10,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
@@ -339,4 +340,36 @@ func TestTokenExchangeWithoutIssuer(t *testing.T) {
 	e := newEnv(t, envOptions{})
 	wantOAuthError(t, e.do("POST", "/v1/auth/token", "application/x-www-form-urlencoded", "",
 		exchangeForm("x.y.z", nil).Encode()), 503, "temporarily_unavailable", "", "x.y.z")
+}
+
+func TestTokenExchangeClipsLoggedIssuer(t *testing.T) {
+	f := newFedEnv(t, 0, nil)
+	long := "https://" + strings.Repeat("x", 5000)
+	tok := f.prov.Mint(map[string]any{"iss": long, "sub": "g-1", "email": corpEric})
+	if s, _, _ := f.post(exchangeForm(tok, nil)); s != 400 {
+		t.Fatalf("status %d", s)
+	}
+	logs := f.log.String()
+	if !strings.Contains(logs, "unknown issuer") || len(logs) > 1500 || strings.Contains(logs, strings.Repeat("x", 300)) {
+		t.Errorf("logged issuer not clipped (%d bytes)", len(logs))
+	}
+}
+
+func TestClip(t *testing.T) {
+	if clip("short") != "short" {
+		t.Error("short changed")
+	}
+	got := clip(strings.Repeat("\u00e9", 300))
+	if len(got) > maxLogged+3 || !utf8.ValidString(got) {
+		t.Errorf("clip = %d bytes, valid %v", len(got), utf8.ValidString(got))
+	}
+}
+
+func TestTokenExchangeExpiresInFollowsMint(t *testing.T) {
+	// HumanLifetime 0 falls back to the issuer's lifetime (1 h in the env).
+	f := newFedEnv(t, 0, func(e *token.External) { e.HumanLifetime = 0 })
+	_, body, m := f.post(exchangeForm(f.prov.Mint(map[string]any{"sub": "g-1", "email": corpEric}), nil))
+	if m["expires_in"] != float64(3600) {
+		t.Fatalf("expires_in = %v, want 3600 (%s)", m["expires_in"], body)
+	}
 }
