@@ -3,6 +3,7 @@ package slackgo
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"maps"
 	"net/http"
 	"net/http/httptest"
@@ -259,4 +260,76 @@ func waitFor(t *testing.T, cond func() bool) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal("condition not reached")
+}
+
+func TestRunSocketAuthErrorsNameTheSetting(t *testing.T) {
+	for _, code := range []string{"invalid_auth", "token_revoked", "account_inactive"} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"ok":false,"error":"` + code + `"}`))
+		}))
+		c, _ := New(testApp, testBot, Options{APIURL: srv.URL + "/api/"})
+		err := c.RunSocket(context.Background(), func(context.Context, slackapi.Event) {})
+		srv.Close()
+		if err == nil || !strings.Contains(err.Error(), "slack_app_token_file") || !strings.Contains(err.Error(), code) || strings.Contains(err.Error(), "SECRET") {
+			t.Errorf("%s: got %v", code, err)
+		}
+	}
+}
+
+func TestRunSocketNotFoundIsInvalidAuth(t *testing.T) {
+	srv := httptest.NewServer(http.NotFoundHandler())
+	defer srv.Close()
+	c, _ := New(testApp, testBot, Options{APIURL: srv.URL + "/api/"})
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	err := c.RunSocket(ctx, func(context.Context, slackapi.Event) { t.Error("handler called") })
+	if err == nil || !strings.Contains(err.Error(), "slack_app_token_file") || strings.Contains(err.Error(), "SECRET") {
+		t.Fatalf("got %v", err)
+	}
+}
+
+func TestRunSocketWarnsOnUnparsableEnvelope(t *testing.T) {
+	s := newSocketServer(t, func(n int, send func(any)) {
+		if n == 0 {
+			send(eventsEnvelope("bad1", map[string]any{"type": "zzz_unknown_event", "text": "PAYLOADSECRET"}))
+		}
+	})
+	var buf syncBuf
+	c, err := New(testApp, testBot, Options{APIURL: s.srv.URL + "/api/", Logger: slog.New(slog.NewTextHandler(&buf, nil))})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() { done <- c.RunSocket(ctx, func(context.Context, slackapi.Event) {}) }()
+	if !s.ackSeen("bad1") {
+		t.Fatal("not acked")
+	}
+	waitFor(t, func() bool { return strings.Contains(buf.String(), "dropped an unparsable envelope") })
+	cancel()
+	if err := <-done; err != nil {
+		t.Fatal(err)
+	}
+	out := buf.String()
+	if !strings.Contains(out, "level=WARN") || !strings.Contains(out, "bad1") || strings.Contains(out, "PAYLOADSECRET") {
+		t.Fatalf("log %q", out)
+	}
+}
+
+type syncBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *syncBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *syncBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
 }

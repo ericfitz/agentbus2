@@ -112,10 +112,14 @@ type Event struct {
 // Client is every Slack call the bridge makes.
 //
 // Invite invites one user per Web API call (no force) so each user's error
-// code is visible. A per-user refusal (user_not_found and similar) is an
-// InviteFailure in the result, never an error, and the other users are still
-// invited; already_in_channel counts as success. Only a rate limit or a
-// transport error is returned as an error.
+// code is visible. A refusal about one user (user_not_found,
+// cant_invite_guest and similar) is an InviteFailure in the result and the
+// other users are still invited; already_in_channel counts as success. A
+// failure that applies to every user is returned as an error (with the
+// failures so far): a channel-level code (channel_not_found, is_archived,
+// not_in_channel), a credential code (invalid_auth, not_authed,
+// account_inactive, token_revoked, missing_scope), a server or HTTP error, a
+// rate limit or a transport error.
 //
 // History's per-page order is unspecified (real Slack returns newest first);
 // callers that need order read all pages and sort by ts.

@@ -4,7 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/http"
 
+	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
 	"github.com/slack-go/slack/socketmode"
 
@@ -28,18 +31,35 @@ func (c *Client) RunSocket(ctx context.Context, handle func(context.Context, sla
 	for {
 		select {
 		case <-ctx.Done():
+			<-runErr // no overlap with a restarted socket
 			return nil
 		case err := <-runErr:
 			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
 				return nil
 			}
-			return err
+			return socketRunError(err)
 		case evt := <-smc.Events:
 			if err := c.onSocketEvent(ctx, smc, evt, handle); err != nil {
+				cancel()
+				<-runErr
 				return err
 			}
 		}
 	}
+}
+
+// socketRunError names the setting for a credential refusal from
+// apps.connections.open; the error text never holds the token.
+func socketRunError(err error) error {
+	var sc slack.StatusCodeError
+	if errors.As(err, &sc) && sc.Code == http.StatusNotFound {
+		return errors.New("slack socket: invalid_auth: Slack refused the app-level token (slack_app_token_file)")
+	}
+	switch err.Error() {
+	case "invalid_auth", "account_inactive", "token_revoked", "not_authed":
+		return fmt.Errorf("slack socket: %s: Slack refused the app-level token (slack_app_token_file)", err.Error())
+	}
+	return fmt.Errorf("slack socket: %w", err)
 }
 
 func (c *Client) ack(ctx context.Context, smc *socketmode.Client, envelopeID string) {
@@ -87,15 +107,18 @@ func (c *Client) onSocketEvent(ctx context.Context, smc *socketmode.Client, evt 
 	case socketmode.EventTypeErrorBadMessage:
 		// slack-go could not parse the envelope (an inner event type it does
 		// not know, for one): ack it so Slack stops redelivering, handle nothing.
+		id, errType := "", ""
 		if bm, ok := evt.Data.(*socketmode.ErrorBadMessage); ok {
+			errType = fmt.Sprintf("%T", bm.Cause)
 			var env struct {
 				EnvelopeID string `json:"envelope_id"`
 			}
 			if json.Unmarshal(bm.Message, &env) == nil {
-				c.ack(ctx, smc, env.EnvelopeID)
+				id = env.EnvelopeID
 			}
 		}
-		c.log.Debug("slack socket: ignored unparsable envelope")
+		c.ack(ctx, smc, id)
+		c.log.Warn("slack socket: dropped an unparsable envelope", "envelope_id", id, "error_type", errType)
 	case socketmode.EventTypeSlashCommand, socketmode.EventTypeInteractive:
 		if evt.Request != nil {
 			c.ack(ctx, smc, evt.Request.EnvelopeID)

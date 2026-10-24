@@ -96,6 +96,10 @@ func TestFakeChannelRules(t *testing.T) {
 	if len(fails) != 1 || fails[0].User != "UNKNOWN" || fails[0].Code != "user_not_found" {
 		t.Errorf("failures: %+v", fails)
 	}
+	// A channel-level failure is an error, never an InviteFailure.
+	if fails, err := f.Invite(ctx, "CNOPE", []string{"U1"}); !errors.Is(err, slackapi.ErrChannelGone) || len(fails) != 0 {
+		t.Errorf("unknown channel: %+v, %v", fails, err)
+	}
 	ch, _ := f.Channel(id)
 	if !slices.Contains(ch.Members, "U1") || !slices.Contains(ch.Members, "U2") || slices.Contains(ch.Members, "UNKNOWN") {
 		t.Errorf("members: %v", ch.Members)

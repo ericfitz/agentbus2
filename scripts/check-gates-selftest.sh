@@ -355,6 +355,7 @@ block_m7_deps_rule_fires() {
 	deps_probe "$label" internal/slackapi/probe_m7.go "$m/internal/store" "deps_violation=$m/internal/slackapi imports $m/internal/store" m7-exit-checks.sh
 	deps_probe "$label" internal/slackapi/slackfake/probe_m7.go github.com/jmoiron/sqlx "deps_violation=$m/internal/slackapi/slackfake imports github.com/jmoiron/sqlx" m7-exit-checks.sh
 	deps_probe "$label" internal/auth/keys/probe_m7.go github.com/slack-go/slack "deps_violation=$m/internal/auth/keys imports github.com/slack-go/slack" m7-exit-checks.sh
+	deps_probe "$label" internal/auth/keys/probe_m7.go github.com/slack-go/slack/socketmode "deps_violation=$m/internal/auth/keys imports github.com/slack-go/slack" m7-exit-checks.sh
 	deps_probe "$label" internal/core/scopes/probe_m7.go github.com/slack-go/slack "deps_violation=$m/internal/core/scopes imports github.com/slack-go/slack" m7-exit-checks.sh
 	deps_probe "$label" internal/cli/probe_m7.go "$m/internal/slackapi" "deps_violation=$m/internal/cli imports $m/internal/slackapi" m7-exit-checks.sh
 	printf 'package notify\n\nimport _ "%s"\n' "$m/internal/no/such/package" >"$wt/internal/core/notify/probe_m7.go"

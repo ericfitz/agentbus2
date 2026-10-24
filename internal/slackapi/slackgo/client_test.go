@@ -161,6 +161,21 @@ func TestInviteErrors(t *testing.T) {
 			t.Fatalf("%+v, %v", fails, err)
 		}
 	})
+	t.Run("credential-and-server-codes-are-errors", func(t *testing.T) {
+		for _, code := range []string{"not_in_channel", "is_archived", "invalid_auth", "not_authed", "account_inactive", "token_revoked", "missing_scope"} {
+			f, c := newFake(t)
+			f.on("conversations.invite", slackErr(code))
+			fails, err := c.Invite(ctx, "C1", []string{"U1", "U2"})
+			if err == nil || len(fails) != 0 || len(f.callsOf("conversations.invite")) != 1 {
+				t.Errorf("%s: %+v, %v", code, fails, err)
+			}
+		}
+		f, c := newFake(t)
+		f.on("conversations.invite", func(w http.ResponseWriter) { w.WriteHeader(http.StatusBadGateway) })
+		if _, err := c.Invite(ctx, "C1", []string{"U1"}); err == nil {
+			t.Error("http 502 was swallowed")
+		}
+	})
 	t.Run("channel-gone-is-an-error", func(t *testing.T) {
 		f, c := newFake(t)
 		f.on("conversations.invite", jsonReply(`{"ok":true}`), slackErr("channel_not_found"))
