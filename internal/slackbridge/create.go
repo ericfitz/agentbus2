@@ -153,7 +153,11 @@ func (s *Service) reserveAndOpen(ctx context.Context, in bus.CreateBridgeInput) 
 	if !held {
 		return store.Bridge{}, reservation{}, core.E(bus.CodeUnavailable, "another create of this bridge is in progress; retry")
 	}
-	defer func() { _ = s.core.Store.Unlock(context.WithoutCancel(ctx), lock, owner) }()
+	defer func() {
+		if err := s.core.Store.Unlock(context.WithoutCancel(ctx), lock, owner); err != nil {
+			s.log.Warn("slack bridge: create lock release failed", "lock", lock, "err", err)
+		}
+	}()
 	r, err := s.reserve(ctx, in)
 	if err != nil {
 		return store.Bridge{}, r, err

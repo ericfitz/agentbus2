@@ -136,9 +136,10 @@ func (s *Store) unlockLocked(ctx context.Context, name, owner string) error {
 		_, err := t.(*tx).execW(ctx, "UPDATE leases SET expires_at = 0 WHERE name = ? AND owner = ?", name, owner)
 		return err
 	})
-	if err == nil {
-		delete(s.held, name)
-	}
+	// Forget the lease even when the UPDATE failed: the row still expires at its
+	// expires_at, so the database stays correct, while a kept entry would
+	// refuse every other owner on this handle until the process restarts.
+	delete(s.held, name)
 	return err
 }
 

@@ -204,3 +204,24 @@ func TestLockFailedCallsNeverLeakTheSession(t *testing.T) {
 		}
 	})
 }
+
+// TestLockFailedUnlockDoesNotWedgeHandle: an Unlock that fails (here a
+// canceled context) must not leave this handle refusing every other owner
+// after the lease has expired. SQLite keeps the lease row until its expiry, so
+// the same handle takes it with a later clock; a Postgres failed unlock
+// discards the pinned session, which ends the lock at once.
+func TestLockFailedUnlockDoesNotWedgeHandle(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		mustTryLock(t, s, "maintenance", "a", 100, 200, true)
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		if err := s.Unlock(ctx, "maintenance", "a"); err == nil {
+			t.Fatal("Unlock with a canceled context succeeded")
+		}
+		if e.Name == "sqlite" {
+			mustTryLock(t, s, "maintenance", "b", 150, 300, false) // the lease has not expired
+		}
+		mustTryLock(t, s, "maintenance", "b", 250, 400, true)
+	})
+}
