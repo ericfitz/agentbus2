@@ -169,3 +169,109 @@ func (s Service) RegisterLocalHuman(ctx context.Context, name string) error {
 	}
 	return core.FromStore(err)
 }
+
+// HumanSignIn is the outcome of SignInHuman: the identity the claims resolve
+// to, its freshly evaluated admin flag, and whether this call created it.
+type HumanSignIn struct {
+	Identity       string
+	Admin, Created bool
+}
+
+// SignInHuman resolves the verified claims of a corporate sign-in to a human
+// identity (spec 4.2, 6.2; Decision 13): the users gate, the binding checks,
+// creation or subject recording, and the admins evaluation that writes the
+// admin flag. The rule order is the plan's. It reruns the transaction on
+// ErrConflict, up to maxAttempts.
+//
+// State (Definition of Done D): a second sign-in with the same claims
+// changes nothing but the admin flag's re-evaluation; two overlapping first
+// sign-ins end with one identity and one binding (the loser reruns and finds
+// it); a failed run writes nothing, since everything is one transaction.
+func (s Service) SignInHuman(ctx context.Context, c HumanClaims) (HumanSignIn, error) {
+	email, err := NormalizeEmail(c.Email)
+	if err != nil {
+		return HumanSignIn{}, core.E(bus.CodeUnauthenticated, "email claim is not a valid identity name")
+	}
+	c.Email = email
+	if c.Subject == "" || c.Issuer == "" {
+		return HumanSignIn{}, core.E(bus.CodeUnauthenticated, "subject and issuer claims are required")
+	}
+	if err := (channels.Service{Core: s.Core}).EnsureGeneral(ctx); err != nil {
+		return HumanSignIn{}, err
+	}
+	var res HumanSignIn
+	for attempt := 1; ; attempt++ {
+		err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+			res = HumanSignIn{}
+			return signInHumanTx(ctx, tx, c, s.NowMs(), &res)
+		})
+		if errors.Is(err, store.ErrConflict) && attempt < maxAttempts {
+			continue
+		}
+		break
+	}
+	if err != nil {
+		return HumanSignIn{}, core.FromStore(err)
+	}
+	return res, nil
+}
+
+func signInHumanTx(ctx context.Context, tx store.Tx, c HumanClaims, now int64, res *HumanSignIn) error {
+	// (2) the bindings the claims name.
+	byEmail, err := tx.HumanBindingByValue(ctx, store.ClaimEmail, c.Email)
+	hasEmail := err == nil
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	bySub, err := tx.HumanBindingBySubject(ctx, c.Issuer, c.Subject)
+	hasSub := err == nil
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
+		return err
+	}
+	identity := c.Email
+	if hasEmail {
+		identity = byEmail.Identity
+	}
+	// (3) the users gate; a miss writes nothing.
+	users, err := tx.ListReferences(ctx, store.ListUsers)
+	if err != nil {
+		return err
+	}
+	if !MatchReferences(users, identity, c) {
+		return core.E(bus.CodeForbidden, "access denied: no users entry matches")
+	}
+	// (4) the subject and email must agree with what is recorded.
+	if hasSub && (!hasEmail || bySub.Identity != byEmail.Identity) {
+		return core.E(bus.CodeUnauthenticated, "subject bound to identity %q", bySub.Identity)
+	}
+	if hasEmail && byEmail.ProviderSubject != "" && (byEmail.ProviderSubject != c.Subject || byEmail.Issuer != c.Issuer) {
+		return core.E(bus.CodeUnauthenticated, "identity bound to a different subject")
+	}
+	switch {
+	case !hasEmail:
+		// (5) the name is taken by an identity without a binding.
+		if _, err := tx.Identity(ctx, identity); err == nil {
+			return core.E(bus.CodeConflict, "identity %q is an agent", identity)
+		} else if !errors.Is(err, store.ErrNotFound) {
+			return err
+		}
+		// (6)
+		b := store.HumanBinding{Identity: identity, Issuer: c.Issuer, ClaimType: store.ClaimEmail, Value: c.Email, ProviderSubject: c.Subject}
+		if err := createHumanWithGeneral(ctx, tx, b, now); err != nil {
+			return err
+		}
+		res.Created = true
+	case byEmail.ProviderSubject == "":
+		if err := tx.SetHumanSubject(ctx, identity, c.Issuer, c.Subject); err != nil {
+			return err
+		}
+	}
+	// (7)
+	admins, err := tx.ListReferences(ctx, store.ListAdmins)
+	if err != nil {
+		return err
+	}
+	res.Identity = identity
+	res.Admin = MatchReferences(admins, identity, c)
+	return tx.SetAdmin(ctx, identity, res.Admin)
+}
