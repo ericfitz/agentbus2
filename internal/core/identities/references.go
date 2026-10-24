@@ -2,6 +2,7 @@ package identities
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 
@@ -42,7 +43,7 @@ func ParseReference(list, issuer, email, group, subject, identity string) (store
 		return r, nil
 	}
 	if issuer == "" {
-		return r, core.E(bus.CodeValidation, "a %s reference needs an issuer", r.Kind)
+		return r, core.E(bus.CodeValidation, "%s reference needs an issuer", articleKind(r.Kind))
 	}
 	r.Issuer = issuer
 	if r.Kind == store.RefEmail {
@@ -95,13 +96,16 @@ func (s Service) AddReference(ctx context.Context, r store.Reference, issuers []
 	var added bool
 	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		var err error
-		added, err = addReference(ctx, tx, r)
+		added, err = addReference(ctx, tx, r, s.NowMs())
 		return err
 	})
 	return added, core.FromStore(err)
 }
 
-func addReference(ctx context.Context, tx store.Tx, r store.Reference) (bool, error) {
+func addReference(ctx context.Context, tx store.Tx, r store.Reference, now int64) (bool, error) {
+	if r.CreatedAt == 0 {
+		r.CreatedAt = now
+	}
 	if r.Kind == store.RefIdentity {
 		if err := requireRegistered(ctx, tx, r.Value); err != nil {
 			return false, err
@@ -141,7 +145,8 @@ func removeReference(ctx context.Context, tx store.Tx, r store.Reference) (bool,
 		return false, err
 	}
 	if removed && r.List == store.ListAdmins && r.Kind == store.RefIdentity {
-		if err := tx.SetAdmin(ctx, r.Value, false); err != nil {
+		// A stale row whose identity is gone must still be removable.
+		if err := tx.SetAdmin(ctx, r.Value, false); err != nil && !errors.Is(err, store.ErrNotFound) {
 			return false, err
 		}
 	}
@@ -173,6 +178,11 @@ func checkReference(r store.Reference) error {
 	if r.Value == "" {
 		return core.E(bus.CodeValidation, "a reference needs a value")
 	}
+	if r.Kind == store.RefEmail {
+		if n, err := NormalizeEmail(r.Value); err != nil || n != r.Value {
+			return core.E(bus.CodeValidation, "email reference %q must be a normalized address (trimmed, lowercase, one '@')", r.Value)
+		}
+	}
 	if (r.Kind == store.RefIdentity) != (r.Issuer == "") {
 		return core.E(bus.CodeValidation, "a claim reference needs an issuer and an identity reference takes none")
 	}
@@ -184,4 +194,12 @@ func configured(issuers []string) string {
 		return "none"
 	}
 	return strings.Join(issuers, ", ")
+}
+
+// articleKind is the kind with its indefinite article ("an email", "a group").
+func articleKind(k store.RefKind) string {
+	if k == store.RefEmail {
+		return "an " + string(k)
+	}
+	return "a " + string(k)
 }

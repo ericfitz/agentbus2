@@ -101,6 +101,9 @@ func TestReferencesAddIdentityWritesFlag(t *testing.T) {
 			t.Fatal("flag not set")
 		}
 	}
+	if refs := listRefs(t, s, store.ListAdmins); len(refs) != 1 || refs[0].CreatedAt <= 0 {
+		t.Fatalf("refs = %+v, want CreatedAt > 0", refs)
+	}
 	for i, want := range []bool{true, false} {
 		removed, err := s.RemoveReference(ctx, adminRef("pat"))
 		if err != nil || removed != want {
@@ -152,6 +155,8 @@ func TestReferencesRejectInvalid(t *testing.T) {
 		{List: store.ListUsers, Kind: "phone", Issuer: "corp", Value: "x"},
 		{List: store.ListUsers, Kind: store.RefGroup, Issuer: "corp"},
 		{List: store.ListUsers, Kind: store.RefIdentity, Issuer: "corp", Value: "pat"},
+		{List: store.ListUsers, Kind: store.RefEmail, Issuer: "corp", Value: "A@B.C"},
+		{List: store.ListUsers, Kind: store.RefEmail, Issuer: "corp", Value: "nope"},
 	} {
 		_, err := s.AddReference(ctx, r, []string{"corp"})
 		wantCode(t, err, bus.CodeValidation)
@@ -175,6 +180,9 @@ func TestMakeAdminUsesAdminsList(t *testing.T) {
 	if len(refs) != 1 || refs[0].Value != "pat" || refs[0].Kind != store.RefIdentity {
 		t.Fatalf("refs = %+v", refs)
 	}
+	if refs[0].CreatedAt <= 0 {
+		t.Fatalf("CreatedAt = %d", refs[0].CreatedAt)
+	}
 	if id, _ := identityRow(t, s, "pat"); !id.Admin {
 		t.Fatal("flag not set")
 	}
@@ -186,5 +194,23 @@ func TestMakeAdminUsesAdminsList(t *testing.T) {
 	}
 	if id, _ := identityRow(t, s, "pat"); id.Admin {
 		t.Fatal("flag left")
+	}
+}
+
+func TestRemoveStaleAdminReference(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	if err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		_, err := tx.AddReference(ctx, store.Reference{List: store.ListAdmins, Kind: store.RefIdentity, Value: "gone", CreatedAt: 1})
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := s.RemoveReference(ctx, adminRef("gone"))
+	if err != nil || !removed {
+		t.Fatalf("remove = %v, %v", removed, err)
+	}
+	if len(listRefs(t, s, store.ListAdmins)) != 0 {
+		t.Fatal("row left")
 	}
 }

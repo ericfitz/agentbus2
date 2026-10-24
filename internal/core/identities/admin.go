@@ -42,7 +42,7 @@ func (s Service) MakeAdmin(ctx context.Context, name string, admin bool) error {
 		}
 		r := store.Reference{List: store.ListAdmins, Kind: store.RefIdentity, Value: name}
 		if admin {
-			_, err := addReference(ctx, tx, r)
+			_, err := addReference(ctx, tx, r, s.NowMs())
 			return err
 		}
 		if _, err := removeReference(ctx, tx, r); err != nil {
