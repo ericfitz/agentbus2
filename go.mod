@@ -14,11 +14,13 @@ require (
 	github.com/charmbracelet/x/ansi v0.11.8
 	github.com/getkin/kin-openapi v0.151.0
 	github.com/go-jose/go-jose/v4 v4.1.6
+	github.com/gorilla/websocket v1.5.3
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/jmoiron/sqlx v1.4.0
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	github.com/oapi-codegen/nethttp-middleware v1.2.0
 	github.com/oapi-codegen/runtime v1.7.0
+	github.com/slack-go/slack v0.30.1
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	golang.org/x/sys v0.49.0

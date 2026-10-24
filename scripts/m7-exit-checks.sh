@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Milestone 7 exit evidence.
+# Milestone 7 exit evidence and the Slack bridge import rules.
 #   usage: m7-exit-checks.sh <replicas.log>   counts, then import rule
 #          m7-exit-checks.sh --deps-only      import rule alone (Docker-free)
 # <replicas.log> is a `go test -v -run '^TestReplicas'
@@ -24,6 +24,20 @@
 # Prints deps_ok=1 when nothing matched; otherwise one
 # deps_violation=<package> imports <forbidden> line per hit and exits 1.
 # A go list failure exits 2.
+#
+# The Slack bridge rules (same output):
+#   ./internal/slackapi              imports only the standard library and
+#                                    itself (allowlist)
+#   ./internal/slackapi/slackfake    imports only the standard library and
+#                                    internal/slackapi (allowlist)
+#   github.com/slack-go/slack        is imported (directly) only by
+#                                    internal/slackapi/slackgo
+#   ./internal/slackapi, slackfake   never import internal/core, store, server,
+#                                    bus or slack-go
+#   ./internal/core/..., ./internal/bus/..., ./internal/cli,
+#   ./internal/mcpserver, ./internal/client, ./internal/server
+#                                    never import internal/slackapi,
+#                                    internal/slackbridge or slack-go
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -63,10 +77,75 @@ check_deps() {
 	done
 }
 
+# check_allowlist PATTERN ALLOWED...: every non-standard production dependency
+# of each package PATTERN matches must equal an allowed entry or lie below it
+# ("<entry>/..."). Entries are full import paths. Sets the global violations.
+check_allowlist() {
+	local pattern="$1" pkg dep a ok
+	shift
+	local pkgs deps
+	pkgs="$(cd "$ROOT" && go list "$pattern")" || {
+		echo "m7-exit-checks: go list $pattern failed" >&2
+		exit 2
+	}
+	for pkg in $pkgs; do
+		deps="$(cd "$ROOT" && go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' "$pkg")" || {
+			echo "m7-exit-checks: go list -deps $pkg failed" >&2
+			exit 2
+		}
+		for dep in $deps; do
+			ok=0
+			for a in "$@"; do
+				case "$dep" in
+				"$a" | "$a"/*) ok=1 ;;
+				esac
+			done
+			if [ "$ok" -eq 0 ]; then
+				echo "deps_violation=$pkg imports $dep"
+				violations=$((violations + 1))
+			fi
+		done
+	done
+}
+
+# check_importers IMPORT ALLOWED_PKG: only ALLOWED_PKG (a full import path) may
+# import IMPORT (or a package below it) directly; every package of ./... is
+# scanned. Sets the global violations.
+check_importers() {
+	local target="$1" allowed="$2" lines pkg imp rest
+	lines="$(cd "$ROOT" && go list -f '{{.ImportPath}} {{join .Imports " "}}' ./...)" || {
+		echo "m7-exit-checks: go list ./... failed" >&2
+		exit 2
+	}
+	while IFS= read -r line; do
+		pkg="${line%% *}"
+		rest="${line#"$pkg"}"
+		[ "$pkg" = "$allowed" ] && continue
+		for imp in $rest; do
+			case "$imp" in
+			"$target" | "$target"/*)
+				echo "deps_violation=$pkg imports $target"
+				violations=$((violations + 1))
+				break
+				;;
+			esac
+		done
+	done <<<"$lines"
+}
+
 import_check() {
 	check_deps './internal/store/...' internal/core
 	check_deps ./internal/core/notify internal/store github.com/jackc/pgx
 	check_deps ./internal/core/notify/pgnotify internal/server internal/gen
+	check_allowlist ./internal/slackapi "$MOD/internal/slackapi"
+	check_allowlist ./internal/slackapi/slackfake "$MOD/internal/slackapi"
+	check_importers github.com/slack-go/slack "$MOD/internal/slackapi/slackgo"
+	check_deps ./internal/slackapi internal/core internal/store internal/server internal/bus github.com/slack-go/slack
+	check_deps ./internal/slackapi/slackfake internal/core internal/store internal/server internal/bus github.com/slack-go/slack
+	local p
+	for p in './internal/core/...' './internal/bus/...' ./internal/cli ./internal/mcpserver ./internal/client ./internal/server; do
+		check_deps "$p" internal/slackapi internal/slackbridge github.com/slack-go/slack
+	done
 	if [ "$violations" -ne 0 ]; then
 		return 1
 	fi

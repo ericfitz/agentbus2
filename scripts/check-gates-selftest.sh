@@ -340,14 +340,23 @@ block_m5_deps_rule_fires() {
 # --- 22. m7-deps-rule-fires ------------------------------------------------------------
 # Docker-free. The Milestone 7 import rule: store never imports core, notify
 # stays a leaf (pgx/v5 is caught only by the prefix match), pgnotify never
-# imports the server (a subpackage, likewise). An import go list cannot
-# resolve must exit 2, never pass as a package with no imports.
+# imports the server (a subpackage, likewise). The Slack bridge rules: slackapi
+# imports no core, store, server or bus; slackfake may import only the standard
+# library and slackapi (the allowlist); slack-go is imported only by
+# slackapi/slackgo (the importer scan); core and the clients never import
+# slackapi or slack-go. An import go list cannot resolve must exit 2, never
+# pass as a package with no imports.
 block_m7_deps_rule_fires() {
 	local label=m7-deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b22z.log" rc=0
 	begin
 	deps_probe "$label" internal/store/sqlstore/probe_m7.go "$m/internal/core/notify" "deps_violation=$m/internal/store/sqlstore imports $m/internal/core" m7-exit-checks.sh
 	deps_probe "$label" internal/core/notify/probe_m7.go github.com/jackc/pgx/v5 "deps_violation=$m/internal/core/notify imports github.com/jackc/pgx" m7-exit-checks.sh
 	deps_probe "$label" internal/core/notify/pgnotify/probe_m7.go "$m/internal/server/config" "deps_violation=$m/internal/core/notify/pgnotify imports $m/internal/server" m7-exit-checks.sh
+	deps_probe "$label" internal/slackapi/probe_m7.go "$m/internal/store" "deps_violation=$m/internal/slackapi imports $m/internal/store" m7-exit-checks.sh
+	deps_probe "$label" internal/slackapi/slackfake/probe_m7.go github.com/jmoiron/sqlx "deps_violation=$m/internal/slackapi/slackfake imports github.com/jmoiron/sqlx" m7-exit-checks.sh
+	deps_probe "$label" internal/auth/keys/probe_m7.go github.com/slack-go/slack "deps_violation=$m/internal/auth/keys imports github.com/slack-go/slack" m7-exit-checks.sh
+	deps_probe "$label" internal/core/scopes/probe_m7.go github.com/slack-go/slack "deps_violation=$m/internal/core/scopes imports github.com/slack-go/slack" m7-exit-checks.sh
+	deps_probe "$label" internal/cli/probe_m7.go "$m/internal/slackapi" "deps_violation=$m/internal/cli imports $m/internal/slackapi" m7-exit-checks.sh
 	printf 'package notify\n\nimport _ "%s"\n' "$m/internal/no/such/package" >"$wt/internal/core/notify/probe_m7.go"
 	bash "$wt/scripts/m7-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 2 ]; then
