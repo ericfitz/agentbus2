@@ -829,6 +829,27 @@ paths:
                 $ref: "#/components/schemas/CredentialReset"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/admin/identities/by-email:
+    post:
+      operationId: createIdentityByEmail
+      tags: [admin]
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateIdentityByEmailRequest"
+      responses:
+        "200":
+          description: The human identity bound to the email, created when it did not exist.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HumanIdentity"
+        default:
+          $ref: "#/components/responses/Problem"
 components:
   securitySchemes:
     bearerAuth:
@@ -1619,6 +1640,21 @@ components:
         algorithm:
           type: string
           enum: [EdDSA, ES256]
+        created:
+          type: boolean
+    CreateIdentityByEmailRequest:
+      type: object
+      additionalProperties: false
+      required: [email]
+      properties:
+        email:
+          type: string
+    HumanIdentity:
+      type: object
+      required: [identity, created]
+      properties:
+        identity:
+          type: string
         created:
           type: boolean
     CredentialReset:

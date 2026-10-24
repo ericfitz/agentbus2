@@ -34,6 +34,7 @@ type Admin interface {
 	RenameChannel(ctx context.Context, in RenameChannelInput) error
 	Reset(ctx context.Context, in ResetInput) error
 	ResetCredential(ctx context.Context, in ResetCredentialInput) (ResetCredentialResult, error)
+	CreateIdentityByEmail(ctx context.Context, in CreateIdentityByEmailInput) (CreateIdentityByEmailResult, error)
 }
 
 // ResetScope selects what Reset removes (Milestone 5 choice 12).
@@ -58,4 +59,15 @@ type ResetCredentialInput struct{ Identity, IdempotencyKey string }
 type ResetCredentialResult struct {
 	Identity    string
 	KeysRemoved int
+}
+
+// CreateIdentityByEmailInput names the email a human identity is created for
+// (spec 4.3); the core normalizes it.
+type CreateIdentityByEmailInput struct{ Email, IdempotencyKey string }
+
+// CreateIdentityByEmailResult is the normalized identity name and whether
+// this call created it.
+type CreateIdentityByEmailResult struct {
+	Identity string
+	Created  bool
 }

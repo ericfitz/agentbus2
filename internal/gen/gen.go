@@ -376,6 +376,11 @@ type CreateChannelRequest struct {
 // CreateChannelRequestKind defines model for CreateChannelRequest.Kind.
 type CreateChannelRequestKind string
 
+// CreateIdentityByEmailRequest defines model for CreateIdentityByEmailRequest.
+type CreateIdentityByEmailRequest struct {
+	Email string `json:"email"`
+}
+
 // CredentialReset defines model for CredentialReset.
 type CredentialReset struct {
 	Identity    string `json:"identity"`
@@ -417,6 +422,12 @@ type Gap struct {
 	Channel string `json:"channel"`
 	From    int64  `json:"from"`
 	To      int64  `json:"to"`
+}
+
+// HumanIdentity defines model for HumanIdentity.
+type HumanIdentity struct {
+	Created  bool   `json:"created"`
+	Identity string `json:"identity"`
 }
 
 // Identity defines model for Identity.
@@ -762,6 +773,12 @@ type IdempotencyKeyParam = string
 // SessionParam defines model for SessionParam.
 type SessionParam = string
 
+// CreateIdentityByEmailParams defines parameters for CreateIdentityByEmail.
+type CreateIdentityByEmailParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
 // ResetCredentialParams defines parameters for ResetCredential.
 type ResetCredentialParams struct {
 	// IdempotencyKey Absent or empty means no receipt (Decision 66).
@@ -925,6 +942,9 @@ type ReleaseTaskParams struct {
 	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
 }
 
+// CreateIdentityByEmailJSONRequestBody defines body for CreateIdentityByEmail for application/json ContentType.
+type CreateIdentityByEmailJSONRequestBody = CreateIdentityByEmailRequest
+
 // RegisterJSONRequestBody defines body for Register for application/json ContentType.
 type RegisterJSONRequestBody = RegisterRequest
 
@@ -1046,6 +1066,14 @@ type ClientInterface interface {
 
 	// OpenidConfiguration performs a GET /.well-known/openid-configuration (the `OpenidConfiguration` operationId) request.
 	OpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateIdentityByEmailWithBody performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request,
+	// with any type of body and a specified content type.
+	CreateIdentityByEmailWithBody(ctx context.Context, params *CreateIdentityByEmailParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// CreateIdentityByEmail performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request.
+	// Takes a body of the `application/json` content type.
+	CreateIdentityByEmail(ctx context.Context, params *CreateIdentityByEmailParams, body CreateIdentityByEmailJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ResetCredential performs a POST /v1/admin/identities/{identity}/reset-credential (the `ResetCredential` operationId) request.
 	ResetCredential(ctx context.Context, identity string, params *ResetCredentialParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1260,6 +1288,34 @@ func (c *Client) WellKnown(ctx context.Context, reqEditors ...RequestEditorFn) (
 // OpenidConfiguration performs a GET /.well-known/openid-configuration (the `OpenidConfiguration` operationId) request.
 func (c *Client) OpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewOpenidConfigurationRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateIdentityByEmailWithBody performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request,
+// with any type of body and a specified content type.
+func (c *Client) CreateIdentityByEmailWithBody(ctx context.Context, params *CreateIdentityByEmailParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIdentityByEmailRequestWithBody(c.Server, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// CreateIdentityByEmail performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request.
+// Takes a body of the `application/json` content type.
+func (c *Client) CreateIdentityByEmail(ctx context.Context, params *CreateIdentityByEmailParams, body CreateIdentityByEmailJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewCreateIdentityByEmailRequest(c.Server, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -2035,6 +2091,61 @@ func NewOpenidConfigurationRequest(server string) (*http.Request, error) {
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
 	if err != nil {
 		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewCreateIdentityByEmailRequest calls the generic CreateIdentityByEmail builder with application/json body
+func NewCreateIdentityByEmailRequest(server string, params *CreateIdentityByEmailParams, body CreateIdentityByEmailJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewCreateIdentityByEmailRequestWithBody(server, params, "application/json", bodyReader)
+}
+
+// NewCreateIdentityByEmailRequestWithBody constructs an http.Request for the CreateIdentityByEmail method, with any body, and a specified content type
+func NewCreateIdentityByEmailRequestWithBody(server string, params *CreateIdentityByEmailParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/identities/by-email")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
 	}
 
 	return req, nil
@@ -4102,6 +4213,16 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	OpenidConfigurationWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*OpenidConfigurationResponse, error)
 
+	// CreateIdentityByEmailWithBodyWithResponse performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	CreateIdentityByEmailWithBodyWithResponse(ctx context.Context, params *CreateIdentityByEmailParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIdentityByEmailResponse, error)
+
+	// CreateIdentityByEmailWithResponse performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	CreateIdentityByEmailWithResponse(ctx context.Context, params *CreateIdentityByEmailParams, body CreateIdentityByEmailJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIdentityByEmailResponse, error)
+
 	// ResetCredentialWithResponse performs a POST /v1/admin/identities/{identity}/reset-credential (the `ResetCredential` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -4465,6 +4586,54 @@ func (r OpenidConfigurationResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r OpenidConfigurationResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type CreateIdentityByEmailResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *HumanIdentity
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateIdentityByEmailResponse) GetJSON200() *HumanIdentity {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r CreateIdentityByEmailResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r CreateIdentityByEmailResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r CreateIdentityByEmailResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r CreateIdentityByEmailResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r CreateIdentityByEmailResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -6254,6 +6423,28 @@ func (c *ClientWithResponses) OpenidConfigurationWithResponse(ctx context.Contex
 	return ParseOpenidConfigurationResponse(rsp)
 }
 
+// CreateIdentityByEmailWithBodyWithResponse performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request,
+// with any type of body and a specified content type.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateIdentityByEmailWithBodyWithResponse(ctx context.Context, params *CreateIdentityByEmailParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateIdentityByEmailResponse, error) {
+	rsp, err := c.CreateIdentityByEmailWithBody(ctx, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIdentityByEmailResponse(rsp)
+}
+
+// CreateIdentityByEmailWithResponse performs a POST /v1/admin/identities/by-email (the `CreateIdentityByEmail` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) CreateIdentityByEmailWithResponse(ctx context.Context, params *CreateIdentityByEmailParams, body CreateIdentityByEmailJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateIdentityByEmailResponse, error) {
+	rsp, err := c.CreateIdentityByEmail(ctx, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseCreateIdentityByEmailResponse(rsp)
+}
+
 // ResetCredentialWithResponse performs a POST /v1/admin/identities/{identity}/reset-credential (the `ResetCredential` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -6887,6 +7078,39 @@ func ParseOpenidConfigurationResponse(rsp *http.Response) (*OpenidConfigurationR
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest OpenIDConfiguration
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseCreateIdentityByEmailResponse parses an HTTP response from a CreateIdentityByEmailWithResponse call
+func ParseCreateIdentityByEmailResponse(rsp *http.Response) (*CreateIdentityByEmailResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &CreateIdentityByEmailResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest HumanIdentity
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -8137,6 +8361,9 @@ type ServerInterface interface {
 	// (GET /.well-known/openid-configuration)
 	OpenidConfiguration(w http.ResponseWriter, r *http.Request)
 
+	// (POST /v1/admin/identities/by-email)
+	CreateIdentityByEmail(w http.ResponseWriter, r *http.Request, params CreateIdentityByEmailParams)
+
 	// (POST /v1/admin/identities/{identity}/reset-credential)
 	ResetCredential(w http.ResponseWriter, r *http.Request, identity string, params ResetCredentialParams)
 
@@ -8280,6 +8507,47 @@ func (siw *ServerInterfaceWrapper) OpenidConfiguration(w http.ResponseWriter, r 
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.OpenidConfiguration(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// CreateIdentityByEmail operation middleware
+func (siw *ServerInterfaceWrapper) CreateIdentityByEmail(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params CreateIdentityByEmailParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.CreateIdentityByEmail(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10005,6 +10273,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/auth/register", wrapper.Register)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/reset", wrapper.AdminReset)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/identities/{identity}/reset-credential", wrapper.ResetCredential)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/identities/by-email", wrapper.CreateIdentityByEmail)
 
 	return m
 }
@@ -10076,6 +10345,46 @@ type OpenidConfigurationdefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response OpenidConfigurationdefaultApplicationProblemPlusJSONResponse) VisitOpenidConfigurationResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateIdentityByEmailRequestObject struct {
+	Params CreateIdentityByEmailParams
+	Body   *CreateIdentityByEmailJSONRequestBody
+}
+
+type CreateIdentityByEmailResponseObject interface {
+	VisitCreateIdentityByEmailResponse(w http.ResponseWriter) error
+}
+
+type CreateIdentityByEmail200JSONResponse HumanIdentity
+
+func (response CreateIdentityByEmail200JSONResponse) VisitCreateIdentityByEmailResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type CreateIdentityByEmaildefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response CreateIdentityByEmaildefaultApplicationProblemPlusJSONResponse) VisitCreateIdentityByEmailResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -11562,6 +11871,9 @@ type StrictServerInterface interface {
 	// (GET /.well-known/openid-configuration)
 	OpenidConfiguration(ctx context.Context, request OpenidConfigurationRequestObject) (OpenidConfigurationResponseObject, error)
 
+	// (POST /v1/admin/identities/by-email)
+	CreateIdentityByEmail(ctx context.Context, request CreateIdentityByEmailRequestObject) (CreateIdentityByEmailResponseObject, error)
+
 	// (POST /v1/admin/identities/{identity}/reset-credential)
 	ResetCredential(ctx context.Context, request ResetCredentialRequestObject) (ResetCredentialResponseObject, error)
 
@@ -11757,6 +12069,39 @@ func (sh *strictHandler) OpenidConfiguration(w http.ResponseWriter, r *http.Requ
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(OpenidConfigurationResponseObject); ok {
 		if err := validResponse.VisitOpenidConfigurationResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// CreateIdentityByEmail operation middleware
+func (sh *strictHandler) CreateIdentityByEmail(w http.ResponseWriter, r *http.Request, params CreateIdentityByEmailParams) {
+	var request CreateIdentityByEmailRequestObject
+
+	request.Params = params
+
+	var body CreateIdentityByEmailJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.CreateIdentityByEmail(ctx, request.(CreateIdentityByEmailRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "CreateIdentityByEmail")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(CreateIdentityByEmailResponseObject); ok {
+		if err := validResponse.VisitCreateIdentityByEmailResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

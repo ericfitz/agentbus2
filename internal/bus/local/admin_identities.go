@@ -22,3 +22,13 @@ func (b *Bus) ResetCredential(ctx context.Context, in ab2bus.ResetCredentialInpu
 	}
 	return ab2bus.ResetCredentialResult{Identity: in.Identity, KeysRemoved: n}, nil
 }
+
+// CreateIdentityByEmail creates the human identity bound to in.Email, or
+// answers the existing one.
+func (b *Bus) CreateIdentityByEmail(ctx context.Context, in ab2bus.CreateIdentityByEmailInput) (ab2bus.CreateIdentityByEmailResult, error) {
+	id, created, err := b.identities().CreateIdentityByEmailAs(ctx, b.identity, in.Email, in.IdempotencyKey)
+	if err != nil {
+		return ab2bus.CreateIdentityByEmailResult{}, err
+	}
+	return ab2bus.CreateIdentityByEmailResult{Identity: id, Created: created}, nil
+}

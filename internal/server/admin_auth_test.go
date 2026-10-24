@@ -241,3 +241,50 @@ func TestResetCredentialKeepsMintedToken(t *testing.T) {
 		t.Fatalf("RequireIdentity after reset: %v", err)
 	}
 }
+
+// postBody is post with a JSON body (nil sends none).
+func (e *env) postBody(identity, path, body string) (int, string, string) {
+	e.t.Helper()
+	var rd io.Reader
+	if body != "" {
+		rd = strings.NewReader(body)
+	}
+	req, err := http.NewRequest(http.MethodPost, "http://inproc"+path, rd)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	if body != "" {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	resp := e.raw(identity, req)
+	b, _ := io.ReadAll(resp.Body)
+	return resp.StatusCode, string(b), resp.Header.Get("Content-Type")
+}
+
+func TestCreateIdentityByEmailWire(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	e.identity("root", true)
+	const path = "/v1/admin/identities/by-email"
+	st, body, ct := e.postBody("root", path, "")
+	if st != 400 || !strings.HasPrefix(ct, "application/problem+json") {
+		t.Fatalf("no body: %d %s %s", st, ct, body)
+	}
+	if st, body, _ = e.postBody("root", path, `{"email":"a@b.c","extra":1}`); st != 400 {
+		t.Fatalf("unknown member: %d %s", st, body)
+	}
+	if e.hasIdentity("a@b.c") {
+		t.Fatal("a refused request created the identity")
+	}
+	st, body, _ = e.postBody("root", path, `{"email":"A@b.c"}`)
+	if st != 200 || !strings.Contains(body, `"identity":"a@b.c"`) || !strings.Contains(body, `"created":true`) {
+		t.Fatalf("success: %d %s", st, body)
+	}
+	st, body, _ = e.postBody("root", path, `{"email":"a@b.c"}`)
+	if st != 200 || !strings.Contains(body, `"created":false`) {
+		t.Fatalf("again: %d %s", st, body)
+	}
+	e.identity("pat", false)
+	if st, _, _ = e.postBody("pat", path, `{"email":"z@b.c"}`); st != 403 {
+		t.Fatalf("as pat = %d, want 403", st)
+	}
+}

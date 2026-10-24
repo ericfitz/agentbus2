@@ -31,3 +31,13 @@ func (a *api) ResetCredential(ctx context.Context, req gen.ResetCredentialReques
 	}
 	return gen.ResetCredential200JSONResponse{Identity: req.Identity, KeysRemoved: n}, nil
 }
+
+// CreateIdentityByEmail creates the human identity bound to the body's
+// email, or answers the existing one (spec 4.3). Administrator only.
+func (a *api) CreateIdentityByEmail(ctx context.Context, req gen.CreateIdentityByEmailRequestObject) (gen.CreateIdentityByEmailResponseObject, error) {
+	id, created, err := (identities.Service{Core: a.core}).CreateIdentityByEmailAs(ctx, IdentityFrom(ctx), req.Body.Email, idemKey(req.Params.IdempotencyKey))
+	if err != nil {
+		return nil, err
+	}
+	return gen.CreateIdentityByEmail200JSONResponse{Identity: id, Created: created}, nil
+}

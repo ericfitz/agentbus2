@@ -283,3 +283,44 @@ func TestCreateIdentityByEmailOverlap(t *testing.T) {
 		}
 	})
 }
+
+func TestCreateIdentityByEmailBus(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx := context.Background()
+		h := newHarness(t, e, harnessOptions{})
+		root := h.admin("root").(ab2bus.Admin)
+		h.as("agent-a")
+		h.as("bot@corp.example") // an agent whose name looks like an address
+
+		res, err := root.CreateIdentityByEmail(ctx, ab2bus.CreateIdentityByEmailInput{Email: "Eric@Corp.Example"})
+		if err != nil || res.Identity != "eric@corp.example" || !res.Created {
+			t.Fatalf("first = %+v, %v", res, err)
+		}
+		res, err = root.CreateIdentityByEmail(ctx, ab2bus.CreateIdentityByEmailInput{Email: "eric@corp.example"})
+		if err != nil || res.Identity != "eric@corp.example" || res.Created {
+			t.Fatalf("second = %+v, %v; want created=false", res, err)
+		}
+
+		// The same idempotency key replays the first result.
+		res, err = root.CreateIdentityByEmail(ctx, ab2bus.CreateIdentityByEmailInput{Email: "pat@corp.example", IdempotencyKey: "k"})
+		if err != nil || !res.Created {
+			t.Fatalf("keyed first = %+v, %v", res, err)
+		}
+		res, err = root.CreateIdentityByEmail(ctx, ab2bus.CreateIdentityByEmailInput{Email: "pat@corp.example", IdempotencyKey: "k"})
+		if err != nil || res.Identity != "pat@corp.example" || !res.Created {
+			t.Fatalf("keyed replay = %+v, %v; want the first result", res, err)
+		}
+
+		patAdmin := h.as("agent-a").(ab2bus.Admin)
+		_, err = patAdmin.CreateIdentityByEmail(ctx, ab2bus.CreateIdentityByEmailInput{Email: "x@corp.example"})
+		codeOf(t, err, ab2bus.CodeForbidden)
+		if hasIdentity(t, h, "x@corp.example") {
+			t.Fatal("a refused request created the identity")
+		}
+
+		_, err = root.CreateIdentityByEmail(ctx, ab2bus.CreateIdentityByEmailInput{Email: "bot@corp.example"})
+		codeOf(t, err, ab2bus.CodeConflict)
+		_, err = root.CreateIdentityByEmail(ctx, ab2bus.CreateIdentityByEmailInput{Email: "x"})
+		codeOf(t, err, ab2bus.CodeValidation)
+	})
+}

@@ -36,3 +36,19 @@ func (b *Bus) ResetCredential(ctx context.Context, in ab2bus.ResetCredentialInpu
 	}
 	return ab2bus.ResetCredentialResult{Identity: r.JSON200.Identity, KeysRemoved: r.JSON200.KeysRemoved}, nil
 }
+
+// CreateIdentityByEmail creates the human identity bound to in.Email, or
+// answers the existing one.
+func (b *Bus) CreateIdentityByEmail(ctx context.Context, in ab2bus.CreateIdentityByEmailInput) (ab2bus.CreateIdentityByEmailResult, error) {
+	r, err := b.c.CreateIdentityByEmailWithResponse(ctx, &gen.CreateIdentityByEmailParams{IdempotencyKey: key(in.IdempotencyKey)}, gen.CreateIdentityByEmailJSONRequestBody{Email: in.Email})
+	if err != nil {
+		return ab2bus.CreateIdentityByEmailResult{}, errorOf(ctx, 0, nil, nil, err)
+	}
+	if err := errorOf(ctx, r.StatusCode(), r.ApplicationproblemJSONDefault, r.Body, nil); err != nil {
+		return ab2bus.CreateIdentityByEmailResult{}, err
+	}
+	if r.JSON200 == nil {
+		return ab2bus.CreateIdentityByEmailResult{}, unparsable(r.StatusCode())
+	}
+	return ab2bus.CreateIdentityByEmailResult{Identity: r.JSON200.Identity, Created: r.JSON200.Created}, nil
+}
