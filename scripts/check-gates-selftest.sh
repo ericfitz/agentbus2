@@ -523,6 +523,7 @@ block_m6_exit_script_fires() {
 	deps_probe "$label" internal/profile/probe_m6.go "$m/internal/core" "deps_violation=$m/internal/profile imports $m/internal/core" m6-exit-checks.sh
 	deps_probe "$label" internal/mcpserver/probe_m6.go "$m/internal/gen" "deps_violation=$m/internal/mcpserver imports $m/internal/gen" m6-exit-checks.sh
 	deps_probe "$label" internal/cli/probe_m6.go "$m/internal/store/sqlite" "deps_violation=$m/internal/cli imports $m/internal/store/sqlite" m6-exit-checks.sh
+	deps_probe "$label" internal/oidcclient/probe_m6.go "$m/internal/bus" "deps_violation=$m/internal/oidcclient imports $m/internal/bus" m6-exit-checks.sh
 	rc=0
 	bash "$wt/scripts/m6-exit-checks.sh" "$tmp/does-not-exist.log" >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 2 ]; then problem "$label" "missing log: exit $rc, expected 2"; fi

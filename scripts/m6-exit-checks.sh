@@ -28,6 +28,10 @@
 #       internal/store/{sqlite,postgres,sqlstore}
 #   consumer group ./internal/mcpserver ./internal/cli
 #       must not import internal/gen or internal/store (and below)
+#   sign-in group ./internal/oidcclient ./internal/oidctest
+#       import no package of this module (oidcclient is stdlib-only and oidctest
+#       stdlib plus go-jose by convention: the direct-import check cannot tell a
+#       stdlib path from a third-party one cheaply)
 # Prints deps_ok=1 when nothing matched; otherwise one
 # deps_violation=<package> imports <forbidden> line per hit and exits 1.
 set -euo pipefail
@@ -65,6 +69,7 @@ import_check() {
 		"^$MOD/internal/(core|server)(/|\$)|^$MOD/internal/bus/local\$|^$MOD/internal/store/(sqlite|postgres|sqlstore)(/|\$)"
 	check_group './internal/mcpserver ./internal/cli' \
 		"^$MOD/internal/(gen|store)(/|\$)"
+	check_group './internal/oidcclient ./internal/oidctest' "^$MOD/"
 	if [ "$violations" -ne 0 ]; then
 		return 1
 	fi
