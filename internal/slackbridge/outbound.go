@@ -108,9 +108,9 @@ func sleep(ctx context.Context, d time.Duration) error {
 // What remains is a duplicate Slack post (never a bus message) when a post
 // reached Slack and its record is lost with this process's memory (a crash, or
 // a takeover by another replica) and CatchUp cannot repair it through the
-// metadata, or when the uncertain search finds nothing because Slack does not
-// return message metadata to the bot through History and Replies (unverified
-// on a real workspace) or the post landed after the search.
+// metadata, or when the uncertain search finds nothing because the post landed
+// after the search or is older than its window (the bot reads its own metadata
+// through History and Replies: verified on a real workspace, 2026-10-24).
 func (s *Service) Drain(ctx context.Context) error {
 	if _, err := s.requireReady(); err != nil {
 		return err

@@ -218,7 +218,8 @@ func slackTag(inner string, name func(string) string) string {
 		if hasLabel && label != "" {
 			return "#" + unescapeSlack.Replace(label)
 		}
-		return "#" + target[1:]
+		// Slack often sends the id alone; keep it out of the bus text.
+		return "#channel"
 	case strings.HasPrefix(target, "!"):
 		if hasLabel && label != "" {
 			return unescapeSlack.Replace(label)

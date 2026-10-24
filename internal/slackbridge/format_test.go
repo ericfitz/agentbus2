@@ -318,6 +318,20 @@ func TestFormatPostPlainMentionsPassThrough(t *testing.T) {
 	}
 }
 
+// Channel mentions typed by an agent never become a live channel link.
+func TestFormatPostNoChannelLink(t *testing.T) {
+	in := "#general <#C123|general> <#C123>"
+	p := FormatPost(bus.Message{Seq: 1, Channel: "c", Sender: "a", Subject: in, Content: in}, "", 3000, in)
+	for name, got := range map[string]string{"section": p.Section, "fallback": p.Fallback} {
+		if strings.ContainsAny(strings.ReplaceAll(got, "\n> ", ""), "<>") || strings.Contains(got, "<#") {
+			t.Errorf("%s has a live channel link: %q", name, got)
+		}
+		if !strings.Contains(got, "#general") || !strings.Contains(got, "&lt;#C123|general&gt; &lt;#C123&gt;") {
+			t.Errorf("%s lacks the escaped text: %q", name, got)
+		}
+	}
+}
+
 func TestFormatPostLinkSpecials(t *testing.T) {
 	for _, in := range []string{"[x](!channel)", "[x](@U123)", "[](!subteam^S1)", "[x](!here)", "[x](#C1)", "[](!channel)"} {
 		p := FormatPost(bus.Message{Seq: 1, Channel: "c", Sender: "a", Subject: in, Content: in}, "", 3000, in)
