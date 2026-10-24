@@ -7,6 +7,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core/channels"
 	"github.com/ericfitz/agentbus2/internal/core/embed"
+	"github.com/ericfitz/agentbus2/internal/core/scopes"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -25,6 +26,16 @@ func (s Service) lapsedSessions(ctx context.Context, now int64) (int, error) {
 		})
 		return n, err
 	})
+}
+
+// scopeRetirement retires the scopes that are due (done, or idle for
+// ScopeIdleHours; spec 4.3) and purges the retired rows older than the
+// session retention. It returns the scopes retired plus the rows purged.
+func (s Service) scopeRetirement(ctx context.Context, now int64) (int, error) {
+	sv := scopes.Service{Core: s.Core}
+	retired, err := sv.RetireDue(ctx, now, s.Archiver)
+	purged, perr := sv.PurgeRetired(ctx, now)
+	return retired + purged, errors.Join(err, perr)
 }
 
 // abandonedTasks reclaims the abandoned tasks of every task list (v1

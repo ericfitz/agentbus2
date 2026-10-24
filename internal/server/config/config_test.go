@@ -37,6 +37,9 @@ func TestDefaultMatchesCore(t *testing.T) {
 	if d.TokenLifetimeSeconds != 3600 || d.JWKSRefreshSeconds != 300 || d.ChannelCreation != "open" || d.LogLevel != "info" {
 		t.Errorf("unexpected defaults: %+v", d)
 	}
+	if d.ScopeIdleHours != 336 {
+		t.Errorf("scope_idle_hours default = %d, want 336", d.ScopeIdleHours)
+	}
 	if d.Listen != "" || d.Registration != "" || d.SQLite != "" || d.Postgres != "" || d.Issuer != "" {
 		t.Errorf("Listen, Registration, SQLite, Postgres and Issuer must default empty: %+v", d)
 	}
@@ -109,6 +112,8 @@ func TestValidateRejects(t *testing.T) {
 		{"budget bound", func(c *Config) { c.SQLiteBudgetMiB = 1 }, "sqlite_budget_mib"},
 		{"cleanup bound", func(c *Config) { c.CleanupFreePercent = 95 }, "cleanup_free_percent"},
 		{"reap bound", func(c *Config) { c.EmptyChannelReapHours = 0 }, "empty_channel_reap_hours"},
+		{"scope idle low", func(c *Config) { c.ScopeIdleHours = 0 }, "scope_idle_hours"},
+		{"scope idle high", func(c *Config) { c.ScopeIdleHours = 8761 }, "scope_idle_hours"},
 		{"default acl", func(c *Config) { c.DefaultACL = []ACLEntry{{"ghost", []string{"read"}}} }, "default_acl"},
 	}
 	for _, tc := range cases {

@@ -13,6 +13,9 @@ func TestDefaultsValidate(t *testing.T) {
 	if d.SessionLeaseSeconds != 90 || d.LeaseSkewSeconds != 5 || d.ChannelCreation != "open" || d.WatchMaxSeconds != 50 {
 		t.Errorf("defaults = %+v", d)
 	}
+	if d.ScopeIdleHours != 336 {
+		t.Errorf("ScopeIdleHours default = %d, want 336", d.ScopeIdleHours)
+	}
 }
 
 // TestConfigBounds checks both sides of every bound against literals that do
@@ -44,6 +47,7 @@ func TestConfigBounds(t *testing.T) {
 		{"sqlite_budget_mib", 64, 1048576, func(c *Config, v int) { c.SQLiteBudgetMiB = v }},
 		{"cleanup_free_percent", 5, 90, func(c *Config, v int) { c.CleanupFreePercent = v }},
 		{"empty_channel_reap_hours", 1, 8760, func(c *Config, v int) { c.EmptyChannelReapHours = v }},
+		{"scope_idle_hours", 1, 8760, func(c *Config, v int) { c.ScopeIdleHours = v }},
 		{"task_expiry_hours", 0, 87600, func(c *Config, v int) { c.TaskExpiryHours = v }},
 		{"memory_expiry_hours", 0, 87600, func(c *Config, v int) { c.MemoryExpiryHours = v }},
 	}

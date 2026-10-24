@@ -9,6 +9,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/scopes"
 	"github.com/ericfitz/agentbus2/internal/core/tasks"
 )
 
@@ -29,6 +30,9 @@ type Service struct {
 	// BudgetOverride is the SQLite budget in bytes; tests only. 0 means
 	// Cfg.SQLiteBudgetMiB << 20.
 	BudgetOverride int64
+	// Archiver archives the Slack channel of a bridge the scope retirement
+	// job retires; nil means the bridge is off (spec 4.3).
+	Archiver scopes.Archiver
 
 	// jobs replaces Jobs() when non-nil (tests drive Tick with fakes).
 	jobs []Job
@@ -73,6 +77,10 @@ func (s Service) Jobs() []Job {
 	}
 	return []Job{
 		{"lapsed sessions", s.lapsedSessions},
+		// After "lapsed sessions" and before "abandoned tasks": a retired
+		// scope's identities are gone with their sessions, so their claims
+		// are abandoned and reclaimed in the same tick (Decision 19).
+		{"scope retirement", s.scopeRetirement},
 		// After "lapsed sessions" so an owner whose session was just deleted
 		// counts as dead in the same tick.
 		{"abandoned tasks", s.abandonedTasks},
