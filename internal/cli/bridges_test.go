@@ -1,7 +1,9 @@
 package cli
 
-import "testing"
-import "strings"
+import (
+	"strings"
+	"testing"
+)
 
 func TestBridgesCommandsUnconfigured(t *testing.T) {
 	e := adminEnv(t)

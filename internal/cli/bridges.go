@@ -122,6 +122,6 @@ func runBridgesRemove(ctx context.Context, args []string, environ []string, _ io
 	}
 	return opPrint(stdout, stderr, struct {
 		Channel string `json:"channel"`
-		State   string `json:"state"`
-	}{rest[0], string(bus.BridgeArchived)})
+		Removed bool   `json:"removed"`
+	}{rest[0], true})
 }

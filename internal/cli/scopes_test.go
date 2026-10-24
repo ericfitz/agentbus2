@@ -106,6 +106,17 @@ func TestIdentitiesCreateCommand(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &got); err != nil || got.Identity != "agent1" || got.Scope != "job1" || got.EnrollmentToken == "" || got.ExpiresAt == 0 {
 		t.Fatalf("out %q: %+v %v", out, got, err)
 	}
+	code, out2, er := ids("create", "-scope", "job1", "agent1")
+	if code != 0 {
+		t.Fatalf("second create: %d %s", code, er)
+	}
+	var again struct {
+		Created         bool   `json:"created"`
+		EnrollmentToken string `json:"enrollment_token"`
+	}
+	if err := json.Unmarshal([]byte(out2), &again); err != nil || again.Created || again.EnrollmentToken == "" || again.EnrollmentToken == got.EnrollmentToken {
+		t.Fatalf("second create out %q: %+v %v (want created false and a new token)", out2, again, err)
+	}
 	if code, _, er := ids("create", "-scope", "nosuch", "agent2"); code != 1 || !strings.Contains(er, "agentbus2: not_found:") {
 		t.Fatalf("unknown scope: %d %q", code, er)
 	}
