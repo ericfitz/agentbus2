@@ -5,9 +5,11 @@ import (
 	"errors"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/dbtest"
 	ab2store "github.com/ericfitz/agentbus2/internal/store"
@@ -362,5 +364,65 @@ func TestSignInHumanConcurrentPrecreated(t *testing.T) {
 		if b.ProviderSubject != "guid-1" || b.Issuer != siIssuer {
 			t.Fatalf("binding = %+v", b)
 		}
+	})
+}
+
+// adminCountStore counts the SetAdmin calls its transactions make.
+type adminCountStore struct {
+	ab2store.Store
+	n *atomic.Int32
+}
+
+func (s adminCountStore) Tx(ctx context.Context, fn func(context.Context, ab2store.Tx) error) error {
+	return s.Store.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+		return fn(ctx, adminCountTx{Tx: tx, n: s.n})
+	})
+}
+
+type adminCountTx struct {
+	ab2store.Tx
+	n *atomic.Int32
+}
+
+func (t adminCountTx) SetAdmin(ctx context.Context, name string, admin bool) error {
+	t.n.Add(1)
+	return t.Tx.SetAdmin(ctx, name, admin)
+}
+
+// Item 30 and Definition of Done D: the admin flag is written only when the
+// evaluated value differs from the stored one, so a repeated sign-in with the
+// same claims writes nothing.
+func TestSignInHumanWritesAdminOnlyOnChange(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx := context.Background()
+		h := newHarness(t, e, harnessOptions{})
+		var n atomic.Int32
+		c, err := core.New(adminCountStore{Store: h.raw, n: &n}, h.cfg, core.Options{Now: h.clock.Now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		svc := identities.Service{Core: c}
+		siUsersEric(t, svc)
+		siAdd(t, svc, ab2store.ListAdmins, ab2store.RefGroup, "corp", "pai-admins")
+		withGroup := siClaims()
+		withGroup.Groups = []string{"pai-admins"}
+		step := func(name string, claims identities.HumanClaims, wantAdmin bool, wantWrites int32) {
+			t.Helper()
+			n.Store(0)
+			res, err := svc.SignInHuman(ctx, claims)
+			if err != nil || res.Admin != wantAdmin {
+				t.Fatalf("%s: SignInHuman = %+v, %v; want admin %v", name, res, err, wantAdmin)
+			}
+			if got := n.Load(); got != wantWrites {
+				t.Fatalf("%s: SetAdmin called %d times, want %d", name, got, wantWrites)
+			}
+			if id, _, _, _, _ := siState(t, h, siEric); id.Admin != wantAdmin {
+				t.Fatalf("%s: stored admin = %v, want %v", name, id.Admin, wantAdmin)
+			}
+		}
+		step("first sign-in with the admin group", withGroup, true, 1)
+		step("second identical sign-in", withGroup, true, 0)
+		step("sign-in that drops the group", siClaims(), false, 1)
+		step("repeat without the group", siClaims(), false, 0)
 	})
 }

@@ -184,7 +184,7 @@ type HumanSignIn struct {
 // ErrConflict, up to maxAttempts.
 //
 // State (Definition of Done D): a second sign-in with the same claims
-// changes nothing but the admin flag's re-evaluation; two overlapping first
+// changes nothing (the admin flag is re-evaluated and written only when it changes); two overlapping first
 // sign-ins end with one identity and one binding (the loser reruns and finds
 // it); a failed run writes nothing, since everything is one transaction.
 func (s Service) SignInHuman(ctx context.Context, c HumanClaims) (HumanSignIn, error) {
@@ -273,5 +273,13 @@ func signInHumanTx(ctx context.Context, tx store.Tx, c HumanClaims, now int64, r
 	}
 	res.Identity = identity
 	res.Admin = MatchReferences(admins, identity, c)
+	// Write the flag only when it changes, so a repeated sign-in writes nothing.
+	cur, err := tx.Identity(ctx, identity)
+	if err != nil {
+		return err
+	}
+	if cur.Admin == res.Admin {
+		return nil
+	}
 	return tx.SetAdmin(ctx, identity, res.Admin)
 }
