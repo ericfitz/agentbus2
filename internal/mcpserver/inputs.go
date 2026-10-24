@@ -113,6 +113,7 @@ type historyIn struct {
 	After   *int64   `json:"after,omitempty" jsonschema:"only messages with a higher sequence number"`
 	Count   int      `json:"count,omitempty" jsonschema:"maximum number of messages"`
 	Tags    []string `json:"tags,omitempty" jsonschema:"only messages carrying at least one of these tags; a tag ending in * matches every tag with that prefix"`
+	Thread  *int64   `json:"thread,omitempty" jsonschema:"only the thread rooted at this sequence number: the message and every message whose reply_to is it. Complete for replies stored after the channel's Slack bridge went live (or on channels whose replies all point at the root); an earlier reply may point at another reply"`
 }
 
 type searchIn struct {

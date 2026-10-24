@@ -36,7 +36,7 @@ func (a *api) History(ctx context.Context, req gen.HistoryRequestObject) (gen.Hi
 	p := req.Params
 	msgs, err := a.messaging.History(ctx, IdentityFrom(ctx), bus.HistoryInput{
 		Channel: req.Channel, Before: p.Before, After: p.After,
-		Count: derefOr(p.Count), Tags: derefOr(p.Tags),
+		Count: derefOr(p.Count), Tags: derefOr(p.Tags), Thread: p.Thread,
 	})
 	if err != nil {
 		return nil, err

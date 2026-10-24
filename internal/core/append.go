@@ -56,7 +56,9 @@ func (c *Core) EnvelopeSize(in AppendInput, sender string) (int, error) {
 // Append writes the message inside tx, which must come from Store.Append. On
 // a memory-kind (or tasks-kind) channel the row is memory revision 1 of
 // itself and, unless TaskRow, gets its memory_access row (v1 insertMessage).
-// A reply_to must name an existing message.
+// A reply_to must name an existing message of the same channel (Decision 13);
+// when the channel's bridge is live and the parent is itself a reply, the
+// stored reply_to is the thread root (Decision 14), and in is not changed.
 func (c *Core) Append(ctx context.Context, tx store.Tx, in AppendInput) (int64, *int64, error) {
 	switch in.Kind {
 	case store.KindOrdinary, store.KindMemory, store.KindTasks:
@@ -68,18 +70,18 @@ func (c *Core) Append(ctx context.Context, tx store.Tx, in AppendInput) (int64, 
 		// A programming error: every writer holds the RequireIdentity result.
 		return 0, nil, E(bus.CodeInternal, "append with sender kind %q", in.SenderKind)
 	}
-	if in.ReplyTo != nil {
-		if _, err := tx.Message(ctx, *in.ReplyTo); err != nil {
-			if errors.Is(err, store.ErrNotFound) {
-				return 0, nil, E(bus.CodeNotFound, "reply_to %d does not exist", *in.ReplyTo)
-			}
-			return 0, nil, FromStore(err)
+	replyTo := in.ReplyTo
+	if replyTo != nil {
+		root, err := c.resolveReplyTo(ctx, tx, in.ChannelID, *replyTo)
+		if err != nil {
+			return 0, nil, err
 		}
+		replyTo = &root
 	}
 	now := c.NowMs()
 	seq, err := tx.AppendMessage(ctx, store.NewMessage{
 		ChannelID: in.ChannelID, Sender: in.Sender, SenderKind: in.SenderKind, SessionID: in.SessionID, CreatedAt: now,
-		Type: in.Type, Subject: in.Subject, Content: in.Content, ReplyTo: in.ReplyTo,
+		Type: in.Type, Subject: in.Subject, Content: in.Content, ReplyTo: replyTo,
 		Metadata: in.Metadata, Tags: in.Tags,
 	})
 	if err != nil {
@@ -98,4 +100,45 @@ func (c *Core) Append(ctx context.Context, tx store.Tx, in AppendInput) (int64, 
 	}
 	id := seq
 	return seq, &id, nil
+}
+
+// resolveReplyTo applies the reply_to rules, in order: the parent exists
+// (not_found), it is in channelID (validation; on memory and task channels
+// this is the whole memory-record rule), and on a channel whose bridge is live
+// a reply parent is replaced by its thread root. The walk follows reply_to
+// until a message without one; each hop has a smaller seq, so it ends, and a
+// hop whose row is gone stops at the last row found.
+func (c *Core) resolveReplyTo(ctx context.Context, tx store.Tx, channelID, parentSeq int64) (int64, error) {
+	parent, err := tx.Message(ctx, parentSeq)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			return 0, E(bus.CodeNotFound, "reply_to %d does not exist", parentSeq)
+		}
+		return 0, FromStore(err)
+	}
+	if parent.ChannelID != channelID {
+		return 0, E(bus.CodeValidation, "reply_to %d is in another channel", parentSeq)
+	}
+	if parent.ReplyTo == nil {
+		return parentSeq, nil
+	}
+	br, err := tx.BridgeByChannel(ctx, channelID)
+	if errors.Is(err, store.ErrNotFound) || (err == nil && br.State != store.BridgeLive) {
+		return parentSeq, nil
+	}
+	if err != nil {
+		return 0, FromStore(err)
+	}
+	root := parent
+	for root.ReplyTo != nil {
+		next, err := tx.Message(ctx, *root.ReplyTo)
+		if errors.Is(err, store.ErrNotFound) {
+			break
+		}
+		if err != nil {
+			return 0, FromStore(err)
+		}
+		root = next
+	}
+	return root.Seq, nil
 }

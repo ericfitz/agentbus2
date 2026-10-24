@@ -430,3 +430,26 @@ func TestAppendRefusesEmptySenderKind(t *testing.T) {
 		})
 	}
 }
+
+func TestAppendRefusesOtherChannelParent(t *testing.T) {
+	c, _ := newTestCore(t, nil)
+	mustIdentity(t, c, "pat", false)
+	a := mustChannel(t, c, store.ChannelCreate{Name: "a", Kind: store.KindOrdinary, Creator: "pat"})
+	b := mustChannel(t, c, store.ChannelCreate{Name: "b", Kind: store.KindOrdinary, Creator: "pat"})
+	parent, _, err := appendOne(t, c, AppendInput{ChannelID: b.ID, Kind: b.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "p"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var before int64
+	mustTx(t, c, func(ctx context.Context, tx store.Tx) (err error) { before, err = tx.MaxSeq(ctx); return })
+	_, _, err = appendOne(t, c, AppendInput{ChannelID: a.ID, Kind: a.Kind, Sender: "pat", SenderKind: store.IdentityAgent, Content: "x", ReplyTo: &parent})
+	if bus.CodeOf(err) != bus.CodeValidation || !strings.Contains(err.Error(), "another channel") {
+		t.Fatalf("Append = %v, want validation \"another channel\"", err)
+	}
+	mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
+		if after, err := tx.MaxSeq(ctx); err != nil || after != before {
+			t.Errorf("MaxSeq = %d, %v; want %d unchanged", after, err, before)
+		}
+		return nil
+	})
+}

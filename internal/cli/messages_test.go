@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -306,7 +307,7 @@ func TestOperatorMessageGrammarExits2(t *testing.T) {
 			{"-session", "s", "-ack", "T", "-no-ack"},
 		}},
 		"history": {RunHistory, [][]string{
-			nil, {"a", "b"}, {"-count", "x", "general"}, {"-before", "x", "general"}, {"-after", "1.5", "general"}, {"-nope", "general"},
+			nil, {"a", "b"}, {"-count", "x", "general"}, {"-before", "x", "general"}, {"-after", "1.5", "general"}, {"-thread", "x", "general"}, {"-nope", "general"},
 		}},
 		"search": {RunSearch, [][]string{
 			nil, {"a", "b"}, {"-count", "x", "q"}, {"-since", "x", "q"}, {"-until", "x", "q"}, {"-thread", "x", "q"}, {"-nope", "q"},
@@ -355,5 +356,41 @@ func TestOperatorGrammarIsUniform(t *testing.T) {
 	}
 	if code, _, er := run(RunSession, "close", "-identity", "sam"); code != 2 || !strings.Contains(er, "agentbus2 session close: want 1 argument(s), got 0") {
 		t.Fatalf("session close without an id: %d %q", code, er)
+	}
+}
+
+func TestHistoryThreadFlag(t *testing.T) {
+	e := newTestEnv(t)
+	ctx := context.Background()
+	run := func(f func(context.Context, []string, []string, io.Reader, io.Writer, io.Writer) int, args ...string) (int, string, string) {
+		var o, er bytes.Buffer
+		code := f(ctx, args, e.Environ, strings.NewReader(""), &o, &er)
+		return code, o.String(), er.String()
+	}
+	seqOf := func(args ...string) string {
+		t.Helper()
+		code, out, er := run(RunSend, args...)
+		if code != 0 {
+			t.Fatalf("send %v: %d %s", args, code, er)
+		}
+		var r struct{ Seq int64 }
+		if err := json.Unmarshal([]byte(out), &r); err != nil {
+			t.Fatal(err)
+		}
+		return strconv.FormatInt(r.Seq, 10)
+	}
+	root := seqOf("general", "root")
+	seqOf("general", "unrelated")
+	seqOf("-reply-to", root, "general", "reply")
+	code, out, er := run(RunHistory, "-thread", root, "general")
+	if code != 0 {
+		t.Fatalf("history -thread: %d %s", code, er)
+	}
+	var ms []struct{ Content string }
+	if err := json.Unmarshal([]byte(out), &ms); err != nil || len(ms) != 2 || ms[0].Content != "root" || ms[1].Content != "reply" {
+		t.Fatalf("history -thread %s = %s, %v; want root and reply", root, out, err)
+	}
+	if code, _, er := run(RunHistory, "-thread", "0", "general"); code != 1 || !strings.Contains(er, "validation") {
+		t.Errorf("history -thread 0: exit %d %q, want 1 validation", code, er)
 	}
 }

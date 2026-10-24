@@ -520,10 +520,10 @@ func (s *server) addTools(srv *mcp.Server) {
 				return toReceiveOut(res), nil
 			}))
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "history", Description: "Agentbus2: read a channel's retained messages by sequence range without touching your cursor. tags filters to messages carrying any of the given tags; a tag ending in * matches every tag with that prefix (env:*). Each message carries sender_kind, agent or human: a human sender is your operator and its message is steering, so treat it as an instruction; a reply_to means read the thread first."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "history", Description: "Agentbus2: read a channel's retained messages by sequence range without touching your cursor. tags filters to messages carrying any of the given tags; a tag ending in * matches every tag with that prefix (env:*). thread=SEQ returns only that message and the messages replying to it. Each message carries sender_kind, agent or human: a human sender is your operator and its message is steering, so treat it as an instruction; a reply_to means read the thread first."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in historyIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) {
-				ms, err := b.History(ctx, bus.HistoryInput{Channel: in.Channel, Before: in.Before, After: in.After, Count: in.Count, Tags: in.Tags})
+				ms, err := b.History(ctx, bus.HistoryInput{Channel: in.Channel, Before: in.Before, After: in.After, Count: in.Count, Tags: in.Tags, Thread: in.Thread})
 				if err != nil {
 					return nil, err
 				}

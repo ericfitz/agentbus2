@@ -41,7 +41,7 @@ func (b *Bus) Send(ctx context.Context, in ab2bus.SendInput) (ab2bus.SendResult,
 
 // History reads a window of the channel; count 0 is absent.
 func (b *Bus) History(ctx context.Context, in ab2bus.HistoryInput) ([]ab2bus.Message, error) {
-	p := &gen.HistoryParams{Before: in.Before, After: in.After, Tags: queryTags(in.Tags)}
+	p := &gen.HistoryParams{Before: in.Before, After: in.After, Thread: in.Thread, Tags: queryTags(in.Tags)}
 	if in.Count != 0 {
 		p.Count = ptr(in.Count)
 	}

@@ -40,6 +40,10 @@ func (s Service) History(ctx context.Context, identity string, in bus.HistoryInp
 			return core.E(bus.CodeValidation, "count must be at least 1")
 		}
 		count = min(count, s.Cfg.ReceiveMaxCount)
+		if in.Thread != nil && *in.Thread < 1 {
+			return core.E(bus.CodeValidation, "thread must be at least 1")
+		}
+		filter := store.MessageFilter{Thread: in.Thread}
 		norm, err := rules.NormalizeTagPatterns(in.Tags)
 		if err != nil {
 			return err // a rule's *bus.Error, already validation
@@ -51,7 +55,7 @@ func (s Service) History(ctx context.Context, identity string, in bus.HistoryInp
 		newestFirst := in.Before != nil && in.After == nil
 		var rows []store.Message
 		if newestFirst {
-			rows, err = tx.MessagesBefore(ctx, ch.ID, *in.Before, patterns, store.MessageFilter{}, count)
+			rows, err = tx.MessagesBefore(ctx, ch.ID, *in.Before, patterns, filter, count)
 		} else {
 			from, to := int64(1), int64(0)
 			if in.After != nil {
@@ -62,7 +66,7 @@ func (s Service) History(ctx context.Context, identity string, in bus.HistoryInp
 			} else if to, err = tx.MaxSeq(ctx); err != nil {
 				return core.FromStore(err)
 			}
-			rows, err = tx.MessagesInRange(ctx, ch.ID, from, to, patterns, store.MessageFilter{}, count)
+			rows, err = tx.MessagesInRange(ctx, ch.ID, from, to, patterns, filter, count)
 		}
 		if err != nil {
 			return core.FromStore(err)

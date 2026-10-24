@@ -55,7 +55,14 @@ type EmbedFailure struct {
 
 // MessageFilter excludes a sender's and a session's own messages in SQL
 // (Decision 45 include_own). "" means no exclusion; both set means AND.
-type MessageFilter struct{ ExcludeSender, ExcludeSessionID string }
+// Thread, when set, keeps only seq == Thread or reply_to == Thread
+// (MessagesInRange and MessagesBefore; history's thread filter, spec 7); nil
+// is no filter. On a bridged channel every reply points at the root
+// (Decision 14), so this is the whole thread.
+type MessageFilter struct {
+	ExcludeSender, ExcludeSessionID string
+	Thread                          *int64
+}
 
 // SearchFilter narrows search and the semantic scan (Decisions 51, 95; v1
 // searchFilters without the DM branch). Since and Until bound created_at,

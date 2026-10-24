@@ -811,9 +811,12 @@ type SetACLParams struct {
 
 // HistoryParams defines parameters for History.
 type HistoryParams struct {
-	Before *int64    `form:"before,omitempty" json:"before,omitempty"`
-	After  *int64    `form:"after,omitempty" json:"after,omitempty"`
-	Count  *int      `form:"count,omitempty" json:"count,omitempty"`
+	Before *int64 `form:"before,omitempty" json:"before,omitempty"`
+	After  *int64 `form:"after,omitempty" json:"after,omitempty"`
+	Count  *int   `form:"count,omitempty" json:"count,omitempty"`
+
+	// Thread Only the message with this sequence number and the messages whose reply_to is it.
+	Thread *int64    `form:"thread,omitempty" json:"thread,omitempty"`
 	Tags   *[]string `form:"tags,omitempty" json:"tags,omitempty"`
 }
 
@@ -2810,6 +2813,18 @@ func NewHistoryRequest(server string, channel ChannelParam, params *HistoryParam
 		if params.Count != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "count", *params.Count, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Thread != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "thread", *params.Thread, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -9200,6 +9215,19 @@ func (siw *ServerInterfaceWrapper) History(w http.ResponseWriter, r *http.Reques
 			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "count"})
 		} else {
 			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "count", Err: err})
+		}
+		return
+	}
+
+	// ------------- Optional query parameter "thread" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "thread", r.URL.Query(), &params.Thread, runtime.BindQueryParameterOptions{Type: "integer", Format: "int64"})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "thread"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "thread", Err: err})
 		}
 		return
 	}

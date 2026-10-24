@@ -61,13 +61,16 @@ type SendResult struct {
 	MemoryID *int64 `json:"memory_id,omitempty"`
 }
 
-// HistoryInput reads a window of a channel.
+// HistoryInput reads a window of a channel. Thread, when set (at least 1),
+// keeps only the message with that seq and the messages whose reply_to is it;
+// on a bridged channel every reply points at the root (Decision 14).
 type HistoryInput struct {
 	Channel string
 	Before  *int64
 	After   *int64
 	Count   int
 	Tags    []string
+	Thread  *int64
 }
 
 // SearchInput searches readable channels. Mode is "", "text", "semantic" or "both".

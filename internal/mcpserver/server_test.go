@@ -767,3 +767,18 @@ func TestEditMemoryOmitKeepsEmptyClears(t *testing.T) {
 	stale := g["revision"].(float64) - 1
 	r.mustFail(t, "edit_memory", map[string]any{"id": mid, "content": "x", "if_revision": stale}, bus.CodeConflict)
 }
+
+func TestHistoryToolThread(t *testing.T) {
+	e := newTestEnv(t)
+	r := startServer(t, e, newFakeTable(), "test-client")
+	sid := str(r.must(t, "register", nil), "session")
+	r.must(t, "create_channel", map[string]any{"name": "dev"})
+	root := r.must(t, "send", map[string]any{"session": sid, "channel": "dev", "content": "root"})["seq"]
+	r.must(t, "send", map[string]any{"session": sid, "channel": "dev", "content": "unrelated"})
+	r.must(t, "send", map[string]any{"session": sid, "channel": "dev", "content": "reply", "reply_to": root})
+	hist := r.must(t, "history", map[string]any{"channel": "dev", "thread": root})
+	ms := arr(hist, "messages")
+	if len(ms) != 2 || str(ms[0].(map[string]any), "content") != "root" || str(ms[1].(map[string]any), "content") != "reply" {
+		t.Fatalf("history thread = %v; want root and reply only", hist)
+	}
+}

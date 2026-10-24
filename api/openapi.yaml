@@ -441,6 +441,14 @@ paths:
           required: false
           schema:
             type: integer
+        - name: thread
+          in: query
+          required: false
+          description: Only the message with this sequence number and the messages whose reply_to is it.
+          schema:
+            type: integer
+            format: int64
+            minimum: 1
         - name: tags
           in: query
           required: false

@@ -285,3 +285,35 @@ func TestEmbedFailuresCountAndLast(t *testing.T) {
 		check("unknown", 0, ab2store.EmbedFailure{})
 	})
 }
+
+func TestMessagesThreadFilter(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		a := mustChannel(t, s, "a", ab2store.KindOrdinary, "", nil)
+		root := mustAppend(t, s, ab2store.NewMessage{ChannelID: a.ID, Sender: "pat", Content: "root"})
+		mustAppend(t, s, ab2store.NewMessage{ChannelID: a.ID, Sender: "pat", Content: "plain"})
+		r1 := mustAppend(t, s, ab2store.NewMessage{ChannelID: a.ID, Sender: "pat", Content: "r1", ReplyTo: &root})
+		mustAppend(t, s, ab2store.NewMessage{ChannelID: a.ID, Sender: "pat", Content: "r1a", ReplyTo: &r1})
+		r2 := mustAppend(t, s, ab2store.NewMessage{ChannelID: a.ID, Sender: "pat", Content: "r2", ReplyTo: &root})
+		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			f := ab2store.MessageFilter{Thread: &root}
+			got, err := tx.MessagesInRange(ctx, a.ID, 1, 10, nil, f, 10)
+			if want := []int64{root, r1, r2}; err != nil || !reflect.DeepEqual(messageSeqs(got), want) {
+				t.Errorf("MessagesInRange thread = %v, %v; want %v", messageSeqs(got), err, want)
+			}
+			got, err = tx.MessagesBefore(ctx, a.ID, 10, nil, f, 10)
+			if want := []int64{r2, r1, root}; err != nil || !reflect.DeepEqual(messageSeqs(got), want) {
+				t.Errorf("MessagesBefore thread = %v, %v; want %v", messageSeqs(got), err, want)
+			}
+			got, err = tx.MessagesInRange(ctx, a.ID, 1, 10, nil, ab2store.MessageFilter{}, 10)
+			if err != nil || len(got) != 5 {
+				t.Errorf("MessagesInRange nil = %v, %v; want all 5", messageSeqs(got), err)
+			}
+			got, err = tx.MessagesBefore(ctx, a.ID, 10, nil, ab2store.MessageFilter{}, 10)
+			if err != nil || len(got) != 5 {
+				t.Errorf("MessagesBefore nil = %v, %v; want all 5", messageSeqs(got), err)
+			}
+			return nil
+		})
+	})
+}

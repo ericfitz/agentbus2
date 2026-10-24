@@ -259,6 +259,15 @@ func searchFilterSQL(f store.SearchFilter) (q string, args []any, ok bool) {
 	return q + tq, append(args, targs...), true
 }
 
+// threadSQL is history's thread filter: the root and its direct replies. It
+// is applied by MessagesInRange and MessagesBefore only.
+func threadSQL(f store.MessageFilter) (string, []any) {
+	if f.Thread == nil {
+		return "", nil
+	}
+	return " AND (m.seq = ? OR m.reply_to = ?)", []any{*f.Thread, *f.Thread}
+}
+
 func (t *tx) MessagesAfter(ctx context.Context, channelID, afterSeq int64, f store.MessageFilter, limit int) ([]store.Message, error) {
 	if err := checkLimit(limit); err != nil {
 		return nil, err
@@ -297,9 +306,11 @@ func (t *tx) MessagesBefore(ctx context.Context, channelID, beforeSeq int64, pat
 		return []store.Message{}, nil
 	}
 	eq, eargs := excludeSQL(f)
+	thq, thargs := threadSQL(f)
 	args := append([]any{channelID, beforeSeq}, targs...)
 	args = append(args, eargs...)
-	return scanMessages(ctx, t, "SELECT "+messageCols+" FROM messages m WHERE m.channel_id = ? AND m.seq < ? AND m.tombstone = FALSE"+tq+eq+" ORDER BY m.seq DESC LIMIT ?",
+	args = append(args, thargs...)
+	return scanMessages(ctx, t, "SELECT "+messageCols+" FROM messages m WHERE m.channel_id = ? AND m.seq < ? AND m.tombstone = FALSE"+tq+eq+thq+" ORDER BY m.seq DESC LIMIT ?",
 		append(args, limit)...)
 }
 
@@ -315,9 +326,11 @@ func (t *tx) MessagesInRange(ctx context.Context, channelID, fromSeq, toSeq int6
 		return []store.Message{}, nil
 	}
 	eq, eargs := excludeSQL(f)
+	thq, thargs := threadSQL(f)
 	args := append([]any{channelID, fromSeq, toSeq}, targs...)
 	args = append(args, eargs...)
-	return scanMessages(ctx, t, "SELECT "+messageCols+" FROM messages m WHERE m.channel_id = ? AND m.seq >= ? AND m.seq <= ? AND m.tombstone = FALSE"+tq+eq+" ORDER BY m.seq LIMIT ?",
+	args = append(args, thargs...)
+	return scanMessages(ctx, t, "SELECT "+messageCols+" FROM messages m WHERE m.channel_id = ? AND m.seq >= ? AND m.seq <= ? AND m.tombstone = FALSE"+tq+eq+thq+" ORDER BY m.seq LIMIT ?",
 		append(args, limit)...)
 }
 
