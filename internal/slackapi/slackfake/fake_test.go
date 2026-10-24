@@ -199,12 +199,12 @@ func TestFakeSocketAckBeforeHandle(t *testing.T) {
 			got <- ev
 		})
 	}()
-	first := <-got
+	first := recv(t, got)
 	if first.Kind != slackapi.EventConnected {
 		t.Fatalf("first event %q", first.Kind)
 	}
 	m := f.Say(id, "U1", "hello", "")
-	ev := <-got
+	ev := recv(t, got)
 	if ev.Kind != slackapi.EventMessage || ev.Message.TS != m.TS || ev.Channel != id || ev.User != "U1" || ev.EnvelopeID == "" {
 		t.Fatalf("event %+v", ev)
 	}
@@ -457,7 +457,7 @@ func TestFakeStopsWithContext(t *testing.T) {
 	ret := make(chan error, 1)
 	got := make(chan slackapi.Event, 4)
 	go func() { ret <- f.RunSocket(ctx, func(_ context.Context, ev slackapi.Event) { got <- ev }) }()
-	<-got
+	recv(t, got)
 	cancel()
 	select {
 	case err := <-ret:
@@ -476,7 +476,7 @@ func TestFakeStopsWithContext(t *testing.T) {
 	ctx2, cancel2 := context.WithCancel(context.Background())
 	ret2 := make(chan error, 1)
 	go func() { ret2 <- f.RunSocket(ctx2, func(context.Context, slackapi.Event) { got <- slackapi.Event{} }) }()
-	<-got
+	recv(t, got)
 	select {
 	case <-f.SocketDone():
 		t.Fatal("SocketDone closed while running")
@@ -497,4 +497,97 @@ func TestFakeNoTokenInErrors(t *testing.T) {
 	if err == nil || strings.Contains(strings.ToLower(err.Error()), "xox") {
 		t.Errorf("error %v", err)
 	}
+}
+
+func recv(t *testing.T, ch <-chan slackapi.Event) slackapi.Event {
+	t.Helper()
+	select {
+	case ev := <-ch:
+		return ev
+	case <-time.After(2 * time.Second):
+		t.Fatal("no event within 2s")
+		return slackapi.Event{}
+	}
+}
+
+func TestFakeBroadcastInHistoryAndReplies(t *testing.T) {
+	ctx := context.Background()
+	f := New(self)
+	id, _ := f.CreatePrivateChannel(ctx, "c")
+	root := f.Say(id, "U1", "root", "")
+	plain := f.Say(id, "U2", "plain", root.TS)
+	r := startSocket(t, f)
+	r.next(t) // connected
+	r.next(t) // root
+	r.next(t) // plain
+	b := f.SayBroadcast(id, "U2", "bc", root.TS)
+	if b.Subtype != "thread_broadcast" {
+		t.Fatalf("subtype %q", b.Subtype)
+	}
+	if e := r.next(t); e.Message.TS != b.TS || e.Message.Subtype != "thread_broadcast" {
+		t.Errorf("event %+v", e)
+	}
+	h, _ := f.History(ctx, id, "", "")
+	var got []string
+	for _, m := range h.Messages {
+		got = append(got, m.TS)
+	}
+	if !slices.Equal(got, []string{root.TS, b.TS}) || h.Messages[1].Subtype != "thread_broadcast" {
+		t.Errorf("history %v (plain reply %s must be absent)", got, plain.TS)
+	}
+	rp, _ := f.Replies(ctx, id, root.TS, "", "")
+	if len(rp.Messages) != 3 || rp.Messages[2].TS != b.TS || rp.Messages[2].Subtype != "thread_broadcast" {
+		t.Errorf("replies %+v", rp)
+	}
+	s := f.SaySubtype(id, "U3", "x", "", "me_message")
+	if s.Subtype != "me_message" {
+		t.Errorf("SaySubtype %+v", s)
+	}
+}
+
+func TestFakeTwoSocketsAndDisconnect(t *testing.T) {
+	f := New(self)
+	a := startSocket(t, f)
+	b := startSocket(t, f)
+	if a.next(t).Kind != slackapi.EventConnected || b.next(t).Kind != slackapi.EventConnected {
+		t.Fatal("no connected")
+	}
+	if n := f.MaxConcurrentSockets(); n != 2 {
+		t.Errorf("MaxConcurrentSockets = %d", n)
+	}
+	f.Disconnect()
+	if a.next(t).Kind != slackapi.EventConnected || b.next(t).Kind != slackapi.EventConnected {
+		t.Error("Disconnect did not reach both")
+	}
+}
+
+func TestFakeEchoPostsAndArchivedSay(t *testing.T) {
+	ctx := context.Background()
+	f := New(self)
+	id, _ := f.CreatePrivateChannel(ctx, "c")
+	r := startSocket(t, f)
+	r.next(t)
+	if _, err := f.Post(ctx, slackapi.PostInput{Channel: id, Fallback: "quiet", Seq: 1}); err != nil {
+		t.Fatal(err)
+	}
+	r.none(t)
+	f.EchoPosts(true)
+	ts, err := f.Post(ctx, slackapi.PostInput{Channel: id, Fallback: "loud", Seq: 5})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := r.next(t)
+	if e.Kind != slackapi.EventMessage || e.User != "UBOT" || e.Message.BotID != "BBOT" || e.Message.TS != ts || e.Message.MetadataSeq != 5 {
+		t.Errorf("echo %+v", e)
+	}
+	f.RateLimit("Post", 1, time.Second)
+	_, _ = f.Post(ctx, slackapi.PostInput{Channel: id, Fallback: "limited"})
+	r.none(t) // a failed post echoes nothing
+	f.ArchiveByHand(id)
+	defer func() {
+		if recover() == nil {
+			t.Error("Say into an archived channel did not panic")
+		}
+	}()
+	f.Say(id, "U1", "x", "")
 }

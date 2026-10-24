@@ -117,6 +117,9 @@ type Event struct {
 // invited; already_in_channel counts as success. Only a rate limit or a
 // transport error is returned as an error.
 //
+// History's per-page order is unspecified (real Slack returns newest first);
+// callers that need order read all pages and sort by ts.
+//
 // RunSocket acks each envelope before calling handle, calls handle with
 // EventConnected after every (re)connect, and returns nil when ctx ends.
 type Client interface {

@@ -67,6 +67,7 @@ type Fake struct {
 	maxActive int
 	done      chan struct{}
 	doneShut  bool
+	echo      bool
 }
 
 // New returns a Fake whose AuthTest reports self.
@@ -218,8 +219,8 @@ func (f *Fake) Archive(_ context.Context, channelID string) error {
 }
 
 // Post appends the message to the channel's history and records the input. It
-// queues no event: use SayAsBot or Emit to simulate Slack echoing the app's
-// own post.
+// queues no event unless EchoPosts is on; otherwise use SayAsBot or Emit to
+// simulate Slack echoing the app's own post.
 func (f *Fake) Post(_ context.Context, in slackapi.PostInput) (string, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -234,6 +235,9 @@ func (f *Fake) Post(_ context.Context, in slackapi.PostInput) (string, error) {
 	c.Posts = append(c.Posts, in)
 	m := slackapi.Message{TS: f.newTS(), ThreadTS: in.ThreadTS, User: f.self.UserID, BotID: f.self.BotID, Text: in.Fallback, MetadataSeq: in.Seq}
 	f.addMessage(c, m)
+	if f.echo {
+		f.enqueue(slackapi.Event{Kind: slackapi.EventMessage, Channel: in.Channel, User: m.User, Message: m})
+	}
 	return m.TS, nil
 }
 
@@ -272,8 +276,9 @@ func (f *Fake) page(method string, msgs []slackapi.Message, cursor string) (slac
 	return p, nil
 }
 
-// History returns the channel's top-level messages (thread replies excluded)
-// newer than oldest, ascending.
+// History returns the channel's top-level messages and thread_broadcast
+// replies (other thread replies excluded) newer than oldest. The fake keeps
+// ascending order; the interface leaves per-page order unspecified.
 func (f *Fake) History(_ context.Context, channelID, oldest, cursor string) (slackapi.Page, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -286,7 +291,7 @@ func (f *Fake) History(_ context.Context, channelID, oldest, cursor string) (sla
 	}
 	var msgs []slackapi.Message
 	for _, m := range c.Messages {
-		if (m.ThreadTS == "" || m.ThreadTS == m.TS) && m.TS > oldest {
+		if (m.ThreadTS == "" || m.ThreadTS == m.TS || m.Subtype == "thread_broadcast") && m.TS > oldest {
 			msgs = append(msgs, m)
 		}
 	}
@@ -381,11 +386,31 @@ func (f *Fake) SetPageSize(n int) {
 }
 
 // Say adds a user's message to the channel's history with the next ts and
-// queues its event. A channel id never created is created bare.
+// queues its event. A channel id never created is created bare; Say into an
+// archived channel panics (a test-authoring error).
 func (f *Fake) Say(channelID, user, text, threadTS string) slackapi.Message {
+	return f.SaySubtype(channelID, user, text, threadTS, "")
+}
+
+// SayBroadcast is Say for a thread reply also sent to the channel
+// (subtype thread_broadcast).
+func (f *Fake) SayBroadcast(channelID, user, text, threadTS string) slackapi.Message {
+	return f.SaySubtype(channelID, user, text, threadTS, "thread_broadcast")
+}
+
+// SaySubtype is Say with an explicit message subtype; the event carries it.
+func (f *Fake) SaySubtype(channelID, user, text, threadTS, subtype string) slackapi.Message {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.say(channelID, slackapi.Message{User: user, Text: text, ThreadTS: threadTS})
+	return f.say(channelID, slackapi.Message{User: user, Text: text, ThreadTS: threadTS, Subtype: subtype})
+}
+
+// EchoPosts, when on, makes a successful Post also queue a message event for
+// the app's own post (User and BotID are the app's), as real Slack does.
+func (f *Fake) EchoPosts(on bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.echo = on
 }
 
 // SayAsBot is Say for a bot message carrying a bus seq in its metadata.
@@ -397,6 +422,9 @@ func (f *Fake) SayAsBot(channelID, botID, text, threadTS string, seq int64) slac
 
 func (f *Fake) say(channelID string, m slackapi.Message) slackapi.Message {
 	c := f.chanFor(channelID)
+	if c.Archived {
+		panic(fmt.Sprintf("slackfake: message into archived channel %q", channelID))
+	}
 	m.TS = f.newTS()
 	f.addMessage(c, m)
 	f.enqueue(slackapi.Event{Kind: slackapi.EventMessage, Channel: channelID, User: m.User, Message: m})
@@ -438,6 +466,7 @@ func (f *Fake) Emit(ev slackapi.Event) {
 }
 
 // DropNext discards the next n events before delivery (history keeps them).
+// It overwrites any earlier count rather than adding to it.
 func (f *Fake) DropNext(n int) {
 	if n < 0 {
 		panic("slackfake: DropNext of a negative count")
@@ -455,7 +484,8 @@ func (f *Fake) RepeatNext() {
 }
 
 // ReorderNext holds the next n events and delivers them in reverse order once
-// the nth has been queued.
+// the nth has been queued. It replaces any group still being held (those
+// events are lost) rather than adding to it.
 func (f *Fake) ReorderNext(n int) {
 	if n < 0 {
 		panic("slackfake: ReorderNext of a negative count")
@@ -515,6 +545,7 @@ func (f *Fake) FailNext(method string, err error) {
 }
 
 // RateLimit makes the next times calls of method return a RateLimitedError.
+// It overwrites any earlier limit for method rather than adding to it.
 func (f *Fake) RateLimit(method string, times int, retryAfter time.Duration) {
 	checkMethod(method)
 	if times < 0 {
