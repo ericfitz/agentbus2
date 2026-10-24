@@ -72,11 +72,26 @@ type AccessToken struct {
 // Token exchanges a signed client assertion for a bearer (private_key_jwt).
 func Token(ctx context.Context, c *gen.ClientWithResponses, clientAssertion string) (AccessToken, error) {
 	assertionType := assertion.Type
-	r, err := c.TokenWithFormdataBodyWithResponse(ctx, gen.TokenFormdataRequestBody{
+	return tokenRequest(ctx, c, gen.TokenFormdataRequestBody{
 		GrantType:           "client_credentials",
 		ClientAssertionType: &assertionType,
 		ClientAssertion:     &clientAssertion,
 	})
+}
+
+// TokenExchange exchanges a corporate provider's access token for a human
+// bearer (RFC 8693; spec 5.2). Errors map as Token's do.
+func TokenExchange(ctx context.Context, c *gen.ClientWithResponses, subjectToken string) (AccessToken, error) {
+	subjectType := tokenTypeAccess
+	return tokenRequest(ctx, c, gen.TokenFormdataRequestBody{
+		GrantType:        grantTokenExchange,
+		SubjectToken:     &subjectToken,
+		SubjectTokenType: &subjectType,
+	})
+}
+
+func tokenRequest(ctx context.Context, c *gen.ClientWithResponses, body gen.TokenFormdataRequestBody) (AccessToken, error) {
+	r, err := c.TokenWithFormdataBodyWithResponse(ctx, body)
 	if err != nil {
 		return AccessToken{}, errorOf(ctx, 0, nil, nil, err)
 	}
@@ -91,6 +106,11 @@ func Token(ctx context.Context, c *gen.ClientWithResponses, clientAssertion stri
 	}
 	return AccessToken{Token: r.JSON200.AccessToken, ExpiresIn: time.Duration(r.JSON200.ExpiresIn) * time.Second}, nil
 }
+
+const (
+	grantTokenExchange = "urn:ietf:params:oauth:grant-type:token-exchange"
+	tokenTypeAccess    = "urn:ietf:params:oauth:token-type:access_token"
+)
 
 // oauthErrorOf maps the RFC 6749 section 5.2 body of a refused token request
 // to a bus error, or returns nil when the response carries none (a proxy's

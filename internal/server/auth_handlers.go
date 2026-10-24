@@ -50,6 +50,8 @@ func (a *api) Token(ctx context.Context, req gen.TokenRequestObject) (gen.TokenR
 		return oauthFail(http.StatusBadRequest, "invalid_request", "grant_type is required"), nil
 	case "client_credentials":
 		return a.clientCredentials(ctx, iss, req.Body), nil
+	case grantTokenExchange:
+		return a.tokenExchange(ctx, req.Body), nil
 	default:
 		return oauthFail(http.StatusBadRequest, "unsupported_grant_type", "grant_type %q is not supported", req.Body.GrantType), nil
 	}

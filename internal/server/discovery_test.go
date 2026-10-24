@@ -87,9 +87,9 @@ func TestAuthorizationServerMetadata(t *testing.T) {
 	if c.Issuer != "http://inproc" || c.TokenEndpoint != c.Issuer+"/v1/auth/token" || c.JwksUri != c.Issuer+"/v1/auth/jwks" {
 		t.Errorf("%+v", c)
 	}
-	if !slices.Equal(c.TokenEndpointAuthMethodsSupported, []string{"private_key_jwt"}) ||
+	if !slices.Equal(c.TokenEndpointAuthMethodsSupported, []string{"private_key_jwt", "none"}) ||
 		!slices.Equal(c.TokenEndpointAuthSigningAlgValuesSupported, []string{"EdDSA", "ES256"}) ||
-		!slices.Equal(c.GrantTypesSupported, []string{"client_credentials"}) {
+		!slices.Equal(c.GrantTypesSupported, []string{"client_credentials", grantTokenExchange}) {
 		t.Errorf("%+v", c)
 	}
 	if c.ResponseTypesSupported == nil || len(c.ResponseTypesSupported) != 0 {

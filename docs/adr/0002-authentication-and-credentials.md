@@ -613,3 +613,35 @@ later tasks extend it.
   a string when present. A JWKS fetch that fails and leaves no usable key is
   `ErrJWKSUnavailable`, so the exchange can answer
   `temporarily_unavailable` rather than blame the token.
+
+### The token exchange endpoint (Task 11)
+
+- **Grant.** `urn:ietf:params:oauth:grant-type:token-exchange` (RFC 8693).
+  `subject_token` is required; `subject_token_type` and
+  `requested_token_type` (when set) must be
+  `urn:ietf:params:oauth:token-type:access_token`.
+- **ID tokens are refused** (`invalid_request`, "ID tokens are not accepted;
+  present the provider's access token"): an ID token is addressed to the
+  client application, not to this server, and many providers do not give it
+  the audience the entry checks.
+- **`audience` and `resource` are single-valued** and, when set, must equal
+  this server's issuer URL, else `invalid_target`. `actor_token` and
+  `actor_token_type` are refused (`invalid_request`); `scope` is ignored.
+- **A `users` miss answers `invalid_request`** (`exchangeDeniedCode`), not
+  `access_denied`: RFC 8693 section 2.2.2 gives a failed exchange
+  `invalid_request`. Decision (Eric, 2026-10-23); spec Decision 13.
+- **`client_id` of the minted bearer** is the provider token's `client_id`,
+  else its `azp`, else its subject claim. It is recorded for the
+  authorization code that reads it; it grants nothing.
+- **Provider outage** (the entry's JWKS cannot be fetched and no cached key
+  fits) answers 503 `temporarily_unavailable`, not `invalid_request`: the
+  token is not at fault.
+- **Metadata** advertises both grants and the auth methods
+  `private_key_jwt` and `none` (the exchange authenticates by the subject
+  token, not by a client credential).
+- **Logging.** A refusal is logged at warn with the entry name (or the
+  claimed issuer URL when no entry matches), the reason and the identity when
+  known; a token is never logged. The reassigned-email refusal (spec 4.2) is
+  one of these lines.
+- **`internal/oidctest`** is the fake provider the tests use; it is a test
+  harness with its own self-tests.

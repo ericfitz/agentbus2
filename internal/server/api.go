@@ -1,6 +1,8 @@
 package server
 
 import (
+	"log/slog"
+
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/channels"
 	"github.com/ericfitz/agentbus2/internal/core/delivery"
@@ -19,6 +21,7 @@ type api struct {
 	core    *core.Core
 	opts    Options
 	version string
+	log     *slog.Logger
 
 	channels  channels.Service
 	sessions  sessions.Service
@@ -36,9 +39,13 @@ func newAPI(c *core.Core, o Options) *api {
 	if v == "" {
 		v = version.Version
 	}
+	log := o.Logger
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
+	}
 	sess := sessions.Service{Core: c}
 	return &api{
-		core: c, opts: o, version: v,
+		core: c, opts: o, version: v, log: log,
 		channels:  channels.Service{Core: c},
 		sessions:  sess,
 		delivery:  delivery.Service{Core: c, Sessions: sess},

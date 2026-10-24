@@ -59,8 +59,8 @@ func (a *api) metadata(ctx context.Context) gen.AuthorizationServerMetadata {
 		TokenEndpoint:                     issuer + "/v1/auth/token",
 		JwksUri:                           issuer + "/v1/auth/jwks",
 		ResponseTypesSupported:            []string{},
-		GrantTypesSupported:               []string{"client_credentials"},
-		TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
+		GrantTypesSupported:               []string{"client_credentials", grantTokenExchange},
+		TokenEndpointAuthMethodsSupported: []string{"private_key_jwt", "none"},
 		TokenEndpointAuthSigningAlgValuesSupported: []string{"EdDSA", "ES256"},
 	}
 }

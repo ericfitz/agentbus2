@@ -94,6 +94,24 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 
 `issuers` defaults to the empty list. Rules: an entry whose `issuer` equals the server's own `issuer`, or repeats another entry's `issuer`, is rejected. A `jwks_uri` that is plain `http` on a host other than `localhost` or a loopback address starts the server with a warning (anyone on the path can substitute the key set); use `https`. Each `name` must be a valid identity name (1 to 128 bytes, no `/`, no control characters), not `everyone` or `admins`, and unique across entries. The old `subjects` member is gone and an entry that has it fails to load. A token from an issuer is never accepted directly as a bearer; the token endpoint exchanges it for an agentbus2 bearer, and a human's identity is created at the first sign-in in every registration mode.
 
+An `issuers` entry serves the token exchange only (RFC 8693, `POST /v1/auth/token` with `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`). The caller sends the provider's access token as `subject_token` with `subject_token_type=urn:ietf:params:oauth:token-type:access_token`; the server finds the entry whose `issuer` equals the token's `iss`, verifies the signature against the entry's `jwks_uri`, then `iss`, `aud` (must equal the entry's `audience`) and `exp`, reads the email, groups and subject claims, runs the `users` gate and answers an agentbus2 human bearer that lives `human_token_lifetime_seconds`. Refusals are RFC 6749 bodies: `invalid_request` for a bad or unknown token, an unknown issuer, an ID token (`urn:ietf:params:oauth:token-type:id_token` is refused; present the access token), an `actor_token`, or a person the `users` list does not admit (Decision 13); `invalid_target` when `audience` or `resource` is set and is not this server's `issuer`; `temporarily_unavailable` (503) when the provider's key set cannot be fetched. Every refusal is logged with the entry name or issuer, the reason and the identity when known, never a token.
+
+Example for a provider whose access token carries the person's identity in `user_id` instead of `sub` (an OCI-shaped entry; the claim names are the provider's, shown for illustration):
+
+```json
+[{
+  "name": "corp",
+  "issuer": "https://idp.example.com/oauth2",
+  "jwks_uri": "https://idp.example.com/oauth2/keys",
+  "audience": "agentbus2",
+  "algorithms": ["RS256"],
+  "claims": {"email": "email", "groups": "groups", "subject": "user_id"},
+  "human_token_lifetime_seconds": 900
+}]
+```
+
+The first successful exchange binds the person's identity to the token's subject claim and to the `issuer` URL of the entry. Changing an entry's `issuer` URL therefore makes every bound human's next sign-in fail with "identity bound to a different subject" until an operator runs `reset-credential NAME` for each of them (it clears the recorded subject, so the next sign-in binds afresh). Renaming the entry (`name`) does not matter to the bindings, but `users` and `admins` entries refer to the name.
+
 `default_acl` defaults to three entries, in this order: `everyone` with `read` and `write`; `<creator>` with `read`, `write` and `admin`; `admins` with `admin`. Only `everyone`, `admins` and the placeholder `<creator>` are accepted as identities, each with a non-empty list of distinct `read`, `write` or `admin`. `<creator>` stands for the identity that creates the channel and is dropped when there is none (the `general` channel at start, and after a reset). Setting a list equal to the default changes nothing.
 
 ## What replicas must share
