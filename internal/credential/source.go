@@ -148,6 +148,13 @@ func (s *Source) Refresh(ctx context.Context) (string, error) {
 	return s.refresh(ctx)
 }
 
+// Invalidate removes the cached bearer, so the next Token mints a new one.
+func (s *Source) Invalidate() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.Cache.Remove(s.Identity)
+}
+
 // discovery returns the held or cached discovery document, else a fresh one;
 // fresh reports whether it was fetched by this call.
 func (s *Source) discovery(ctx context.Context) (d Discovery, fresh bool, err error) {

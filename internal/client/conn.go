@@ -17,7 +17,9 @@ type Conn struct {
 	Resolved Resolved
 	Client   *gen.ClientWithResponses
 	Core     *core.Core         // local mode only
-	Source   *credential.Source // server mode only
+	Source   *credential.Source // server mode, agent identity
+	// Human is the sign-in source of a Conn opened with Options.HumanSignIn.
+	Human *credential.HumanSource
 
 	close func() error
 }
@@ -34,7 +36,7 @@ func Open(ctx context.Context, o Options) (*Conn, error) {
 	case profile.ModeLocal:
 		return openLocal(ctx, o, r)
 	case profile.ModeServer:
-		return openServer(o, r)
+		return openServer(ctx, o, r)
 	}
 	return nil, resolveErr(fmt.Errorf("profile %q: unknown mode %q", r.Profile.Name, r.Profile.Mode))
 }

@@ -645,3 +645,27 @@ later tasks extend it.
   one of these lines.
 - **`internal/oidctest`** is the fake provider the tests use; it is a test
   harness with its own self-tests.
+
+### Human sign-in on the client (Task 13)
+
+- **Profile `oidc`** (`issuer`, `client_id`, `redirect_port`, `scopes`) is
+  valid on server profiles only and is required for a human. The issuer is
+  `https`, or `http` on a loopback host (controller ruling, 2026-10-24): the
+  authorization code and PKCE verifier must not cross a network in
+  cleartext.
+- **`login -human`** (plan choice) is a flag, not a new command, because one
+  server profile can hold agent keys and an `oidc` setting at once; plain
+  `login` keeps meaning the agent's assertion. `-human` refuses `-identity`
+  and always runs the browser.
+- **The TUI on a server profile** is always the human who signs in
+  (Decision 11): `-identity` is refused (exit 2), and `AGENTBUS2_IDENTITY`,
+  the profile's `identity` and its credentials are not consulted. A profile
+  without `oidc` exits 2 naming it.
+- **Session cache** `<data dir>/tokens/<profile>/human/session.json` (0600,
+  directory 0700, owner-only ACL on Windows) holds the server's bearer, its
+  discovery document and the provider's refresh token. The corporate access
+  token is never stored. A 401 invalidates the bearer, keeps the refresh
+  token, and the transport refreshes once: through the refresh token, else the
+  browser (which blocks that request for up to 5 minutes).
+- **Identity** is the unverified `sub` of the cached bearer (the server
+  verifies every request); a bearer without one is an error at save.

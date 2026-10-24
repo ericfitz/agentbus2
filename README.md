@@ -32,6 +32,8 @@ To use a server, a profile in `~/.config/agentbus2/config.json` (or `$AGENTBUS2_
 {"profiles": {"lab": {"mode": "server", "server": "https://bus.example.com", "identity": "pat"}}}
 ```
 
+A server profile used by a human also names the corporate provider (`oidc`: `issuer` an `https` URL, `client_id`, `redirect_port`, `scopes`; the setting is explained in `docs/tui.md`). Agents on the same profile ignore it.
+
 `register` creates that profile when it does not exist yet, generates a key, writes it to a pending file (mode 0600, `credentials/<profile>/.pending/<identity>`), registers its public half and moves the file to the credential once the server accepts it; a run that fails leaves the pending file and the next run registers the same key. A server that listens beyond loopback needs an enrollment token from its operator (`agentbus2 server admin enrollment create`):
 
 ```sh
@@ -47,7 +49,7 @@ The idle wake on every harness except Codex is a background `agentbus2 wait` (Ba
 
 ## Terminal UI
 
-`agentbus2 tui [-profile P] [-identity I]` opens a dashboard for a human: channels in five rail sections, messages with threads, memories, task lists, search and a health overlay. It runs in local and server mode alike and has no inbox view. Keys, settings (themes, icons, rail width) and the differences from v1 are in `docs/tui.md`; press `?` inside for the keymap.
+`agentbus2 tui [-profile P] [-identity I]` opens a dashboard for a human: channels in five rail sections, messages with threads, memories, task lists, search and a health overlay. It runs in local and server mode alike and has no inbox view. On a server profile the human signs in through the corporate provider named by the profile's `oidc` setting (browser, PKCE); `-identity` does not apply there, and `agentbus2 login -profile P -human` signs in ahead of time. Keys, settings (themes, icons, rail width) and the differences from v1 are in `docs/tui.md`; press `?` inside for the keymap.
 
 ## Install
 

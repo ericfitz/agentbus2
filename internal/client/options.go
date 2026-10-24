@@ -28,6 +28,19 @@ type Options struct {
 	// repository file selected the profile, so the human never shares the
 	// agent's identity there (TUI decision 11).
 	HumanIdentity bool
+	// HumanSignIn (server mode) makes the caller a human who signs in through
+	// the profile's oidc provider (spec 5.3): no identity is selected and Open
+	// obtains the bearer, opening the browser when there is no usable session.
+	// The identity is then the bearer's subject (IdentitySource "sign-in").
+	HumanSignIn bool
+	// HumanOpenBrowser and HumanAnnounce replace the system browser launcher
+	// and receive the sign-in URL (HumanSignIn only; nil: the system browser,
+	// no announcement).
+	HumanOpenBrowser func(url string) error
+	HumanAnnounce    func(url string)
+	// HumanDeferSignIn (with HumanSignIn) makes Open obtain nothing: the caller
+	// drives Conn.Human itself and Resolved.Identity stays empty until it has.
+	HumanDeferSignIn bool
 	// Maintenance (local mode) runs maintenance.New(c).Tick on a ticker.
 	Maintenance bool
 	Logger      *slog.Logger
@@ -105,10 +118,17 @@ func Resolve(o Options) (Resolved, error) {
 	r.ProfileSource = src
 	r.Credentials = credential.Store{Dir: profile.CredentialDir(r.ConfigDir, r.Profile.Name)}
 	var creds []string
-	if r.Profile.Mode == profile.ModeServer {
+	if r.Profile.Mode == profile.ModeServer && !o.HumanSignIn {
 		if creds, err = r.Credentials.List(); err != nil {
 			return Resolved{}, resolveErr(err)
 		}
+	}
+	if o.HumanSignIn {
+		if r.Profile.Mode != profile.ModeServer || r.Profile.OIDC == nil {
+			return Resolved{}, resolveErr(fmt.Errorf("profile %q has no oidc setting: on a server profile a human signs in through the corporate provider", r.Profile.Name))
+		}
+		r.IdentitySource = "sign-in"
+		return r, nil
 	}
 	envIdentity, _ := profile.Getenv(o.Environ, "AGENTBUS2_IDENTITY")
 	r.Identity, r.IdentitySource, err = r.Profile.ResolveIdentity(profile.IdentitySelection{Flag: o.Identity, Env: envIdentity, Credentials: creds, Fallback: o.FallbackIdentity, SkipProfile: o.HumanIdentity && src == profile.SourceRepo})

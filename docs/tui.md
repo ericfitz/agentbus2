@@ -8,11 +8,28 @@
 agentbus2 tui [-profile P] [-identity I]
 ```
 
+On a server profile the TUI is a human who signs in through the corporate provider; see "Server profiles and sign-in" below. The rest of this section is the local-profile rule.
+
 `-profile` and `-identity` select the profile as they do for every other command (`AGENTBUS2_PROFILE`, then `.local/agentbus2.json`, then `default`). The identity order is the TUI's own: `-identity`, `AGENTBUS2_IDENTITY`, the profile's `identity` only when the profile was not selected by the repository file (so inside a repository the TUI is not the repository's agent identity), the profile's only credential (also skipped when the repository file selected the profile, because it is the agent's), then the OS login name (a Windows `DOMAIN\name` is cut to `name`, a `/` becomes `-`, and an unknown user leaves the "identity is required" error). There are no other flags: v1's `-config` and `-as` are rejected (exit 2), and so is a positional argument. `-h` prints the flags and exits 0.
 
 In local mode the TUI also runs the maintenance loop, as v1's TUI ran its background loops; when several local processes run it, a lease row in the database lets one tick at a time. A server runs its own maintenance, so server mode does not.
 
 Exit codes: 0 on a clean quit, 1 with `agentbus2: <error>` on stderr when the session is lost or the program fails, 2 for a usage or profile/identity resolution error.
+
+### Server profiles and sign-in
+
+On a server profile `tui` does not select an agent identity: the profile needs an `oidc` setting, and the identity is the one the server binds to the signed-in email (Decision 11; spec 5.3). `-identity` is refused (exit 2), as are `AGENTBUS2_IDENTITY`, the profile's `identity` and the profile's credentials, which belong to agents; a server profile without `oidc` exits 2 naming the missing setting. Local profiles are unchanged.
+
+```json
+{"profiles": {"lab": {"mode": "server", "server": "https://bus.example.com",
+  "oidc": {"issuer": "https://idp.example.com", "client_id": "...", "redirect_port": 8765, "scopes": ["openid", "email"]}}}}
+```
+
+`oidc` is valid in server mode only. `issuer` is an absolute `https` URL; `http` is accepted only for a loopback host (`127.0.0.1`, `::1`, `localhost`, for tests with a fake provider), because the authorization code and the PKCE verifier must not cross a network in cleartext. `client_id` is the provider's public client (no secret). `redirect_port` (1 to 65535) is the fixed port of the loopback redirect `http://127.0.0.1:<port>/callback`, which the provider's client registration must list exactly. `scopes` is a non-empty list of scope names without whitespace.
+
+With no usable session the TUI prints `agentbus2 tui: sign in at <url>` on stderr, opens the system browser at that URL (authorization code flow with PKCE) and waits for the callback for up to 5 minutes. It exchanges the provider's access token at the server and caches the server's bearer in `<data dir>/tokens/<profile>/human/session.json` (mode 0600, directory 0700; an owner-only ACL on Windows), together with the provider's refresh token when one was issued. The corporate token itself is never stored or logged. The next start reuses the cached bearer until 60 seconds before it expires, then refreshes through the provider's refresh token without the browser, and reopens the browser only when there is none or the provider rejects it. `agentbus2 login -profile P -human` always runs the browser sign-in and prints `logged in as <identity> at <server> (token expires <time>)`.
+
+The sign-in URL is announced only before the screen opens. A bearer the server refuses mid-session is refreshed once; when that needs the browser, the request that triggered it (a screen update, a send) blocks for up to 5 minutes, with nothing shown on the screen, until the sign-in completes or times out. Run `agentbus2 login -human` before that happens if the session is long.
 
 ### Terminal
 
@@ -32,7 +49,7 @@ Subscriptions and the acked mark belong to the identity, not the session. A huma
 agentbus2 tui: identity eric has 1 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)
 ```
 
-When nothing else selects an identity, and also whenever the repository file selected the profile (its `identity` and its single credential are skipped, so in a `$HOME` repository the agent `efitz-home` and the human `efitz` stay apart), `tui` (and only `tui`) falls back to the OS login name (source `os-user`, v1's `tui_name`). In a server profile the name is used only when it has a credential file; otherwise it is the usual "identity is required" resolution error. In a local profile the OS-login row is marked human (an identity named with `-identity` is never turned human); a row that already holds keys cannot be, and the TUI exits 2 asking for `-identity`. Every other command has no such fallback. The login name is the human's: `agentbus2 mcp` refuses to run under it (Decision 16), and `agentbus2 init` in the home directory names the agent `<user>-home` (Decision 15).
+On a local profile, when nothing else selects an identity, and also whenever the repository file selected the profile (its `identity` and its single credential are skipped, so in a `$HOME` repository the agent `efitz-home` and the human `efitz` stay apart), `tui` (and only `tui`) falls back to the OS login name (source `os-user`, v1's `tui_name`). On a server profile there is no such fallback (see "Server profiles and sign-in"). In a local profile the OS-login row is marked human (an identity named with `-identity` is never turned human); a row that already holds keys cannot be, and the TUI exits 2 asking for `-identity`. Every other command has no such fallback. The login name is the human's: `agentbus2 mcp` refuses to run under it (Decision 16), and `agentbus2 init` in the home directory names the agent `<user>-home` (Decision 15).
 
 ## Layout
 
@@ -196,7 +213,7 @@ Three Font Awesome glyphs (`fa-face-sleeping`, `fa-microchip-ai`, `fa-user-robot
 - No direct messages and no inbox view (spec 1.3, ADR 0006): a session row shows details only, never messages (TUI decision 14).
 - A session row is selectable only to show its details (TUI decision 14); there is no session view of messages.
 - Kinds, not prefixes: a task list is a channel of kind `tasks`, a memory channel of kind `memory` (ADR 0008). v1's `general/`, `memory/` and `tasks/` prefixes are not read, and names are shown in full.
-- Identity comes from `-identity`, `AGENTBUS2_IDENTITY` and the profile (Decision 71, with the repository-file exception above), then the OS login name as the last step; not from `tui_name` or `-as`.
+- Identity comes from `-identity`, `AGENTBUS2_IDENTITY` and the profile (Decision 71, with the repository-file exception above), then the OS login name as the last step, on a local profile; on a server profile it comes from the corporate sign-in; not from `tui_name` or `-as`.
 - Names shown for messages and sessions are the server's (`Message.Display`, `Session.DisplayName`; ADR 0003).
 - Task release is its own operation (`u`), and assigning picks from identities (owners are identities).
 - The TUI reads from `Watch` and `Receive` with acks (Decision 83) rather than a blocking `Receive`, and has no per-session repo or context.

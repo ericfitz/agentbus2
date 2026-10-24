@@ -128,6 +128,76 @@ func TestProfileValidate(t *testing.T) {
 	}
 }
 
+func TestOIDCValidate(t *testing.T) {
+	ok := func() *OIDC {
+		return &OIDC{Issuer: "https://idp.example", ClientID: "cid", RedirectPort: 8765, Scopes: []string{"openid", "email"}}
+	}
+	with := func(f func(*OIDC)) *OIDC { o := ok(); f(o); return o }
+	srv := func(o *OIDC) Profile { return Profile{Mode: ModeServer, Server: "https://h", OIDC: o} }
+	tests := []struct {
+		name    string
+		p       Profile
+		wantErr string
+	}{
+		{"server ok", srv(ok()), ""},
+		{"http loopback 127.0.0.1 ok", srv(with(func(o *OIDC) { o.Issuer = "http://127.0.0.1:9000" })), ""},
+		{"http localhost ok", srv(with(func(o *OIDC) { o.Issuer = "http://localhost:9000/path" })), ""},
+		{"http ipv6 loopback ok", srv(with(func(o *OIDC) { o.Issuer = "http://[::1]:9000" })), ""},
+		{"http non-loopback refused", srv(with(func(o *OIDC) { o.Issuer = "http://idp.example" })), "https"},
+		{"http lookalike host refused", srv(with(func(o *OIDC) { o.Issuer = "http://127.0.0.1.example" })), "https"},
+		{"local mode refused", Profile{Mode: ModeLocal, OIDC: ok()}, "oidc"},
+		{"port 0", srv(with(func(o *OIDC) { o.RedirectPort = 0 })), "redirect_port"},
+		{"port 65536", srv(with(func(o *OIDC) { o.RedirectPort = 65536 })), "redirect_port"},
+		{"port negative", srv(with(func(o *OIDC) { o.RedirectPort = -1 })), "redirect_port"},
+		{"empty scopes", srv(with(func(o *OIDC) { o.Scopes = nil })), "scopes"},
+		{"scope with space", srv(with(func(o *OIDC) { o.Scopes = []string{"a b"} })), "scopes"},
+		{"empty scope entry", srv(with(func(o *OIDC) { o.Scopes = []string{"openid", ""} })), "scopes"},
+		{"missing client_id", srv(with(func(o *OIDC) { o.ClientID = "" })), "client_id"},
+		{"non-URL issuer", srv(with(func(o *OIDC) { o.Issuer = "idp" })), "issuer"},
+		{"empty issuer", srv(with(func(o *OIDC) { o.Issuer = "" })), "issuer"},
+		{"ftp issuer", srv(with(func(o *OIDC) { o.Issuer = "ftp://idp.example" })), "issuer"},
+		{"issuer with userinfo", srv(with(func(o *OIDC) { o.Issuer = "https://u:p@idp.example" })), "issuer"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.p.Validate()
+			switch {
+			case tc.wantErr == "" && err != nil:
+				t.Fatalf("unexpected error %v", err)
+			case tc.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.wantErr)):
+				t.Fatalf("error %v must contain %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// The oidc object round-trips through Save and Load, and Load is strict about
+// its members.
+func TestOIDCLoadSave(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	want := &OIDC{Issuer: "https://idp.example", ClientID: "cid", RedirectPort: 8765, Scopes: []string{"openid"}}
+	c := Config{Path: path, Profiles: map[string]Profile{"lab": {Name: "lab", Mode: ModeServer, Server: "https://h", OIDC: want}}}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got.Profiles["lab"].OIDC, want) {
+		t.Fatalf("round trip = %+v", got.Profiles["lab"].OIDC)
+	}
+	bad := writeCfg(t, `{"profiles":{"lab":{"mode":"server","server":"https://h","oidc":{"issuer":"https://i","client_id":"c","redirect_port":1,"scopes":["a"],"colour":1}}}}`)
+	if _, err := Load(bad); err == nil || !strings.Contains(err.Error(), "colour") {
+		t.Fatalf("unknown oidc key: %v", err)
+	}
+	// A saved invalid oidc is refused before anything is written.
+	c.Profiles["lab"] = Profile{Name: "lab", Mode: ModeServer, Server: "https://h", OIDC: &OIDC{Issuer: "http://idp.example", ClientID: "c", RedirectPort: 1, Scopes: []string{"a"}}}
+	if err := c.Save(); err == nil || !strings.Contains(err.Error(), "https") {
+		t.Fatalf("Save of an http non-loopback issuer: %v", err)
+	}
+}
+
 func TestSaveRoundTripAtomic(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "cfg")
 	path := filepath.Join(dir, "config.json")

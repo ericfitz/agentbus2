@@ -7,19 +7,14 @@ import (
 	"os"
 	"os/user"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
 	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
 	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/tui"
 )
@@ -113,12 +108,20 @@ func tuiSessionUp(t *testing.T, b bus.Bus, want string) {
 // eric/macmini, then quit.
 func driveSend(t *testing.T, r *runningTUI, sam *client.Conn) {
 	t.Helper()
+	driveSendAs(t, r, sam, "eric", "", nil)
+}
+
+// driveSendAs is driveSend for a TUI whose identity is identity. wantKind, when
+// set, is the SenderKind sam must see; wantStderr is the exact stderr the TUI
+// must leave behind (nil: none), computed once the TUI has quit.
+func driveSendAs(t *testing.T, r *runningTUI, sam *client.Conn, identity string, wantKind bus.IdentityKind, wantStderr func() string) {
+	t.Helper()
 	ctx := context.Background()
 	sess, err := sam.Bus.Open(ctx, bus.OpenSessionInput{Hint: "probe"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	tuiSessionUp(t, sam.Bus, "eric/macmini")
+	tuiSessionUp(t, sam.Bus, identity+"/macmini")
 	waitUntil(t, "the first frame to list general", 5*time.Second, func() bool { return strings.Contains(r.out.String(), "general") })
 	if _, err := r.in.Write([]byte("i")); err != nil {
 		t.Fatal(err)
@@ -141,14 +144,21 @@ func driveSend(t *testing.T, r *runningTUI, sam *client.Conn) {
 		}
 		return got != nil
 	})
-	if got.Display != "eric/macmini" || got.Sender != "eric" || got.Channel != "general" {
-		t.Fatalf("message %+v, want sender eric, display eric/macmini on general", *got)
+	if got.Display != identity+"/macmini" || got.Sender != identity || got.Channel != "general" {
+		t.Fatalf("message %+v, want sender %s, display %s/macmini on general", *got, identity, identity)
+	}
+	if wantKind != "" && got.SenderKind != wantKind {
+		t.Fatalf("message sender kind %q, want %q", got.SenderKind, wantKind)
 	}
 	if code := r.quit(t); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, r.stderr.String())
 	}
-	if s := r.stderr.String(); s != "" {
-		t.Fatalf("stderr %q, want empty", s)
+	want := ""
+	if wantStderr != nil {
+		want = wantStderr()
+	}
+	if s := r.stderr.String(); s != want {
+		t.Fatalf("stderr %q, want %q", s, want)
 	}
 }
 
@@ -187,57 +197,16 @@ func TestRunTUINoIdentityNoUser(t *testing.T) {
 	}
 }
 
+// TestRunTUIServerProfile: on a server profile the TUI is a human who signs in
+// through the profile's corporate provider (Decision 11, spec 5.3). The sign-in
+// URL is announced on stderr before the TUI starts and never again; the
+// identity is the email the server bound; an agent with a key (sam) sees the
+// TUI's message as a human's.
 func TestRunTUIServerProfile(t *testing.T) {
 	pinTUI(t, 80, 24)
 	ctx := context.Background()
 	e := newTestEnv(t)
-
-	sctx, cancel := context.WithCancel(ctx)
-	srvOut, srvErr := &syncBuf{}, &syncBuf{}
-	done := make(chan int, 1)
-	// Made before the stop cleanup is registered, so its RemoveAll runs after
-	// the server has closed the database (Windows refuses to delete an open file).
-	db := filepath.Join(t.TempDir(), "srv.sqlite")
-	go func() {
-		done <- cmd.Run(sctx, []string{"-listen", "127.0.0.1:0", "-sqlite", db}, nil, srvOut, srvErr)
-	}()
-	t.Cleanup(func() {
-		cancel()
-		select {
-		case <-done:
-		case <-time.After(15 * time.Second):
-			t.Error("server did not stop")
-		}
-	})
-	re := regexp.MustCompile(`listening on (\S+) `)
-	base := ""
-	for deadline := time.Now().Add(10 * time.Second); base == "" && time.Now().Before(deadline); time.Sleep(10 * time.Millisecond) {
-		if m := re.FindStringSubmatch(srvOut.String()); m != nil {
-			base = "http://" + m[1]
-		}
-	}
-	if base == "" {
-		t.Fatalf("no listening line: %s %s", srvOut.String(), srvErr.String())
-	}
-
-	gc, err := gen.NewClientWithResponses(base)
-	if err != nil {
-		t.Fatal(err)
-	}
-	store := credential.Store{Dir: profile.CredentialDir(e.ConfigDir, "lab")}
-	for _, id := range []string{"eric", "sam"} {
-		k, err := keys.Generate(keys.EdDSA)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := remote.Register(ctx, gc, id, k.Public(), ""); err != nil {
-			t.Fatalf("register %s: %v", id, err)
-		}
-		if err := store.Save(id, k); err != nil {
-			t.Fatal(err)
-		}
-	}
-	e.writeProfile(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: base})
+	hs := startHumanServer(t, e, "lab")
 
 	sam, err := client.Open(ctx, client.Options{Environ: e.Environ, Cwd: e.Home, Profile: "lab", Identity: "sam", PollInterval: 50 * time.Millisecond})
 	if err != nil {
@@ -245,10 +214,44 @@ func TestRunTUIServerProfile(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = sam.Close() })
 
-	r := startTUI(t, e, "-profile", "lab", "-identity", "eric")
-	driveSend(t, r, sam)
-	if _, err := os.Stat(filepath.Join(e.DataDir, "tokens", "lab", "eric.json")); err != nil {
-		t.Fatalf("no token cache for eric: %v", err)
+	r := startTUI(t, e, "-profile", "lab")
+	driveSendAs(t, r, sam, "eric@corp.example", bus.IdentityHuman, func() string { return "agentbus2 tui: sign in at " + hs.lastURL() + "\n" })
+	if hs.browser.opened.Load() != 1 {
+		t.Errorf("%d browser opens, want 1", hs.browser.opened.Load())
+	}
+	cache := filepath.Join(e.DataDir, "tokens", "lab", "human", "session.json")
+	if _, err := os.Stat(cache); err != nil {
+		t.Fatalf("no human session cache: %v", err)
+	}
+	// The next TUI reuses the session: no browser, nothing on stderr.
+	r2 := startTUI(t, e, "-profile", "lab")
+	driveSendAs(t, r2, sam, "eric@corp.example", bus.IdentityHuman, nil)
+	if hs.browser.opened.Load() != 1 {
+		t.Errorf("%d browser opens after the second TUI, want 1", hs.browser.opened.Load())
+	}
+}
+
+// -identity names an agent's key; on a server profile the identity comes from
+// sign-in, so the flag is refused before anything is dialed.
+func TestRunTUIServerIdentityFlagRefused(t *testing.T) {
+	pinTUI(t, 80, 24)
+	e := newTestEnv(t)
+	e.writeProfile(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1", OIDC: &profile.OIDC{Issuer: "https://idp.example", ClientID: "cid", RedirectPort: 8765, Scopes: []string{"openid"}}})
+	var errb syncBuf
+	code := RunTUI(context.Background(), []string{"-profile", "lab", "-identity", "eric"}, e.Environ, strings.NewReader(""), io.Discard, &errb)
+	if code != 2 || !strings.Contains(errb.String(), "-identity does not apply on a server profile") {
+		t.Fatalf("exit %d stderr %q", code, errb.String())
+	}
+}
+
+func TestRunTUIServerNoOIDC(t *testing.T) {
+	pinTUI(t, 80, 24)
+	e := newTestEnv(t)
+	e.writeProfile(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
+	var errb syncBuf
+	code := RunTUI(context.Background(), []string{"-profile", "lab"}, e.Environ, strings.NewReader(""), io.Discard, &errb)
+	if code != 2 || !strings.Contains(errb.String(), "no oidc setting") || !strings.Contains(errb.String(), `"lab"`) {
+		t.Fatalf("exit %d stderr %q", code, errb.String())
 	}
 }
 

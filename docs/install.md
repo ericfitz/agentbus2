@@ -94,7 +94,7 @@ agentbus2 init --global   # once per machine, and again after an upgrade: MCP se
 agentbus2 init            # inside each repository (the profile's identity is the repository name, or <user>-home for the home directory)
 ```
 
-The README's Quick start covers profiles, servers and registration; `docs/ops/` covers running a server.
+The README's Quick start covers profiles, servers and registration; a human on a server profile adds an `oidc` setting and signs in through the browser (`agentbus2 login -human`, `docs/tui.md`); `docs/ops/` covers running a server.
 
 ## Or, build from source
 

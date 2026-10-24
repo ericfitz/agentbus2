@@ -11,6 +11,10 @@ import (
 	"github.com/ericfitz/agentbus2/internal/tui"
 )
 
+// testOpenBrowser is nil in production. When set, tui and login -human open
+// the sign-in URL through it instead of the system browser.
+var testOpenBrowser func(string) error
+
 // testTUIOptions is nil in production. RunTUI applies it last, so a test can
 // pin Width and Height (a buffer-backed Output never gets a WindowSizeMsg)
 // exactly as testClientOptions pins the Conn.
@@ -33,14 +37,38 @@ func RunTUI(ctx context.Context, args []string, environ []string, stdin io.Reade
 		_, _ = fmt.Fprintf(stderr, "agentbus2 tui: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
-	// Decision 11: with no identity chosen, the TUI is the OS login name.
-	o.FallbackIdentity = osUserName()
+	// Decision 11: on a local profile with no identity chosen, the TUI is the
+	// OS login name; on a server profile it is the human who signs in through
+	// the profile's corporate provider (spec 5.3), and the agent identity
+	// selection does not apply.
+	sel, err := selectProfile(o)
+	if err != nil {
+		fail(stderr, err)
+		return 2
+	}
+	human := sel.Profile.Mode == profile.ModeServer
+	if human {
+		if o.Identity != "" {
+			_, _ = fmt.Fprintln(stderr, "agentbus2 tui: -identity does not apply on a server profile: the identity comes from sign-in")
+			return 2
+		}
+		o.HumanSignIn = true
+		o.HumanOpenBrowser = testOpenBrowser
+		o.HumanAnnounce = func(u string) { _, _ = fmt.Fprintf(stderr, "agentbus2 tui: sign in at %s\n", u) }
+	} else {
+		o.FallbackIdentity = osUserName()
+	}
 	o.HumanIdentity = true
 	conn, code := open(ctx, o, stderr)
 	if conn == nil {
 		return code
 	}
 	defer func() { _ = conn.Close() }()
+	if conn.Human != nil {
+		// The screen belongs to the TUI from here on: a sign-in that a 401
+		// triggers later is not announced (docs/tui.md).
+		conn.Human.SetAnnounce(nil)
+	}
 
 	r := conn.Resolved
 	configPath := filepath.Join(r.ConfigDir, "config.json")
@@ -74,7 +102,10 @@ func RunTUI(ctx context.Context, args []string, environ []string, stdin io.Reade
 	if ids, err := conn.Bus.Identities(ctx); err == nil {
 		for _, id := range ids {
 			if id.Name == r.Identity && len(id.Sessions) > 0 {
-				w := fmt.Sprintf("agentbus2 tui: identity %s has %d other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)", r.Identity, len(id.Sessions))
+				w := fmt.Sprintf("agentbus2 tui: identity %s has %d other live session(s); subscriptions and acks are shared with them", r.Identity, len(id.Sessions))
+				if !human {
+					w += " (pass -identity for a separate name)"
+				}
 				_, _ = fmt.Fprintln(stderr, w)
 				opts.Host.Warnings = append(opts.Host.Warnings, w)
 			}

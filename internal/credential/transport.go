@@ -2,21 +2,31 @@ package credential
 
 import (
 	"bytes"
+	"context"
 	"io"
 	"net/http"
 	"strings"
 )
 
+// TokenSource is what Transport needs of a source of bearers: Token returns a
+// usable bearer, Refresh mints one regardless of the cache, and Invalidate
+// forgets the cached bearer a server just refused.
+type TokenSource interface {
+	Token(ctx context.Context) (string, error)
+	Refresh(ctx context.Context) (string, error)
+	Invalidate() error
+}
+
 type refreshing struct {
 	base http.RoundTripper
-	s    *Source
+	s    TokenSource
 }
 
 // Transport wraps base so that a 401 to a request that carried a bearer
 // triggers exactly one refresh and one replay of the request. Any other status or error passes through; a refresh
 // that fails returns the original 401 response (the remote maps it to
 // unauthenticated).
-func Transport(base http.RoundTripper, s *Source) http.RoundTripper {
+func Transport(base http.RoundTripper, s TokenSource) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
 	}
@@ -51,7 +61,7 @@ func (t *refreshing) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil || resp.StatusCode != http.StatusUnauthorized {
 		return resp, err
 	}
-	_ = t.s.Cache.Remove(t.s.Identity)
+	_ = t.s.Invalidate()
 	tok, rerr := t.s.Refresh(req.Context())
 	if rerr != nil {
 		return resp, nil

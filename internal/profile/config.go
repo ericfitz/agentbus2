@@ -36,6 +36,53 @@ type Profile struct {
 	Identity          string   `json:"identity,omitempty"`
 	CredentialProcess []string `json:"credential_process,omitempty"`
 	SQLite            string   `json:"sqlite,omitempty"`
+	// OIDC names the corporate provider a human signs in through on a server
+	// profile (spec 5.3); nil: the profile has no human sign-in.
+	OIDC *OIDC `json:"oidc,omitempty"`
+}
+
+// OIDC is the "oidc" object of a server profile: the provider, the public
+// client registered with it and the fixed loopback redirect port.
+type OIDC struct {
+	Issuer       string   `json:"issuer"`
+	ClientID     string   `json:"client_id"`
+	RedirectPort int      `json:"redirect_port"`
+	Scopes       []string `json:"scopes"`
+}
+
+// Validate checks the setting's shape. The issuer is https, or http on a
+// loopback host (tests): the authorization code and the PKCE verifier must not
+// cross a network in cleartext.
+func (o OIDC) Validate() error {
+	u, err := url.Parse(o.Issuer)
+	if err != nil || u.Host == "" || u.Opaque != "" || (u.Scheme != "http" && u.Scheme != "https") {
+		return fmt.Errorf("oidc.issuer %q must be an absolute https URL", o.Issuer)
+	}
+	if u.User != nil {
+		return fmt.Errorf("oidc.issuer %q must not carry credentials", o.Issuer)
+	}
+	if u.Scheme == "http" {
+		switch u.Hostname() {
+		case "127.0.0.1", "::1", "localhost":
+		default:
+			return fmt.Errorf("oidc.issuer %q must use https (http is accepted only for 127.0.0.1, ::1 and localhost)", o.Issuer)
+		}
+	}
+	if o.ClientID == "" {
+		return errors.New("oidc.client_id is required")
+	}
+	if o.RedirectPort < 1 || o.RedirectPort > 65535 {
+		return fmt.Errorf("oidc.redirect_port must be between 1 and 65535, got %d", o.RedirectPort)
+	}
+	if len(o.Scopes) == 0 {
+		return errors.New("oidc.scopes must not be empty")
+	}
+	for _, sc := range o.Scopes {
+		if sc == "" || strings.ContainsAny(sc, " \t\r\n") {
+			return fmt.Errorf("oidc.scopes entry %q must be non-empty and contain no whitespace", sc)
+		}
+	}
+	return nil
 }
 
 // Validate checks the profile's shape. It does not normalize: Load and Save
@@ -49,12 +96,20 @@ func (p Profile) Validate() error {
 		if len(p.CredentialProcess) > 0 {
 			return errors.New("credential_process is only valid in server mode")
 		}
+		if p.OIDC != nil {
+			return errors.New("oidc is only valid in server mode")
+		}
 	case ModeServer:
 		if err := validServer(p.Server); err != nil {
 			return err
 		}
 		if p.SQLite != "" {
 			return errors.New("sqlite is only valid in local mode")
+		}
+		if p.OIDC != nil {
+			if err := p.OIDC.Validate(); err != nil {
+				return err
+			}
 		}
 	case "":
 		return errors.New(`mode is required ("local" or "server")`)

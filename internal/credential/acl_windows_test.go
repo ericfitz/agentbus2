@@ -38,3 +38,15 @@ func TestCacheSaveSetsOwnerOnlyACL(t *testing.T) {
 		acltest.AssertOwnerOnly(t, c.path("pat"))
 	}
 }
+
+// The human session holds a bearer and the provider's refresh token and gets
+// the same owner-only DACL.
+func TestHumanCacheSaveSetsOwnerOnlyACL(t *testing.T) {
+	c := HumanCache{Dir: filepath.Join(t.TempDir(), "tokens", "lab")}
+	for range 2 {
+		if err := c.Save(HumanSession{Server: "http://127.0.0.1:1", Identity: "eric@corp.example", AccessToken: "t1", ExpiresAt: time.Now().Add(time.Hour)}); err != nil {
+			t.Fatal(err)
+		}
+		acltest.AssertOwnerOnly(t, filepath.Join(c.Dir, "human", "session.json"))
+	}
+}
