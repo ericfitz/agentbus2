@@ -134,7 +134,10 @@ func (s *Service) lifecycleOne(ctx context.Context, b store.Bridge) error {
 
 // checkMembers archives the bridge when no human remains in its Slack
 // channel: the members minus the app and minus bots and deleted users. A
-// failed check is not marked, so the next pass repeats it.
+// member Slack cannot find (users.info says user_not_found) is unknown, not
+// "not human": with no human found and any member unknown, the bridge stays
+// and the check is repeated on the next pass. A failed check is not marked
+// either.
 func (s *Service) checkMembers(ctx context.Context, b store.Bridge, gen uint64) error {
 	self, err := s.requireReady()
 	if err != nil {
@@ -147,12 +150,14 @@ func (s *Service) checkMembers(ctx context.Context, b store.Bridge, gen uint64) 
 	if err != nil {
 		return slackErr(err)
 	}
+	unknown := 0
 	for _, id := range ids {
 		if id == self.UserID {
 			continue
 		}
 		u, err := s.user(ctx, id)
 		if errors.Is(err, slackapi.ErrUserNotFound) {
+			unknown++ // neither human nor not human: Slack cannot say
 			continue
 		}
 		if err != nil {
@@ -162,6 +167,12 @@ func (s *Service) checkMembers(ctx context.Context, b store.Bridge, gen uint64) 
 			continue
 		}
 		s.markChecked(b.ID, gen)
+		return nil
+	}
+	if unknown > 0 {
+		// Archiving is irreversible: a lookup anomaly is not proof that no human
+		// remains. The check is not marked, so the next pass asks again.
+		s.log.Warn("slack bridge: members Slack cannot find; not archiving", "slack_channel", b.SlackChannelID, "unknown_members", unknown)
 		return nil
 	}
 	return s.ArchiveBridge(ctx, b, scopes.ReasonNoHumans)
