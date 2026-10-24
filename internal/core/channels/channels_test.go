@@ -16,8 +16,9 @@ import (
 var errBoom = errors.New("boom: store failure")
 
 // flakyStore makes the failOn-th Identity lookup of each transaction fail with
-// errBoom (failOn 0 never fails). It counts the lookups it saw in lookups and
-// records in fired whether a fault was injected.
+// errBoom (failOn 0 never fails). The position counter is per transaction,
+// while lookups totals them across all transactions; the fired assertion in
+// the test catches a mismatch between the two.
 type flakyStore struct {
 	store.Store
 	st *flakyState
@@ -93,6 +94,11 @@ func TestCreateNamedScopeStoreErrorIsNotForbidden(t *testing.T) {
 		}
 		if err == nil {
 			t.Fatalf("lookup %d of %d: want an error", k, total)
+		}
+		// The core converts the store error to a bus.Error, so errors.Is does
+		// not survive; its text does.
+		if !strings.Contains(err.Error(), errBoom.Error()) {
+			t.Fatalf("lookup %d of %d: err = %v, want the injected fault", k, total, err)
 		}
 		var be *bus.Error
 		if errors.As(err, &be) && be.Code == bus.CodeForbidden {

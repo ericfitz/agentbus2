@@ -184,9 +184,10 @@ type HumanSignIn struct {
 // ErrConflict, up to maxAttempts.
 //
 // State (Definition of Done D): a second sign-in with the same claims
-// changes nothing (the admin flag is re-evaluated and written only when it changes); two overlapping first
-// sign-ins end with one identity and one binding (the loser reruns and finds
-// it); a failed run writes nothing, since everything is one transaction.
+// changes nothing (the admin flag is re-evaluated and written only when it
+// changes); two overlapping first sign-ins end with one identity and one
+// binding (the loser reruns and finds it); a failed run writes nothing, since
+// everything is one transaction.
 func (s Service) SignInHuman(ctx context.Context, c HumanClaims) (HumanSignIn, error) {
 	email, err := NormalizeEmail(c.Email)
 	if err != nil {
