@@ -36,29 +36,45 @@ func Capabilities(c *core.Core) []string {
 	return caps
 }
 
-const openidConfigurationPath = "/.well-known/openid-configuration"
+const (
+	openidConfigurationPath = "/.well-known/openid-configuration"
+	metadataPath            = "/.well-known/oauth-authorization-server"
+)
 
 // WellKnown answers GET /.well-known/agentbus2.
 func (a *api) WellKnown(context.Context, gen.WellKnownRequestObject) (gen.WellKnownResponseObject, error) {
 	return gen.WellKnown200JSONResponse{Discover: "/v1/discover"}, nil
 }
 
-// OpenidConfiguration answers GET /.well-known/openid-configuration
-// (Decisions 55, 70, 84, 91). The issuer is the configured one when set
-// (Decision (Eric, 2026-10-21), item 3), never derived from the request Host
-// then; without an issuer it is the request's base URL.
-func (a *api) OpenidConfiguration(ctx context.Context, _ gen.OpenidConfigurationRequestObject) (gen.OpenidConfigurationResponseObject, error) {
+// metadata is the RFC 8414 document. The issuer is the configured one when
+// set (Decision (Eric, 2026-10-21), item 3), never derived from the request
+// Host then; without an issuer it is the request's base URL.
+func (a *api) metadata(ctx context.Context) gen.AuthorizationServerMetadata {
 	issuer := baseURLFrom(ctx)
 	if a.opts.Issuer != nil {
 		issuer = a.opts.Issuer.URL()
 	}
-	return gen.OpenidConfiguration200JSONResponse{
+	return gen.AuthorizationServerMetadata{
 		Issuer:                            issuer,
 		TokenEndpoint:                     issuer + "/v1/auth/token",
 		JwksUri:                           issuer + "/v1/auth/jwks",
+		ResponseTypesSupported:            []string{},
+		GrantTypesSupported:               []string{"client_credentials"},
 		TokenEndpointAuthMethodsSupported: []string{"private_key_jwt"},
 		TokenEndpointAuthSigningAlgValuesSupported: []string{"EdDSA", "ES256"},
-	}, nil
+	}
+}
+
+// AuthorizationServerMetadata answers GET /.well-known/oauth-authorization-server
+// (RFC 8414; Decisions 55, 70, 84, 91).
+func (a *api) AuthorizationServerMetadata(ctx context.Context, _ gen.AuthorizationServerMetadataRequestObject) (gen.AuthorizationServerMetadataResponseObject, error) {
+	return gen.AuthorizationServerMetadata200JSONResponse(a.metadata(ctx)), nil
+}
+
+// OpenidConfiguration answers GET /.well-known/openid-configuration with the
+// same document, for clients that predate the RFC 8414 path.
+func (a *api) OpenidConfiguration(ctx context.Context, _ gen.OpenidConfigurationRequestObject) (gen.OpenidConfigurationResponseObject, error) {
+	return gen.OpenidConfiguration200JSONResponse(a.metadata(ctx)), nil
 }
 
 // Discover answers GET /v1/discover, computed from the embedded document
@@ -69,6 +85,7 @@ func (a *api) Discover(ctx context.Context, _ gen.DiscoverRequestObject) (gen.Di
 		base = a.opts.Issuer.URL()
 	}
 	oidcURL := base + openidConfigurationPath
+	asURL := base + metadataPath
 	schemes := Spec().Components.SecuritySchemes
 	names := make([]string, 0, len(schemes))
 	for n := range schemes {
@@ -87,10 +104,6 @@ func (a *api) Discover(ctx context.Context, _ gen.DiscoverRequestObject) (gen.Di
 			bf := s.BearerFormat
 			m.BearerFormat = &bf
 		}
-		if s.Type == "openIdConnect" {
-			u := oidcURL
-			m.OpenidConfiguration = &u
-		}
 		methods = append(methods, m)
 	}
 	issuers := make([]string, 0, len(a.opts.External))
@@ -102,6 +115,7 @@ func (a *api) Discover(ctx context.Context, _ gen.DiscoverRequestObject) (gen.Di
 	return gen.Discover200JSONResponse{
 		ApiVersions:         []string{"v1"},
 		AuthMethods:         methods,
+		AuthorizationServer: &asURL,
 		Capabilities:        Capabilities(a.core),
 		Issuers:             issuers,
 		OpenidConfiguration: &oidcURL,

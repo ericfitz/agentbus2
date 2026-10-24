@@ -110,7 +110,7 @@ func (w *replicaWho) assertionFor(t *testing.T) string {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := assertion.Sign(assertion.Input{Identity: w.name, TokenEndpoint: replicaIssuer + "/v1/auth/token", Key: w.key, KID: kid, Now: time.Now()})
+	raw, err := assertion.Sign(assertion.Input{Identity: w.name, Audience: replicaIssuer, Key: w.key, KID: kid, Now: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}

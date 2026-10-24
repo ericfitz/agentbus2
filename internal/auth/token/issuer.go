@@ -105,7 +105,7 @@ func NewIssuer(issuerURL string, key crypto.Signer, lifetime time.Duration, now 
 		ja = jose.ES256
 	}
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: ja, Key: cryptosigner.Opaque(key)},
-		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kid))
+		(&jose.SignerOptions{}).WithType("at+jwt").WithHeader("kid", kid))
 	if err != nil {
 		return nil, fmt.Errorf("token: signer: %w", err)
 	}
@@ -121,8 +121,12 @@ func (i *Issuer) KID() string { return i.kid }
 // Algorithm is the signing algorithm.
 func (i *Issuer) Algorithm() keys.Algorithm { return i.alg }
 
-// TokenEndpoint is the audience of client assertions.
+// TokenEndpoint is the token endpoint URL, which a client assertion may still
+// name as its audience (RFC 7523bis prefers the issuer URL).
 func (i *Issuer) TokenEndpoint() string { return i.url + "/v1/auth/token" }
+
+// MetadataURI is where the RFC 8414 authorization server metadata is served.
+func (i *Issuer) MetadataURI() string { return i.url + "/.well-known/oauth-authorization-server" }
 
 // JWKSURI is where the public key is served.
 func (i *Issuer) JWKSURI() string { return i.url + "/v1/auth/jwks" }
@@ -130,26 +134,61 @@ func (i *Issuer) JWKSURI() string { return i.url + "/v1/auth/jwks" }
 // Lifetime is the bearer lifetime.
 func (i *Issuer) Lifetime() time.Duration { return i.lifetime }
 
-// Mint issues a bearer for identity: iss = aud = URL, sub = identity.
-func (i *Issuer) Mint(identity string) (string, time.Time, error) {
-	if identity == "" {
+// Token kinds carried in the KindClaim claim.
+const (
+	KindAgent = "agent"
+	KindHuman = "human"
+)
+
+// KindClaim is the private claim naming the kind of the bearer's identity.
+const KindClaim = "agentbus2_kind"
+
+// MintInput is what Mint needs. Lifetime 0 means the issuer's lifetime;
+// ClientID "" means Identity.
+type MintInput struct {
+	Identity, Kind, ClientID string
+	Lifetime                 time.Duration
+}
+
+// Mint issues an RFC 9068 access token: typ at+jwt, iss = aud = URL,
+// sub = identity, client_id, jti, iat, exp and the agentbus2_kind claim.
+func (i *Issuer) Mint(in MintInput) (string, time.Time, error) {
+	if in.Identity == "" {
 		return "", time.Time{}, errors.New("token: identity is required")
+	}
+	if in.Kind != KindAgent && in.Kind != KindHuman {
+		return "", time.Time{}, fmt.Errorf("token: unknown kind %q", in.Kind)
+	}
+	if in.Lifetime < 0 {
+		return "", time.Time{}, errors.New("token: lifetime must not be negative")
+	}
+	life := in.Lifetime
+	if life == 0 {
+		life = i.lifetime
+	}
+	clientID := in.ClientID
+	if clientID == "" {
+		clientID = in.Identity
 	}
 	var rnd [16]byte
 	if _, err := rand.Read(rnd[:]); err != nil {
 		return "", time.Time{}, fmt.Errorf("token: jti: %w", err)
 	}
 	now := i.now()
-	exp := now.Add(i.lifetime)
+	exp := now.Add(life)
 	c := jwt.Claims{
 		Issuer:   i.url,
-		Subject:  identity,
+		Subject:  in.Identity,
 		Audience: jwt.Audience{i.url},
 		ID:       base64.RawURLEncoding.EncodeToString(rnd[:]),
 		IssuedAt: jwt.NewNumericDate(now),
 		Expiry:   jwt.NewNumericDate(exp),
 	}
-	raw, err := jwt.Signed(i.signer).Claims(c).Serialize()
+	extra := struct {
+		ClientID string `json:"client_id"`
+		Kind     string `json:"agentbus2_kind"`
+	}{clientID, in.Kind}
+	raw, err := jwt.Signed(i.signer).Claims(c).Claims(extra).Serialize()
 	if err != nil {
 		return "", time.Time{}, fmt.Errorf("token: sign: %w", err)
 	}
@@ -171,6 +210,9 @@ func (i *Issuer) Verify(raw string, now time.Time) (string, error) {
 	if tok.Headers[0].KeyID != i.kid {
 		return "", ErrUnknownKey
 	}
+	if !isAccessTokenType(tok.Headers[0]) {
+		return "", invalid("typ must be at+jwt")
+	}
 	var c jwt.Claims
 	if err := tok.Claims(i.key.Public(), &c); err != nil {
 		return "", invalidCause("signature", err)
@@ -185,6 +227,14 @@ func (i *Issuer) Verify(raw string, now time.Time) (string, error) {
 		return "", invalid("sub is required")
 	}
 	return c.Subject, nil
+}
+
+// isAccessTokenType reports whether the header's typ is at+jwt or
+// application/at+jwt, compared case-insensitively (RFC 9068 section 2.1).
+func isAccessTokenType(h jose.Header) bool {
+	typ, _ := h.ExtraHeaders[jose.HeaderType].(string)
+	typ = strings.ToLower(typ)
+	return typ == "at+jwt" || typ == "application/at+jwt"
 }
 
 // JWKS is the public key set served at JWKSURI.

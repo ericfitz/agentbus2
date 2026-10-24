@@ -70,7 +70,7 @@ func mintBearer(ctx context.Context, c *gen.ClientWithResponses, issuer *token.I
 	if err != nil {
 		return "", err
 	}
-	raw, err := assertion.Sign(assertion.Input{Identity: name, TokenEndpoint: issuer.TokenEndpoint(), Key: key, KID: kid, Now: time.Now()})
+	raw, err := assertion.Sign(assertion.Input{Identity: name, Audience: issuer.URL(), Key: key, KID: kid, Now: time.Now()})
 	if err != nil {
 		return "", err
 	}
@@ -271,7 +271,7 @@ func TestAuthEndToEnd(t *testing.T) {
 				t.Fatal(err)
 			}
 			sg, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.EdDSA, Key: priv},
-				(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", serverKID))
+				(&jose.SignerOptions{}).WithType("at+jwt").WithHeader("kid", serverKID))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -420,7 +420,7 @@ func TestAuthEndToEnd(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			expired, _, err := past.Mint("root")
+			expired, _, err := past.Mint(token.MintInput{Identity: "root", Kind: token.KindAgent})
 			if err != nil {
 				t.Fatal(err)
 			}

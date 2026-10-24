@@ -334,11 +334,21 @@ type AccessToken struct {
 
 // AuthMethod defines model for AuthMethod.
 type AuthMethod struct {
-	BearerFormat        *string `json:"bearer_format,omitempty"`
-	Name                string  `json:"name"`
-	OpenidConfiguration *string `json:"openid_configuration,omitempty"`
-	Scheme              *string `json:"scheme,omitempty"`
-	Type                string  `json:"type"`
+	BearerFormat *string `json:"bearer_format,omitempty"`
+	Name         string  `json:"name"`
+	Scheme       *string `json:"scheme,omitempty"`
+	Type         string  `json:"type"`
+}
+
+// AuthorizationServerMetadata defines model for AuthorizationServerMetadata.
+type AuthorizationServerMetadata struct {
+	GrantTypesSupported                        []string `json:"grant_types_supported"`
+	Issuer                                     string   `json:"issuer"`
+	JwksUri                                    string   `json:"jwks_uri"`
+	ResponseTypesSupported                     []string `json:"response_types_supported"`
+	TokenEndpoint                              string   `json:"token_endpoint"`
+	TokenEndpointAuthMethodsSupported          []string `json:"token_endpoint_auth_methods_supported"`
+	TokenEndpointAuthSigningAlgValuesSupported []string `json:"token_endpoint_auth_signing_alg_values_supported"`
 }
 
 // Channel defines model for Channel.
@@ -389,12 +399,17 @@ type CredentialReset struct {
 
 // Discovery defines model for Discovery.
 type Discovery struct {
-	ApiVersions         []string     `json:"api_versions"`
-	AuthMethods         []AuthMethod `json:"auth_methods"`
-	Capabilities        []string     `json:"capabilities"`
-	Issuers             []string     `json:"issuers"`
-	OpenidConfiguration *string      `json:"openid_configuration,omitempty"`
-	ServerVersion       string       `json:"server_version"`
+	ApiVersions []string     `json:"api_versions"`
+	AuthMethods []AuthMethod `json:"auth_methods"`
+
+	// AuthorizationServer URL of the RFC 8414 authorization server metadata.
+	AuthorizationServer *string  `json:"authorization_server,omitempty"`
+	Capabilities        []string `json:"capabilities"`
+	Issuers             []string `json:"issuers"`
+
+	// OpenidConfiguration URL of the same document under /.well-known/openid-configuration, kept for existing clients.
+	OpenidConfiguration *string `json:"openid_configuration,omitempty"`
+	ServerVersion       string  `json:"server_version"`
 }
 
 // EditMemoryRequest Every field is optional and an omitted field keeps the live revision's value; a present empty subject, type, metadata or tags clears it. Content cannot be cleared (an empty content is a validation error). A request with no field is a validation error.
@@ -483,15 +498,6 @@ type Notice struct {
 type OfferedCursor struct {
 	Channel string `json:"channel"`
 	Seq     int64  `json:"seq"`
-}
-
-// OpenIDConfiguration defines model for OpenIDConfiguration.
-type OpenIDConfiguration struct {
-	Issuer                                     string   `json:"issuer"`
-	JwksUri                                    string   `json:"jwks_uri"`
-	TokenEndpoint                              string   `json:"token_endpoint"`
-	TokenEndpointAuthMethodsSupported          []string `json:"token_endpoint_auth_methods_supported"`
-	TokenEndpointAuthSigningAlgValuesSupported []string `json:"token_endpoint_auth_signing_alg_values_supported"`
 }
 
 // OpenSessionRequest defines model for OpenSessionRequest.
@@ -1064,6 +1070,9 @@ type ClientInterface interface {
 	// WellKnown performs a GET /.well-known/agentbus2 (the `WellKnown` operationId) request.
 	WellKnown(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// AuthorizationServerMetadata performs a GET /.well-known/oauth-authorization-server (the `AuthorizationServerMetadata` operationId) request.
+	AuthorizationServerMetadata(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// OpenidConfiguration performs a GET /.well-known/openid-configuration (the `OpenidConfiguration` operationId) request.
 	OpenidConfiguration(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1275,6 +1284,19 @@ type ClientInterface interface {
 // WellKnown performs a GET /.well-known/agentbus2 (the `WellKnown` operationId) request.
 func (c *Client) WellKnown(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewWellKnownRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// AuthorizationServerMetadata performs a GET /.well-known/oauth-authorization-server (the `AuthorizationServerMetadata` operationId) request.
+func (c *Client) AuthorizationServerMetadata(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAuthorizationServerMetadataRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -2052,6 +2074,33 @@ func NewWellKnownRequest(server string) (*http.Request, error) {
 	}
 
 	operationPath := fmt.Sprintf("/.well-known/agentbus2")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewAuthorizationServerMetadataRequest constructs an http.Request for the AuthorizationServerMetadata method
+func NewAuthorizationServerMetadataRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/.well-known/oauth-authorization-server")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -4208,6 +4257,11 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	WellKnownWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*WellKnownResponse, error)
 
+	// AuthorizationServerMetadataWithResponse performs a GET /.well-known/oauth-authorization-server (the `AuthorizationServerMetadata` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	AuthorizationServerMetadataWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AuthorizationServerMetadataResponse, error)
+
 	// OpenidConfigurationWithResponse performs a GET /.well-known/openid-configuration (the `OpenidConfiguration` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -4544,17 +4598,65 @@ func (r WellKnownResponse) ContentType() string {
 	return ""
 }
 
-type OpenidConfigurationResponse struct {
+type AuthorizationServerMetadataResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
-	JSON200 *OpenIDConfiguration
+	JSON200 *AuthorizationServerMetadata
 	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
 	ApplicationproblemJSONDefault *Problem
 }
 
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
-func (r OpenidConfigurationResponse) GetJSON200() *OpenIDConfiguration {
+func (r AuthorizationServerMetadataResponse) GetJSON200() *AuthorizationServerMetadata {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r AuthorizationServerMetadataResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AuthorizationServerMetadataResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AuthorizationServerMetadataResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AuthorizationServerMetadataResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AuthorizationServerMetadataResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type OpenidConfigurationResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AuthorizationServerMetadata
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r OpenidConfigurationResponse) GetJSON200() *AuthorizationServerMetadata {
 	return r.JSON200
 }
 
@@ -6412,6 +6514,17 @@ func (c *ClientWithResponses) WellKnownWithResponse(ctx context.Context, reqEdit
 	return ParseWellKnownResponse(rsp)
 }
 
+// AuthorizationServerMetadataWithResponse performs a GET /.well-known/oauth-authorization-server (the `AuthorizationServerMetadata` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) AuthorizationServerMetadataWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AuthorizationServerMetadataResponse, error) {
+	rsp, err := c.AuthorizationServerMetadata(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAuthorizationServerMetadataResponse(rsp)
+}
+
 // OpenidConfigurationWithResponse performs a GET /.well-known/openid-configuration (the `OpenidConfiguration` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -7062,6 +7175,39 @@ func ParseWellKnownResponse(rsp *http.Response) (*WellKnownResponse, error) {
 	return response, nil
 }
 
+// ParseAuthorizationServerMetadataResponse parses an HTTP response from a AuthorizationServerMetadataWithResponse call
+func ParseAuthorizationServerMetadataResponse(rsp *http.Response) (*AuthorizationServerMetadataResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AuthorizationServerMetadataResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AuthorizationServerMetadata
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseOpenidConfigurationResponse parses an HTTP response from a OpenidConfigurationWithResponse call
 func ParseOpenidConfigurationResponse(rsp *http.Response) (*OpenidConfigurationResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -7077,7 +7223,7 @@ func ParseOpenidConfigurationResponse(rsp *http.Response) (*OpenidConfigurationR
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest OpenIDConfiguration
+		var dest AuthorizationServerMetadata
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -8358,6 +8504,9 @@ type ServerInterface interface {
 	// (GET /.well-known/agentbus2)
 	WellKnown(w http.ResponseWriter, r *http.Request)
 
+	// (GET /.well-known/oauth-authorization-server)
+	AuthorizationServerMetadata(w http.ResponseWriter, r *http.Request)
+
 	// (GET /.well-known/openid-configuration)
 	OpenidConfiguration(w http.ResponseWriter, r *http.Request)
 
@@ -8493,6 +8642,20 @@ func (siw *ServerInterfaceWrapper) WellKnown(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.WellKnown(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// AuthorizationServerMetadata operation middleware
+func (siw *ServerInterfaceWrapper) AuthorizationServerMetadata(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AuthorizationServerMetadata(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -10234,6 +10397,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	}
 
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/agentbus2", wrapper.WellKnown)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/oauth-authorization-server", wrapper.AuthorizationServerMetadata)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/openid-configuration", wrapper.OpenidConfiguration)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/discover", wrapper.Discover)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions", wrapper.OpenSession)
@@ -10318,6 +10482,44 @@ func (response WellKnowndefaultApplicationProblemPlusJSONResponse) VisitWellKnow
 	return err
 }
 
+type AuthorizationServerMetadataRequestObject struct {
+}
+
+type AuthorizationServerMetadataResponseObject interface {
+	VisitAuthorizationServerMetadataResponse(w http.ResponseWriter) error
+}
+
+type AuthorizationServerMetadata200JSONResponse AuthorizationServerMetadata
+
+func (response AuthorizationServerMetadata200JSONResponse) VisitAuthorizationServerMetadataResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AuthorizationServerMetadatadefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AuthorizationServerMetadatadefaultApplicationProblemPlusJSONResponse) VisitAuthorizationServerMetadataResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type OpenidConfigurationRequestObject struct {
 }
 
@@ -10325,7 +10527,7 @@ type OpenidConfigurationResponseObject interface {
 	VisitOpenidConfigurationResponse(w http.ResponseWriter) error
 }
 
-type OpenidConfiguration200JSONResponse OpenIDConfiguration
+type OpenidConfiguration200JSONResponse AuthorizationServerMetadata
 
 func (response OpenidConfiguration200JSONResponse) VisitOpenidConfigurationResponse(w http.ResponseWriter) error {
 
@@ -11868,6 +12070,9 @@ type StrictServerInterface interface {
 	// (GET /.well-known/agentbus2)
 	WellKnown(ctx context.Context, request WellKnownRequestObject) (WellKnownResponseObject, error)
 
+	// (GET /.well-known/oauth-authorization-server)
+	AuthorizationServerMetadata(ctx context.Context, request AuthorizationServerMetadataRequestObject) (AuthorizationServerMetadataResponseObject, error)
+
 	// (GET /.well-known/openid-configuration)
 	OpenidConfiguration(ctx context.Context, request OpenidConfigurationRequestObject) (OpenidConfigurationResponseObject, error)
 
@@ -12045,6 +12250,30 @@ func (sh *strictHandler) WellKnown(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(WellKnownResponseObject); ok {
 		if err := validResponse.VisitWellKnownResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AuthorizationServerMetadata operation middleware
+func (sh *strictHandler) AuthorizationServerMetadata(w http.ResponseWriter, r *http.Request) {
+	var request AuthorizationServerMetadataRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AuthorizationServerMetadata(ctx, request.(AuthorizationServerMetadataRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AuthorizationServerMetadata")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AuthorizationServerMetadataResponseObject); ok {
+		if err := validResponse.VisitAuthorizationServerMetadataResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

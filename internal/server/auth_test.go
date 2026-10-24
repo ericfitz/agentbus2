@@ -108,7 +108,7 @@ func readBody(t *testing.T, resp *http.Response) string {
 func (e *env) assertionFor(name string, key crypto.Signer, aud string, life time.Duration) string {
 	e.t.Helper()
 	a, err := assertion.Sign(assertion.Input{
-		Identity: name, TokenEndpoint: aud, Key: key, KID: kidOf(e.t, key), Now: e.clock.Now(), Lifetime: life,
+		Identity: name, Audience: aud, Key: key, KID: kidOf(e.t, key), Now: e.clock.Now(), Lifetime: life,
 	})
 	if err != nil {
 		e.t.Fatal(err)
@@ -243,10 +243,10 @@ func TestTokenRefusesForeignKeyAndReplay(t *testing.T) {
 	pat, kim := genKey(t, keys.EdDSA), genKey(t, keys.EdDSA)
 	e.mustRegister("pat", pat)
 	e.mustRegister("kim", kim)
-	const aud = "http://inproc/v1/auth/token"
+	const aud = "http://inproc"
 
 	// kim's key signing as pat, naming kim's kid.
-	foreign, err := assertion.Sign(assertion.Input{Identity: "pat", TokenEndpoint: aud, Key: kim, KID: kidOf(t, kim), Now: e.clock.Now()})
+	foreign, err := assertion.Sign(assertion.Input{Identity: "pat", Audience: aud, Key: kim, KID: kidOf(t, kim), Now: e.clock.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -259,16 +259,16 @@ func TestTokenRefusesForeignKeyAndReplay(t *testing.T) {
 	}
 	wantAuthProblem(t, e.exchange(a, ""), 401, "unauthenticated", "assertion replayed")
 
-	// Audience is the token endpoint, not the issuer.
-	wantAuthProblem(t, e.exchange(e.assertionFor("pat", pat, "http://inproc", 0), ""), 401, "unauthenticated", "audience")
+	// Any audience but the issuer and the token endpoint is refused.
+	wantAuthProblem(t, e.exchange(e.assertionFor("pat", pat, "http://evil.example", 0), ""), 401, "unauthenticated", "audience")
 	// A signature by the right identity's key but a wrong kid.
-	wrongKID, err := assertion.Sign(assertion.Input{Identity: "pat", TokenEndpoint: aud, Key: pat, KID: "nope", Now: e.clock.Now()})
+	wrongKID, err := assertion.Sign(assertion.Input{Identity: "pat", Audience: aud, Key: pat, KID: "nope", Now: e.clock.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantAuthProblem(t, e.exchange(wrongKID, ""), 401, "unauthenticated", "unknown identity or key")
 	// Expired by more than the leeway.
-	stale, err := assertion.Sign(assertion.Input{Identity: "pat", TokenEndpoint: aud, Key: pat, KID: kidOf(t, pat), Now: e.clock.Now().Add(-10 * time.Minute)})
+	stale, err := assertion.Sign(assertion.Input{Identity: "pat", Audience: aud, Key: pat, KID: kidOf(t, pat), Now: e.clock.Now().Add(-10 * time.Minute)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -330,14 +330,14 @@ func TestBearerRefusals(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	forged, _, err := other.Mint("pat")
+	forged, _, err := other.Mint(token.MintInput{Identity: "pat", Kind: token.KindAgent})
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantAuthProblem(t, e.do("GET", "/v1/channels", "", "Bearer "+forged, ""), 401, "unauthenticated", "unknown key")
 
 	// The authenticator attaches; the core judges registration.
-	ghost, _, err := e.issuer.Mint("ghost")
+	ghost, _, err := e.issuer.Mint(token.MintInput{Identity: "ghost", Kind: token.KindAgent})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -426,12 +426,25 @@ func TestRegisterUnboundTokenKeylessAdmin(t *testing.T) {
 	}
 }
 
+// The token endpoint accepts an assertion whose audience is the issuer URL
+// (draft-ietf-oauth-rfc7523bis) or, for shipped clients, the token endpoint.
+func TestTokenAcceptsIssuerOrTokenEndpointAudience(t *testing.T) {
+	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
+	pat := genKey(t, keys.EdDSA)
+	e.mustRegister("pat", pat)
+	for _, aud := range []string{"http://inproc", "http://inproc/v1/auth/token"} {
+		if resp := e.exchange(e.assertionFor("pat", pat, aud, 0), ""); resp.StatusCode != 200 {
+			t.Errorf("aud %q: %d %s", aud, resp.StatusCode, readBody(t, resp))
+		}
+	}
+}
+
 func TestIssuerIsConfiguredNotRequestHost(t *testing.T) {
 	e := newEnv(t, envOptions{issuer: true})
 	req := newReq(t, "GET", "/.well-known/openid-configuration", nil)
 	req.Host = "other.example"
 	resp := e.raw("", req)
-	var c gen.OpenIDConfiguration
+	var c gen.AuthorizationServerMetadata
 	if err := json.Unmarshal([]byte(readBody(t, resp)), &c); err != nil {
 		t.Fatal(err)
 	}
@@ -454,7 +467,7 @@ func TestIssuerIsConfiguredNotRequestHost(t *testing.T) {
 	req = newReq(t, "GET", "/.well-known/openid-configuration", nil)
 	req.Host = "other.example"
 	resp = n.raw("", req)
-	c = gen.OpenIDConfiguration{}
+	c = gen.AuthorizationServerMetadata{}
 	if err := json.Unmarshal([]byte(readBody(t, resp)), &c); err != nil {
 		t.Fatal(err)
 	}
@@ -541,7 +554,7 @@ func TestExternalIssuerBearer(t *testing.T) {
 		t.Fatalf("kim subscriptions %v err %v", subs, err)
 	}
 	// An own-issuer token for a missing identity is never auto-created.
-	ghost, _, err := o.issuer.Mint("ghost")
+	ghost, _, err := o.issuer.Mint(token.MintInput{Identity: "ghost", Kind: token.KindAgent})
 	if err != nil {
 		t.Fatal(err)
 	}

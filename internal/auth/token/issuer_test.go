@@ -2,6 +2,8 @@ package token
 
 import (
 	"crypto"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -49,7 +51,7 @@ func signRaw(t *testing.T, k crypto.Signer, kid string, c jwt.Claims) string {
 		alg = jose.ES256
 	}
 	s, err := jose.NewSigner(jose.SigningKey{Algorithm: alg, Key: k},
-		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kid))
+		(&jose.SignerOptions{}).WithType("at+jwt").WithHeader("kid", kid))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -63,7 +65,7 @@ func signRaw(t *testing.T, k crypto.Signer, kid string, c jwt.Claims) string {
 func TestMintThenVerify(t *testing.T) {
 	for _, alg := range bothAlgs {
 		i := newIssuer(t, alg, issURL, nil)
-		raw, exp, err := i.Mint("alice")
+		raw, exp, err := i.Mint(MintInput{Identity: "alice", Kind: KindAgent})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -87,7 +89,7 @@ func TestMintThenVerify(t *testing.T) {
 		if i.TokenEndpoint() != issURL+"/v1/auth/token" || i.JWKSURI() != issURL+"/v1/auth/jwks" {
 			t.Errorf("%s: endpoints %q %q", alg, i.TokenEndpoint(), i.JWKSURI())
 		}
-		if _, _, err := i.Mint(""); err == nil {
+		if _, _, err := i.Mint(MintInput{Kind: KindAgent}); err == nil {
 			t.Errorf("%s: empty identity minted", alg)
 		}
 	}
@@ -105,7 +107,7 @@ func TestIssuerVerifyRefusesWrongClaims(t *testing.T) {
 	}
 	// Another key, same URL: unknown kid.
 	other := newIssuer(t, keys.EdDSA, issURL, nil)
-	raw, _, _ := other.Mint("alice")
+	raw, _, _ := other.Mint(MintInput{Identity: "alice", Kind: KindAgent})
 	if _, err := i.Verify(raw, t0); !errors.Is(err, ErrUnknownKey) {
 		t.Errorf("other issuer: %v", err)
 	}
@@ -160,7 +162,7 @@ func TestIssuerVerifyRefusesWrongClaims(t *testing.T) {
 	// An assertion presented as a bearer is never accepted.
 	cl, kid := genKey(t, keys.EdDSA), ""
 	kid, _ = keys.KID(cl.Public())
-	asr, err := assertion.Sign(assertion.Input{Identity: "alice", TokenEndpoint: i.TokenEndpoint(), Key: cl, KID: kid, Now: t0})
+	asr, err := assertion.Sign(assertion.Input{Identity: "alice", Audience: i.URL(), Key: cl, KID: kid, Now: t0})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,5 +233,111 @@ func TestNewIssuerRejectsURL(t *testing.T) {
 	}
 	if _, err := NewIssuer(issURL, k, time.Hour, nil); err == nil {
 		t.Error("nil clock accepted")
+	}
+}
+
+// decodeJWT returns the protected header and the claims of a compact JWS
+// without verifying it.
+func decodeJWT(t *testing.T, raw string) (map[string]any, map[string]any) {
+	t.Helper()
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		t.Fatalf("not compact: %q", raw)
+	}
+	dec := func(s string) map[string]any {
+		b, err := base64.RawURLEncoding.DecodeString(s)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var m map[string]any
+		if err := json.Unmarshal(b, &m); err != nil {
+			t.Fatal(err)
+		}
+		return m
+	}
+	return dec(parts[0]), dec(parts[1])
+}
+
+func TestMintAccessTokenProfile(t *testing.T) {
+	i := newIssuer(t, keys.EdDSA, issURL, nil)
+	raw, _, err := i.Mint(MintInput{Identity: "alice", Kind: KindAgent})
+	if err != nil {
+		t.Fatal(err)
+	}
+	h, c := decodeJWT(t, raw)
+	if h["typ"] != "at+jwt" {
+		t.Errorf("typ = %v", h["typ"])
+	}
+	if c["iss"] != issURL || c["sub"] != "alice" || c["client_id"] != "alice" || c[KindClaim] != "agent" {
+		t.Errorf("claims %v", c)
+	}
+	if aud, _ := c["aud"].([]any); len(aud) != 1 || aud[0] != issURL {
+		if s, ok := c["aud"].(string); !ok || s != issURL {
+			t.Errorf("aud = %v", c["aud"])
+		}
+	}
+	if jti, _ := c["jti"].(string); jti == "" {
+		t.Error("no jti")
+	}
+	if c["iat"] == nil || c["exp"] == nil {
+		t.Errorf("iat/exp missing: %v", c)
+	}
+	if KindClaim != "agentbus2_kind" {
+		t.Errorf("KindClaim = %q", KindClaim)
+	}
+	if _, _, err := i.Mint(MintInput{Identity: "x", Kind: "robot"}); err == nil {
+		t.Error("unknown kind minted")
+	}
+	if _, _, err := i.Mint(MintInput{Identity: "x", Kind: ""}); err == nil {
+		t.Error("empty kind minted")
+	}
+	if _, _, err := i.Mint(MintInput{Identity: "x", Kind: KindAgent, Lifetime: -time.Second}); err == nil {
+		t.Error("negative lifetime minted")
+	}
+	raw, _, err = i.Mint(MintInput{Identity: "x", Kind: KindHuman, ClientID: "tui-app", Lifetime: 900 * time.Second})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, c = decodeJWT(t, raw)
+	if c["client_id"] != "tui-app" || c[KindClaim] != "human" || c["exp"].(float64)-c["iat"].(float64) != 900 {
+		t.Errorf("human claims %v", c)
+	}
+}
+
+func TestVerifyRequiresAccessTokenType(t *testing.T) {
+	k := genKey(t, keys.EdDSA)
+	i := newIssuer(t, keys.EdDSA, issURL, k)
+	claims := jwt.Claims{
+		Issuer: issURL, Subject: "alice", Audience: jwt.Audience{issURL}, ID: "j",
+		IssuedAt: jwt.NewNumericDate(t0), Expiry: jwt.NewNumericDate(t0.Add(time.Hour)),
+	}
+	withType := func(typ string) string {
+		s, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.EdDSA, Key: k},
+			(&jose.SignerOptions{}).WithType(jose.ContentType(typ)).WithHeader("kid", i.KID()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		raw, err := jwt.Signed(s).Claims(claims).Serialize()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	for _, typ := range []string{"JWT", "client-authentication+jwt", "id_token"} {
+		if _, err := i.Verify(withType(typ), t0); !errors.Is(err, ErrInvalid) {
+			t.Errorf("typ %q: %v", typ, err)
+		}
+	}
+	for _, typ := range []string{"at+jwt", "application/at+jwt", "AT+JWT"} {
+		if id, err := i.Verify(withType(typ), t0); err != nil || id != "alice" {
+			t.Errorf("typ %q: %q %v", typ, id, err)
+		}
+	}
+}
+
+func TestMetadataURI(t *testing.T) {
+	i := newIssuer(t, keys.EdDSA, issURL, nil)
+	if got := i.MetadataURI(); got != issURL+"/.well-known/oauth-authorization-server" {
+		t.Errorf("MetadataURI = %q", got)
 	}
 }

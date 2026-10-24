@@ -3,6 +3,7 @@ package credential
 import (
 	"context"
 	"crypto"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -15,6 +16,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/go-jose/go-jose/v4/jwt"
 
 	"github.com/ericfitz/agentbus2/internal/auth/assertion"
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
@@ -30,9 +33,12 @@ type fakeServer struct {
 	exchanges   atomic.Int32
 	discoveries atomic.Int32
 	failTokens  atomic.Bool
+	// onAssertion, when set, sees each parsed assertion and its compact form.
+	onAssertion func(assertion.Parsed, string)
 
 	mu         sync.Mutex
 	advertised string
+	issuer     string
 	issuers    []string
 	// accept decides whether a bearer is valid on /v1/echo.
 	accept func(token string, body []byte) bool
@@ -48,12 +54,12 @@ func newFakeServer(t *testing.T) *fakeServer {
 	}
 	f.key = k
 	mux := http.NewServeMux()
-	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
 		f.discoveries.Add(1)
 		f.mu.Lock()
-		ep := f.advertised
+		ep, iss := f.advertised, f.issuer
 		f.mu.Unlock()
-		_ = json.NewEncoder(w).Encode(map[string]string{"issuer": "http://issuer", "token_endpoint": ep, "jwks_uri": "http://issuer/jwks"})
+		_ = json.NewEncoder(w).Encode(map[string]string{"issuer": iss, "token_endpoint": ep, "jwks_uri": "http://issuer/jwks"})
 	})
 	mux.HandleFunc("/v1/auth/token", func(w http.ResponseWriter, r *http.Request) {
 		if f.failTokens.Load() {
@@ -69,10 +75,13 @@ func newFakeServer(t *testing.T) *fakeServer {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return
 		}
+		if f.onAssertion != nil {
+			f.onAssertion(p, r.PostForm.Get("client_assertion"))
+		}
 		f.mu.Lock()
-		ep := f.advertised
+		iss := f.issuer
 		f.mu.Unlock()
-		if err := p.Verify(f.key.Public(), ep, p.Expiry.Add(-time.Minute), 0); err != nil {
+		if err := p.Verify(f.key.Public(), []string{iss}, p.Expiry.Add(-time.Minute), 0); err != nil {
 			http.Error(w, err.Error(), http.StatusUnauthorized)
 			return
 		}
@@ -111,6 +120,7 @@ func newFakeServer(t *testing.T) *fakeServer {
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
 	f.advertised = f.srv.URL + "/v1/auth/token"
+	f.issuer = "http://issuer"
 	return f
 }
 
@@ -247,7 +257,7 @@ func TestSourceProcessPaths(t *testing.T) {
 	})
 	t.Run("assertion", func(t *testing.T) {
 		f := newFakeServer(t)
-		raw, err := assertion.Sign(assertion.Input{Identity: "pat", TokenEndpoint: f.advertised, Key: f.key, KID: mustKID(t, f.key), Now: t0})
+		raw, err := assertion.Sign(assertion.Input{Identity: "pat", Audience: "http://issuer", Key: f.key, KID: mustKID(t, f.key), Now: t0})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -388,7 +398,7 @@ func TestSourceCacheBoundToServer(t *testing.T) {
 	}
 }
 
-func TestSourceProcessInput(t *testing.T) {
+func TestProcessInputAudienceIsIssuer(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("bash fake process")
 	}
@@ -414,7 +424,7 @@ func TestSourceProcessInput(t *testing.T) {
 		if err := json.Unmarshal(b, &in); err != nil {
 			t.Fatalf("stdin %q: %v", b, err)
 		}
-		if in.Version != 1 || in.Identity != "pat" || in.TokenEndpoint != "http://0.0.0.0:1/v1/auth/token" || in.Audience != in.TokenEndpoint {
+		if in.Version != 1 || in.Identity != "pat" || in.TokenEndpoint != "http://0.0.0.0:1/v1/auth/token" || in.Audience != "http://issuer" {
 			t.Errorf("stdin %s", b)
 		}
 		if len(in.JTI) != 22 {
@@ -427,7 +437,30 @@ func TestSourceProcessInput(t *testing.T) {
 	}
 }
 
-// A cached discovery whose token endpoint the server no longer advertises
+// The assertion names the issuer, not the token endpoint, as its audience
+// (draft-ietf-oauth-rfc7523bis), even when the endpoint is advertised elsewhere.
+func TestMintSignsForIssuer(t *testing.T) {
+	f := newFakeServer(t)
+	f.mu.Lock()
+	f.advertised = "http://0.0.0.0:1/v1/auth/token"
+	f.mu.Unlock()
+	var got []string
+	f.onAssertion = func(p assertion.Parsed, raw string) {
+		parts := strings.Split(raw, ".")
+		b, _ := base64.RawURLEncoding.DecodeString(parts[1])
+		var c jwt.Claims
+		_ = json.Unmarshal(b, &c)
+		got = []string(c.Audience)
+	}
+	if _, err := f.source(t, Cache{}, t0).Token(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || got[0] != "http://issuer" {
+		t.Errorf("aud = %v, want [http://issuer]", got)
+	}
+}
+
+// A cached discovery whose issuer the server no longer advertises
 // does not wedge the profile: a failed exchange rediscovers once and retries.
 func TestStaleCachedDiscoveryIsRediscovered(t *testing.T) {
 	f := newFakeServer(t)
@@ -436,20 +469,20 @@ func TestStaleCachedDiscoveryIsRediscovered(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.mu.Lock()
-	f.advertised = f.srv.URL + "/v1/auth/token?moved=1"
+	f.issuer = "http://issuer-moved-1"
 	f.mu.Unlock()
 	later := t0.Add(2 * time.Hour) // the cached bearer has expired
 	if _, err := f.source(t, cache, later).Token(context.Background()); err != nil {
-		t.Fatalf("Token after the endpoint moved: %v", err)
+		t.Fatalf("Token after the issuer moved: %v", err)
 	}
-	if e, ok, _ := cache.Load("pat"); !ok || e.Discovery.TokenEndpoint != f.srv.URL+"/v1/auth/token?moved=1" {
-		t.Fatalf("cached discovery %+v, want the new endpoint", e.Discovery)
+	if e, ok, _ := cache.Load("pat"); !ok || e.Discovery.Issuer != "http://issuer-moved-1" {
+		t.Fatalf("cached discovery %+v, want the new issuer", e.Discovery)
 	}
 	f.mu.Lock()
-	f.advertised = f.srv.URL + "/v1/auth/token?moved=2"
+	f.issuer = "http://issuer-moved-2"
 	f.mu.Unlock()
 	if _, err := f.source(t, cache, later).Refresh(context.Background()); err != nil {
-		t.Fatalf("Refresh after the endpoint moved again: %v", err)
+		t.Fatalf("Refresh after the issuer moved again: %v", err)
 	}
 }
 
@@ -461,7 +494,7 @@ func TestTokenExchangeIsBounded(t *testing.T) {
 	block := make(chan struct{})
 	var srv *httptest.Server
 	mux := http.NewServeMux()
-	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(w).Encode(map[string]string{"issuer": "x", "token_endpoint": srv.URL + "/v1/auth/token"})
 	})
 	mux.HandleFunc("/v1/auth/token", func(w http.ResponseWriter, r *http.Request) {

@@ -24,7 +24,7 @@ func procArgv(t *testing.T, mode string) []string {
 }
 
 func in() ProcessInput {
-	return ProcessInput{Identity: "pat", TokenEndpoint: "http://h/v1/auth/token", Audience: "http://h/v1/auth/token", JTI: "AAAAAAAAAAAAAAAAAAAAAA"}
+	return ProcessInput{Identity: "pat", TokenEndpoint: "http://h/v1/auth/token", Audience: "http://h", JTI: "AAAAAAAAAAAAAAAAAAAAAA"}
 }
 
 func TestProcessInputShape(t *testing.T) {
@@ -41,7 +41,7 @@ func TestProcessInputShape(t *testing.T) {
 	if err := json.Unmarshal(b, &m); err != nil {
 		t.Fatal(err)
 	}
-	if len(m) != 5 || m["version"] != float64(1) || m["identity"] != "pat" || m["token_endpoint"] != "http://h/v1/auth/token" || m["audience"] != "http://h/v1/auth/token" {
+	if len(m) != 5 || m["version"] != float64(1) || m["identity"] != "pat" || m["token_endpoint"] != "http://h/v1/auth/token" || m["audience"] != "http://h" {
 		t.Errorf("stdin %s", b)
 	}
 	if jti, _ := m["jti"].(string); len(jti) != 22 {

@@ -202,7 +202,7 @@ func mintToken(t *testing.T, base, issuer string, hc *http.Client, name string, 
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := assertion.Sign(assertion.Input{Identity: name, TokenEndpoint: issuer + "/v1/auth/token", Key: k, KID: kid, Now: time.Now()})
+	a, err := assertion.Sign(assertion.Input{Identity: name, Audience: issuer, Key: k, KID: kid, Now: time.Now()})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +349,7 @@ func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 	doc := server.Spec()
 	subst := strings.NewReplacer("{channel}", "dev", "{session}", "s", "{id}", "1", "{patterns}", "deploy", "{identity}", "pat")
 	wantOpen := map[string]int{
-		"token": 400, "register": 400, "jwks": 200, "discover": 200, "wellKnown": 200, "openidConfiguration": 200,
+		"token": 400, "register": 400, "jwks": 200, "discover": 200, "wellKnown": 200, "openidConfiguration": 200, "authorizationServerMetadata": 200,
 	}
 	protected, open := 0, 0
 	for path, item := range doc.Paths.Map() {
@@ -406,8 +406,8 @@ func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 			}
 		}
 	}
-	if protected != 35 || open != 6 || protected+open != 41 {
-		t.Fatalf("operations: %d protected, %d open; want 35 and 6", protected, open)
+	if protected != 35 || open != 7 || protected+open != 42 {
+		t.Fatalf("operations: %d protected, %d open; want 35 and 7", protected, open)
 	}
 }
 

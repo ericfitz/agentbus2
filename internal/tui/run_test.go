@@ -208,7 +208,7 @@ func TestBothModes(t *testing.T) {
 			srv.Config.Handler = h
 			srv.Start()
 			t.Cleanup(srv.Close)
-			tok, _, err := iss.Mint("pat")
+			tok, _, err := iss.Mint(token.MintInput{Identity: "pat", Kind: token.KindAgent})
 			if err != nil {
 				t.Fatal(err)
 			}

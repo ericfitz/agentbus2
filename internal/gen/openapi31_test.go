@@ -36,16 +36,13 @@ func TestDocumentIs31AndValidates(t *testing.T) {
 		t.Fatalf("Validate: %v", err)
 	}
 	schemes := doc.Components.SecuritySchemes
-	if len(schemes) != 2 {
-		t.Fatalf("security schemes: %d, want 2", len(schemes))
+	if len(schemes) != 1 {
+		t.Fatalf("security schemes: %d, want 1", len(schemes))
 	}
 	if b := schemes["bearerAuth"]; b == nil || b.Value.Type != "http" || b.Value.Scheme != "bearer" {
 		t.Fatalf("bearerAuth: %+v", b)
 	}
-	if o := schemes["oidc"]; o == nil || o.Value.Type != "openIdConnect" || o.Value.OpenIdConnectUrl != "/.well-known/openid-configuration" {
-		t.Fatalf("oidc: %+v", o)
-	}
-	if len(doc.Security) != 2 {
+	if len(doc.Security) != 1 {
 		t.Fatalf("global security: %v", doc.Security)
 	}
 	names := map[string]bool{}
@@ -54,10 +51,10 @@ func TestDocumentIs31AndValidates(t *testing.T) {
 			names[n] = true
 		}
 	}
-	if !names["bearerAuth"] || !names["oidc"] {
+	if !names["bearerAuth"] || len(names) != 1 {
 		t.Fatalf("global security names: %v", names)
 	}
-	for _, p := range []string{"/.well-known/agentbus2", "/.well-known/openid-configuration", "/v1/discover"} {
+	for _, p := range []string{"/.well-known/agentbus2", "/.well-known/oauth-authorization-server", "/.well-known/openid-configuration", "/v1/discover"} {
 		op := doc.Paths.Value(p).Get
 		if op.Security == nil || len(*op.Security) != 0 {
 			t.Fatalf("%s: security = %v, want an empty list", p, op.Security)
@@ -87,47 +84,48 @@ func lowerFirst(s string) string {
 
 func TestOperationTable(t *testing.T) {
 	want := map[string]string{
-		"wellKnown":             "GET /.well-known/agentbus2",
-		"openidConfiguration":   "GET /.well-known/openid-configuration",
-		"discover":              "GET /v1/discover",
-		"openSession":           "POST /v1/sessions",
-		"closeSession":          "DELETE /v1/sessions/{session}",
-		"receive":               "POST /v1/sessions/{session}/receive",
-		"watch":                 "GET /v1/sessions/{session}/watch",
-		"peek":                  "GET /v1/sessions/{session}/peek",
-		"listIdentities":        "GET /v1/identities",
-		"listChannels":          "GET /v1/channels",
-		"createChannel":         "POST /v1/channels",
-		"deleteChannel":         "DELETE /v1/channels/{channel}",
-		"renameChannel":         "PATCH /v1/channels/{channel}",
-		"getACL":                "GET /v1/channels/{channel}/acl",
-		"setACL":                "PUT /v1/channels/{channel}/acl",
-		"subscribe":             "PUT /v1/channels/{channel}/subscription",
-		"unsubscribe":           "DELETE /v1/channels/{channel}/subscription",
-		"listTagSubscriptions":  "GET /v1/tag-subscriptions",
-		"subscribeTags":         "POST /v1/tag-subscriptions",
-		"unsubscribeTags":       "DELETE /v1/tag-subscriptions",
-		"sendMessage":           "POST /v1/channels/{channel}/messages",
-		"history":               "GET /v1/channels/{channel}/messages",
-		"search":                "GET /v1/search",
-		"getMemory":             "GET /v1/memories/{id}",
-		"editMemory":            "POST /v1/memories/{id}/revisions",
-		"listMemoryRevisions":   "GET /v1/memories/{id}/revisions",
-		"deleteMemory":          "DELETE /v1/memories/{id}",
-		"createTask":            "POST /v1/channels/{channel}/tasks",
-		"listTasks":             "GET /v1/channels/{channel}/tasks",
-		"getTask":               "GET /v1/tasks/{id}",
-		"updateTask":            "PATCH /v1/tasks/{id}",
-		"claimTask":             "POST /v1/tasks/{id}/claim",
-		"releaseTask":           "POST /v1/tasks/{id}/release",
-		"adminStatus":           "GET /v1/admin/status",
-		"adminUsage":            "GET /v1/admin/usage",
-		"token":                 "POST /v1/auth/token",
-		"jwks":                  "GET /v1/auth/jwks",
-		"register":              "POST /v1/auth/register",
-		"adminReset":            "POST /v1/admin/reset",
-		"resetCredential":       "POST /v1/admin/identities/{identity}/reset-credential",
-		"createIdentityByEmail": "POST /v1/admin/identities/by-email",
+		"wellKnown":                   "GET /.well-known/agentbus2",
+		"openidConfiguration":         "GET /.well-known/openid-configuration",
+		"discover":                    "GET /v1/discover",
+		"openSession":                 "POST /v1/sessions",
+		"closeSession":                "DELETE /v1/sessions/{session}",
+		"receive":                     "POST /v1/sessions/{session}/receive",
+		"watch":                       "GET /v1/sessions/{session}/watch",
+		"peek":                        "GET /v1/sessions/{session}/peek",
+		"listIdentities":              "GET /v1/identities",
+		"listChannels":                "GET /v1/channels",
+		"createChannel":               "POST /v1/channels",
+		"deleteChannel":               "DELETE /v1/channels/{channel}",
+		"renameChannel":               "PATCH /v1/channels/{channel}",
+		"getACL":                      "GET /v1/channels/{channel}/acl",
+		"setACL":                      "PUT /v1/channels/{channel}/acl",
+		"subscribe":                   "PUT /v1/channels/{channel}/subscription",
+		"unsubscribe":                 "DELETE /v1/channels/{channel}/subscription",
+		"listTagSubscriptions":        "GET /v1/tag-subscriptions",
+		"subscribeTags":               "POST /v1/tag-subscriptions",
+		"unsubscribeTags":             "DELETE /v1/tag-subscriptions",
+		"sendMessage":                 "POST /v1/channels/{channel}/messages",
+		"history":                     "GET /v1/channels/{channel}/messages",
+		"search":                      "GET /v1/search",
+		"getMemory":                   "GET /v1/memories/{id}",
+		"editMemory":                  "POST /v1/memories/{id}/revisions",
+		"listMemoryRevisions":         "GET /v1/memories/{id}/revisions",
+		"deleteMemory":                "DELETE /v1/memories/{id}",
+		"createTask":                  "POST /v1/channels/{channel}/tasks",
+		"listTasks":                   "GET /v1/channels/{channel}/tasks",
+		"getTask":                     "GET /v1/tasks/{id}",
+		"updateTask":                  "PATCH /v1/tasks/{id}",
+		"claimTask":                   "POST /v1/tasks/{id}/claim",
+		"releaseTask":                 "POST /v1/tasks/{id}/release",
+		"adminStatus":                 "GET /v1/admin/status",
+		"adminUsage":                  "GET /v1/admin/usage",
+		"token":                       "POST /v1/auth/token",
+		"jwks":                        "GET /v1/auth/jwks",
+		"register":                    "POST /v1/auth/register",
+		"adminReset":                  "POST /v1/admin/reset",
+		"resetCredential":             "POST /v1/admin/identities/{identity}/reset-credential",
+		"createIdentityByEmail":       "POST /v1/admin/identities/by-email",
+		"authorizationServerMetadata": "GET /.well-known/oauth-authorization-server",
 	}
 	doc := loadDoc(t)
 	got := map[string]string{}
@@ -158,8 +156,8 @@ func TestOperationTable(t *testing.T) {
 			t.Errorf("unexpected operation %s", id)
 		}
 	}
-	if open != 6 || protected != 35 {
-		t.Fatalf("security: %d open, %d protected; want 6 and 35", open, protected)
+	if open != 7 || protected != 35 {
+		t.Fatalf("security: %d open, %d protected; want 7 and 35", open, protected)
 	}
 }
 

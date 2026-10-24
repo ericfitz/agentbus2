@@ -203,8 +203,8 @@ func (s *Source) refresh(ctx context.Context) (string, error) {
 	return s.mint(ctx, nd)
 }
 
-// mint runs the credential_process or signs an assertion for d's token
-// endpoint, exchanges it and caches the result with d.
+// mint runs the credential_process or signs an assertion for d's
+// issuer, exchanges it and caches the result with d.
 func (s *Source) mint(ctx context.Context, d Discovery) (string, error) {
 	signer := s.Signer
 	if signer == nil {
@@ -216,7 +216,7 @@ func (s *Source) mint(ctx context.Context, d Discovery) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		out, err := RunProcess(ctx, s.Process, ProcessInput{Identity: s.Identity, TokenEndpoint: d.TokenEndpoint, Audience: d.TokenEndpoint, JTI: jti})
+		out, err := RunProcess(ctx, s.Process, ProcessInput{Identity: s.Identity, TokenEndpoint: d.TokenEndpoint, Audience: d.Issuer, JTI: jti})
 		if err != nil {
 			return "", err
 		}
@@ -242,7 +242,7 @@ func (s *Source) mint(ctx context.Context, d Discovery) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		raw, err = assertion.Sign(assertion.Input{Identity: s.Identity, TokenEndpoint: d.TokenEndpoint, Key: signer, KID: kid, Now: s.now()})
+		raw, err = assertion.Sign(assertion.Input{Identity: s.Identity, Audience: d.Issuer, Key: signer, KID: kid, Now: s.now()})
 		if err != nil {
 			return "", err
 		}

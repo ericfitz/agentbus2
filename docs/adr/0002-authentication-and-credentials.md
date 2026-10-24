@@ -402,8 +402,9 @@ the choice numbers below are its.
   at once, because its `jti` is single-use; a returned private key is held in
   memory only.
 - **Choice 7 and item 7, the token cache (Decision (Eric, 2026-10-21)).**
-  Discovery reads `<server>/.well-known/openid-configuration` once per
-  process; the assertion `aud` is its `token_endpoint`, and the request goes
+  Discovery reads `<server>/.well-known/oauth-authorization-server` once per
+  process (changed by the federated identity addendum); the assertion `aud`
+  is its `issuer` (formerly its `token_endpoint`), and the request goes
   to the client's base URL, so a server bound to `0.0.0.0`, which advertises
   `http://0.0.0.0:<port>`, is reachable at the address the client dials. The
   bearer is cached on disk at `<data dir>/tokens/<profile>/<identity>.json`
@@ -468,3 +469,88 @@ the choice numbers below are its.
   configure; whichever replica starts first creates it. Encoded in
   `TestReplicasWake/shared-key-and-issuer` and the check that exactly one
   replica prints `generated signing key`.
+
+## Federated identity addendum (2026-10-23)
+
+Spec: `docs/superpowers/specs/2026-10-23-federated-identity-design.md`. This
+section starts in Task 7 (own tokens, client assertions and metadata) and
+later tasks extend it.
+
+### Decisions (Eric, 2026-10-23)
+
+1. **Decision 1 (Eric).** One token type on every API: agentbus2's own
+   bearer. Humans exchange a corporate token for it at the token endpoint
+   (RFC 8693); agents keep `client_credentials` with `private_key_jwt`.
+2. **Decision 2 (Eric).** Align with the OAuth and OIDC RFCs as closely as
+   practical (spec section 8, below).
+3. **Decision 3 (Eric).** Corporate provider: OCI IAM Identity Domains,
+   OIDC; browser sign-in only, no device flow, no headless humans.
+4. **Decision 4 (Eric).** Human identity is the email claim; other binding
+   types may be added later.
+5. **Decision 5 (Eric).** Two built-in reference lists, `users` and
+   `admins`, whose entries match claims (email, group, subject) or name an
+   agentbus2 identity; no directory.
+6. **Decision 6 (Eric).** The gate: a token is issued only to an agent with
+   a registered key or to a human whose claims match `users`.
+7. **Decision 7 (Eric).** Admins come from `admins`.
+8. **Decision 8 (Eric).** ACLs keep naming identities; an admin pre-creates
+   a human by email and the first sign-in binds to it.
+9. **Decision 9 (Eric).** TUI parity: the same corporate path and the same
+   identity as the Slack human, differing only in the session display name.
+10. **Decision 10 (Eric).** Exchange only: direct acceptance of external
+    tokens and the static `subjects` map are removed; a human's first
+    sign-in creates the identity in every registration mode.
+11. **Decision 11 (Eric).** TUI identity by mode: the OS login name in local
+    mode; the exchange's identity in every network mode.
+12. **Decision 12 (Eric).** Admin reset scopes: `data` keeps `users`,
+    `admins` and bindings; `everything` also wipes humans, bindings and
+    `users`, and reduces `admins` to the caller's own entry.
+13. **Decision 13 (Eric, after the plan review).** A `users` miss is
+    `invalid_request` (RFC 8693 section 2.2.2).
+
+### Claude's calls (ratified by Eric, 2026-10-23)
+
+- `response_types_supported` is `[]` in the metadata (RFC 8414 requires the
+  member; there is no authorization endpoint).
+- `/.well-known/openid-configuration` keeps serving the same document for
+  existing clients; agentbus2 does not claim to be an OpenID provider.
+- The server keeps accepting the token endpoint URL as a client assertion
+  `aud` during the transition.
+- `client_id` on an agent token is `sub`; on an exchanged token it is the
+  provider token's `client_id`, else its `azp`, else `sub`.
+- The token endpoint answers 503 `temporarily_unavailable` and 500
+  `server_error` for an unconfigured issuer or an internal failure.
+
+### Standards alignment
+
+- **Item 8.2, authorization server metadata (RFC 8414).** The server
+  serves `/.well-known/oauth-authorization-server` and, as the same
+  document, `/.well-known/openid-configuration`. Members: `issuer`,
+  `token_endpoint`, `jwks_uri`, `response_types_supported: []`,
+  `grant_types_supported: ["client_credentials"]`,
+  `token_endpoint_auth_methods_supported: ["private_key_jwt"]` and
+  `token_endpoint_auth_signing_alg_values_supported: ["EdDSA", "ES256"]`.
+  The metadata gains the token-exchange grant (and the `none` method, the
+  exchange's public client) only in Task 11, when the grant exists. The
+  client discovers from the RFC 8414 path and requires `issuer` and
+  `token_endpoint`; `Discover` (`GET /v1/discover`) adds
+  `authorization_server` and keeps `openid_configuration`.
+- **Item 8.3, client assertion `aud` and `typ`
+  (draft-ietf-oauth-rfc7523bis).** Clients send `aud` = issuer URL and
+  `typ: client-authentication+jwt`. The server accepts `aud` = issuer URL
+  or the token endpoint URL; the token endpoint URL stays an accepted
+  audience until the draft is published and every shipped client sends the
+  issuer. `assertion.Parse` accepts only no `typ`, `JWT` or
+  `client-authentication+jwt` (case-insensitive), so an access token
+  (`at+jwt`) presented as an assertion is malformed.
+- **Item 8.4, access token profile (RFC 9068).** Bearers carry header
+  `typ: at+jwt` and claims `iss`, `exp`, `aud` (the issuer URL), `sub`,
+  `client_id`, `iat`, `jti` and the private `agentbus2_kind` (`agent` or
+  `human`). `Issuer.Verify` requires `typ` `at+jwt` or `application/at+jwt`
+  (case-insensitive). `client_id` is `sub` on agent tokens; Task 11 adds the
+  exchanged-token rule.
+- **Item 8.6, the `openIdConnect` security scheme.** The scheme is removed
+  from `api/openapi.yaml` and from `Discover`'s `auth_methods`
+  (`openid_configuration` is gone from `AuthMethod`); the `bearerAuth`
+  description names the RFC 8414 document. Supersedes the `openIdConnect`
+  scheme of Decision 91 and ADR 0007.

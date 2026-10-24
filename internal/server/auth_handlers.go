@@ -55,7 +55,7 @@ func (a *api) Token(ctx context.Context, req gen.TokenRequestObject) (gen.TokenR
 		return nil, err
 	}
 	now := a.core.Now()
-	if err := p.Verify(pub, iss.TokenEndpoint(), now, token.Leeway); err != nil {
+	if err := p.Verify(pub, []string{iss.URL(), iss.TokenEndpoint()}, now, token.Leeway); err != nil {
 		return nil, core.E(bus.CodeUnauthenticated, "%s", err)
 	}
 	// Verify accepts the assertion until exp plus the leeway inclusive, and
@@ -75,7 +75,7 @@ func (a *api) Token(ctx context.Context, req gen.TokenRequestObject) (gen.TokenR
 	if err != nil {
 		return nil, core.FromStore(err)
 	}
-	raw, _, err := iss.Mint(p.Identity)
+	raw, _, err := iss.Mint(token.MintInput{Identity: p.Identity, Kind: token.KindAgent})
 	if err != nil {
 		return nil, bus.Internal(err)
 	}

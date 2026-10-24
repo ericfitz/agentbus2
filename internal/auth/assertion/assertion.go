@@ -1,6 +1,6 @@
 // Package assertion builds and checks RFC 7523 client assertions: a JWT signed
-// by the identity's own key, with iss = sub = the identity and aud = the token
-// endpoint (Decisions 19 and 70). It ships in the client binaries and imports
+// by the identity's own key, with iss = sub = the identity and aud = the issuer
+// URL (Decisions 19 and 70; draft-ietf-oauth-rfc7523bis). It ships in the client binaries and imports
 // only the standard library, go-jose and internal/auth/keys.
 package assertion
 
@@ -23,6 +23,9 @@ import (
 // Type is the client_assertion_type of RFC 7523 section 2.2.
 const Type = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 
+// JWTType is the typ header an assertion carries (draft-ietf-oauth-rfc7523bis).
+const JWTType = "client-authentication+jwt"
+
 // MaxLifetime bounds an assertion's lifetime (Milestone 5 choice 4).
 const MaxLifetime = 5 * time.Minute
 
@@ -37,11 +40,11 @@ var allowedAlgorithms = []jose.SignatureAlgorithm{jose.EdDSA, jose.ES256}
 
 // Input is what Sign needs.
 type Input struct {
-	Identity, TokenEndpoint string
-	Key                     crypto.Signer
-	KID                     string
-	Now                     time.Time
-	Lifetime                time.Duration // 0: MaxLifetime; above it: error
+	Identity, Audience string
+	Key                crypto.Signer
+	KID                string
+	Now                time.Time
+	Lifetime           time.Duration // 0: MaxLifetime; above it: error
 }
 
 func joseAlg(a keys.Algorithm) jose.SignatureAlgorithm {
@@ -53,8 +56,8 @@ func joseAlg(a keys.Algorithm) jose.SignatureAlgorithm {
 
 // Sign builds a compact assertion.
 func Sign(in Input) (string, error) {
-	if in.Identity == "" || in.TokenEndpoint == "" || in.KID == "" {
-		return "", errors.New("assertion: identity, token endpoint and kid are required")
+	if in.Identity == "" || in.Audience == "" || in.KID == "" {
+		return "", errors.New("assertion: identity, audience and kid are required")
 	}
 	if in.Key == nil {
 		return "", errors.New("assertion: key is required")
@@ -74,7 +77,7 @@ func Sign(in Input) (string, error) {
 	if _, err := rand.Read(rnd[:]); err != nil {
 		return "", fmt.Errorf("assertion: jti: %w", err)
 	}
-	opts := (&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", in.KID)
+	opts := (&jose.SignerOptions{}).WithType(JWTType).WithHeader("kid", in.KID)
 	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: joseAlg(alg), Key: cryptosigner.Opaque(in.Key)}, opts)
 	if err != nil {
 		return "", fmt.Errorf("assertion: signer: %w", err)
@@ -82,7 +85,7 @@ func Sign(in Input) (string, error) {
 	claims := jwt.Claims{
 		Issuer:   in.Identity,
 		Subject:  in.Identity,
-		Audience: jwt.Audience{in.TokenEndpoint},
+		Audience: jwt.Audience{in.Audience},
 		ID:       base64.RawURLEncoding.EncodeToString(rnd[:]),
 		IssuedAt: jwt.NewNumericDate(in.Now),
 		Expiry:   jwt.NewNumericDate(in.Now.Add(life)),
@@ -144,6 +147,11 @@ func Parse(raw string) (Parsed, error) {
 	default:
 		return Parsed{}, malformed("algorithm %q", h.Algorithm)
 	}
+	switch typ, _ := h.ExtraHeaders[jose.HeaderType].(string); strings.ToLower(typ) {
+	case "", "jwt", strings.ToLower(JWTType):
+	default:
+		return Parsed{}, malformed("typ %q", typ)
+	}
 	var c jwt.Claims
 	if err := tok.UnsafeClaimsWithoutVerification(&c); err != nil {
 		return Parsed{}, malformedCause("claims", err)
@@ -177,14 +185,19 @@ func invalidCause(what string, cause error) error {
 	return fmt.Errorf("%w: %s: %w", ErrInvalid, what, cause)
 }
 
-// Verify checks the signature against pub and the claims against the token
-// endpoint and the clock, with the given leeway.
-func (p Parsed) Verify(pub crypto.PublicKey, tokenEndpoint string, now time.Time, leeway time.Duration) error {
+// Verify checks the signature against pub and the claims against the
+// accepted audiences (any one matches) and the clock, with the given leeway.
+func (p Parsed) Verify(pub crypto.PublicKey, audiences []string, now time.Time, leeway time.Duration) error {
 	if p.tok == nil {
 		return invalid("not parsed")
 	}
-	if tokenEndpoint == "" {
-		return invalid("token endpoint is required")
+	if len(audiences) == 0 {
+		return invalid("an accepted audience is required")
+	}
+	for _, a := range audiences {
+		if a == "" {
+			return invalid("an accepted audience is empty")
+		}
 	}
 	alg, err := keys.AlgorithmOf(pub)
 	if err != nil {
@@ -197,7 +210,7 @@ func (p Parsed) Verify(pub crypto.PublicKey, tokenEndpoint string, now time.Time
 	if err := p.tok.Claims(pub, &c); err != nil {
 		return invalidCause("signature", err)
 	}
-	exp := jwt.Expected{Issuer: p.Identity, Subject: p.Identity, AnyAudience: jwt.Audience{tokenEndpoint}, Time: now}
+	exp := jwt.Expected{Issuer: p.Identity, Subject: p.Identity, AnyAudience: jwt.Audience(audiences), Time: now}
 	if err := c.ValidateWithLeeway(exp, leeway); err != nil {
 		return invalidCause("", err)
 	}

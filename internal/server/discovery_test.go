@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"net/http/httptest"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/auth/token"
@@ -35,9 +36,6 @@ func TestDiscoverAgreesWithDocument(t *testing.T) {
 		ref, ok := schemes[m.Name]
 		if !ok || ref.Value.Type != m.Type {
 			t.Errorf("auth method %+v not in the document", m)
-		}
-		if m.Type == "openIdConnect" && (m.OpenidConfiguration == nil || *m.OpenidConfiguration != oidc) {
-			t.Errorf("oidc entry %+v", m)
 		}
 		if m.Type == "http" && (m.Scheme == nil || *m.Scheme != "bearer") {
 			t.Errorf("bearer entry %+v", m)
@@ -78,9 +76,10 @@ func TestCapabilitiesComputed(t *testing.T) {
 	}
 }
 
-func TestOpenIDConfigurationNamesMilestone5Paths(t *testing.T) {
+func TestAuthorizationServerMetadata(t *testing.T) {
 	e := newEnv(t, envOptions{})
-	r, err := e.client("").OpenidConfigurationWithResponse(context.Background())
+	ctx := context.Background()
+	r, err := e.client("").AuthorizationServerMetadataWithResponse(ctx)
 	if err != nil || r.JSON200 == nil {
 		t.Fatalf("%v %v", r, err)
 	}
@@ -89,8 +88,48 @@ func TestOpenIDConfigurationNamesMilestone5Paths(t *testing.T) {
 		t.Errorf("%+v", c)
 	}
 	if !slices.Equal(c.TokenEndpointAuthMethodsSupported, []string{"private_key_jwt"}) ||
-		!slices.Equal(c.TokenEndpointAuthSigningAlgValuesSupported, []string{"EdDSA", "ES256"}) {
+		!slices.Equal(c.TokenEndpointAuthSigningAlgValuesSupported, []string{"EdDSA", "ES256"}) ||
+		!slices.Equal(c.GrantTypesSupported, []string{"client_credentials"}) {
 		t.Errorf("%+v", c)
+	}
+	if c.ResponseTypesSupported == nil || len(c.ResponseTypesSupported) != 0 {
+		t.Errorf("response_types_supported %#v, want []", c.ResponseTypesSupported)
+	}
+	// Both well-known paths return the same document, with response_types_supported present.
+	var bodies [2]string
+	for i, path := range []string{"/.well-known/oauth-authorization-server", "/.well-known/openid-configuration"} {
+		resp := e.do("GET", path, "", "", "")
+		if resp.StatusCode != 200 {
+			t.Fatalf("%s: %d", path, resp.StatusCode)
+		}
+		bodies[i] = readBody(t, resp)
+	}
+	if bodies[0] != bodies[1] {
+		t.Errorf("documents differ:\n%s\n%s", bodies[0], bodies[1])
+	}
+	if !strings.Contains(bodies[0], `"response_types_supported":[]`) {
+		t.Errorf("no empty response_types_supported: %s", bodies[0])
+	}
+}
+
+func TestDiscoverHasNoOpenIDConnectScheme(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	r, err := e.client("").DiscoverWithResponse(context.Background())
+	if err != nil || r.JSON200 == nil {
+		t.Fatalf("%v %v", r, err)
+	}
+	for _, m := range r.JSON200.AuthMethods {
+		if m.Type == "openIdConnect" {
+			t.Errorf("auth method %+v", m)
+		}
+	}
+	if as := r.JSON200.AuthorizationServer; as == nil || !strings.HasSuffix(*as, "/.well-known/oauth-authorization-server") {
+		t.Errorf("authorization_server %v", as)
+	}
+	for name := range Spec().Components.SecuritySchemes {
+		if name == "oidc" {
+			t.Error("oidc security scheme still in the document")
+		}
 	}
 }
 

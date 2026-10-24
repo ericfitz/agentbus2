@@ -306,7 +306,7 @@ func TestVerifierRoutesByIssuer(t *testing.T) {
 	v := Verifier{Own: own, External: []*External{newExternal(s, clk)}, Now: clk.Now}
 	ctx := context.Background()
 
-	raw, _, _ := own.Mint("bob")
+	raw, _, _ := own.Mint(MintInput{Identity: "bob", Kind: KindAgent})
 	id, ext, err := v.Verify(ctx, raw)
 	if err != nil || id != "bob" || ext {
 		t.Errorf("own: %q %v %v", id, ext, err)

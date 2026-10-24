@@ -300,7 +300,7 @@ func TestServerTokenEndpoint401IsNotRetried(t *testing.T) {
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/.well-known/openid-configuration":
+		case "/.well-known/oauth-authorization-server":
 			_ = json.NewEncoder(w).Encode(map[string]string{"issuer": srv.URL, "token_endpoint": srv.URL + "/v1/auth/token", "jwks_uri": srv.URL + "/jwks"})
 		case "/v1/auth/token":
 			tokens.Add(1)

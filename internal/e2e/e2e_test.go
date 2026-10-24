@@ -631,7 +631,7 @@ func TestSection24Sequence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			forged, _, err := iss.Mint("pat")
+			forged, _, err := iss.Mint(token.MintInput{Identity: "pat", Kind: token.KindAgent})
 			if err != nil {
 				t.Fatal(err)
 			}

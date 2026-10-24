@@ -12,7 +12,6 @@ info:
     never null. Every error is application/problem+json.
 security:
   - bearerAuth: []
-  - oidc: []
 tags:
   - name: discovery
   - name: sessions
@@ -37,6 +36,23 @@ paths:
                 $ref: "#/components/schemas/WellKnown"
         default:
           $ref: "#/components/responses/Problem"
+  /.well-known/oauth-authorization-server:
+    get:
+      operationId: authorizationServerMetadata
+      tags: [discovery]
+      security: []
+      responses:
+        "200":
+          description: >-
+            OAuth 2.0 authorization server metadata (RFC 8414). The same
+            document is served at /.well-known/openid-configuration for
+            existing clients.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthorizationServerMetadata"
+        default:
+          $ref: "#/components/responses/Problem"
   /.well-known/openid-configuration:
     get:
       operationId: openidConfiguration
@@ -44,11 +60,13 @@ paths:
       security: []
       responses:
         "200":
-          description: OpenID Connect discovery document (Decision 91).
+          description: >-
+            The same document as /.well-known/oauth-authorization-server,
+            kept for existing clients. The server is not an OpenID Provider.
           content:
             application/json:
               schema:
-                $ref: "#/components/schemas/OpenIDConfiguration"
+                $ref: "#/components/schemas/AuthorizationServerMetadata"
         default:
           $ref: "#/components/responses/Problem"
   /v1/discover:
@@ -856,9 +874,9 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
-    oidc:
-      type: openIdConnect
-      openIdConnectUrl: /.well-known/openid-configuration
+      description: >-
+        An access token (RFC 9068, typ at+jwt) issued by the authorization
+        server described at /.well-known/oauth-authorization-server (RFC 8414).
   parameters:
     SessionParam:
       name: session
@@ -975,8 +993,6 @@ components:
           type: string
         bearer_format:
           type: string
-        openid_configuration:
-          type: string
     Discovery:
       type: object
       required: [api_versions, server_version, capabilities, auth_methods, issuers]
@@ -995,18 +1011,26 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/AuthMethod"
+        authorization_server:
+          type: string
+          description: URL of the RFC 8414 authorization server metadata.
         openid_configuration:
           type: string
+          description: >-
+            URL of the same document under /.well-known/openid-configuration,
+            kept for existing clients.
         issuers:
           type: array
           items:
             type: string
-    OpenIDConfiguration:
+    AuthorizationServerMetadata:
       type: object
       required:
         - issuer
         - token_endpoint
         - jwks_uri
+        - response_types_supported
+        - grant_types_supported
         - token_endpoint_auth_methods_supported
         - token_endpoint_auth_signing_alg_values_supported
       properties:
@@ -1016,6 +1040,14 @@ components:
           type: string
         jwks_uri:
           type: string
+        response_types_supported:
+          type: array
+          items:
+            type: string
+        grant_types_supported:
+          type: array
+          items:
+            type: string
         token_endpoint_auth_methods_supported:
           type: array
           items:

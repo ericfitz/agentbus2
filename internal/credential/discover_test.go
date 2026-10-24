@@ -8,9 +8,9 @@ import (
 	"testing"
 )
 
-func TestDiscoverReadsDocument(t *testing.T) {
+func TestDiscoverReadsRFC8414Path(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/.well-known/openid-configuration" {
+		if r.URL.Path != "/.well-known/oauth-authorization-server" {
 			http.NotFound(w, r)
 			return
 		}
@@ -43,6 +43,7 @@ func TestDiscoverRejects(t *testing.T) {
 		"404":               {http.StatusNotFound, "no"},
 		"500":               {http.StatusInternalServerError, "no"},
 		"no token_endpoint": {http.StatusOK, `{"issuer":"x"}`},
+		"no issuer":         {http.StatusOK, `{"token_endpoint":"http://i/v1/auth/token"}`},
 		"not json":          {http.StatusOK, `<html>`},
 	} {
 		status, body = tc.status, tc.body
@@ -51,8 +52,19 @@ func TestDiscoverRejects(t *testing.T) {
 			t.Errorf("%s: accepted", name)
 			continue
 		}
-		if !strings.Contains(err.Error(), srv.URL+"/.well-known/openid-configuration") {
+		if !strings.Contains(err.Error(), srv.URL+"/.well-known/oauth-authorization-server") {
 			t.Errorf("%s: error does not name the URL: %v", name, err)
 		}
+	}
+}
+
+func TestDiscoverRequiresIssuer(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"token_endpoint":"http://i/v1/auth/token","jwks_uri":"http://i/v1/auth/jwks"}`))
+	}))
+	defer srv.Close()
+	_, err := Discover(context.Background(), nil, srv.URL)
+	if err == nil || !strings.Contains(err.Error(), "no issuer") {
+		t.Fatalf("err = %v, want no issuer", err)
 	}
 }

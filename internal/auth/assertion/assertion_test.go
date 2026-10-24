@@ -6,6 +6,7 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -17,7 +18,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 )
 
-const endpoint = "https://bus.example/v1/auth/token"
+const endpoint = "https://bus.example"
 
 var now = time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
 
@@ -39,7 +40,7 @@ func gen(t *testing.T, alg keys.Algorithm) (crypto.Signer, string) {
 func sign(t *testing.T, alg keys.Algorithm) (string, crypto.Signer, string) {
 	t.Helper()
 	k, kid := gen(t, alg)
-	raw, err := Sign(Input{Identity: "alice", TokenEndpoint: endpoint, Key: k, KID: kid, Now: now})
+	raw, err := Sign(Input{Identity: "alice", Audience: endpoint, Key: k, KID: kid, Now: now})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -92,12 +93,12 @@ func TestSignThenParseAndVerify(t *testing.T) {
 		if !p.Expiry.Equal(now.Add(MaxLifetime)) {
 			t.Errorf("%s: expiry %v", alg, p.Expiry)
 		}
-		if err := p.Verify(k.Public(), endpoint, now, time.Minute); err != nil {
+		if err := p.Verify(k.Public(), []string{endpoint}, now, time.Minute); err != nil {
 			t.Errorf("%s: Verify: %v", alg, err)
 		}
-		// Header carries typ JWT.
+		// Header carries typ client-authentication+jwt.
 		jws, _ := jose.ParseSigned(raw, []jose.SignatureAlgorithm{jose.EdDSA, jose.ES256})
-		if jws.Signatures[0].Header.ExtraHeaders[jose.HeaderType] != "JWT" {
+		if jws.Signatures[0].Header.ExtraHeaders[jose.HeaderType] != JWTType {
 			t.Errorf("%s: typ header missing", alg)
 		}
 	}
@@ -105,8 +106,8 @@ func TestSignThenParseAndVerify(t *testing.T) {
 	a, _, _ := sign(t, keys.EdDSA)
 	pa, _ := Parse(a)
 	k, kid := gen(t, keys.EdDSA)
-	r1, _ := Sign(Input{Identity: "a", TokenEndpoint: endpoint, Key: k, KID: kid, Now: now})
-	r2, _ := Sign(Input{Identity: "a", TokenEndpoint: endpoint, Key: k, KID: kid, Now: now})
+	r1, _ := Sign(Input{Identity: "a", Audience: endpoint, Key: k, KID: kid, Now: now})
+	r2, _ := Sign(Input{Identity: "a", Audience: endpoint, Key: k, KID: kid, Now: now})
 	p1, _ := Parse(r1)
 	p2, _ := Parse(r2)
 	if p1.JTI == p2.JTI || p1.JTI == pa.JTI {
@@ -116,10 +117,10 @@ func TestSignThenParseAndVerify(t *testing.T) {
 
 func TestSignRejectsBadInput(t *testing.T) {
 	k, kid := gen(t, keys.EdDSA)
-	base := Input{Identity: "a", TokenEndpoint: endpoint, Key: k, KID: kid, Now: now}
+	base := Input{Identity: "a", Audience: endpoint, Key: k, KID: kid, Now: now}
 	for name, mut := range map[string]func(*Input){
 		"identity": func(i *Input) { i.Identity = "" },
-		"endpoint": func(i *Input) { i.TokenEndpoint = "" },
+		"endpoint": func(i *Input) { i.Audience = "" },
 		"kid":      func(i *Input) { i.KID = "" },
 		"key":      func(i *Input) { i.Key = nil },
 		"negative": func(i *Input) { i.Lifetime = -time.Second },
@@ -134,7 +135,7 @@ func TestSignRejectsBadInput(t *testing.T) {
 
 func TestSignRejectsLongLifetime(t *testing.T) {
 	k, kid := gen(t, keys.ES256)
-	in := Input{Identity: "a", TokenEndpoint: endpoint, Key: k, KID: kid, Now: now, Lifetime: MaxLifetime + time.Second}
+	in := Input{Identity: "a", Audience: endpoint, Key: k, KID: kid, Now: now, Lifetime: MaxLifetime + time.Second}
 	if _, err := Sign(in); err == nil {
 		t.Fatal("lifetime above MaxLifetime accepted")
 	}
@@ -256,7 +257,7 @@ func TestVerifyRefuses(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s: parse: %v", c.name, err)
 		}
-		err = p.Verify(c.pub, endpoint, now, time.Minute)
+		err = p.Verify(c.pub, []string{endpoint}, now, time.Minute)
 		if !errors.Is(err, ErrInvalid) {
 			t.Errorf("%s: err = %v", c.name, err)
 		}
@@ -276,7 +277,7 @@ func TestVerifyRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	err = pp.Verify(p384.Public(), endpoint, now, time.Minute)
+	err = pp.Verify(p384.Public(), []string{endpoint}, now, time.Minute)
 	found := false
 	for _, l := range leaves(err) {
 		found = found || strings.HasPrefix(l.Error(), "keys: unsupported key type")
@@ -292,16 +293,115 @@ func TestVerifyRefuses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := p.Verify(k.Public(), endpoint, now, time.Minute); !errors.Is(err, ErrInvalid) || !errors.Is(err, jose.ErrCryptoFailure) {
+	if err := p.Verify(k.Public(), []string{endpoint}, now, time.Minute); !errors.Is(err, ErrInvalid) || !errors.Is(err, jose.ErrCryptoFailure) {
 		t.Errorf("tampered: %v", err)
 	}
 	// Control: the same claims verify.
 	p, _ = Parse(mut(func(*jwt.Claims) {}))
-	if err := p.Verify(k.Public(), endpoint, now, time.Minute); err != nil {
+	if err := p.Verify(k.Public(), []string{endpoint}, now, time.Minute); err != nil {
 		t.Errorf("control: %v", err)
 	}
 	// A zero-value Parsed cannot verify.
-	if err := (Parsed{}).Verify(k.Public(), endpoint, now, time.Minute); !errors.Is(err, ErrInvalid) {
+	if err := (Parsed{}).Verify(k.Public(), []string{endpoint}, now, time.Minute); !errors.Is(err, ErrInvalid) {
 		t.Errorf("zero Parsed: %v", err)
 	}
+}
+
+func headerOf(t *testing.T, raw string) map[string]any {
+	t.Helper()
+	b, err := base64.RawURLEncoding.DecodeString(strings.Split(raw, ".")[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	return m
+}
+
+func TestSignSendsIssuerAudienceAndType(t *testing.T) {
+	k, kid := gen(t, keys.EdDSA)
+	raw, err := Sign(Input{Identity: "alice", Audience: "https://bus.example", Key: k, KID: kid, Now: now})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h := headerOf(t, raw); h["typ"] != "client-authentication+jwt" || JWTType != "client-authentication+jwt" {
+		t.Errorf("header %v", h)
+	}
+	parts := strings.Split(raw, ".")
+	b, _ := base64.RawURLEncoding.DecodeString(parts[1])
+	var c jwt.Claims
+	if err := json.Unmarshal(b, &c); err != nil || len(c.Audience) != 1 || c.Audience[0] != "https://bus.example" {
+		t.Errorf("aud %v %v", c.Audience, err)
+	}
+}
+
+func TestVerifyAcceptsIssuerOrTokenEndpoint(t *testing.T) {
+	const iss, ep = "https://bus.example", "https://bus.example/v1/auth/token"
+	k, kid := gen(t, keys.EdDSA)
+	for _, aud := range []string{iss, ep} {
+		raw, err := Sign(Input{Identity: "alice", Audience: aud, Key: k, KID: kid, Now: now})
+		if err != nil {
+			t.Fatal(err)
+		}
+		p, err := Parse(raw)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := p.Verify(k.Public(), []string{iss, ep}, now, time.Minute); err != nil {
+			t.Errorf("aud %q: %v", aud, err)
+		}
+	}
+	raw, _ := Sign(Input{Identity: "alice", Audience: "https://evil.example", Key: k, KID: kid, Now: now})
+	p, _ := Parse(raw)
+	if err := p.Verify(k.Public(), []string{iss, ep}, now, time.Minute); !errors.Is(err, ErrInvalid) || !errors.Is(err, jwt.ErrInvalidAudience) {
+		t.Errorf("other aud: %v", err)
+	}
+	raw, _ = Sign(Input{Identity: "alice", Audience: iss, Key: k, KID: kid, Now: now})
+	p, _ = Parse(raw)
+	for _, auds := range [][]string{nil, {}, {""}} {
+		if err := p.Verify(k.Public(), auds, now, time.Minute); !errors.Is(err, ErrInvalid) {
+			t.Errorf("audiences %q: %v", auds, err)
+		}
+	}
+}
+
+func TestParseRefusesAccessTokenType(t *testing.T) {
+	k, kid := gen(t, keys.EdDSA)
+	if _, err := Parse(customTyped(t, k, kid, "at+jwt")); !errors.Is(err, ErrMalformed) {
+		t.Errorf("at+jwt: %v", err)
+	}
+}
+
+func TestParseRefusesUnknownType(t *testing.T) {
+	k, kid := gen(t, keys.EdDSA)
+	for _, typ := range []string{"foo+jwt", "application/at+jwt", "id_token"} {
+		if _, err := Parse(customTyped(t, k, kid, typ)); !errors.Is(err, ErrMalformed) {
+			t.Errorf("%q: %v", typ, err)
+		}
+	}
+	for _, typ := range []string{"", "JWT", "jwt", "client-authentication+jwt", "CLIENT-AUTHENTICATION+JWT"} {
+		if _, err := Parse(customTyped(t, k, kid, typ)); err != nil {
+			t.Errorf("%q: %v", typ, err)
+		}
+	}
+}
+
+// customTyped signs good claims with the given typ header ("" omits it).
+func customTyped(t *testing.T, k crypto.Signer, kid, typ string) string {
+	t.Helper()
+	opts := (&jose.SignerOptions{}).WithHeader("kid", kid)
+	if typ != "" {
+		opts = opts.WithType(jose.ContentType(typ))
+	}
+	s, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.EdDSA, Key: k}, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, err := jwt.Signed(s).Claims(goodClaims()).Serialize()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
 }
