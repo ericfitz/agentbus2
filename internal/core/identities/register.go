@@ -40,12 +40,15 @@ const errInvalidToken = "enrollment token is invalid"
 // conflict or, for the same key, success; a failed run leaves nothing, since
 // everything is one transaction.
 func (s Service) Register(ctx context.Context, mode Mode, in RegisterInput) (RegisterResult, error) {
+	// An unset or unrecognized mode refuses every register and says why; it
+	// never opens (Decision 21, Eric, 2026-10-23). Only server.New called
+	// directly can reach it: the configuration always resolves a mode.
 	switch mode {
 	case ModeOpen, ModeEnrollment:
-	case ModeClosed:
-		return RegisterResult{}, core.E(bus.CodeForbidden, "registration is closed")
+	case "":
+		return RegisterResult{}, core.E(bus.CodeForbidden, "registration refused: this server has no registration mode configured")
 	default:
-		panic("identities: Register with invalid mode " + string(mode))
+		return RegisterResult{}, core.E(bus.CodeForbidden, "registration refused: registration mode %q is not recognized", string(mode))
 	}
 	if in.Key == nil {
 		return RegisterResult{}, core.E(bus.CodeValidation, "public key is required")
@@ -103,6 +106,17 @@ func (s Service) registerTx(ctx context.Context, tx store.Tx, mode Mode, in Regi
 				return nil
 			}
 		}
+		// (a3) a scoped row is claimed only with the token bound to it, in
+		// every mode (Decision 17): nothing is consumed here.
+		if id.Scope != "" {
+			bound, err := boundToken(ctx, tx, in)
+			if err != nil {
+				return err
+			}
+			if !bound {
+				return core.E(bus.CodeForbidden, "identity %q is scoped; it registers only with the enrollment token bound to it", in.Identity)
+			}
+		}
 		// (a2) a keyless administrator row needs an enrollment token.
 		if id.Admin && len(existing) == 0 && in.EnrollmentToken == "" {
 			return core.E(bus.CodeForbidden, "identity %q requires an enrollment token", in.Identity)
@@ -157,6 +171,23 @@ func (s Service) registerTx(ctx context.Context, tx store.Tx, mode Mode, in Regi
 		}
 	}
 	return nil
+}
+
+// boundToken reports whether the supplied token exists and is bound to the
+// name being registered. It judges the binding only; rule (c) judges expiry
+// and uses, and the token is consumed at (f).
+func boundToken(ctx context.Context, tx store.Tx, in RegisterInput) (bool, error) {
+	if in.EnrollmentToken == "" {
+		return false, nil
+	}
+	tok, err := tx.EnrollmentTokenByHash(ctx, HashToken(in.EnrollmentToken))
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return tok.Identity == in.Identity, nil
 }
 
 // createWithGeneral creates the identity row and subscribes it to general at

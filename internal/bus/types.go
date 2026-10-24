@@ -38,6 +38,7 @@ type Channel struct {
 type ChannelInfo struct {
 	Channel
 	Creator   string
+	Scope     string // "" when unscoped
 	CreatedAt int64
 }
 

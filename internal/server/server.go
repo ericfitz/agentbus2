@@ -32,8 +32,9 @@ type Options struct {
 	Version string        // "": version.Version
 	Logger  *slog.Logger  // nil: discard
 
-	// Registration is the mode the register handler enforces. "" is treated
-	// as closed: registration is never open by omission.
+	// Registration is the mode the register handler enforces. "" or an
+	// unrecognized value refuses every register, with a detail saying so:
+	// registration is never open by omission.
 	Registration identities.Mode
 	// Issuer mints and publishes the server's own bearers. nil: the token
 	// endpoint and JWKS answer 503 unavailable (local mode, Decision 36) and

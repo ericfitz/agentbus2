@@ -58,7 +58,7 @@ got="$(docker inspect --format '{{.Config.User}}' "$IMAGE")"
 echo "step 5: serving container"
 docker run -d --name "$NAME" -p 127.0.0.1::8420 \
   -e AGENTBUS2_SERVER_LISTEN=0.0.0.0:8420 -e AGENTBUS2_SERVER_SQLITE=/data/agentbus2.db \
-  "$IMAGE" -registration closed >/dev/null
+  "$IMAGE" -registration open >/dev/null
 port="$(docker port "$NAME" 8420/tcp | head -n 1 | sed 's/.*://')"
 [ -n "$port" ] || fail "no published port for $NAME"
 body=""
@@ -94,8 +94,8 @@ echo "step 8: startup log"
 logs="$(docker logs "$NAME" 2>&1)"
 case "$logs" in
   # the server prints the resolved listener address ([::]:8420 for 0.0.0.0:8420), so match the port and the mode
-  *':8420 (sqlite, registration closed'*) ;;
-  *) fail "log lacks the listening line with 'registration closed': $logs" ;;
+  *':8420 (sqlite, registration open'*) ;;
+  *) fail "log lacks the listening line with 'registration open': $logs" ;;
 esac
 case "$logs" in *'generated signing key'*) ;; *) fail "log lacks 'generated signing key': $logs" ;; esac
 

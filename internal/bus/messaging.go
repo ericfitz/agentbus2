@@ -3,11 +3,13 @@ package bus
 import "context"
 
 // CreateChannelInput creates a channel. Kind "" means ordinary; ACL nil means
-// the configured default and [] an empty list.
+// the configured default and [] an empty list. Scope "" takes the creator's
+// scope, if any; only an administrator may name one (Slack bridge spec 4.2).
 type CreateChannelInput struct {
 	Name           string
 	Kind           Kind
 	ACL            []ACLEntry
+	Scope          string
 	IdempotencyKey string
 }
 

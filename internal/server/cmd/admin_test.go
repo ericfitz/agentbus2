@@ -9,8 +9,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentbus2/internal/core/scopes"
 	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/store/sqlite"
 )
@@ -423,5 +425,52 @@ func TestAdminUsersAddKnownIssuer(t *testing.T) {
 	code, _, errOut := run("users", "add", "-issuer", "nope", "-group", "pai-users")
 	if code != 1 || !strings.Contains(errOut, "unknown issuer") || !strings.Contains(errOut, "nope") || !strings.Contains(errOut, "configured: corp") {
 		t.Fatalf("unknown issuer: code %d stderr %q, want exit 1 naming corp", code, errOut)
+	}
+}
+
+func TestAdminCreateScopedIdentity(t *testing.T) {
+	e := newAdminEnv(t)
+	// The first host command creates the schema and the admin.
+	if code, _, errOut := e.run("create-identity", "root"); code != 0 {
+		t.Fatalf("create-identity root: %d %s", code, errOut)
+	}
+	if code, _, errOut := e.run("admins", "add", "-identity", "root"); code != 0 {
+		t.Fatalf("admins add: %d %s", code, errOut)
+	}
+	svc, st := e.service()
+	if _, err := (scopes.Service{Core: svc.Core}).Create(context.Background(), "root", bus.CreateScopeInput{Name: "job1"}); err != nil {
+		t.Fatal(err)
+	}
+
+	code, out, errOut := e.run("create-identity", "job1-coder", "-scope", "job1")
+	lines := strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if code != 0 || len(lines) != 3 || lines[0] != "job1-coder created in scope job1" ||
+		!regexp.MustCompile(`^token: abe_\S+$`).MatchString(lines[1]) ||
+		!regexp.MustCompile(`^expires: \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$`).MatchString(lines[2]) {
+		t.Fatalf("scoped create: code %d out %q stderr %q", code, out, errOut)
+	}
+	id := readStore(t, st, func(ctx context.Context, tx store.Tx) (store.Identity, error) { return tx.Identity(ctx, "job1-coder") })
+	if id.Scope != "job1" {
+		t.Fatalf("row scope %q", id.Scope)
+	}
+	first := strings.TrimPrefix(lines[1], "token: ")
+
+	// A second run: "already exists in", a different token.
+	code, out, _ = e.run("create-identity", "-scope", "job1", "job1-coder")
+	lines = strings.Split(strings.TrimRight(out, "\n"), "\n")
+	if code != 0 || len(lines) != 3 || lines[0] != "job1-coder already exists in scope job1" || strings.TrimPrefix(lines[1], "token: ") == first {
+		t.Fatalf("scoped create again: code %d out %q", code, out)
+	}
+
+	// An unknown scope names the scope; nothing is created.
+	code, out, errOut = e.run("create-identity", "x-a", "-scope", "nope")
+	if code != 1 || out != "" || !strings.Contains(errOut, "nope") || !strings.Contains(errOut, "does not exist") {
+		t.Fatalf("unknown scope: code %d out %q stderr %q", code, out, errOut)
+	}
+
+	// Without -scope the output is unchanged.
+	code, out, _ = e.run("create-identity", "pat")
+	if code != 0 || out != "pat created\n" {
+		t.Fatalf("plain create: code %d out %q", code, out)
 	}
 }

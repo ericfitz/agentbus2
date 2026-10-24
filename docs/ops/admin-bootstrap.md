@@ -37,7 +37,7 @@ agentbus2 server admin admins: {"code":"not_registered","message":"identity \"gh
 - `users|admins add|remove|list [-issuer NAME] [-email V | -group V | -subject V | -identity NAME]`: edit the two reference lists (federated identity spec 6). `admins add -identity NAME` sets the administrator flag (the identity must exist, registered or created with `create-identity`); `admins remove -identity NAME` clears it. A claim kind (`-email`, `-group`, `-subject`) needs `-issuer` naming a configured issuer; an identity reference takes none. `add` prints `added` or `already present`, `remove` prints `removed` or `not present`, `list` prints one `{identity: pat}` or `{issuer: corp, group: pai-users}` line per entry. With no `issuers` entry configured, every claim-kind `add` is refused; the error lists the configured names. `make-admin` is gone: it exits 2 and names this replacement.
 - `create-human EMAIL`: create a human identity named by the address (trimmed and lowercased; exactly one `@` with text on each side). The identity has no key, joins `general`, and is bound to the address with no provider subject until the person first signs in. Prints `<identity> created` or `<identity> already exists`; an agent of that name is a conflict (exit 1). A human cannot register a key.
 - `reset-credential NAME`: remove every registered key of the identity so the name can be registered again. For a human it clears the recorded provider subject instead (the next sign-in binds afresh). A bearer token already issued stays valid until it expires. For an administrator, the new key needs a token bound to `NAME` (`enrollment create -identity NAME`).
-- `create-identity NAME`: create a keyless row for an identity that will register a key later. In `open` mode any registrant may bind a key to a keyless name that is not an administrator; a keyless administrator can only be claimed with an enrollment token bound to its name.
+- `create-identity NAME [-scope S]`: create a keyless row for an identity that will register a key later. In `open` mode any registrant may bind a key to a keyless name that is not an administrator; a keyless administrator can only be claimed with an enrollment token bound to its name.
 - `enrollment create [-identity NAME] [-expires 24h] [-uses 1]`: print a token and its row. Without `-identity` the token binds a key to a free name or to a keyless row that is not an administrator; presented for a keyless administrator it is refused `forbidden` (`identity "NAME" requires an enrollment token bound to it`) and not consumed. `-expires` and `-uses` must be positive.
 - `enrollment list`, `enrollment revoke ID`.
 
@@ -61,6 +61,20 @@ docker compose -f deploy/docker-compose.yml exec agentbus2-a /agentbus2 server a
 
 The second form needs no store flag: `AGENTBUS2_SERVER_POSTGRES` is in the container's environment and `server admin` reads it. Both forms were run against the example image and compose file.
 
+## Scopes and scoped agents
+
+A scope groups the channels and agent identities of one job so they are retired together (Decisions 8 and 9 of the Slack bridge design). Only an administrator creates scopes and scoped agents.
+
+1. Create the scope first, as an administrator (`scopes create NAME`; a scope name follows the channel name rule).
+2. On the server host: `agentbus2 server admin ... create-identity NAME -scope S`. It prints `NAME created in scope S`, then `token: abe_...` and `expires: <RFC 3339>`. The row has no key and no `general` subscription; the token is bound to `NAME`, usable once, and valid for 24 hours. The token is shown once and never stored in clear.
+3. Hand the token to the agent. It registers its own public key with it (`POST /v1/auth/register`, body members `identity`, `public_key_jwk` and `enrollment_token`), so the private key never leaves the agent's host.
+
+A scoped name can never be claimed without its bound token, in `open` and in `enrollment` registration alike: a register with no token, an unbound token or a token bound to another name is `forbidden` and consumes nothing. Self registration never creates a scoped identity. Running the command again for an agent that has no key yet prints a fresh token and revokes the earlier unused one, so a retry after a lost response leaves one live token; for an agent that already has a key it answers `conflict`. The scope must be open: a done or retired scope refuses new identities and channels (`conflict`, or `not_found` when retired).
+
+An administrator who wants only pre-created names to register mints only bound tokens (`create-identity` and `enrollment create -identity NAME`); there is no server setting that forbids unbound tokens (Decision 21). The `closed` registration mode no longer exists.
+
+`reset-credential` on a human also removes the Slack account bound to that person, so the next verified Slack message binds afresh.
+
 ## Humans: sign-in through a corporate provider
 
 A human signs in by exchanging a corporate access token at the token endpoint (see `configuration.md`, `issuers`). The walk-through, all on the server host:
@@ -70,7 +84,7 @@ A human signs in by exchanging a corporate access token at the token endpoint (s
 3. Name the administrators: `agentbus2 server admin ... admins add -issuer corp -group pai-admins`. The administrator flag is re-evaluated at every sign-in from the token's claims, so removing someone from the group clears the flag at their next sign-in (a bearer already issued keeps working until it expires, but the flag it is checked against is the stored one).
 4. Optionally pre-create a person: `agentbus2 server admin ... create-human eric@corp.example`. Their first sign-in binds the existing identity to the provider subject.
 
-The first sign-in of an admitted person creates the identity in every registration mode, `closed` included (Decision 10). In `open` registration an agent may register an email-shaped name first; that human's first sign-in then answers a conflict, because the name belongs to an agent. Pre-create humans with `create-human`, or run `enrollment`, to avoid the race. A human cannot register a key.
+The first sign-in of an admitted person creates the identity in every registration mode (Decision 10). In `open` registration an agent may register an email-shaped name first; that human's first sign-in then answers a conflict, because the name belongs to an agent. Pre-create humans with `create-human`, or run `enrollment`, to avoid the race. A human cannot register a key.
 
 If the provider reassigns an address to a different person (a different subject for the same email), the sign-in is refused (`invalid_request`, "identity bound to a different subject") and the refusal is logged with the identity; run `reset-credential NAME` once you have confirmed the change is legitimate.
 

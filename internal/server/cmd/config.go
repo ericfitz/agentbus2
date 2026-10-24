@@ -42,7 +42,7 @@ func flagSet(name string, f *flags, withListen bool) *flag.FlagSet {
 	fs.Var(setFlag{f}, "set", "override a setting, name=value (repeatable); settings: "+strings.Join(config.Settings(), ", "))
 	if withListen {
 		fs.StringVar(&f.Listen, "listen", "", "address to listen on: host:port or unix:<path>")
-		fs.StringVar(&f.Registration, "registration", "", "registration mode: open, enrollment or closed")
+		fs.StringVar(&f.Registration, "registration", "", "registration mode: open or enrollment")
 	}
 	return fs
 }

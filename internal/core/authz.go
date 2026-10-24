@@ -45,10 +45,10 @@ func (c *Core) Authorize(ctx context.Context, tx store.Tx, identity string, chan
 	return E(bus.CodeForbidden, "%s needs %s on channel %q", identity, p, name)
 }
 
-// reservedIdentity reports "" and the ACL group names everyone and admins,
-// none of which is an identity that can act.
+// reservedIdentity reports "" and the reserved names (everyone, admins and
+// slack-bridge), none of which is an identity that can act through the Bus.
 func reservedIdentity(name string) bool {
-	return name == "" || name == store.Everyone || name == store.Admins
+	return name == "" || store.ReservedIdentity(name)
 }
 
 func notRegistered(name string) error {

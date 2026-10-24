@@ -66,7 +66,7 @@ func newFedEnv(t *testing.T, lifetime time.Duration, mutate func(*token.External
 	if mutate != nil {
 		mutate(ext)
 	}
-	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeClosed, external: []*token.External{ext}})
+	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeEnrollment, external: []*token.External{ext}})
 	f := &fedEnv{env: e, prov: prov, log: &logBuf{}}
 	e.opts.Logger = slog.New(slog.NewTextHandler(f.log, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	f.users(store.RefEmail, corpEric)

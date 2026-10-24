@@ -43,9 +43,12 @@ Eric decided:
    authorizes binding a public key to a name. (Decision 20)
 5. **Listener classification.** Loopback (including `::ffff:127.0.0.1`), a
    Unix socket, or a hostname whose every address is loopback counts as
-   local. There is an explicit `-registration=open|enrollment|closed`
+   local. There is an explicit `-registration=open|enrollment`
    override (for Docker). A lost credential is recovered only with an admin `reset-credential`
    command. (Decision 58)
+   **Amended (Eric, 2026-10-23, Slack bridge Decision 21):** the `closed`
+   registration mode is removed; the override names `open` or `enrollment`,
+   and `closed` is an unknown value like any other.
 6. **Global config only, AWS-style, under `$HOME`.** There is no repo-local
    config, because of worktrees and the risk of committing credentials.
    Named profiles are chosen in this order: command-line flag, then
@@ -290,9 +293,17 @@ the choice numbers below are its.
    inside the transaction, so a retry answers `Created false` and consumes
    nothing; a different key for a name with a credential is `conflict`;
    `open` is trust on first use, `enrollment` requires a token consumed in
-   the same transaction, `closed` refuses. The transaction is re-run on
+   the same transaction. The transaction is re-run on
    `ErrConflict`, at most twice. Decision (Eric, 2026-10-21), Milestone 5
    item 6: `register` takes no `Idempotency-Key`.
+   **Amended (Eric, 2026-10-23, Slack bridge Decisions 17 and 21):** the
+   `closed` mode is removed. Whether an enrollment token is bound to a name
+   is the administrator's choice when minting it; no server setting forbids
+   unbound tokens. A scoped identity is claimed only with the token bound
+   to it, in both modes. A server that reaches the register handler with an
+   unset or unrecognized mode (only `server.New` called directly can) still
+   refuses every register (`forbidden`, 403) and the detail says why; it
+   never opens.
 9. **Enrollment tokens.** `abe_` plus 32 random bytes, shown once, stored as
    SHA-256 hex; optional bound identity, expiry (default 24 h), uses
    (default 1). An unbound token claims a free name or a keyless non-admin
@@ -463,7 +474,7 @@ the choice numbers below are its.
   `scripts/check-gates-selftest.sh` breaks it.
 - **Docker `-registration` pass-through (Decision 58).** The image's
   entrypoint is `/agentbus2 server` with an empty `CMD`, so
-  `docker run <image> -registration open|enrollment|closed` reaches the
+  `docker run <image> -registration open|enrollment` reaches the
   server; the container listens on a non-loopback address, where the default
   is `enrollment` (Decision 72).
 - **Replicas share the issuer and the signing key.** Every replica must be

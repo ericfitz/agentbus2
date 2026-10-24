@@ -118,5 +118,14 @@ func ChannelToBus(c store.Channel) bus.Channel {
 // ChannelInfoToBus adds the creator and creation time, for CreateChannel and
 // Status.
 func ChannelInfoToBus(c store.Channel) bus.ChannelInfo {
-	return bus.ChannelInfo{Channel: ChannelToBus(c), Creator: c.Creator, CreatedAt: c.CreatedAt}
+	return bus.ChannelInfo{Channel: ChannelToBus(c), Creator: c.Creator, Scope: c.Scope, CreatedAt: c.CreatedAt}
+}
+
+// ScopeToBus converts a stored scope. Channels and Identities stay nil; Get
+// fills them.
+func ScopeToBus(s store.Scope) bus.Scope {
+	return bus.Scope{
+		Name: s.Name, State: bus.ScopeState(s.State), Retire: bus.RetireMode(s.Retire),
+		CreatedAt: s.CreatedAt, DoneAt: s.DoneAt, LastActivity: s.LastActivity,
+	}
 }

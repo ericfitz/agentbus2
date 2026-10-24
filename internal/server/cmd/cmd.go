@@ -72,8 +72,8 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		return fail(2, "%v", err)
 	}
 	// An unknown registration value never reaches Serve: ParseMode rejects it
-	// here as well as in config.Validate (server.New's closed fallback is
-	// only a backstop).
+	// here as well as in config.Validate (the register handler's refusal of an
+	// unset or unrecognized mode is only a backstop).
 	var mode identities.Mode
 	switch {
 	case cfg.Registration != "":

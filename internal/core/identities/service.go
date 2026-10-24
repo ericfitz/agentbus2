@@ -17,16 +17,16 @@ type Mode string
 const (
 	ModeOpen       Mode = "open"
 	ModeEnrollment Mode = "enrollment"
-	ModeClosed     Mode = "closed"
 )
 
-// ParseMode accepts the three mode names and nothing else.
+// ParseMode accepts the two mode names and nothing else. The closed mode was
+// removed (Decision 21, Eric, 2026-10-23): "closed" is an unknown value.
 func ParseMode(s string) (Mode, error) {
 	switch m := Mode(s); m {
-	case ModeOpen, ModeEnrollment, ModeClosed:
+	case ModeOpen, ModeEnrollment:
 		return m, nil
 	}
-	return "", core.E(bus.CodeValidation, "unknown registration mode %q: want %q, %q or %q", s, ModeOpen, ModeEnrollment, ModeClosed)
+	return "", core.E(bus.CodeValidation, "unknown registration mode %q: want %q or %q", s, ModeOpen, ModeEnrollment)
 }
 
 // Service is the identities aggregate over a Core.

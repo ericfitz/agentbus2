@@ -6,6 +6,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
+	"github.com/ericfitz/agentbus2/internal/core/scopes"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -47,15 +48,35 @@ func (s Service) Create(ctx context.Context, identity string, in bus.CreateChann
 		acl = s.Cfg.DefaultACL(identity)
 	}
 	payload := struct {
-		Op   string
-		Name string
-		Kind store.Kind
-		ACL  []store.ACLEntry
-	}{"create_channel", in.Name, kind, acl}
+		Op    string
+		Name  string
+		Kind  store.Kind
+		ACL   []store.ACLEntry
+		Scope string
+	}{"create_channel", in.Name, kind, acl, in.Scope}
 	var res bus.ChannelInfo
 	err = s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx) error {
+		creator, err := s.RequireIdentity(ctx, tx, identity)
+		if err != nil {
+			return err
+		}
 		if s.Cfg.ChannelCreation == core.ChannelCreationAdmins {
 			if _, err := s.RequireAdmin(ctx, tx, identity); err != nil {
+				return err
+			}
+		}
+		// The scope (Slack bridge spec 4.2): only an administrator names
+		// one; otherwise the channel takes the creator's. Either must be
+		// open.
+		scope := creator.Scope
+		if in.Scope != "" {
+			if _, err := s.RequireAdmin(ctx, tx, identity); err != nil {
+				return core.E(bus.CodeForbidden, "only an administrator may name a scope")
+			}
+			scope = in.Scope
+		}
+		if scope != "" {
+			if _, err := scopes.RequireOpen(ctx, s.Core, tx, scope); err != nil {
 				return err
 			}
 		}
@@ -64,7 +85,7 @@ func (s Service) Create(ctx context.Context, identity string, in bus.CreateChann
 			return err
 		}
 		ch, err := tx.CreateChannel(ctx, store.ChannelCreate{
-			Name: in.Name, Kind: kind, Creator: identity, ACL: acl, CreatedSeq: seq, CreatedAt: s.NowMs(),
+			Name: in.Name, Kind: kind, Creator: identity, Scope: scope, ACL: acl, CreatedSeq: seq, CreatedAt: s.NowMs(),
 		})
 		if err != nil {
 			return err

@@ -38,7 +38,7 @@ func TestPrecedenceTable(t *testing.T) {
 		get                      func(Config) string
 	}{
 		{"listen", `"f:1"`, "e:2", "g:3", func(c Config) string { return c.Listen }},
-		{"registration", `"open"`, "enrollment", "closed", func(c Config) string { return c.Registration }},
+		{"registration", `"enrollment"`, "open", "enrollment", func(c Config) string { return c.Registration }},
 		{"token_lifetime_seconds", `10`, "20", "30", func(c Config) string { return strconv.Itoa(c.TokenLifetimeSeconds) }},
 		{"channel_creation", `"admins"`, "open", "admins", func(c Config) string { return c.ChannelCreation }},
 		{"issuers", issuersA, issuersB, issuersC, func(c Config) string { return c.Issuers[0].Audience }},

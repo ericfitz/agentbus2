@@ -44,19 +44,9 @@ func (s Service) CreateEnrollmentToken(ctx context.Context, in TokenInput) (stri
 	if in.Uses == 0 {
 		in.Uses = 1
 	}
-	rnd, err := core.RandomToken(32)
+	token, row, err := s.mintToken(in.Identity, in.Expires, in.Uses)
 	if err != nil {
-		return "", store.EnrollmentToken{}, bus.Internal(err)
-	}
-	token := "abe_" + rnd
-	id, err := core.RandomHex(8)
-	if err != nil {
-		return "", store.EnrollmentToken{}, bus.Internal(err)
-	}
-	now := s.NowMs()
-	row := store.EnrollmentToken{
-		ID: id, TokenHash: HashToken(token), Identity: in.Identity,
-		ExpiresAt: now + in.Expires.Milliseconds(), UsesLeft: in.Uses, CreatedAt: now,
+		return "", store.EnrollmentToken{}, err
 	}
 	err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error { return tx.PutEnrollmentToken(ctx, row) })
 	if err != nil {
@@ -81,4 +71,24 @@ func (s Service) RevokeEnrollmentToken(ctx context.Context, id string) error {
 	return core.FromStore(s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		return tx.DeleteEnrollmentToken(ctx, id)
 	}))
+}
+
+// mintToken builds a token and its row without storing either: the caller
+// puts the row in its own transaction. expires and uses must be positive.
+func (s Service) mintToken(identity string, expires time.Duration, uses int) (string, store.EnrollmentToken, error) {
+	rnd, err := core.RandomToken(32)
+	if err != nil {
+		return "", store.EnrollmentToken{}, bus.Internal(err)
+	}
+	token := "abe_" + rnd
+	id, err := core.RandomHex(8)
+	if err != nil {
+		return "", store.EnrollmentToken{}, bus.Internal(err)
+	}
+	now := s.NowMs()
+	row := store.EnrollmentToken{
+		ID: id, TokenHash: HashToken(token), Identity: identity,
+		ExpiresAt: now + expires.Milliseconds(), UsesLeft: uses, CreatedAt: now,
+	}
+	return token, row, nil
 }

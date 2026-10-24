@@ -571,15 +571,25 @@ func TestRegistrationDefaultsByListener(t *testing.T) {
 		t.Fatalf("open register: %+v, %v", res, err)
 	}
 
-	// An explicit mode wins over the listener.
-	c := runServer(t, "-listen", "127.0.0.1:0", "-registration", "closed", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"))
-	if c.mode != "closed" {
-		t.Fatalf("mode %q, want closed", c.mode)
+	// An explicit mode wins over the listener, both ways.
+	c := runServer(t, "-listen", "127.0.0.1:0", "-registration", "enrollment", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"))
+	if c.mode != "enrollment" {
+		t.Fatalf("mode %q, want enrollment", c.mode)
 	}
 	_, err = remote.Register(context.Background(), genClient(t, c.base(), nil), "pat", k.Public(), "")
 	wantBusCode(t, err, bus.CodeForbidden)
+	w := runServer(t, "-listen", "0.0.0.0:0", "-registration", "open", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"))
+	if w.mode != "open" || !strings.Contains(w.stdout.String(), "registration open") {
+		t.Fatalf("-registration open on a non-loopback listener: mode %q, stdout %q", w.mode, w.stdout.String())
+	}
 
-	code, _, errs := runOnce(nil, "-listen", "127.0.0.1:0", "-registration", "tofu", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"))
+	// The closed mode is gone: it is an unknown value like any other.
+	code, _, errs := runOnce(nil, "-listen", "127.0.0.1:0", "-registration", "closed", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"))
+	if code != 2 || !strings.Contains(errs, "registration") {
+		t.Fatalf("closed: exit %d, stderr %q", code, errs)
+	}
+
+	code, _, errs = runOnce(nil, "-listen", "127.0.0.1:0", "-registration", "tofu", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"))
 	if code != 2 || !strings.Contains(errs, "registration") {
 		t.Fatalf("tofu: exit %d, stderr %q", code, errs)
 	}

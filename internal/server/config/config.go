@@ -38,7 +38,7 @@ type IssuerClaims struct {
 // Config is the server configuration (Decision 85, spec 6.5).
 type Config struct {
 	Listen       string `json:"listen"`
-	Registration string `json:"registration"` // "", open, enrollment, closed
+	Registration string `json:"registration"` // "", open, enrollment
 	SQLite       string `json:"sqlite"`
 	Postgres     string `json:"postgres"`
 
@@ -175,9 +175,9 @@ func (c Config) Validate() error {
 		return errors.New("exactly one of sqlite or postgres is required")
 	}
 	switch c.Registration {
-	case "", "open", "enrollment", "closed":
+	case "", "open", "enrollment":
 	default:
-		return fmt.Errorf("registration must be open, enrollment or closed, got %q", c.Registration)
+		return fmt.Errorf("registration must be open or enrollment, got %q", c.Registration)
 	}
 	if c.Issuer != "" {
 		u, err := url.Parse(c.Issuer)

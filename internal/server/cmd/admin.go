@@ -9,6 +9,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -18,12 +19,18 @@ const adminSubcommands = "users and admins (add, remove, list), reset-credential
 
 const makeAdminReplaced = "make-admin was replaced by: admins add -identity NAME (admins remove -identity NAME)"
 
-const createIdentityUsage = `usage: agentbus2 server admin create-identity NAME
+const createIdentityUsage = `usage: agentbus2 server admin create-identity NAME [-scope S]
 
 Creates a keyless row for an identity that will register a key later; in open
 mode any registrant may bind a key to a keyless name that is not an
 administrator, while a keyless administrator can only be claimed with an
 enrollment token bound to its name (enrollment create -identity NAME).
+
+With -scope S (an open scope) the identity is a scoped agent: it holds no
+general subscription and can be claimed only with the enrollment token this
+command prints (bound to NAME, one use, 24 hours). Running it again for a
+keyless agent of the same scope prints a fresh token and revokes the earlier
+one.
 `
 
 // hostEnv is what a host command runs against: the identities service and the
@@ -213,6 +220,7 @@ func resetCredentialCommand(args []string, stdout, stderr io.Writer) (adminActio
 
 func createIdentityCommand(args []string, stdout, stderr io.Writer) (adminAction, int, bool) {
 	fs, buf := subFlags("create-identity")
+	scope := fs.String("scope", "", "create a scoped agent in this open scope and print its bound enrollment token")
 	pos, code, done := parseInterleaved(fs, buf, args, stdout, stderr)
 	if done {
 		return nil, code, true
@@ -224,6 +232,18 @@ func createIdentityCommand(args []string, stdout, stderr io.Writer) (adminAction
 	name := pos[0]
 	return func(ctx context.Context, e hostEnv, w io.Writer) error {
 		s := e.Svc
+		if *scope != "" {
+			res, err := s.CreateAgentIdentity(ctx, bus.CreateAgentIdentityInput{Name: name, Scope: *scope})
+			if err != nil {
+				return err
+			}
+			verb := "already exists in"
+			if res.Created {
+				verb = "created in"
+			}
+			_, _ = fmt.Fprintf(w, "%s %s scope %s\ntoken: %s\nexpires: %s\n", name, verb, *scope, res.EnrollmentToken, time.UnixMilli(res.ExpiresAt).UTC().Format(time.RFC3339))
+			return nil
+		}
 		created, err := s.CreateIdentity(ctx, name)
 		if err != nil {
 			return err

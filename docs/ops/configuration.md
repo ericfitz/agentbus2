@@ -15,7 +15,7 @@ Flags:
 
 - `-config FILE`: the JSON file. It is an error if it does not exist.
 - `-listen ADDR`: `host:port` or `unix:<path>` (server only; `server admin` rejects it).
-- `-registration MODE`: `open`, `enrollment` or `closed` (server only).
+- `-registration MODE`: `open` or `enrollment` (server only).
 - `-sqlite PATH` and `-postgres DSN`: exactly one is required.
 - `-set name=value`: any setting, repeatable. It wins over the dedicated flag for the same name.
 
@@ -54,7 +54,7 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | Setting | Environment variable | Type | Default | Bounds and meaning |
 | --- | --- | --- | --- | --- |
 | `listen` | `AGENTBUS2_SERVER_LISTEN` | string | `(unset)` | Required to serve (no default port). `host:port`, or `unix:<path>` (mode 0600). A loopback, unix or all-loopback-hostname address is local; anything else (including `0.0.0.0` and an empty host) is not, which decides the default `registration` and whether `issuer` must be set. |
-| `registration` | `AGENTBUS2_SERVER_REGISTRATION` | string | `(unset)` | `open`, `enrollment` or `closed`. Unset means `open` on a local listener and `enrollment` otherwise. |
+| `registration` | `AGENTBUS2_SERVER_REGISTRATION` | string | `(unset)` | `open` or `enrollment`. Unset means `open` on a local listener and `enrollment` otherwise. |
 | `sqlite` | `AGENTBUS2_SERVER_SQLITE` | string | `(unset)` | Database file. Exactly one of `sqlite` and `postgres`. A new file is created with mode 0600. |
 | `postgres` | `AGENTBUS2_SERVER_POSTGRES` | string | `(unset)` | Postgres DSN. The database needs a UTF-8 ctype. |
 | `issuer` | `AGENTBUS2_SERVER_ISSUER` | string | `(unset)` | Absolute `http` or `https` URL with no path, query, fragment or trailing slash. Unset means `http://<bound address>`, which is wrong behind a proxy or in a container: set it on every non-local server. Required for a unix socket. Replicas must share it. |

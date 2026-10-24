@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -353,21 +354,48 @@ func TestBearerRefusals(t *testing.T) {
 	wantAuthProblem(t, e.do("GET", "/v1/channels", "", "Bearer "+a, ""), 401, "unauthenticated", "unknown issuer")
 }
 
+// TestRegisterUnsetModeRefuses: a server built without a recognized
+// registration mode (only server.New called directly can be) refuses every
+// register with 403 forbidden and says why; it never opens, and no row is
+// created (Decision 21, Eric 2026-10-23).
+func TestRegisterUnsetModeRefuses(t *testing.T) {
+	key := genKey(t, keys.EdDSA)
+	for _, tc := range []struct {
+		name   string
+		mode   identities.Mode
+		detail string
+	}{
+		{"unset", "", "registration refused: this server has no registration mode configured"},
+		{"bogus", "bogus", `registration refused: registration mode "bogus" is not recognized`},
+		{"closed is gone", "closed", `registration refused: registration mode "closed" is not recognized`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newEnv(t, envOptions{issuer: true, registration: tc.mode})
+			resp := e.register("pat", key, "")
+			if ct := resp.Header.Get("Content-Type"); !strings.HasPrefix(ct, "application/problem+json") {
+				t.Fatalf("content type %q", ct)
+			}
+			p := readProblem(t, resp)
+			if resp.StatusCode != 403 || string(p.Code) != "forbidden" || p.Detail == nil || *p.Detail != tc.detail {
+				t.Fatalf("got %d %q %v, want 403 forbidden %q", resp.StatusCode, p.Code, p.Detail, tc.detail)
+			}
+			err := e.store.Read(context.Background(), func(ctx context.Context, tx store.Tx) error {
+				_, err := tx.Identity(ctx, "pat")
+				if !errors.Is(err, store.ErrNotFound) {
+					t.Fatalf("identity row after a refused register: %v", err)
+				}
+				return nil
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestRegisterModes(t *testing.T) {
 	key := genKey(t, keys.EdDSA)
 
-	t.Run("closed", func(t *testing.T) {
-		e := newEnv(t, envOptions{issuer: true, registration: identities.ModeClosed})
-		wantAuthProblem(t, e.register("pat", key, ""), 403, "forbidden", "")
-	})
-	t.Run("unset is closed", func(t *testing.T) {
-		e := newEnv(t, envOptions{})
-		wantAuthProblem(t, e.register("pat", key, ""), 403, "forbidden", "")
-	})
-	t.Run("unknown mode is refused", func(t *testing.T) {
-		e := newEnv(t, envOptions{issuer: true, registration: identities.Mode("bogus")})
-		wantAuthProblem(t, e.register("pat", key, ""), 403, "forbidden", "")
-	})
 	t.Run("enrollment", func(t *testing.T) {
 		e := newEnv(t, envOptions{issuer: true, registration: identities.ModeEnrollment})
 		wantAuthProblem(t, e.register("pat", key, ""), 403, "forbidden", "")

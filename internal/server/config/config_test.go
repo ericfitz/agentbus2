@@ -70,6 +70,7 @@ func TestValidateRejects(t *testing.T) {
 		{"both stores", func(c *Config) { c.Postgres = "postgres://x" }, "exactly one of sqlite or postgres"},
 		{"no store", func(c *Config) { c.SQLite = "" }, "exactly one of sqlite or postgres"},
 		{"registration", func(c *Config) { c.Registration = "tofu" }, "registration"},
+		{"registration closed is gone", func(c *Config) { c.Registration = "closed" }, `registration must be open or enrollment, got "closed"`},
 		{"issuer path", func(c *Config) { c.Issuer = "http://x/base" }, "issuer"},
 		{"issuer slash", func(c *Config) { c.Issuer = "http://x/" }, "issuer"},
 		{"issuer query", func(c *Config) { c.Issuer = "http://x?a=b" }, "issuer"},

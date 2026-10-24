@@ -39,13 +39,13 @@ func TestRunLoadsConfigFileEnvAndFlags(t *testing.T) {
 	cfgPath := filepath.Join(dir, "server.json")
 	file, _ := json.Marshal(map[string]any{
 		"listen": "127.0.0.1:0", "sqlite": filepath.Join(dir, "ab2.db"),
-		"token_lifetime_seconds": 7200, "registration": "closed",
+		"token_lifetime_seconds": 7200, "registration": "enrollment",
 	})
 	if err := os.WriteFile(cfgPath, file, 0o600); err != nil {
 		t.Fatal(err)
 	}
 
-	// The file alone: closed, 7200.
+	// The file alone: enrollment, 7200.
 	r := startRun(t, nil, "-config", cfgPath, "-registration", "open")
 	if r.mode != "open" {
 		t.Fatalf("flag did not beat file: mode %q", r.mode)
@@ -57,14 +57,14 @@ func TestRunLoadsConfigFileEnvAndFlags(t *testing.T) {
 	r.stop()
 
 	// Environment beats the file; flags beat the environment.
-	env := []string{"AGENTBUS2_SERVER_REGISTRATION=enrollment"}
+	env := []string{"AGENTBUS2_SERVER_REGISTRATION=open"}
 	e := startRun(t, env, "-config", cfgPath)
-	if e.mode != "enrollment" {
+	if e.mode != "open" {
 		t.Fatalf("environment did not beat file: mode %q", e.mode)
 	}
 	e.stop()
 
-	f := startRun(t, env, "-config", cfgPath, "-set", "token_lifetime_seconds=60", "-registration", "open")
+	f := startRun(t, []string{"AGENTBUS2_SERVER_REGISTRATION=enrollment"}, "-config", cfgPath, "-set", "token_lifetime_seconds=60", "-registration", "open")
 	if f.mode != "open" || !strings.Contains(f.stdout.String(), "registration open") {
 		t.Fatalf("flag did not beat environment: %q", f.stdout.String())
 	}

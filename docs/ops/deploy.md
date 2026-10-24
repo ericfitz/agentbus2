@@ -8,7 +8,7 @@ All settings are in `configuration.md`; admin commands are in `admin-bootstrap.m
 agentbus2 server -listen 127.0.0.1:8420 -sqlite /var/lib/agentbus2/agentbus2.db
 ```
 
-There is no default port: `listen` is required, and the server exits 2 with `listen is required` without it. On a loopback address (or a `unix:<path>` socket, created mode 0600; on Windows it gets an owner-only ACL) registration defaults to `open` (Decision 20): an agent claims any free name with an unauthenticated `register`. Any other address defaults to `enrollment` (Decision 58, 72); `-registration open|enrollment|closed` overrides either default.
+There is no default port: `listen` is required, and the server exits 2 with `listen is required` without it. On a loopback address (or a `unix:<path>` socket, created mode 0600; on Windows it gets an owner-only ACL) registration defaults to `open` (Decision 20): an agent claims any free name with an unauthenticated `register`. Any other address defaults to `enrollment` (Decision 58, 72); `-registration open|enrollment` overrides either default.
 
 On start the server prints `generated signing key <kid>` (first start only) and `agentbus2 server listening on ...` with the engine, registration mode, issuer and key id. SIGINT or SIGTERM starts a shutdown that gives in-flight requests up to 60 seconds; a clean shutdown exits 0.
 
@@ -33,7 +33,7 @@ docker run -d --name agentbus2 -p 127.0.0.1:8420:8420 -v agentbus2-data:/data \
   agentbus2:local
 ```
 
-A container listens on `0.0.0.0`, which is not local, so registration defaults to `enrollment`; the `-registration` flag, passed as the container command, is the override (`agentbus2:local -registration closed`). A named volume takes the ownership of `/data`; a bind-mounted data directory must be writable by uid 65532 (`chown 65532:65532 <dir>`). The container exits 2 with a message when no store or no `listen` is configured.
+A container listens on `0.0.0.0`, which is not local, so registration defaults to `enrollment`; the `-registration` flag, passed as the container command, is the override (`agentbus2:local -registration open`). A named volume takes the ownership of `/data`; a bind-mounted data directory must be writable by uid 65532 (`chown 65532:65532 <dir>`). The container exits 2 with a message when no store or no `listen` is configured.
 
 `docker stop` waits 10 seconds by default before killing; pass `--time 60` (compose: `stop_grace_period: 60s`) to leave the full drain.
 

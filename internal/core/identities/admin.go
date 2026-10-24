@@ -75,7 +75,13 @@ func resetCredential(ctx context.Context, tx store.Tx, name string) (int, error)
 	}
 	if id.Kind == store.IdentityHuman {
 		// A human holds no keys: the reset clears the recorded provider
-		// subject, so the next sign-in binds afresh (spec 6.3).
+		// subject, so the next sign-in binds afresh (spec 6.3), and the
+		// Slack account bound to it (Slack bridge, plan choice): the next
+		// verified Slack message binds afresh. The Slack row goes whatever
+		// the subject was.
+		if _, err := tx.DeleteSlackUser(ctx, name); err != nil {
+			return 0, err
+		}
 		b, err := tx.HumanBinding(ctx, name)
 		if errors.Is(err, store.ErrNotFound) || (err == nil && b.ProviderSubject == "") {
 			return 0, nil

@@ -139,7 +139,8 @@ func (a *api) Jwks(context.Context, gen.JwksRequestObject) (gen.JwksResponseObje
 }
 
 // Register binds a public key to an identity under the configured mode
-// (Decisions 20, 58, 72). An unset mode is closed, never open.
+// (Decisions 20, 58, 72). An unset or unrecognized mode refuses every
+// register with forbidden and says why; it is never open (Decision 21).
 func (a *api) Register(ctx context.Context, req gen.RegisterRequestObject) (gen.RegisterResponseObject, error) {
 	if req.Body == nil {
 		return nil, core.E(bus.CodeValidation, "request body is required")
@@ -156,17 +157,11 @@ func (a *api) Register(ctx context.Context, req gen.RegisterRequestObject) (gen.
 	if err != nil {
 		return nil, core.E(bus.CodeValidation, "public_key_jwk: %s", err)
 	}
-	// Anything but open and enrollment is closed: "" and an unrecognized
-	// value never register (and never reach the service's panic guard).
-	mode := a.opts.Registration
-	if mode != identities.ModeOpen && mode != identities.ModeEnrollment {
-		mode = identities.ModeClosed
-	}
 	in := identities.RegisterInput{Identity: req.Body.Identity, Key: pub}
 	if req.Body.EnrollmentToken != nil {
 		in.EnrollmentToken = *req.Body.EnrollmentToken
 	}
-	res, err := identities.Service{Core: a.core}.Register(ctx, mode, in)
+	res, err := identities.Service{Core: a.core}.Register(ctx, a.opts.Registration, in)
 	if err != nil {
 		return nil, err
 	}

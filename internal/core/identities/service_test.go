@@ -218,9 +218,6 @@ func TestRegisterOpenTOFU(t *testing.T) {
 		// enrollment mode: the admin text, not the mode's.
 		_, err = s.Register(ctx, ModeEnrollment, RegisterInput{Identity: "root", Key: genKey(t)})
 		wantDetail(t, err, `identity "root" requires an enrollment token`)
-		// closed mode: the mode check runs first.
-		_, err = s.Register(ctx, ModeClosed, RegisterInput{Identity: "root", Key: genKey(t)})
-		wantDetail(t, err, "registration is closed")
 
 		tok, row := newToken(t, s, TokenInput{Identity: "root"})
 		res, err := s.Register(ctx, ModeOpen, RegisterInput{Identity: "root", Key: genKey(t), EnrollmentToken: tok})
@@ -253,13 +250,22 @@ func TestRegisterOpenTOFU(t *testing.T) {
 	})
 }
 
-func TestRegisterClosed(t *testing.T) {
+// TestRegisterUnsetOrUnknownMode: the mode switch in Register refuses an
+// unset or unrecognized mode (including the deleted "closed") with forbidden
+// and a detail naming the cause; nothing is created.
+func TestRegisterUnsetOrUnknownMode(t *testing.T) {
 	s, _ := newSvc(t, nil)
-	_, err := s.Register(context.Background(), ModeClosed, RegisterInput{Identity: "pat", Key: genKey(t)})
-	wantCode(t, err, bus.CodeForbidden)
-	wantDetail(t, err, "registration is closed")
-	if _, ok := identityRow(t, s, "pat"); ok {
-		t.Fatal("row created")
+	for mode, detail := range map[Mode]string{
+		"":       "registration refused: this server has no registration mode configured",
+		"bogus":  `registration refused: registration mode "bogus" is not recognized`,
+		"closed": `registration refused: registration mode "closed" is not recognized`,
+	} {
+		_, err := s.Register(context.Background(), mode, RegisterInput{Identity: "pat", Key: genKey(t)})
+		wantCode(t, err, bus.CodeForbidden)
+		wantDetail(t, err, detail)
+		if _, ok := identityRow(t, s, "pat"); ok {
+			t.Fatalf("mode %q: row created", mode)
+		}
 	}
 }
 
@@ -407,7 +413,7 @@ func TestRegisterRejects(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newSvc(t, nil)
 	k := genKey(t)
-	for _, name := range []string{"a/b", "everyone", "admins", "", strings.Repeat("x", 129)} {
+	for _, name := range []string{"a/b", "everyone", "admins", "slack-bridge", "", strings.Repeat("x", 129)} {
 		_, err := s.Register(ctx, ModeOpen, RegisterInput{Identity: name, Key: k})
 		wantCode(t, err, bus.CodeValidation)
 	}
@@ -423,23 +429,15 @@ func TestRegisterRejects(t *testing.T) {
 	if _, ok := identityRow(t, s, "pat"); ok {
 		t.Fatal("row created by a rejected register")
 	}
-	func() {
-		defer func() {
-			if recover() == nil {
-				t.Fatal(`Mode("") did not panic`)
-			}
-		}()
-		_, _ = s.Register(ctx, Mode(""), RegisterInput{Identity: "pat", Key: k})
-	}()
 }
 
 func TestParseMode(t *testing.T) {
-	for _, m := range []string{"open", "enrollment", "closed"} {
+	for _, m := range []string{"open", "enrollment"} {
 		if got, err := ParseMode(m); err != nil || string(got) != m {
 			t.Fatalf("ParseMode(%q) = %q, %v", m, got, err)
 		}
 	}
-	for _, m := range []string{"", "Open", "all"} {
+	for _, m := range []string{"", "Open", "all", "closed"} {
 		_, err := ParseMode(m)
 		wantCode(t, err, bus.CodeValidation)
 		wantDetail(t, err, "enrollment")
