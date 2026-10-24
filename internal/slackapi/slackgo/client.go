@@ -179,18 +179,22 @@ func (c *Client) Archive(ctx context.Context, channelID string) error {
 // Post implements slackapi.Client.
 func (c *Client) Post(ctx context.Context, in slackapi.PostInput) (string, error) {
 	blocks := []slack.Block{
-		slack.NewSectionBlock(slack.NewTextBlockObject(slack.MarkdownType, in.Section, false, false), nil, nil),
+		slack.NewSectionBlock(slack.NewTextBlockObject(slack.MarkdownType, in.Section, false, true), nil, nil),
 	}
 	if len(in.Context) > 0 {
 		els := make([]slack.MixedElement, 0, len(in.Context))
 		for _, t := range in.Context {
-			els = append(els, slack.NewTextBlockObject(slack.MarkdownType, t, false, false))
+			els = append(els, slack.NewTextBlockObject(slack.MarkdownType, t, false, true))
 		}
 		blocks = append(blocks, slack.NewContextBlock("", els...))
 	}
 	opts := []slack.MsgOption{
 		slack.MsgOptionBlocks(blocks...),
 		slack.MsgOptionText(in.Fallback, false),
+		// No mention or link parsing of the fallback text either; the text
+		// objects are verbatim, so a plain @here or #name stays plain.
+		slack.MsgOptionParse(false),
+		slack.MsgOptionLinkNames(false),
 		slack.MsgOptionMetadata(slack.SlackMetadata{EventType: metadataType, EventPayload: map[string]any{"seq": in.Seq}}),
 	}
 	if in.Username != "" {

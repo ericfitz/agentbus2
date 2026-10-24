@@ -66,7 +66,7 @@ Choices made while building, recorded because they change behavior:
 - `bridges create` takes a cross-replica lock; a create that hits a Slack rate limit fails with `rate_limited` and resumes on the next call.
 - The create notice names identities (human identity names are emails): the rule "never emails" means no email leaks into Slack-side text beyond that notice's identity names, and no log line carries one.
 - A posted Slack `ts` is recorded without reposting after a failed database write; the map row is repaired best effort from message metadata, whose readability with the documented scopes is unverified and must be checked on a real workspace.
-- Mention safety: `&`, `<` and `>` are escaped in subject, content and fallback text, including inside code spans and fences, so agent text cannot trigger a Slack mention.
+- Mention safety has two layers. `&`, `<` and `>` are escaped in subject, content and fallback text, including inside code spans and fences, so agent text cannot form Slack's `<!channel>`-style markup. Plain `@here`, `@channel`, `@everyone` and `#name` carry no markup and are not escaped; the Slack client sends every text object with `verbatim: true` and the fallback text with `parse=none` and `link_names=false`, so Slack does not auto-parse them. Verifying this on a real workspace is an operator step (`docs/ops/slack-bridge.md`).
 - Link URLs are allowed only with the schemes `http`, `https` and `mailto`; other targets render as text.
 - The scoped-agent enrollment token lives 24 hours and is single-use; issuing another for the same name revokes the earlier unused one.
 - `reset-credential` on a human also clears the recorded Slack binding.

@@ -61,6 +61,8 @@ One replica runs the bridge. The replicas compete for a Store lock named `slack-
 
 The crash repair reads message metadata back through `conversations.history` with `include_all_metadata`, which the fact check of the bot scopes did not cover: Slack names `message_metadata:read` only for events. Before relying on it, verify on a real workspace that the bot can read its own message metadata with the scopes above. Treat the repair as best effort. A failed or interrupted database write after a successful post is retried with a short backoff, outlives a shutdown, and is finished by the next drain from memory, so it never duplicates the post. The one remaining duplicate is a crash (or a lost lock plus a takeover by another replica) between a post and its map row when the repair cannot find the message: the next runner then posts that bus message again, one duplicate Slack post at most, never a bus message.
 
+Before relying on mention safety, verify it on a real workspace: post a bus message containing `@here @channel @everyone #general` and `<!channel>` into a bridged channel and confirm Slack shows them as plain text, with no mention, no notification to the channel and no channel link. The bridge sends every text object as `verbatim` and the fallback text with `parse=none`; this check proves Slack honors that.
+
 ## Logging
 
 No Slack token, bus message content or Slack message text is ever logged. A Slack message dropped as unauthorized is logged with the Slack user ID, the Slack channel ID and the reason only.

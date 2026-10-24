@@ -301,6 +301,23 @@ func TestFormatPostNeverMentions(t *testing.T) {
 	}
 }
 
+// Plain @here, @channel, @everyone and #name carry no markup, so the
+// formatter leaves them as written; the Slack client sends every text object
+// verbatim (and parse=none), which is what keeps them from becoming a live
+// mention or link (slackgo TestPostParams).
+func TestFormatPostPlainMentionsPassThrough(t *testing.T) {
+	plain := "@here @channel @everyone #general"
+	p := FormatPost(bus.Message{Seq: 1, Channel: "c", Sender: "a", Subject: plain, Content: plain}, "", 3000, plain)
+	for name, got := range map[string]string{"section": p.Section, "fallback": p.Fallback} {
+		if !strings.Contains(got, plain) {
+			t.Errorf("%s changed plain mention text: %q", name, got)
+		}
+		if strings.ContainsAny(strings.ReplaceAll(got, "\n> ", ""), "<>") {
+			t.Errorf("%s has angle brackets: %q", name, got)
+		}
+	}
+}
+
 func TestFormatPostLinkSpecials(t *testing.T) {
 	for _, in := range []string{"[x](!channel)", "[x](@U123)", "[](!subteam^S1)", "[x](!here)", "[x](#C1)", "[](!channel)"} {
 		p := FormatPost(bus.Message{Seq: 1, Channel: "c", Sender: "a", Subject: in, Content: in}, "", 3000, in)

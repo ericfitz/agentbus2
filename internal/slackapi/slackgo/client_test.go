@@ -244,6 +244,14 @@ func TestPostParams(t *testing.T) {
 		Text     struct{ Type, Text string }
 		Elements []struct{ Type, Text string }
 	}
+	// Verbatim on every text object: Slack must not turn plain @here,
+	// @channel or #name into a live mention or link.
+	if n := strings.Count(form.Get("blocks"), `"verbatim":true`); n != 3 {
+		t.Errorf("verbatim:true count = %d, want 3 (section and two context): %s", n, form.Get("blocks"))
+	}
+	if form.Get("parse") != "none" || form.Get("link_names") != "false" {
+		t.Errorf("parse=%q link_names=%q, want none and false", form.Get("parse"), form.Get("link_names"))
+	}
 	if err := json.Unmarshal([]byte(form.Get("blocks")), &blocks); err != nil {
 		t.Fatal(err)
 	}
