@@ -26,6 +26,7 @@ func TestConfigWithDefaults(t *testing.T) {
 		"negative post":   {ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, PostInterval: -1},
 		"negative renew":  {ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, LockRenew: -1},
 		"negative life":   {ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, LifecycleInterval: -1},
+		"negative retry":  {ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, RetryBase: -1},
 	} {
 		if _, err := c.withDefaults(); err == nil {
 			t.Errorf("%s: accepted", name)

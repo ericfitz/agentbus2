@@ -236,3 +236,61 @@ func (s Service) pending(ctx context.Context, tx store.Tx, identity string, pos 
 	}
 	return out, nil
 }
+
+// EnsureHinted returns the id of the identity's open session (ClosedAt == 0,
+// live or lapsed) with the hint, its lease renewed; when it has none, a new
+// session with that hint is opened and its id returned. The resume token is
+// generated and discarded: the caller finds the session again by hint, so
+// the Slack bridge keeps one session per human (Slack bridge spec 6.3).
+// State (Definition of Done D): a second call finds the first call's row;
+// two overlapping first calls run in serializable transactions that read the
+// rows, so one retries and finds the other's row (or both commit with
+// distinct display names, which is harmless); a closed session is replaced.
+func (s Service) EnsureHinted(ctx context.Context, identity, hint string) (string, error) {
+	if hint == "" {
+		return "", core.E(bus.CodeValidation, "hint is required")
+	}
+	if err := store.NameRule(hint); err != nil {
+		return "", core.E(bus.CodeValidation, "hint %s", err)
+	}
+	newID, err := core.RandomHex(16)
+	if err != nil {
+		return "", bus.Internal(err)
+	}
+	newToken, err := core.RandomToken(resumeTokenBytes)
+	if err != nil {
+		return "", bus.Internal(err)
+	}
+	var id string
+	err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		id = ""
+		ident, err := s.RequireIdentity(ctx, tx, identity)
+		if err != nil {
+			return err
+		}
+		rows, err := tx.ListSessions(ctx, identity)
+		if err != nil {
+			return core.FromStore(err)
+		}
+		now := s.NowMs()
+		for _, r := range rows {
+			if r.ClosedAt == 0 && r.Hint == hint {
+				if err := tx.RenewLease(ctx, r.ID, s.LeaseUntil(now)); err != nil {
+					return core.FromStore(err)
+				}
+				id = r.ID
+				return nil
+			}
+		}
+		var out bus.Session
+		if err := s.create(ctx, tx, ident, bus.OpenSessionInput{Hint: hint}, newID, newToken, now, &out); err != nil {
+			return err
+		}
+		id = out.ID
+		return nil
+	})
+	if err != nil {
+		return "", core.FromStore(err)
+	}
+	return id, nil
+}

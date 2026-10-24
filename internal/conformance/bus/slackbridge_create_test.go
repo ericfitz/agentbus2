@@ -64,7 +64,14 @@ func slackUsers(f *slackfake.Fake) {
 
 func newSlackFix(t *testing.T, e dbtest.Engine) *slackFix {
 	t.Helper()
-	h := newHarness(t, e, harnessOptions{})
+	return newSlackFixOpts(t, e, harnessOptions{}, nil)
+}
+
+// newSlackFixOpts is newSlackFix with harness options and a bridge Config
+// modifier (nil: none).
+func newSlackFixOpts(t *testing.T, e dbtest.Engine, o harnessOptions, mod func(*slackbridge.Config)) *slackFix {
+	t.Helper()
+	h := newHarness(t, e, o)
 	f := slackfake.New(slackapi.Self{TeamID: slTeam, UserID: slBot, BotID: "BBOT"})
 	slackUsers(f)
 	h.admin("adm")
@@ -76,10 +83,14 @@ func newSlackFix(t *testing.T, e dbtest.Engine) *slackFix {
 		}
 	}
 	logs := &logBuf{}
-	svc, err := slackbridge.New(context.Background(), h.core, f, slackbridge.Config{
+	cfg := slackbridge.Config{
 		ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, LockRenew: 10 * time.Millisecond,
 		Logger: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),
-	})
+	}
+	if mod != nil {
+		mod(&cfg)
+	}
+	svc, err := slackbridge.New(context.Background(), h.core, f, cfg)
 	if err != nil {
 		t.Fatalf("slackbridge.New: %v", err)
 	}

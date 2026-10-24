@@ -26,10 +26,25 @@ type sendFingerprint struct {
 	Tags     []string          `json:"tags"`
 }
 
+// AppendHook runs inside the Store.Append transaction of SendWith, right
+// after the message is appended, with its sequence number. An error from it
+// rolls the whole send back and is the error SendWith answers (a *bus.Error
+// keeps its code). It must not call back into the Store outside tx.
+type AppendHook func(ctx context.Context, tx store.Tx, seq int64) error
+
 // Send appends one message (v1 internal/bus/messages.go Send). The rate limit
 // is checked inside the transaction and charged once, after the commit; the
 // notifier hint and the embedding kick also run after it (Decision 26).
 func (s Service) Send(ctx context.Context, identity string, in bus.SendInput) (bus.SendResult, error) {
+	return s.SendWith(ctx, identity, in, nil)
+}
+
+// SendWith is Send with a hook that runs in the same transaction as the
+// append, after it. The transaction may run more than once (a retried
+// serialization failure), so the hook must be repeatable. A send replayed
+// from a receipt (an idempotency key seen before) appends nothing and runs no
+// hook.
+func (s Service) SendWith(ctx context.Context, identity string, in bus.SendInput, hook AppendHook) (bus.SendResult, error) {
 	var (
 		res      bus.SendResult
 		replayed bool
@@ -106,6 +121,11 @@ func (s Service) Send(ctx context.Context, identity string, in bus.SendInput) (b
 			seq, memID, err := s.Append(ctx, tx, ai)
 			if err != nil {
 				return err
+			}
+			if hook != nil {
+				if err := hook(ctx, tx, seq); err != nil {
+					return err
+				}
 			}
 			res = bus.SendResult{Seq: seq, MemoryID: memID}
 			size, chanID, kind = n, ch.ID, ch.Kind

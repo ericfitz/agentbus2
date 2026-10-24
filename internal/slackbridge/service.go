@@ -26,7 +26,10 @@ type Config struct {
 	ArchiveAfterDone                           time.Duration
 	MaxMessageChars                            int
 	PostInterval, LockRenew, LifecycleInterval time.Duration
-	Logger                                     *slog.Logger
+	// RetryBase is the first requeue delay of an inbound Slack message that hit
+	// a transient failure; it doubles to 30 s. Zero takes 1 s.
+	RetryBase time.Duration
+	Logger    *slog.Logger
 }
 
 const (
@@ -41,7 +44,7 @@ func (c Config) withDefaults() (Config, error) {
 	if c.MaxMessageChars < minMessageChars || c.MaxMessageChars > maxMessageChars {
 		return c, fmt.Errorf("slackbridge: MaxMessageChars must be between %d and %d, got %d", minMessageChars, maxMessageChars, c.MaxMessageChars)
 	}
-	for _, d := range []time.Duration{c.PostInterval, c.LockRenew, c.LifecycleInterval} {
+	for _, d := range []time.Duration{c.PostInterval, c.LockRenew, c.LifecycleInterval, c.RetryBase} {
 		if d < 0 {
 			return c, errors.New("slackbridge: durations must not be negative")
 		}
@@ -54,6 +57,9 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	if c.LifecycleInterval == 0 {
 		c.LifecycleInterval = 60 * time.Second
+	}
+	if c.RetryBase == 0 {
+		c.RetryBase = time.Second
 	}
 	if c.Logger == nil {
 		c.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -75,6 +81,8 @@ type Service struct {
 	// overlapping Creates never race for the Slack name here; across replicas
 	// the resumed row adopts the winner's channel (see Create).
 	createMu sync.Mutex
+
+	users userCache // users.info answers, 10 minutes
 
 	mu    sync.Mutex
 	ready bool
