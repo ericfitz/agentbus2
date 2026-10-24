@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/slackapi"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -108,25 +109,31 @@ func (s *Service) catchUpBridge(ctx context.Context, b store.Bridge) error {
 	// (a thread read returns its root whatever oldest says).
 	slices.SortStableFunc(all, func(a, b slackapi.Message) int { return compareTS(a.TS, b.TS) })
 	all = slices.CompactFunc(all, func(a, b slackapi.Message) bool { return a.TS == b.TS })
+	// The cursor never passes the newest top-level ts the history read
+	// returned: a top-level message posted after that read, before a later
+	// thread read, must not be skipped (thread replies read later are
+	// re-read next pass and are duplicates by then).
 	var newest, oldestRetry string
+	for _, m := range hist {
+		if slackapi.ValidTS(m.TS) && m.TS > newest {
+			newest = m.TS
+		}
+	}
 	for _, m := range all {
 		if !slackapi.ValidTS(m.TS) || m.TS <= b.CursorTS {
 			continue
-		}
-		if m.TS > newest {
-			newest = m.TS
 		}
 		out, err := s.handleMessage(ctx, b.SlackChannelID, m, true)
 		if out == OutcomeRetry {
 			if oldestRetry == "" {
 				oldestRetry = m.TS
 			}
-			s.log.Warn("slack catch-up: message will be retried", "slack_user", m.User, "slack_channel", b.SlackChannelID, "err", err)
+			s.log.Warn("slack catch-up: message will be retried", "slack_user", m.User, "slack_channel", b.SlackChannelID, "code", bus.CodeOf(err))
 		}
 	}
 	target := newest
 	if oldestRetry != "" {
-		target = prevTS(oldestRetry)
+		target = min(newest, prevTS(oldestRetry))
 	}
 	if target == "" || target <= b.CursorTS {
 		return nil

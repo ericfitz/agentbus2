@@ -128,6 +128,23 @@ func (s *Service) refusal(u slackapi.User, self slackapi.Self) string {
 	return ""
 }
 
+// The fixed texts of the trust check; only these reach the drop log.
+const (
+	reasonNotHuman = "not a human identity"
+	reasonNoWrite  = "no explicit write permission"
+	reasonBinding  = "Slack account does not match the bound account"
+	reasonConflict = "Slack user binding conflict"
+)
+
+// dropReason is the log reason of a forbidden answer: a trust text, else a
+// fixed "refused" (a core authorization text names the identity, an email).
+func dropReason(err error) string {
+	if m := msgOf(err); m == reasonNotHuman || m == reasonNoWrite || m == reasonBinding || m == reasonConflict {
+		return m
+	}
+	return "refused"
+}
+
 // errBridgeGone marks a bridge that was archived, removed or retired between
 // the lookup and the write; the message is ignored.
 var errBridgeGone = core.E(bus.CodeNotFound, "the bridge is no longer live")
@@ -151,7 +168,7 @@ func trust(ctx context.Context, tx store.Tx, b store.Bridge, identity string, su
 		return false, err
 	}
 	if ident.Kind != store.IdentityHuman {
-		return false, core.E(bus.CodeForbidden, "not a human identity")
+		return false, core.E(bus.CodeForbidden, reasonNotHuman)
 	}
 	acl, err := tx.ACL(ctx, b.ChannelID)
 	if err != nil {
@@ -160,7 +177,7 @@ func trust(ctx context.Context, tx store.Tx, b store.Bridge, identity string, su
 	if !slices.ContainsFunc(acl, func(e store.ACLEntry) bool {
 		return e.Identity == identity && slices.Contains(e.Permissions, store.PermWrite)
 	}) {
-		return false, core.E(bus.CodeForbidden, "no explicit write permission")
+		return false, core.E(bus.CodeForbidden, reasonNoWrite)
 	}
 	bound, errUser := tx.SlackUserOf(ctx, identity)
 	if errUser != nil && !errors.Is(errUser, store.ErrNotFound) {
@@ -173,11 +190,11 @@ func trust(ctx context.Context, tx store.Tx, b store.Bridge, identity string, su
 	switch {
 	case errUser == nil && errOwner == nil:
 		if bound.TeamID != su.TeamID || bound.UserID != su.UserID || owner != identity {
-			return false, core.E(bus.CodeForbidden, "Slack account does not match the bound account")
+			return false, core.E(bus.CodeForbidden, reasonBinding)
 		}
 		return false, nil
 	case errUser == nil || errOwner == nil:
-		return false, core.E(bus.CodeForbidden, "Slack account does not match the bound account")
+		return false, core.E(bus.CodeForbidden, reasonBinding)
 	}
 	return true, nil
 }
@@ -279,7 +296,7 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 	case errors.Is(err, errBridgeGone):
 		return OutcomeIgnored, nil
 	case bus.CodeOf(err) == bus.CodeForbidden:
-		return s.drop(ctx, b, m, msgOf(err))
+		return s.drop(ctx, b, m, dropReason(err))
 	default:
 		return OutcomeRetry, err
 	}
@@ -337,7 +354,7 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 				su.CreatedAt = s.core.NowMs()
 				if err := tx.PutSlackUser(ctx, su); err != nil {
 					if errors.Is(err, store.ErrConflict) {
-						return core.E(bus.CodeForbidden, "Slack user binding conflict")
+						return core.E(bus.CodeForbidden, reasonConflict)
 					}
 					return err
 				}
@@ -375,9 +392,10 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 	case bus.CodeConflict:
 		return OutcomeDuplicate, nil
 	case bus.CodeValidation:
+		s.log.Info("slack message ignored", "slack_user", m.User, "slack_channel", b.SlackChannelID, "code", bus.CodeValidation)
 		return OutcomeIgnored, nil
 	case bus.CodeForbidden:
-		return s.drop(ctx, b, m, msgOf(err))
+		return s.drop(ctx, b, m, dropReason(err))
 	}
 	return OutcomeRetry, err
 }

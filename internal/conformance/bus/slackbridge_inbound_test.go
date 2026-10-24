@@ -77,6 +77,28 @@ type archiveRaceStore struct {
 	bridgeID int64
 }
 
+// aclRaceStore revokes alice's write entry inside every Append before the
+// send runs, so the core's own authorization refuses (its text names the
+// identity).
+type aclRaceStore struct {
+	ab2store.Store
+	channelID int64
+}
+
+func (s *aclRaceStore) Append(ctx context.Context, fn func(context.Context, ab2store.Tx) error) error {
+	return s.Store.Append(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+		acl, err := tx.ACL(ctx, s.channelID)
+		if err != nil {
+			return err
+		}
+		kept := slices.DeleteFunc(slices.Clone(acl), func(e ab2store.ACLEntry) bool { return e.Identity == slAlice })
+		if err := tx.SetACL(ctx, s.channelID, kept); err != nil {
+			return err
+		}
+		return fn(ctx, tx)
+	})
+}
+
 func (s *archiveRaceStore) Append(ctx context.Context, fn func(context.Context, ab2store.Tx) error) error {
 	return s.Store.Append(ctx, func(ctx context.Context, tx ab2store.Tx) error {
 		if err := tx.SetBridgeArchived(ctx, s.bridgeID, 1); err != nil {
@@ -650,6 +672,33 @@ func TestSlackBridgeInbound(t *testing.T) {
 			}
 		})
 
+		t.Run("revoke-race-reason-is-fixed", func(t *testing.T) {
+			f := newInFix(t, e)
+			orig := f.h.core.Store
+			f.h.core.Store = &aclRaceStore{Store: orig, channelID: f.ch.ID}
+			defer func() { f.h.core.Store = orig }()
+			f.want(f.fake.Say(f.sl, "U1", "revoked mid-flight", ""), "dropped")
+			f.h.core.Store = orig
+			log := f.logs.String()
+			if !strings.Contains(log, "reason=refused") {
+				t.Errorf("log lacks the fixed reason:\n%s", log)
+			}
+			f.noSecretsLogged(t)
+			if len(f.human()) != 0 {
+				t.Error("a revoked write delivered")
+			}
+		})
+
+		t.Run("validation-logged", func(t *testing.T) {
+			f := newInFix(t, e)
+			// A body past the envelope limit is a validation answer.
+			f.want(f.fake.Say(f.sl, "U1", strings.Repeat("x", 2<<20), ""), "ignored")
+			log := f.logs.String()
+			if !strings.Contains(log, "slack message ignored") || !strings.Contains(log, "slack_user=U1") || !strings.Contains(log, "code=validation") || strings.Contains(log, "xxxx") {
+				t.Errorf("log = %.300s", log)
+			}
+		})
+
 		t.Run("drop-is-final", func(t *testing.T) {
 			f := newInFix(t, e)
 			first := f.fake.Say(f.sl, "U4", "denied", "")
@@ -845,6 +894,34 @@ func TestSlackBridgeCatchUp(t *testing.T) {
 			}
 			if f.bridge().CursorTS != c.TS {
 				t.Errorf("cursor = %q, want %q", f.bridge().CursorTS, c.TS)
+			}
+			log := f.logs.String()
+			if !strings.Contains(log, "will be retried") || !strings.Contains(log, "code=rate_limited") {
+				t.Errorf("no retry log with a code:\n%s", log)
+			}
+			f.noSecretsLogged(t)
+			for _, bad := range []string{"two", "one", "three", "corp.example"} {
+				if strings.Contains(log, bad) {
+					t.Errorf("log contains %q:\n%s", bad, log)
+				}
+			}
+		})
+
+		t.Run("cursor-stops-at-history", func(t *testing.T) {
+			f := newInFix(t, e)
+			root := f.fake.Say(f.sl, "U1", "root", "")
+			reply := f.fake.Say(f.sl, "U1", "reply", root.TS)
+			if err := f.svc.CatchUp(ctx); err != nil {
+				t.Fatalf("CatchUp: %v", err)
+			}
+			if len(f.human()) != 2 {
+				t.Fatalf("%d messages, want 2", len(f.human()))
+			}
+			if cur := f.bridge().CursorTS; cur != root.TS || cur >= reply.TS {
+				t.Errorf("cursor = %q, want the history's newest %q", cur, root.TS)
+			}
+			if err := f.svc.CatchUp(ctx); err != nil || len(f.human()) != 2 {
+				t.Errorf("second pass: %v, %d messages", err, len(f.human()))
 			}
 		})
 
