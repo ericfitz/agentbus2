@@ -21,6 +21,7 @@ type opChannelInfoOut struct {
 	Name      string `json:"name"`
 	Kind      string `json:"kind"`
 	Creator   string `json:"creator"`
+	Scope     string `json:"scope,omitempty"`
 	CreatedAt int64  `json:"created_at"`
 }
 
@@ -70,12 +71,13 @@ func runChannelsCreate(ctx context.Context, args []string, environ []string, _ i
 	c := newOpCmd("channels create", stderr)
 	kind := c.fs.String("kind", "", "ordinary, memory or tasks (default ordinary)")
 	acl := c.fs.String("acl", "", "ACL as a JSON array of {identity, permissions} (absent: the default ACL; [] : none)")
+	scope := c.fs.String("scope", "", "scope of the channel (administrator only; default: the creator's scope)")
 	key := c.fs.String("key", "", "idempotency key")
 	rest, code, ok := c.parse(args, 1, 1)
 	if !ok {
 		return code
 	}
-	in := bus.CreateChannelInput{Name: rest[0], Kind: bus.Kind(*kind), IdempotencyKey: *key}
+	in := bus.CreateChannelInput{Name: rest[0], Kind: bus.Kind(*kind), Scope: *scope, IdempotencyKey: *key}
 	if c.seen("acl") {
 		entries, err := opParseACL(*acl)
 		if err != nil {
@@ -92,7 +94,7 @@ func runChannelsCreate(ctx context.Context, args []string, environ []string, _ i
 	if err != nil {
 		return fail(stderr, err)
 	}
-	return opPrint(stdout, stderr, opChannelInfoOut{Name: info.Name, Kind: string(info.Kind), Creator: info.Creator, CreatedAt: info.CreatedAt})
+	return opPrint(stdout, stderr, opChannelInfoOut{Name: info.Name, Kind: string(info.Kind), Creator: info.Creator, Scope: info.Scope, CreatedAt: info.CreatedAt})
 }
 
 // runChannelsDelete keeps the y/N prompt and -y of v1 internal/cli/delete.go.

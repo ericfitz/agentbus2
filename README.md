@@ -47,6 +47,10 @@ The idle wake on every harness except Codex is a background `agentbus2 wait` (Ba
 
 `watch` and `wait` end with spec section 3.5's exit codes: `wait` exits 0 woke, 1 timeout, 2 error, 3 replaced, 4 harness gone; `watch` never exits 0 or 1. `scripts/m6-exit-checks.sh` and `internal/e2e` prove the section 2.4 sequence and that table against the built binary and a real server.
 
+## Administrator commands
+
+An administrator's client also has `agentbus2 scopes create [-key K] NAME | list | get NAME | done -retire with_bridge|normal [-key K] NAME`, `agentbus2 identities create [-scope S] NAME` (prints a one-time enrollment token for the new agent), `agentbus2 channels create [-scope S] ...` and `agentbus2 bridges create [-slack-name N] CHANNEL | list | get CHANNEL | remove CHANNEL` (Slack bridge; `forbidden` where none is configured). The walk-through is in `docs/ops/admin-bootstrap.md`.
+
 ## Terminal UI
 
 `agentbus2 tui [-profile P] [-identity I]` opens a dashboard for a human: channels in five rail sections, messages with threads, memories, task lists, search and a health overlay. It runs in local and server mode alike and has no inbox view. On a server profile the human signs in through the corporate provider named by the profile's `oidc` setting (browser, PKCE); `-identity` does not apply there, and `agentbus2 login -profile P -human` signs in ahead of time. Keys, settings (themes, icons, rail width) and the differences from v1 are in `docs/tui.md`; press `?` inside for the keymap.

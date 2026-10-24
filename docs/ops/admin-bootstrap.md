@@ -36,8 +36,8 @@ agentbus2 server admin admins: {"code":"not_registered","message":"identity \"gh
 
 - `users|admins add|remove|list [-issuer NAME] [-email V | -group V | -subject V | -identity NAME]`: edit the two reference lists (federated identity spec 6). `admins add -identity NAME` sets the administrator flag (the identity must exist, registered or created with `create-identity`); `admins remove -identity NAME` clears it. A claim kind (`-email`, `-group`, `-subject`) needs `-issuer` naming a configured issuer; an identity reference takes none. `add` prints `added` or `already present`, `remove` prints `removed` or `not present`, `list` prints one `{identity: pat}` or `{issuer: corp, group: pai-users}` line per entry. With no `issuers` entry configured, every claim-kind `add` is refused; the error lists the configured names. `make-admin` is gone: it exits 2 and names this replacement.
 - `create-human EMAIL`: create a human identity named by the address (trimmed and lowercased; exactly one `@` with text on each side). The identity has no key, joins `general`, and is bound to the address with no provider subject until the person first signs in. Prints `<identity> created` or `<identity> already exists`; an agent of that name is a conflict (exit 1). A human cannot register a key.
-- `reset-credential NAME`: remove every registered key of the identity so the name can be registered again. For a human it clears the recorded provider subject instead (the next sign-in binds afresh). A bearer token already issued stays valid until it expires. For an administrator, the new key needs a token bound to `NAME` (`enrollment create -identity NAME`).
-- `create-identity NAME [-scope S]`: create a keyless row for an identity that will register a key later. In `open` mode any registrant may bind a key to a keyless name that is not an administrator; a keyless administrator can only be claimed with an enrollment token bound to its name.
+- `reset-credential NAME`: remove every registered key of the identity so the name can be registered again. For a human it clears the recorded provider subject instead (the next sign-in binds afresh) and also removes the Slack user bound to that person (the next verified Slack message binds afresh). A bearer token already issued stays valid until it expires. For an administrator, the new key needs a token bound to `NAME` (`enrollment create -identity NAME`).
+- `create-identity NAME [-scope S]`: create a keyless row for an identity that will register a key later. With `-scope S` it creates a scoped agent instead and prints three lines: `NAME created in scope S` (`NAME already exists in scope S` on a repeat), `token: abe_...` and `expires: <RFC 3339>`; it fails on an unknown scope (`not_found`) and on a done or retired one (`conflict`, `not_found`). The same operation is `agentbus2 identities create [-scope S] NAME` for an administrator's client. In `open` mode any registrant may bind a key to a keyless name that is not an administrator; a keyless administrator can only be claimed with an enrollment token bound to its name.
 - `enrollment create [-identity NAME] [-expires 24h] [-uses 1]`: print a token and its row. Without `-identity` the token binds a key to a free name or to a keyless row that is not an administrator; presented for a keyless administrator it is refused `forbidden` (`identity "NAME" requires an enrollment token bound to it`) and not consumed. `-expires` and `-uses` must be positive.
 - `enrollment list`, `enrollment revoke ID`.
 
@@ -65,7 +65,7 @@ The second form needs no store flag: `AGENTBUS2_SERVER_POSTGRES` is in the conta
 
 A scope groups the channels and agent identities of one job so they are retired together (Decisions 8 and 9 of the Slack bridge design). Only an administrator creates scopes and scoped agents.
 
-1. Create the scope first, as an administrator (`scopes create NAME`; a scope name follows the channel name rule).
+1. Create the scope first, as an administrator (`agentbus2 scopes create [-key K] NAME`; a scope name follows the channel name rule).
 2. On the server host: `agentbus2 server admin ... create-identity NAME -scope S`. It prints `NAME created in scope S`, then `token: abe_...` and `expires: <RFC 3339>`. The row has no key and no `general` subscription; the token is bound to `NAME`, usable once, and valid for 24 hours. The token is shown once and never stored in clear.
 3. Hand the token to the agent. It registers its own public key with it (`POST /v1/auth/register`, body members `identity`, `public_key_jwk` and `enrollment_token`), so the private key never leaves the agent's host.
 
@@ -74,6 +74,17 @@ A scoped name can never be claimed without its bound token, in `open` and in `en
 An administrator who wants only pre-created names to register mints only bound tokens (`create-identity` and `enrollment create -identity NAME`); there is no server setting that forbids unbound tokens (Decision 21). The `closed` registration mode no longer exists.
 
 `reset-credential` on a human also removes the Slack account bound to that person, so the next verified Slack message binds afresh.
+
+## Walk-through: a job with agents, people and a Slack channel
+
+The commands below are the administrator's client commands (`-profile` and `-identity` select the administrator; each prints one JSON document). They assume a server with the Slack bridge configured; without one every `bridges` action answers `forbidden` ("the Slack bridge is not configured"). The example is a job called `pai1`.
+
+1. Create the scope: `agentbus2 scopes create pai1`.
+2. Create the agents: `agentbus2 identities create -scope pai1 pai1-worker`. It prints `identity`, `scope`, `created`, `enrollment_token` and `expires_at`; hand the token to the agent, which registers with it. (On the server host `server admin ... create-identity pai1-worker -scope pai1` does the same.)
+3. Create the people by email: `agentbus2 server admin ... create-human eric@corp.example`, or let them sign in; the channel's ACL names them.
+4. Create the channel in the scope with a named-only ACL (no `everyone`), so only the listed identities, administrators and the bridge reach it: `agentbus2 channels create -scope pai1 -acl '[{"identity":"pai1-worker","permissions":["read","write"]},{"identity":"eric@corp.example","permissions":["read","write"]}]' pai1-chat`.
+5. Bridge it: `agentbus2 bridges create [-slack-name N] pai1-chat`. The answer is the bridge plus `not_invited`, each human Slack could not invite and why. `bridges list`, `bridges get CHANNEL` and `bridges remove CHANNEL` (archives the bridge) manage it later.
+6. When the job ends: `agentbus2 scopes done -retire with_bridge pai1`, or `-retire normal`. `with_bridge` retires the scope once its Slack channel is archived (after `slack_archive_after_done_hours`, or sooner by another bridge rule) and is `conflict` for a scope with no live bridge; `normal` retires it when its last channel is removed by the normal rules. `-retire` is required and takes exactly `with_bridge` or `normal`; anything else exits 2. `scopes list` and `scopes get NAME` show the state, channels and identities.
 
 ## Humans: sign-in through a corporate provider
 

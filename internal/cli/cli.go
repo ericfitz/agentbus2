@@ -14,7 +14,7 @@ import (
 // Usage is the top-level usage: the command line, then OpGrammar. `server` is
 // dispatched by package main (it is the API server, not a client command);
 // every other name is a case of Main.
-const Usage = "usage: agentbus2 <init|register|login|mcp|server|watch|wait|stop-hook|subagent-hook|park|unpark|session|channels|send|receive|history|search|memories|tasks|status|tui|version|help> [flags]\n" + OpGrammar
+const Usage = "usage: agentbus2 <init|register|login|mcp|server|watch|wait|stop-hook|subagent-hook|park|unpark|session|channels|scopes|bridges|identities|send|receive|history|search|memories|tasks|status|tui|version|help> [flags]\n" + OpGrammar
 
 // runFunc is the shape of every command.
 type runFunc func(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int
@@ -34,6 +34,9 @@ var commands = map[string]runFunc{
 	"unpark":        RunUnpark,
 	"session":       RunSession,
 	"channels":      RunChannels,
+	"scopes":        RunScopes,
+	"bridges":       RunBridges,
+	"identities":    RunIdentities,
 	"send":          RunSend,
 	"receive":       RunReceive,
 	"history":       RunHistory,
