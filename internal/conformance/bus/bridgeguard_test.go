@@ -48,7 +48,9 @@ func TestBridgedChannelGuards(t *testing.T) {
 		bus := func(entries ...ab2bus.ACLEntry) ab2bus.SetACLInput {
 			return ab2bus.SetACLInput{Channel: "job1-chat", Entries: entries}
 		}
-		perm := func(id string, ps ...ab2bus.Permission) ab2bus.ACLEntry { return ab2bus.ACLEntry{Identity: id, Permissions: ps} }
+		perm := func(id string, ps ...ab2bus.Permission) ab2bus.ACLEntry {
+			return ab2bus.ACLEntry{Identity: id, Permissions: ps}
+		}
 		R, W, A := ab2bus.PermRead, ab2bus.PermWrite, ab2bus.PermAdmin
 		base := []ab2bus.ACLEntry{
 			perm("job1-coder", R, W, A), perm("eric@corp.example", R, W),
@@ -66,23 +68,38 @@ func TestBridgedChannelGuards(t *testing.T) {
 			t.Fatalf("coder SetACL message = %q", got)
 		}
 		// The server administrator is held to the bridge ACL rules.
-		codeOf(t, adm.SetACL(ctx, with(perm(ab2store.Everyone, R))), ab2bus.CodeForbidden)
-		codeOf(t, adm.SetACL(ctx, bus(perm("job1-coder", R, W, A), perm(ab2store.SlackBridge, R), perm(ab2store.Admins, R))), ab2bus.CodeForbidden)
-		codeOf(t, adm.SetACL(ctx, bus(perm("job1-coder", R, W, A), perm("eric@corp.example", R, W), perm(ab2store.Admins, A))), ab2bus.CodeForbidden)
-		codeOf(t, adm.SetACL(ctx, ab2bus.SetACLInput{Channel: "job1-chat"}), ab2bus.CodeForbidden)
+		everyoneMsg := "a bridged channel may grant read or write only to named identities (Decision 12)"
+		pinnedMsg := "the slack-bridge read entry is pinned while the bridge is live"
+		for _, c := range []struct {
+			name string
+			in   ab2bus.SetACLInput
+			msg  string
+		}{
+			{"everyone read", with(perm(ab2store.Everyone, R)), everyoneMsg},
+			{"admins read", bus(perm("job1-coder", R, W, A), perm("eric@corp.example", R, W), perm(ab2store.SlackBridge, R), perm(ab2store.Admins, R)), everyoneMsg},
+			{"slack-bridge dropped", bus(perm("job1-coder", R, W, A), perm("eric@corp.example", R, W), perm(ab2store.Admins, A)), pinnedMsg},
+		} {
+			err := adm.SetACL(ctx, c.in)
+			codeOf(t, err, ab2bus.CodeForbidden)
+			if got := msgOf(err); got != c.msg {
+				t.Fatalf("%s: message = %q, want %q", c.name, got, c.msg)
+			}
+		}
 		if err := adm.SetACL(ctx, with(perm("kim@corp.example", W))); err != nil {
 			t.Fatalf("admin adding a named identity: %v", err)
 		}
 
 		// Delete and rename are refused for the administrator too.
-		for name, err := range map[string]error{
-			"delete": adm.DeleteChannel(ctx, ab2bus.DeleteChannelInput{Name: "job1-chat"}),
-			"rename": adm.RenameChannel(ctx, ab2bus.RenameChannelInput{Name: "job1-chat", NewName: "job1-talk"}),
-		} {
-			codeOf(t, err, ab2bus.CodeConflict)
-			if got := msgOf(err); got != `channel "job1-chat" has a live Slack bridge; run bridges remove first` {
-				t.Fatalf("%s message = %q", name, got)
-			}
+		wantMsg := `channel "job1-chat" has a live Slack bridge; run bridges remove first`
+		err = adm.DeleteChannel(ctx, ab2bus.DeleteChannelInput{Name: "job1-chat"})
+		codeOf(t, err, ab2bus.CodeConflict)
+		if got := msgOf(err); got != wantMsg {
+			t.Fatalf("delete message = %q", got)
+		}
+		err = adm.RenameChannel(ctx, ab2bus.RenameChannelInput{Name: "job1-chat", NewName: "job1-talk"})
+		codeOf(t, err, ab2bus.CodeConflict)
+		if got := msgOf(err); got != wantMsg {
+			t.Fatalf("rename message = %q", got)
 		}
 
 		// A creating bridge pins the channel the same way.

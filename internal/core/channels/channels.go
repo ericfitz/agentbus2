@@ -238,7 +238,11 @@ func (s Service) SetACL(ctx context.Context, identity string, in bus.SetACLInput
 		}
 		if pinned {
 			if _, err := s.RequireAdmin(ctx, tx, identity); err != nil {
-				return core.E(bus.CodeForbidden, "only a server administrator may change the ACL of a bridged channel")
+				var be *bus.Error
+				if errors.As(err, &be) && be.Code == bus.CodeForbidden {
+					return core.E(bus.CodeForbidden, "only a server administrator may change the ACL of a bridged channel")
+				}
+				return err
 			}
 			if err := scopes.CheckBridgeACL(entries); err != nil {
 				return err
