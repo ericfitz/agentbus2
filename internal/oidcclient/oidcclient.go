@@ -110,6 +110,8 @@ type callbackResult struct {
 
 const donePage = `<!doctype html><meta charset="utf-8"><title>agentbus2</title><p>Sign-in complete. You may close this window.</p>`
 
+const ignoredPage = `<!doctype html><meta charset="utf-8"><title>agentbus2</title><p>This request does not belong to the sign-in in progress and was ignored.</p>`
+
 func failPage(msg string) string {
 	return `<!doctype html><meta charset="utf-8"><title>agentbus2</title><p>Sign-in failed: ` + html.EscapeString(msg) + `. You may close this window.</p>`
 }
@@ -161,8 +163,9 @@ func SignIn(ctx context.Context, c Config) (Tokens, error) {
 		switch {
 		case subtle.ConstantTimeCompare([]byte(q.Get("state")), []byte(state)) != 1:
 			w.WriteHeader(http.StatusBadRequest)
-			_, _ = io.WriteString(w, failPage("state mismatch"))
-			report(callbackResult{err: errors.New("oidcclient: callback state does not match this sign-in")})
+			// A stray request, a prefetch or a second tab must not abort a
+			// legitimate sign-in: ignore it and keep waiting.
+			_, _ = io.WriteString(w, ignoredPage)
 		case q.Get("error") != "":
 			e := clip(q.Get("error"))
 			w.WriteHeader(http.StatusBadRequest)

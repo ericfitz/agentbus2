@@ -159,22 +159,117 @@ func assertPortFree(t *testing.T, port int) {
 	}
 }
 
-func TestSignInStateMismatch(t *testing.T) {
+// strayThen returns an OpenBrowser seam that first sends each stray request to
+// the loopback listener (answering with its status in strays[i]), then follows
+// the authorization URL as a browser would. A stray is a path and query
+// relative to the redirect URI's origin.
+func strayThen(t *testing.T, strays []string, statuses chan<- int, follow bool) func(string) error {
+	t.Helper()
+	return func(raw string) error {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return err
+		}
+		redirect, err := url.Parse(u.Query().Get("redirect_uri"))
+		if err != nil {
+			return err
+		}
+		go func() {
+			c := &http.Client{Timeout: 5 * time.Second}
+			for _, s := range strays {
+				resp, err := c.Get("http://" + redirect.Host + s)
+				if err != nil {
+					statuses <- -1
+					continue
+				}
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+				statuses <- resp.StatusCode
+			}
+			if !follow {
+				return
+			}
+			if resp, err := c.Get(u.String()); err == nil {
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
+			}
+		}()
+		return nil
+	}
+}
+
+// A callback whose state does not match is ignored with a 400 page: the
+// sign-in keeps waiting for the matching callback (item 36).
+func TestSignInStrayCallbackDoesNotAbort(t *testing.T) {
+	for name, strays := range map[string][]string{
+		"wrong state":   {"/callback?state=forged&code=x"},
+		"missing state": {"/callback?code=x"},
+		"both":          {"/callback?state=forged&code=x", "/callback", "/callback?state=forged&error=access_denied"},
+		"other path":    {"/", "/favicon.ico"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid"})
+			port := freePort(t)
+			statuses := make(chan int, len(strays))
+			c := config(p, port, newBrowser(nil))
+			c.OpenBrowser = strayThen(t, strays, statuses, true)
+			tok, err := SignIn(context.Background(), c)
+			if err != nil || tok.AccessToken == "" {
+				t.Fatalf("SignIn = %+v, %v; a stray request aborted the sign-in", tok, err)
+			}
+			for range strays {
+				st := <-statuses
+				want := http.StatusBadRequest
+				if name == "other path" {
+					want = http.StatusNotFound
+				}
+				if st != want {
+					t.Errorf("stray status = %d, want %d", st, want)
+				}
+			}
+			assertPortFree(t, port)
+		})
+	}
+}
+
+// A stray request alone never ends the sign-in early: only the timeout does,
+// and nothing is exchanged.
+func TestSignInStrayCallbackOnlyTimesOut(t *testing.T) {
 	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid"})
 	port := freePort(t)
-	b := newBrowser(func(u *url.URL) {
-		q := u.Query()
-		q.Set("state", "forged")
-		u.RawQuery = q.Encode()
-	})
-	_, err := SignIn(context.Background(), config(p, port, b))
-	if err == nil || !strings.Contains(err.Error(), "state") {
-		t.Fatalf("err = %v, want one naming state", err)
+	statuses := make(chan int, 1)
+	c := config(p, port, newBrowser(nil))
+	c.Timeout = 400 * time.Millisecond
+	c.OpenBrowser = strayThen(t, []string{"/callback?state=forged&code=x"}, statuses, false)
+	start := time.Now()
+	_, err := SignIn(context.Background(), c)
+	if err == nil || !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("err = %v, want the timeout error", err)
+	}
+	if time.Since(start) < 300*time.Millisecond {
+		t.Fatalf("SignIn ended after %v, before its timeout", time.Since(start))
+	}
+	if st := <-statuses; st != http.StatusBadRequest {
+		t.Errorf("stray status = %d, want 400", st)
 	}
 	for _, r := range p.Requests() {
 		if strings.HasPrefix(r, "POST /token") {
-			t.Error("the code was exchanged despite a state mismatch")
+			t.Error("the code was exchanged for a stray request")
 		}
+	}
+	assertPortFree(t, port)
+}
+
+// The matching state with an error parameter still ends the sign-in with it.
+func TestSignInMatchingStateErrorEnds(t *testing.T) {
+	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid", AuthorizeError: "access_denied"})
+	port := freePort(t)
+	statuses := make(chan int, 1)
+	c := config(p, port, newBrowser(nil))
+	c.OpenBrowser = strayThen(t, []string{"/callback?state=forged&code=x"}, statuses, true)
+	_, err := SignIn(context.Background(), c)
+	if err == nil || !strings.Contains(err.Error(), "access_denied") {
+		t.Fatalf("err = %v, want one containing access_denied", err)
 	}
 	assertPortFree(t, port)
 }
