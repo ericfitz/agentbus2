@@ -29,15 +29,20 @@ func senderName(x bus.Message) string {
 func (m Model) isOwn(x bus.Message) bool { return x.Sender == m.c.identity }
 
 // agentLabel is a message's sender with its icon and color: the TUI's own
-// identity in the user color, everyone else in the agent color, named by the
-// server-assigned display name.
+// identity and human senders in the user color, other agents in the agent
+// color, named by the server-assigned display name.
 func (m Model) agentLabel(x bus.Message) string {
-	own := m.isOwn(x)
 	style := m.theme.Style(m.theme.Agent)
-	if own {
+	if m.isOwn(x) || x.SenderKind == bus.IdentityHuman {
 		style = m.theme.Style(m.theme.User)
 	}
-	return m.senderIcon(own) + style.Render(senderName(x))
+	return m.messageIcon(x) + style.Render(senderName(x))
+}
+
+// messageIcon is the sender icon of a message: the user icon for the TUI's own
+// messages and for a human sender (spec 7), the agent icon otherwise.
+func (m Model) messageIcon(x bus.Message) string {
+	return m.senderIcon(m.isOwn(x) || x.SenderKind == bus.IdentityHuman)
 }
 
 // senderIcon is the sender icon drawn in its color: the user color for the

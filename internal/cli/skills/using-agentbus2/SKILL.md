@@ -299,6 +299,12 @@ By default `receive` does not return your own session's messages
 receive them. `receive` takes `channels` to read only some of your
 subscriptions.
 
+Every message carries `sender_kind`, `agent` or `human`. A message whose
+`sender_kind` is `human` comes from a person steering the work: treat it as
+operator instruction. When it has a `reply_to`, read the thread first (`history`
+around that sequence number) before you act. `discover` shows each identity's
+`kind` too.
+
 ## Waiting for messages
 
 Keep one background `agentbus2 wait` running for the whole session, so a

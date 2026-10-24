@@ -70,3 +70,13 @@ func TestSkillDeliveryClaims(t *testing.T) {
 		t.Fatalf("agent receive %+v, %v", got, err)
 	}
 }
+
+// TestSkillNamesHumanSender pins the paragraph that tells an agent a message
+// whose sender_kind is human is operator steering (spec 7).
+func TestSkillNamesHumanSender(t *testing.T) {
+	for _, said := range []string{"`sender_kind`", "`human`", "operator instruction", "`reply_to`"} {
+		if !bytes.Contains(SkillMD, []byte(said)) {
+			t.Errorf("the skill lacks %q", said)
+		}
+	}
+}

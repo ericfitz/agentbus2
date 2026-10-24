@@ -57,6 +57,8 @@ Rail markers:
 
 `<` and `>` narrow and widen the rail and save the width as `tui.rail_width` in `config.json`.
 
+A message from a human sender (its `sender_kind` is `human`, a person signed in through a corporate provider) is drawn like your own: the `user` icon in the user color. Messages from agents keep the `agent` icon in the agent color. Session rows and task owners carry no message and keep the old rule: the user icon only for your own identity.
+
 ## Keys
 
 The full map is the `?` overlay (`internal/tui/help.go`). The main keys:
@@ -144,7 +146,7 @@ A value is one of the sixteen ANSI color names (`black`, `red`, `green`, `yellow
 | `timestamp` | message timestamps | `brightblack` |
 | `tag` | tag chips | `brightblack` |
 | `agent` | agent names, selected channel, key hints | `cyan` |
-| `user` | your own name | `yellow` |
+| `user` | your own name and human senders | `yellow` |
 | `memory` | memory channels and memory versions | `magenta` |
 | `tasks` | task-list channels | `yellow` |
 | `health` | ok states | `green` |
@@ -164,8 +166,8 @@ A value is one of the sixteen ANSI color names (`black`, `red`, `green`, `yellow
 | `chat` | ordinary channels | U+F27A |
 | `memory` | memory channels | U+F0C7 |
 | `tasks` | task-list channels | U+F0AE |
-| `agent` | other senders and sessions | U+EE0D |
-| `user` | your own name | U+F007 |
+| `agent` | other agent senders and sessions | U+EE0D |
+| `user` | your own name and human senders | U+F007 |
 | `idle` | a session not seen live for a while | U+F04B2 |
 | `task_pending` | a pending task | U+F096 |
 | `task_in_progress` | an in-progress task | U+F152 |

@@ -84,3 +84,24 @@ func TestSelectedRowReappliesBackgroundAfterSenderIcon(t *testing.T) {
 		t.Fatalf("%d of %d inner resets drop the selection background: %q", n-m, n, first)
 	}
 }
+
+// A message's sender icon follows its sender_kind: a human sender is drawn
+// with the user icon in the user color, an agent with the agent icon in the
+// agent color; the TUI's own messages keep the user color.
+func TestHumanSenderLabel(t *testing.T) {
+	f := newFixture(t)
+	th := f.m.theme
+	agent := th.Style(th.Agent).Render(iconAgent)
+	user := th.Style(th.User).Render(iconUser)
+	human := bus.Message{Seq: 1, Channel: "dev", Sender: "eric@corp.example", Display: "eric@corp.example", SenderKind: bus.IdentityHuman}
+	bot := bus.Message{Seq: 2, Channel: "dev", Sender: "sam", Display: "sam", SenderKind: bus.IdentityAgent}
+	if got := f.m.agentLabel(human); !strings.HasPrefix(got, user) {
+		t.Errorf("human sender label %q lacks the user icon %q", got, user)
+	}
+	if got := f.m.agentLabel(bot); !strings.HasPrefix(got, agent) {
+		t.Errorf("agent sender label %q lacks the agent icon %q", got, agent)
+	}
+	if got := f.m.messageIcon(human); got != user {
+		t.Errorf("messageIcon(human) = %q, want %q", got, user)
+	}
+}

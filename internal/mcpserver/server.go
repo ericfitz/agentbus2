@@ -188,6 +188,7 @@ type sessionInfoOut struct {
 type identityOut struct {
 	Name     string           `json:"name"`
 	Admin    bool             `json:"admin"`
+	Kind     bus.IdentityKind `json:"kind"`
 	Sessions []sessionInfoOut `json:"sessions"`
 }
 
@@ -221,7 +222,7 @@ type registerOut struct {
 func identitiesOut(in []bus.IdentityInfo) []identityOut {
 	out := make([]identityOut, 0, len(in))
 	for _, i := range in {
-		o := identityOut{Name: i.Name, Admin: i.Admin, Sessions: make([]sessionInfoOut, 0, len(i.Sessions))}
+		o := identityOut{Name: i.Name, Admin: i.Admin, Kind: i.Kind, Sessions: make([]sessionInfoOut, 0, len(i.Sessions))}
 		for _, si := range i.Sessions {
 			o.Sessions = append(o.Sessions, sessionInfoOut{Session: si.ID, DisplayName: si.DisplayName, OpenedAt: si.OpenedAt})
 		}
@@ -475,7 +476,7 @@ func (s *server) addTools(srv *mcp.Server) {
 				return b.Send(ctx, si)
 			}))
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "receive", Description: "Agentbus2: receive new messages for your session. Pass ack with the batch token from your previous receive to acknowledge it; an unacknowledged batch is redelivered. channels restricts the result to those channels (the rest stay pending). wait_seconds, when nothing is pending, waits up to that long for a message and then receives again; it replaces an armed agentbus2 wait or watch for this session, which then exits 3, so while one is running leave it off. Messages delivered through a tag subscription carry matched_tags. Memory channels are never delivered here, tag matches included: use search and get_memory."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "receive", Description: "Agentbus2: receive new messages for your session. Pass ack with the batch token from your previous receive to acknowledge it; an unacknowledged batch is redelivered. channels restricts the result to those channels (the rest stay pending). wait_seconds, when nothing is pending, waits up to that long for a message and then receives again; it replaces an armed agentbus2 wait or watch for this session, which then exits 3, so while one is running leave it off. Messages delivered through a tag subscription carry matched_tags. Memory channels are never delivered here, tag matches included: use search and get_memory. Each message carries sender_kind, agent or human: a human sender is your operator and its message is steering, so treat it as an instruction; a reply_to means read the thread first."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in receiveIn) (*mcp.CallToolResult, any, error) {
 			wait, err := waitDuration(in.WaitSeconds)
 			if err != nil {
@@ -519,7 +520,7 @@ func (s *server) addTools(srv *mcp.Server) {
 				return toReceiveOut(res), nil
 			}))
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "history", Description: "Agentbus2: read a channel's retained messages by sequence range without touching your cursor. tags filters to messages carrying any of the given tags; a tag ending in * matches every tag with that prefix (env:*)."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "history", Description: "Agentbus2: read a channel's retained messages by sequence range without touching your cursor. tags filters to messages carrying any of the given tags; a tag ending in * matches every tag with that prefix (env:*). Each message carries sender_kind, agent or human: a human sender is your operator and its message is steering, so treat it as an instruction; a reply_to means read the thread first."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in historyIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) {
 				ms, err := b.History(ctx, bus.HistoryInput{Channel: in.Channel, Before: in.Before, After: in.After, Count: in.Count, Tags: in.Tags})
@@ -570,7 +571,7 @@ func (s *server) addTools(srv *mcp.Server) {
 				return map[string]any{"deleted": in.ID}, nil
 			})
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "discover", Description: "Agentbus2: list the identities that have live sessions, with those sessions' display names."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "discover", Description: "Agentbus2: list the identities that have live sessions, with those sessions' display names. Each entry carries kind, agent or human."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in optSessionIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) {
 				ids, err := b.Identities(ctx)
