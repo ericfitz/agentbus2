@@ -1,7 +1,11 @@
 package slackbridge
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"testing"
+	"time"
 
 	"github.com/ericfitz/agentbus2/internal/slackapi"
 )
@@ -48,5 +52,62 @@ func TestOtherTeam(t *testing.T) {
 	s := &Service{}
 	if got := s.refusal(slackapi.User{Email: "a@b.example"}, self); got != "user of another workspace" {
 		t.Errorf("refusal(no team) = %q", got)
+	}
+}
+
+func TestDropRecorded(t *testing.T) {
+	s := &Service{}
+	s.dropRecorded(1, 5) // nil-safe
+	at := time.Unix(1700000000, 0)
+	for _, k := range []postedKey{{1, 4}, {1, 5}, {1, 6}, {2, 4}} {
+		s.setPosted(k, "t")
+		s.setUncertain(k, at)
+	}
+	s.dropRecorded(1, 5)
+	for k, want := range map[postedKey]bool{{1, 4}: false, {1, 5}: false, {1, 6}: true, {2, 4}: true} {
+		if _, ok := s.getPosted(k); ok != want {
+			t.Errorf("posted %v present = %v, want %v", k, ok, want)
+		}
+		if _, ok := s.getUncertain(k); ok != want {
+			t.Errorf("uncertain %v present = %v, want %v", k, ok, want)
+		}
+	}
+	s.setUncertain(postedKey{1, 6}, at.Add(time.Hour)) // the first attempt time stays
+	if got, _ := s.getUncertain(postedKey{1, 6}); !got.Equal(at) {
+		t.Errorf("uncertain time = %v, want the first attempt %v", got, at)
+	}
+	s.clearBridgePosted(1)
+	if n := s.PendingPosts(); n != 2 {
+		t.Errorf("PendingPosts after clearBridgePosted(1) = %d, want 2 (bridge 2)", n)
+	}
+	s.clearBridgePosted(0)
+	if n := s.PendingPosts(); n != 0 {
+		t.Errorf("PendingPosts = %d", n)
+	}
+}
+
+func TestPostUncertain(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want bool
+	}{
+		{errors.New("read tcp: connection reset by peer"), true},
+		{fmt.Errorf("slack: chat.postMessage: %w", errors.New("EOF")), true},
+		{context.DeadlineExceeded, true},
+		{context.Canceled, true},
+		{&slackapi.APIError{Method: "chat.postMessage", Code: "http_502"}, true},
+		{&slackapi.APIError{Method: "chat.postMessage", Code: "http_504"}, true},
+		{&slackapi.APIError{Method: "chat.postMessage", Code: "http_408"}, true},
+		{&slackapi.APIError{Method: "chat.postMessage", Code: "http_403"}, false},
+		{&slackapi.APIError{Method: "chat.postMessage", Code: "invalid_blocks"}, false},
+		{&slackapi.APIError{Method: "chat.postMessage", Code: "internal_error"}, true},
+		{&slackapi.APIError{Method: "chat.postMessage", Code: "service_unavailable"}, true},
+		{&slackapi.RateLimitedError{Method: "chat.postMessage"}, false},
+		{fmt.Errorf("wrapped: %w", &slackapi.RateLimitedError{Method: "chat.postMessage"}), false},
+		{slackapi.ErrChannelGone, false},
+	} {
+		if got := postUncertain(tc.err); got != tc.want {
+			t.Errorf("postUncertain(%v) = %v, want %v", tc.err, got, tc.want)
+		}
 	}
 }

@@ -55,6 +55,7 @@ type Fake struct {
 	pageSize  int
 	calls     map[string]int
 	fails     map[string][]error
+	postFails []error // PostThenFail: Post succeeds, then returns the error
 	limits    map[string]*rateLimit
 	queue     []slackapi.Event
 	acks      []string
@@ -237,6 +238,11 @@ func (f *Fake) Post(_ context.Context, in slackapi.PostInput) (string, error) {
 	f.addMessage(c, m)
 	if f.echo {
 		f.enqueue(slackapi.Event{Kind: slackapi.EventMessage, Channel: in.Channel, User: m.User, Message: m})
+	}
+	if len(f.postFails) > 0 {
+		err := f.postFails[0]
+		f.postFails = f.postFails[1:]
+		return "", err
 	}
 	return m.TS, nil
 }
@@ -542,6 +548,18 @@ func (f *Fake) FailNext(method string, err error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.fails[method] = append(f.fails[method], err)
+}
+
+// PostThenFail makes the next Post (queued: one per call, after any FailNext)
+// store the message, so it shows in History and Replies, and then return err
+// to the caller: a request that reached Slack whose answer was lost.
+func (f *Fake) PostThenFail(err error) {
+	if err == nil {
+		panic("slackfake: PostThenFail of a nil error")
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.postFails = append(f.postFails, err)
 }
 
 // RateLimit makes the next times calls of method return a RateLimitedError.

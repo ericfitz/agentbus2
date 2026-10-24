@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -83,12 +84,33 @@ func sleep(ctx context.Context, d time.Duration) error {
 //
 // State (Definition of Done D): the mark moves only after a successful post,
 // so a second Drain posts nothing already acked; overlapping Drains in one
-// process are serialized; after a failed run the next one resumes from the
-// mark and finishes a post whose map row failed to store from the in-memory
-// posted map (dropped when the bridge is archived or removed and when the
-// runner loses the lock), posting the unacked message again at worst (a crash
-// between the post and its map row is repaired by CatchUp through the message
-// metadata, which the runner runs before the first drain).
+// process are serialized. Chat.postMessage has no idempotency key, so the map
+// row is the only duplicate guard, and this process keeps two memories until a
+// row is stored (both dropped when the bridge is archived or removed, and for
+// every seq at or below the acked mark a drain reads, which another runner
+// recorded; they are not dropped when the runner loses the lock, because
+// record checks the map row before writing and another replica never sees
+// them):
+//
+//   - posted: Slack answered with a ts. The next drain records that ts instead
+//     of posting again.
+//   - uncertain: the post failed in a way that may still have reached Slack (a
+//     transport error, a timeout, a context end, an HTTP 5xx or 408, or a server-side error code such as
+//     internal_error). The next
+//     drain first searches Slack for a message of this app whose metadata seq
+//     is the message's (History for a top-level post, Replies for a reply into
+//     a thread, from 60 s before the attempt), records the ts it finds and
+//     posts nothing; when it finds none it posts; when the search itself fails
+//     the drain stops with that error and posts nothing blind. A failure that
+//     proves Slack did not post (any other APIError, a 429
+//     after the retries, a channel gone) leaves no memory and posts again.
+//
+// What remains is a duplicate Slack post (never a bus message) when a post
+// reached Slack and its record is lost with this process's memory (a crash, or
+// a takeover by another replica) and CatchUp cannot repair it through the
+// metadata, or when the uncertain search finds nothing because Slack does not
+// return message metadata to the bot through History and Replies (unverified
+// on a real workspace) or the post landed after the search.
 func (s *Service) Drain(ctx context.Context) error {
 	if _, err := s.requireReady(); err != nil {
 		return err
@@ -135,6 +157,8 @@ func (s *Service) Drain(ctx context.Context) error {
 }
 
 func (s *Service) drainBridge(ctx context.Context, b store.Bridge, acked int64) error {
+	// Whatever the mark has passed another runner recorded: forget it.
+	s.dropRecorded(b.ID, acked)
 	for {
 		var msgs []store.Message
 		var ch store.Channel
@@ -216,6 +240,7 @@ func (s *Service) drainOne(ctx context.Context, b store.Bridge, ch store.Channel
 	}
 	if skip {
 		s.clearPosted(postedKey{b.ID, m.Seq})
+		s.clearUncertain(postedKey{b.ID, m.Seq})
 		return false, s.core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 			return tx.AdvanceAckedMark(ctx, store.SlackBridge, b.ChannelID, m.Seq)
 		})
@@ -228,6 +253,19 @@ func (s *Service) drainOne(ctx context.Context, b store.Bridge, ch store.Channel
 	key := postedKey{b.ID, m.Seq}
 	ts, again := s.getPosted(key)
 	if !again {
+		if at, unsure := s.getUncertain(key); unsure {
+			found, fts, err := s.findPost(ctx, b, m.Seq, thread, at)
+			if err != nil {
+				return true, fmt.Errorf("searching Slack for seq %d: %w", m.Seq, slackErr(err))
+			}
+			if found {
+				s.log.Warn("slack bridge: an uncertain post had reached Slack; recording it", "channel", b.ChannelName, "slack_channel", b.SlackChannelID, "seq", m.Seq)
+				ts, again = fts, true
+			}
+		}
+	}
+	if !again {
+		attempt := s.core.Now()
 		var err error
 		ts, err = s.post(ctx, in)
 		if errors.Is(err, slackapi.ErrChannelGone) {
@@ -235,6 +273,9 @@ func (s *Service) drainOne(ctx context.Context, b store.Bridge, ch store.Channel
 			return true, s.ArchiveBridge(ctx, cur, reasonSlackGone)
 		}
 		if err != nil {
+			if postUncertain(err) {
+				s.setUncertain(key, attempt)
+			}
 			return true, fmt.Errorf("posting seq %d: %w", m.Seq, slackErr(err))
 		}
 	}
@@ -246,6 +287,7 @@ func (s *Service) drainOne(ctx context.Context, b store.Bridge, ch store.Channel
 	// record (or a stop in the middle of it) is finished by the next drain
 	// instead of posting the message again.
 	s.setPosted(key, ts)
+	s.clearUncertain(key)
 	if err := s.record(ctx, b, m.Seq, ts, root); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			s.clearPosted(key)
@@ -270,13 +312,23 @@ func (s *Service) setPosted(k postedKey, ts string) {
 }
 
 // getPosted reads the remembered Slack ts without removing it; the entry goes
-// only through clearPosted (after the map row is stored) or clearBridgePosted
-// (the bridge is archived or removed, or the runner lost the lock).
+// only through clearPosted (after the map row is stored), dropRecorded (the
+// acked mark passed it) or clearBridgePosted (the bridge is archived or
+// removed).
 func (s *Service) getPosted(k postedKey) (string, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ts, ok := s.posted[k]
 	return ts, ok
+}
+
+// PendingPosts is how many posts this process remembers without a stored map
+// row: posted ones waiting for their record and uncertain ones waiting for the
+// search. Diagnostics and tests.
+func (s *Service) PendingPosts() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.posted) + len(s.uncertain)
 }
 
 func (s *Service) clearPosted(k postedKey) {
@@ -285,15 +337,43 @@ func (s *Service) clearPosted(k postedKey) {
 	delete(s.posted, k)
 }
 
+// setUncertain remembers that the post of k may have reached Slack, with the
+// time of the attempt. An earlier attempt time is kept: the search window must
+// cover every attempt.
+func (s *Service) setUncertain(k postedKey, at time.Time) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.uncertain == nil {
+		s.uncertain = map[postedKey]time.Time{}
+	}
+	if _, ok := s.uncertain[k]; !ok {
+		s.uncertain[k] = at
+	}
+}
+
+func (s *Service) getUncertain(k postedKey) (time.Time, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	at, ok := s.uncertain[k]
+	return at, ok
+}
+
+func (s *Service) clearUncertain(k postedKey) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.uncertain, k)
+}
+
 // clearBridgePosted drops every remembered post of one bridge (bridge 0 means
-// all bridges): an archived or removed bridge posts nothing more, and a
-// runner that lost the lock must not trust a ts another runner may have
-// recorded or repaired since.
+// all bridges): an archived or removed bridge posts nothing more. It is not
+// called when the runner loses the lock: the memory is per process, another
+// replica never sees it, and record checks the map row before writing.
 func (s *Service) clearBridgePosted(bridge int64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if bridge == 0 {
 		clear(s.posted)
+		clear(s.uncertain)
 		return
 	}
 	for k := range s.posted {
@@ -301,6 +381,92 @@ func (s *Service) clearBridgePosted(bridge int64) {
 			delete(s.posted, k)
 		}
 	}
+	for k := range s.uncertain {
+		if k.bridge == bridge {
+			delete(s.uncertain, k)
+		}
+	}
+}
+
+// dropRecorded forgets the remembered posts of a bridge whose seq the acked
+// mark has reached: another runner recorded them (this process's own record
+// clears its entry), so the memory only needs to cover seqs above the mark.
+func (s *Service) dropRecorded(bridge, acked int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for k := range s.posted {
+		if k.bridge == bridge && k.seq <= acked {
+			delete(s.posted, k)
+		}
+	}
+	for k := range s.uncertain {
+		if k.bridge == bridge && k.seq <= acked {
+			delete(s.uncertain, k)
+		}
+	}
+}
+
+// uncertainWindow is how far before an uncertain attempt the search for its
+// message starts, for clock skew between this host and Slack.
+const uncertainWindow = 60 * time.Second
+
+// postUncertain reports whether a failed post may still have reached Slack.
+// Certain failures, where Slack answered that it did not post: an APIError
+// (ok=false with a code) other than an HTTP 5xx or 408 (the adapter maps a bad
+// status to http_<code>, and a gateway can return one after the post went
+// through) and the server-side codes internal_error, fatal_error,
+// service_unavailable and request_timeout; a RateLimitedError (a 429 is refused before processing); a
+// channel gone. Everything else is uncertain: a transport error, a timeout, a
+// canceled or expired context, an HTTP 5xx or 408.
+func postUncertain(err error) bool {
+	var rl *slackapi.RateLimitedError
+	var ae *slackapi.APIError
+	switch {
+	case errors.Is(err, slackapi.ErrChannelGone), errors.As(err, &rl):
+		return false
+	case errors.As(err, &ae):
+		switch ae.Code {
+		case "http_408", "internal_error", "fatal_error", "service_unavailable", "request_timeout":
+			return true
+		}
+		return strings.HasPrefix(ae.Code, "http_5")
+	}
+	return true
+}
+
+// findPost looks in Slack for a post of this app carrying seq in its metadata,
+// from uncertainWindow before the attempt: the thread when the post was a
+// reply, the channel history otherwise. A thread whose root is gone has no
+// post to find.
+func (s *Service) findPost(ctx context.Context, b store.Bridge, seq int64, thread string, attempt time.Time) (found bool, ts string, err error) {
+	self, err := s.requireReady()
+	if err != nil {
+		return false, "", err
+	}
+	oldest := tsOf(attempt.Add(-uncertainWindow))
+	var msgs []slackapi.Message
+	if thread == "" {
+		msgs, err = s.readAll(ctx, func(cursor string) (slackapi.Page, error) {
+			return s.sc.History(ctx, b.SlackChannelID, oldest, cursor)
+		})
+	} else {
+		msgs, err = s.readAll(ctx, func(cursor string) (slackapi.Page, error) {
+			return s.sc.Replies(ctx, b.SlackChannelID, thread, oldest, cursor)
+		})
+		var ae *slackapi.APIError
+		if errors.As(err, &ae) && ae.Code == "thread_not_found" {
+			return false, "", nil
+		}
+	}
+	if err != nil {
+		return false, "", err
+	}
+	for _, m := range msgs {
+		if m.MetadataSeq == seq && m.BotID != "" && m.BotID == self.BotID && slackapi.ValidTS(m.TS) {
+			return true, m.TS, nil
+		}
+	}
+	return false, "", nil
 }
 
 // record stores the map row of a posted message (unless an overlapping runner

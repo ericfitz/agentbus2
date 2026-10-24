@@ -595,3 +595,62 @@ func TestFakeEchoPostsAndArchivedSay(t *testing.T) {
 	}()
 	f.Say(id, "U1", "x", "")
 }
+
+func TestFakePostThenFail(t *testing.T) {
+	ctx := context.Background()
+	f := New(self)
+	id, _ := f.CreatePrivateChannel(ctx, "c")
+	root, err := f.Post(ctx, slackapi.PostInput{Channel: id, Fallback: "root", Seq: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	boom := errors.New("connection reset")
+	f.PostThenFail(boom)
+	f.FailNext("Post", errors.New("early")) // FailNext still fails before the post
+	if _, err := f.Post(ctx, slackapi.PostInput{Channel: id, Fallback: "early", Seq: 9}); err == nil || err.Error() != "early" {
+		t.Fatalf("FailNext call: %v", err)
+	}
+	if ch, _ := f.Channel(id); len(ch.Posts) != 1 {
+		t.Fatalf("a FailNext call posted: %d posts", len(ch.Posts))
+	}
+	ts, err := f.Post(ctx, slackapi.PostInput{Channel: id, Fallback: "lost answer", Seq: 2})
+	if !errors.Is(err, boom) || ts != "" {
+		t.Fatalf("PostThenFail call = %q, %v", ts, err)
+	}
+	reply := slackapi.PostInput{Channel: id, Fallback: "lost reply", Seq: 3, ThreadTS: root}
+	f.PostThenFail(boom)
+	if _, err := f.Post(ctx, reply); !errors.Is(err, boom) {
+		t.Fatalf("second PostThenFail call: %v", err)
+	}
+	// The failed calls stored their messages, with metadata.
+	page, err := f.History(ctx, id, "0", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seqs []int64
+	for _, m := range page.Messages {
+		seqs = append(seqs, m.MetadataSeq)
+	}
+	if !slices.Equal(seqs, []int64{1, 2}) {
+		t.Errorf("History seqs = %v, want [1 2]", seqs)
+	}
+	rp, err := f.Replies(ctx, id, root, "0", "")
+	if err != nil || len(rp.Messages) != 2 || rp.Messages[1].MetadataSeq != 3 {
+		t.Errorf("Replies = %+v, %v", rp, err)
+	}
+	// One failure per queued entry: the next Post succeeds plainly.
+	if _, err := f.Post(ctx, slackapi.PostInput{Channel: id, Fallback: "fine", Seq: 4}); err != nil {
+		t.Errorf("third Post: %v", err)
+	}
+	if n := f.Calls("Post"); n != 5 {
+		t.Errorf("Calls(Post) = %d, want 5", n)
+	}
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Error("PostThenFail(nil) did not panic")
+			}
+		}()
+		f.PostThenFail(nil)
+	}()
+}

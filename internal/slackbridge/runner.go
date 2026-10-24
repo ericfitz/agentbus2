@@ -55,7 +55,10 @@ func retryDelay(base time.Duration, attempt int) time.Duration {
 // is bounded by the lease; the map-row check in Drain keeps the second
 // runner from double counting. A post that succeeded before a crash and
 // before its map row is repaired by catch-up through the message metadata
-// when Slack keeps it; otherwise that one message is posted again.
+// when Slack keeps it; otherwise that one message is posted again. Losing the
+// lock keeps this process's memory of posts not yet recorded (Drain, State):
+// if the same process regains the lock it finishes them instead of posting
+// again, and any other replica never sees that memory.
 func (s *Service) Run(ctx context.Context) error {
 	for {
 		if _, ok := s.Self(); ok {
@@ -94,7 +97,6 @@ func (s *Service) Run(ctx context.Context) error {
 				s.log.Warn("slack bridge: runner stopped; the lock is not held")
 				rs.stop()
 				rs = nil
-				s.clearBridgePosted(0)
 			}
 		case rs == nil && ctx.Err() == nil:
 			s.log.Info("slack bridge: runner started")

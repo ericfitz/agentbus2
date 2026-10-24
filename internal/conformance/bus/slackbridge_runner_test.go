@@ -616,6 +616,56 @@ func TestSlackBridgeLifecycle(t *testing.T) {
 			}
 		})
 
+		t.Run("unknown-member-is-not-no-humans", func(t *testing.T) {
+			x := newLC(t)
+			x.fake.Join(x.sl, "UGHOST") // users.info does not know this member
+			x.fake.Leave(x.sl, "U1")
+			x.h.rtDone("job1", ab2bus.RetireWithBridge)
+			lifecycle(t, x)
+			if state(x) != ab2store.BridgeLive || x.fake.Calls("Archive") != 0 {
+				t.Fatalf("archived because of a user lookup anomaly: state = %s", state(x))
+			}
+			lifecycle(t, x) // the check is repeated, not marked done
+			if state(x) != ab2store.BridgeLive || x.fake.Calls("Members") < 2 {
+				t.Fatalf("state = %s, Members calls = %d", state(x), x.fake.Calls("Members"))
+			}
+			if logs := x.logs.String(); !strings.Contains(logs, "unknown") || !strings.Contains(logs, x.sl) || strings.Contains(logs, "UGHOST") {
+				t.Errorf("warning must name the Slack channel and a count, not the user; logs:\n%s", logs)
+			}
+			// The member resolves as deleted: no human remains.
+			x.fake.AddUser(slackapi.User{ID: "UGHOST", TeamID: slTeam, DisplayName: "gone", Deleted: true})
+			lifecycle(t, x)
+			if state(x) != ab2store.BridgeArchived {
+				t.Errorf("state = %s after the member resolved as deleted", state(x))
+			}
+		})
+
+		t.Run("unknown-member-leaves", func(t *testing.T) {
+			x := newLC(t)
+			x.fake.Join(x.sl, "UGHOST")
+			x.fake.Leave(x.sl, "U1")
+			x.h.rtDone("job1", ab2bus.RetireWithBridge)
+			lifecycle(t, x)
+			if state(x) != ab2store.BridgeLive {
+				t.Fatalf("state = %s", state(x))
+			}
+			x.fake.Leave(x.sl, "UGHOST")
+			lifecycle(t, x)
+			if state(x) != ab2store.BridgeArchived {
+				t.Errorf("state = %s after the unknown member left", state(x))
+			}
+		})
+
+		t.Run("unknown-member-with-a-human-present", func(t *testing.T) {
+			x := newLC(t)
+			x.fake.Join(x.sl, "UGHOST")
+			x.h.rtDone("job1", ab2bus.RetireWithBridge)
+			lifecycle(t, x)
+			if state(x) != ab2store.BridgeLive {
+				t.Errorf("state = %s with a human (U1) still in the channel", state(x))
+			}
+		})
+
 		t.Run("missed-member-left", func(t *testing.T) {
 			x := newLC(t)
 			x.h.rtDone("job1", ab2bus.RetireWithBridge)
@@ -881,6 +931,289 @@ func TestSlackBridgeState(t *testing.T) {
 			time.Sleep(300 * time.Millisecond)
 			if f.fake.Calls("Post") != before || len(f.bridged()) != 0 {
 				t.Errorf("the repaired message was posted again: %+v", f.bridged())
+			}
+		})
+	})
+}
+
+// transportErr is an error no Slack answer can have produced: a request that
+// may or may not have reached Slack.
+var errTransport = errors.New("read tcp: connection reset by peer")
+
+func (f *inFix) sendAs(content string, replyTo *int64) int64 {
+	f.h.t.Helper()
+	return f.send("job1-coder", ab2bus.SendInput{Content: content, ReplyTo: replyTo})
+}
+
+func TestSlackBridgeDuplicateGuards(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx := context.Background()
+
+		t.Run("lock-loss-keeps-pending-record", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post") // the bridge notices
+			fs, svc := f.faulty()
+			runBridge(t, svc)
+			waitFor(t, 10*time.Second, "the socket", func() bool { return f.fake.MaxConcurrentSockets() == 1 })
+			fs.set(func() { fs.failPuts = 1000 })
+			seq := f.sendAs("posted, record fails", nil)
+			waitFor(t, 10*time.Second, "the post", func() bool { return len(f.bridged()) == 1 })
+			waitFor(t, 10*time.Second, "the failed record", func() bool { fs.mu.Lock(); defer fs.mu.Unlock(); return fs.puts >= 1 })
+			first := f.bridged()
+			if len(first) != 1 {
+				t.Fatalf("posts = %d", len(first))
+			}
+			fs.set(func() { fs.denyLock = true })
+			select {
+			case <-f.fake.SocketDone():
+			case <-time.After(5 * time.Second):
+				t.Fatal("the socket outlived the lock")
+			}
+			// The same Service regains the lock with its pending post intact. Its
+			// record still fails here, which also keeps the catch-up from
+			// repairing the row through the message metadata: only the memory of
+			// the first post stands between the drain and a second post.
+			fs.set(func() { fs.denyLock = false })
+			waitFor(t, 10*time.Second, "the catch-up after the lock came back", func() bool { return f.fake.Calls("History") >= 2 })
+			time.Sleep(300 * time.Millisecond)
+			fs.set(func() { fs.failPuts = 0 })
+			waitFor(t, 10*time.Second, "the record", func() bool { _, ok := f.mapBySeq(seq); return ok && f.acked() >= seq })
+			time.Sleep(200 * time.Millisecond)
+			if n := f.fake.Calls("Post") - base; n != 1 {
+				t.Errorf("Post called %d times, want 1", n)
+			}
+			c, _ := f.fake.Channel(f.sl)
+			var firstTS string
+			for _, m := range c.Messages {
+				if m.MetadataSeq == seq && firstTS == "" {
+					firstTS = m.TS
+				}
+			}
+			if row, _ := f.mapBySeq(seq); row.SlackTS != firstTS || firstTS == "" {
+				t.Errorf("map row ts %q, first post ts %q", row.SlackTS, firstTS)
+			}
+		})
+
+		t.Run("stale-pending-dropped", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post") // the bridge notices
+			fs, svc := f.faulty()
+			seq := f.sendAs("recorded by another runner", nil)
+			fs.set(func() { fs.failPuts = 1000 })
+			if err := svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed record")
+			}
+			if n := svc.PendingPosts(); n != 1 {
+				t.Fatalf("PendingPosts = %d, want 1", n)
+			}
+			// Another runner records the message and moves the mark.
+			bid := f.bridge().ID
+			f.h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+				if err := tx.PutBridgeMessage(ctx, ab2store.BridgeMessage{BridgeID: bid, Seq: seq, SlackTS: "1700000500.000001", RootTS: "1700000500.000001", CreatedAt: 1}); err != nil {
+					return err
+				}
+				return tx.AdvanceAckedMark(ctx, ab2store.SlackBridge, f.ch.ID, seq)
+			})
+			fs.set(func() { fs.failPuts = 0 })
+			fs.mu.Lock()
+			putsBefore := fs.puts
+			fs.mu.Unlock()
+			if err := svc.Drain(ctx); err != nil {
+				t.Fatalf("second Drain: %v", err)
+			}
+			fs.mu.Lock()
+			puts := fs.puts
+			fs.mu.Unlock()
+			if puts != putsBefore || f.fake.Calls("Post")-base != 1 {
+				t.Errorf("recorded or posted again: puts %d -> %d, Post calls %d", putsBefore, puts, f.fake.Calls("Post")-base)
+			}
+			if n := svc.PendingPosts(); n != 0 {
+				t.Errorf("PendingPosts = %d after the mark passed it, want 0", n)
+			}
+			if row, _ := f.mapBySeq(seq); row.SlackTS != "1700000500.000001" {
+				t.Errorf("the other runner's row was replaced: %+v", row)
+			}
+		})
+
+		t.Run("uncertain-post-found-not-reposted", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post") // the bridge notices
+			seq := f.sendAs("answer lost", nil)
+			f.fake.PostThenFail(errTransport)
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed post")
+			}
+			if f.acked() >= seq {
+				t.Fatal("acked a message whose post failed")
+			}
+			if n := f.svc.PendingPosts(); n != 1 {
+				t.Errorf("PendingPosts = %d, want 1 (uncertain)", n)
+			}
+			if err := f.svc.Drain(ctx); err != nil {
+				t.Fatalf("second Drain: %v", err)
+			}
+			if n := f.fake.Calls("Post") - base; n != 1 {
+				t.Errorf("Post called %d times, want 1", n)
+			}
+			c, _ := f.fake.Channel(f.sl)
+			var ts string
+			for _, m := range c.Messages {
+				if m.MetadataSeq == seq {
+					ts = m.TS
+				}
+			}
+			row, ok := f.mapBySeq(seq)
+			if !ok || ts == "" || row.SlackTS != ts || row.RootTS != ts || f.acked() != seq {
+				t.Errorf("row = %+v %v, found ts %q, acked %d", row, ok, ts, f.acked())
+			}
+			if n := f.svc.PendingPosts(); n != 0 {
+				t.Errorf("PendingPosts = %d after the record, want 0", n)
+			}
+		})
+
+		t.Run("uncertain-http-5xx-is-searched", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post") // the bridge notices
+			seq := f.sendAs("gateway timeout", nil)
+			f.fake.PostThenFail(&slackapi.APIError{Method: "chat.postMessage", Code: "http_504"})
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed post")
+			}
+			if err := f.svc.Drain(ctx); err != nil {
+				t.Fatalf("second Drain: %v", err)
+			}
+			if _, ok := f.mapBySeq(seq); !ok || f.fake.Calls("Post")-base != 1 {
+				t.Errorf("Post calls = %d, recorded = %v", f.fake.Calls("Post"), ok)
+			}
+		})
+
+		t.Run("uncertain-post-not-found-reposts", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post") // the bridge notices
+			seq := f.sendAs("never reached Slack", nil)
+			f.fake.FailNext("Post", errTransport)
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed post")
+			}
+			if err := f.svc.Drain(ctx); err != nil {
+				t.Fatalf("second Drain: %v", err)
+			}
+			if n := f.fake.Calls("Post") - base; n != 2 {
+				t.Errorf("Post called %d times, want 2", n)
+			}
+			if got := f.bridged(); len(got) != 1 || got[0].Seq != seq {
+				t.Errorf("posts = %+v", got)
+			}
+			if _, ok := f.mapBySeq(seq); !ok || f.acked() != seq || f.svc.PendingPosts() != 0 {
+				t.Errorf("recorded = %v, acked %d, pending %d", ok, f.acked(), f.svc.PendingPosts())
+			}
+		})
+
+		t.Run("uncertain-thread-reply-found", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post") // the bridge notices
+			root := f.sendAs("root", nil)
+			f.drainAll()
+			rootRow, ok := f.mapBySeq(root)
+			if !ok {
+				t.Fatal("root not recorded")
+			}
+			reply := f.sendAs("reply", &root)
+			f.fake.PostThenFail(errTransport)
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed post")
+			}
+			history, replies := f.fake.Calls("History"), f.fake.Calls("Replies")
+			if err := f.svc.Drain(ctx); err != nil {
+				t.Fatalf("second Drain: %v", err)
+			}
+			if n := f.fake.Calls("Post") - base; n != 2 {
+				t.Errorf("Post called %d times, want 2 (root, one reply)", n)
+			}
+			if f.fake.Calls("Replies") <= replies || f.fake.Calls("History") != history {
+				t.Errorf("a thread reply is searched with Replies only: Replies %d -> %d, History %d -> %d",
+					replies, f.fake.Calls("Replies"), history, f.fake.Calls("History"))
+			}
+			c, _ := f.fake.Channel(f.sl)
+			var ts string
+			for _, m := range c.Messages {
+				if m.MetadataSeq == reply {
+					ts = m.TS
+				}
+			}
+			row, ok := f.mapBySeq(reply)
+			if !ok || ts == "" || row.SlackTS != ts || row.RootTS != rootRow.SlackTS {
+				t.Errorf("row = %+v %v, found ts %q, root %q", row, ok, ts, rootRow.SlackTS)
+			}
+		})
+
+		t.Run("certain-failure-no-search", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post") // the bridge notices
+			seq := f.sendAs("refused by Slack", nil)
+			history, replies := f.fake.Calls("History"), f.fake.Calls("Replies")
+			f.fake.FailNext("Post", &slackapi.APIError{Method: "chat.postMessage", Code: "invalid_blocks"})
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed post")
+			}
+			if n := f.svc.PendingPosts(); n != 0 {
+				t.Errorf("PendingPosts = %d after a certain failure", n)
+			}
+			if err := f.svc.Drain(ctx); err != nil {
+				t.Fatalf("second Drain: %v", err)
+			}
+			if f.fake.Calls("History") != history || f.fake.Calls("Replies") != replies {
+				t.Errorf("searched after a certain failure: History %d -> %d, Replies %d -> %d",
+					history, f.fake.Calls("History"), replies, f.fake.Calls("Replies"))
+			}
+			if _, ok := f.mapBySeq(seq); !ok || f.fake.Calls("Post")-base != 2 {
+				t.Errorf("recorded = %v, Post calls %d", ok, f.fake.Calls("Post")-base)
+			}
+		})
+
+		t.Run("search-failure-does-not-post", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post") // the bridge notices
+			seq := f.sendAs("answer lost, search fails", nil)
+			f.fake.PostThenFail(errTransport)
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed post")
+			}
+			f.fake.FailNext("History", errTransport)
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed search")
+			}
+			if n := f.fake.Calls("Post") - base; n != 1 {
+				t.Fatalf("posted blind: Post called %d times", n)
+			}
+			if err := f.svc.Drain(ctx); err != nil {
+				t.Fatalf("third Drain: %v", err)
+			}
+			if _, ok := f.mapBySeq(seq); !ok || f.fake.Calls("Post")-base != 1 || f.acked() != seq {
+				t.Errorf("recorded = %v, Post calls %d, acked %d", ok, f.fake.Calls("Post"), f.acked())
+			}
+		})
+
+		t.Run("uncertain-entry-dropped-when-mark-passes", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			base := f.fake.Calls("Post") // the bridge notices
+			seq := f.sendAs("another runner got there", nil)
+			f.fake.FailNext("Post", errTransport)
+			if err := f.svc.Drain(ctx); err == nil {
+				t.Fatal("Drain hid the failed post")
+			}
+			bid := f.bridge().ID
+			f.h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+				if err := tx.PutBridgeMessage(ctx, ab2store.BridgeMessage{BridgeID: bid, Seq: seq, SlackTS: "1700000500.000001", RootTS: "1700000500.000001", CreatedAt: 1}); err != nil {
+					return err
+				}
+				return tx.AdvanceAckedMark(ctx, ab2store.SlackBridge, f.ch.ID, seq)
+			})
+			if err := f.svc.Drain(ctx); err != nil {
+				t.Fatalf("second Drain: %v", err)
+			}
+			if f.fake.Calls("Post")-base != 1 || f.svc.PendingPosts() != 0 {
+				t.Errorf("Post calls %d, pending %d", f.fake.Calls("Post"), f.svc.PendingPosts())
 			}
 		})
 	})

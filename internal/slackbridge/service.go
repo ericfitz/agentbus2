@@ -94,6 +94,9 @@ type Service struct {
 	connGen uint64               // bumped on every Socket Mode (re)connect
 	checked map[int64]uint64     // bridge ID to the connGen of its last membership check
 	posted  map[postedKey]string // posted but not yet recorded: Slack ts by (bridge, seq)
+	// uncertain: a post that failed in a way that may have reached Slack, with
+	// the time of the first such attempt (searched for before posting again).
+	uncertain map[postedKey]time.Time
 }
 
 var _ scopes.Archiver = (*Service)(nil)
