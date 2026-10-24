@@ -43,7 +43,15 @@ func (t *tx) ResetRegistry(ctx context.Context, keep string) error {
 	if _, err := t.execW(ctx, "DELETE FROM identities WHERE name <> ?", keep); err != nil {
 		return err
 	}
-	_, err := t.execW(ctx, "DELETE FROM enrollment_tokens")
+	if _, err := t.execW(ctx, "DELETE FROM enrollment_tokens"); err != nil {
+		return err
+	}
+	// human_bindings went with their identities (ON DELETE CASCADE).
+	if _, err := t.execW(ctx, "DELETE FROM access_refs WHERE ref_list = ?", string(store.ListUsers)); err != nil {
+		return err
+	}
+	_, err := t.execW(ctx, "DELETE FROM access_refs WHERE ref_list = ? AND NOT (ref_kind = ? AND issuer = '' AND value = ?)",
+		string(store.ListAdmins), string(store.RefIdentity), keep)
 	return err
 }
 

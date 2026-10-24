@@ -13,6 +13,7 @@ import (
 
 type identityRow struct {
 	Name         string `db:"name"`
+	Kind         string `db:"kind"`
 	Admin        bool   `db:"is_admin"`
 	TagsAckedSeq int64  `db:"tags_acked_seq"`
 	CreatedAt    int64  `db:"created_at"`
@@ -32,10 +33,10 @@ func (t *tx) guardIdentityName(name string) error {
 }
 
 func (r identityRow) identity() store.Identity {
-	return store.Identity{Name: r.Name, Admin: r.Admin, TagsAckedSeq: r.TagsAckedSeq, CreatedAt: r.CreatedAt}
+	return store.Identity{Name: r.Name, Kind: store.IdentityKind(r.Kind), Admin: r.Admin, TagsAckedSeq: r.TagsAckedSeq, CreatedAt: r.CreatedAt}
 }
 
-const identityCols = "name, is_admin, tags_acked_seq, created_at"
+const identityCols = "name, kind, is_admin, tags_acked_seq, created_at"
 
 // identityUpdated maps an UPDATE on identities to ErrNotFound when no row
 // matched.
@@ -53,14 +54,23 @@ func identityUpdated(res sql.Result, err error, name string) error {
 	return nil
 }
 
-// CreateIdentity validates the name (NameRule, then the reserved names;
-// Decision (Eric, 2026-10-21): Gate 0 item 1) before the INSERT.
-func (t *tx) CreateIdentity(ctx context.Context, name string, now int64) error {
+// checkIdentityName is the name rule shared by CreateIdentity and
+// CreateHuman: NameRule, then the reserved names.
+func checkIdentityName(name string) error {
 	if err := store.NameRule(name); err != nil {
 		return fmt.Errorf("%w: identity name %q %s", store.ErrInvalid, name, err)
 	}
 	if name == store.Everyone || name == store.Admins {
 		return fmt.Errorf("%w: identity name %q is reserved", store.ErrInvalid, name)
+	}
+	return nil
+}
+
+// CreateIdentity validates the name (NameRule, then the reserved names;
+// Decision (Eric, 2026-10-21): Gate 0 item 1) before the INSERT.
+func (t *tx) CreateIdentity(ctx context.Context, name string, now int64) error {
+	if err := checkIdentityName(name); err != nil {
+		return err
 	}
 	_, err := t.execW(ctx, "INSERT INTO identities (name, is_admin, tags_acked_seq, created_at) VALUES (?, FALSE, 0, ?)", name, now)
 	if isConflict(err) {

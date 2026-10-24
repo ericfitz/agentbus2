@@ -23,7 +23,7 @@ import (
 // messageCols is the fixed, alias-qualified column list; every query that
 // selects messages names the table "messages m" and selects exactly
 // messageCols (Tasks 8 and 9 reuse both).
-const messageCols = "m.seq, m.channel_id, m.sender, m.session_id, m.created_at, m.type, m.subject, m.content, m.reply_to, m.metadata, m.memory_id, m.revision, m.tombstone, m.tombstone_at"
+const messageCols = "m.seq, m.channel_id, m.sender, m.session_id, m.sender_kind, m.created_at, m.type, m.subject, m.content, m.reply_to, m.metadata, m.memory_id, m.revision, m.tombstone, m.tombstone_at"
 
 // idChunk bounds the bind variables of one IN list (SQLite allows 32766).
 const idChunk = 500
@@ -33,6 +33,7 @@ type messageRow struct {
 	ChannelID   int64          `db:"channel_id"`
 	Sender      string         `db:"sender"`
 	SessionID   string         `db:"session_id"`
+	SenderKind  string         `db:"sender_kind"`
 	CreatedAt   int64          `db:"created_at"`
 	Type        string         `db:"type"`
 	Subject     string         `db:"subject"`
@@ -47,7 +48,7 @@ type messageRow struct {
 
 func (r messageRow) message() (store.Message, error) {
 	m := store.Message{
-		Seq: r.Seq, ChannelID: r.ChannelID, Sender: r.Sender, SessionID: r.SessionID,
+		Seq: r.Seq, ChannelID: r.ChannelID, Sender: r.Sender, SessionID: r.SessionID, SenderKind: store.IdentityKind(r.SenderKind),
 		CreatedAt: r.CreatedAt, Type: r.Type, Subject: r.Subject, Content: r.Content,
 		ReplyTo: r.ReplyTo, MemoryID: r.MemoryID, Revision: r.Revision,
 		Tombstone: r.Tombstone, TombstoneAt: r.TombstoneAt,
@@ -139,6 +140,12 @@ func (t *tx) AppendMessage(ctx context.Context, m store.NewMessage) (int64, erro
 	if err := checkMessageText(m); err != nil {
 		return 0, err
 	}
+	if m.SenderKind == "" {
+		m.SenderKind = store.IdentityAgent
+	}
+	if !store.ValidIdentityKind(m.SenderKind) {
+		return 0, fmt.Errorf("%w: message sender kind %q (want agent or human)", store.ErrInvalid, m.SenderKind)
+	}
 	seq, err := t.NextSeq(ctx)
 	if err != nil {
 		return 0, err
@@ -151,9 +158,9 @@ func (t *tx) AppendMessage(ctx context.Context, m store.NewMessage) (int64, erro
 		}
 		meta = string(b)
 	}
-	_, err = t.execW(ctx, `INSERT INTO messages (seq, channel_id, sender, session_id, created_at, type, subject, content, reply_to, metadata, memory_id, revision, tombstone)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE)`,
-		seq, m.ChannelID, m.Sender, m.SessionID, m.CreatedAt, m.Type, m.Subject, m.Content,
+	_, err = t.execW(ctx, `INSERT INTO messages (seq, channel_id, sender, session_id, sender_kind, created_at, type, subject, content, reply_to, metadata, memory_id, revision, tombstone)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE)`,
+		seq, m.ChannelID, m.Sender, m.SessionID, string(m.SenderKind), m.CreatedAt, m.Type, m.Subject, m.Content,
 		m.ReplyTo, meta, m.MemoryID, m.Revision)
 	if isForeignKey(err) {
 		return 0, fmt.Errorf("%w: channel %d", store.ErrNotFound, m.ChannelID)

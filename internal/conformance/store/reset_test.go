@@ -205,3 +205,125 @@ func TestResetDataReadOnly(t *testing.T) {
 		}
 	})
 }
+
+func humanAt(t *testing.T, s ab2store.Store, email, issuer, subject string) {
+	t.Helper()
+	mustHuman(t, s, email)
+	if subject != "" {
+		mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			return tx.SetHumanSubject(ctx, email, issuer, subject)
+		})
+	}
+}
+
+func TestResetRegistryReferences(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, rawDSN := openStore(t, e, sqlstore.Options{})
+		db := rawDB(t, e, rawDSN)
+		humanAt(t, s, "eric@corp.example", "https://idp", "guid-1")
+		humanAt(t, s, "kim@corp.example", "", "")
+		mustIdentity(t, s, "pat")
+		for _, r := range []ab2store.Reference{
+			{List: ab2store.ListUsers, Kind: ab2store.RefGroup, Issuer: "corp", Value: "pai-users"},
+			{List: ab2store.ListAdmins, Kind: ab2store.RefIdentity, Value: "pat"},
+			{List: ab2store.ListAdmins, Kind: ab2store.RefIdentity, Value: "kim@corp.example"},
+			{List: ab2store.ListAdmins, Kind: ab2store.RefGroup, Issuer: "corp", Value: "pai-admins"},
+		} {
+			if _, err := addRef(s, r); err != nil {
+				t.Fatal(err)
+			}
+		}
+		reset := func(keep string) {
+			mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+				if err := tx.ResetData(ctx); err != nil {
+					return err
+				}
+				return tx.ResetRegistry(ctx, keep)
+			})
+		}
+		check := func() {
+			t.Helper()
+			mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+				ids, err := tx.ListIdentities(ctx)
+				if err != nil || len(ids) != 1 || ids[0].Name != "pat" {
+					t.Errorf("identities = %+v, %v; want [pat]", ids, err)
+				}
+				return nil
+			})
+			requireCounts(t, db, 0, "human_bindings")
+			if got := listRefs(t, s, ab2store.ListUsers); len(got) != 0 {
+				t.Errorf("users = %+v, want none", got)
+			}
+			want := ab2store.Reference{List: ab2store.ListAdmins, Kind: ab2store.RefIdentity, Value: "pat"}
+			if got := listRefs(t, s, ab2store.ListAdmins); len(got) != 1 || got[0] != want {
+				t.Errorf("admins = %+v, want [%+v]", got, want)
+			}
+		}
+		reset("pat")
+		check()
+		reset("pat") // a second run gives the same state
+		check()
+	})
+}
+
+func TestResetRegistryKeepsHumanAdmittedByGroup(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, rawDSN := openStore(t, e, sqlstore.Options{})
+		db := rawDB(t, e, rawDSN)
+		humanAt(t, s, "kim@corp.example", "https://idp", "guid-2")
+		humanAt(t, s, "eric@corp.example", "", "")
+		mustIdentity(t, s, "pat")
+		for _, r := range []ab2store.Reference{
+			{List: ab2store.ListUsers, Kind: ab2store.RefGroup, Issuer: "corp", Value: "pai-users"},
+			{List: ab2store.ListAdmins, Kind: ab2store.RefIdentity, Value: "pat"},
+			{List: ab2store.ListAdmins, Kind: ab2store.RefGroup, Issuer: "corp", Value: "pai-admins"},
+		} {
+			if _, err := addRef(s, r); err != nil {
+				t.Fatal(err)
+			}
+		}
+		mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			if err := tx.ResetData(ctx); err != nil {
+				return err
+			}
+			return tx.ResetRegistry(ctx, "kim@corp.example")
+		})
+		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			ids, err := tx.ListIdentities(ctx)
+			if err != nil || len(ids) != 1 || ids[0].Name != "kim@corp.example" || ids[0].Kind != ab2store.IdentityHuman {
+				t.Errorf("identities = %+v, %v; want [kim human]", ids, err)
+			}
+			if b, err := tx.HumanBinding(ctx, "kim@corp.example"); err != nil || b.ProviderSubject != "guid-2" {
+				t.Errorf("binding = %+v, %v; want kim with subject", b, err)
+			}
+			return nil
+		})
+		requireCounts(t, db, 1, "human_bindings")
+		if got := listRefs(t, s, ab2store.ListUsers); len(got) != 0 {
+			t.Errorf("users = %+v, want none", got)
+		}
+		if got := listRefs(t, s, ab2store.ListAdmins); len(got) != 0 {
+			t.Errorf("admins = %+v, want none (the Store adds none)", got)
+		}
+	})
+}
+
+func TestResetDataKeepsHumans(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, rawDSN := openStore(t, e, sqlstore.Options{})
+		db := rawDB(t, e, rawDSN)
+		humanAt(t, s, "eric@corp.example", "https://idp", "guid-1")
+		for _, r := range []ab2store.Reference{
+			{List: ab2store.ListUsers, Kind: ab2store.RefGroup, Issuer: "corp", Value: "pai-users"},
+			{List: ab2store.ListAdmins, Kind: ab2store.RefIdentity, Value: "eric@corp.example"},
+		} {
+			if _, err := addRef(s, r); err != nil {
+				t.Fatal(err)
+			}
+		}
+		for range 2 {
+			mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error { return tx.ResetData(ctx) })
+			requireCounts(t, db, 1, "human_bindings", "access_refs WHERE ref_list = 'users'", "access_refs WHERE ref_list = 'admins'")
+		}
+	})
+}

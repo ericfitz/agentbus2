@@ -47,7 +47,7 @@ func TestMessageAppendAssignsSeqAndStoresTags(t *testing.T) {
 			t.Fatalf("seqs = %d %d %d, want 1 2 3", s1, s2, s3)
 		}
 		want := ab2store.Message{
-			Seq: 2, ChannelID: b.ID, Sender: "sam", SessionID: "sess", CreatedAt: fixedNow + 5, Type: "note",
+			Seq: 2, ChannelID: b.ID, Sender: "sam", SessionID: "sess", SenderKind: ab2store.IdentityAgent, CreatedAt: fixedNow + 5, Type: "note",
 			Subject: "subj", Content: "two", ReplyTo: &reply, Metadata: map[string]string{"k": "v"},
 			Tags: []string{"env", "team:a"},
 		}
@@ -363,6 +363,36 @@ func TestMessageSearchTextWiring(t *testing.T) {
 			got, err = tx.SearchText(ctx, search.Parse("hello"), []int64{a.ID, b.ID}, ab2store.SearchFilter{}, 1)
 			if err != nil || len(got) != 1 || got[0].Seq != elsewhere {
 				t.Errorf("limit 1 = %v, %v; want the newest match [%d]", messageSeqs(got), err, elsewhere)
+			}
+			return nil
+		})
+	})
+}
+
+func TestAppendSenderKind(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		ch := mustChannel(t, s, "a", ab2store.KindOrdinary, "", nil)
+		human := mustAppend(t, s, ab2store.NewMessage{ChannelID: ch.ID, Sender: "eric@corp.example", SenderKind: ab2store.IdentityHuman, Content: "h"})
+		dflt := mustAppend(t, s, ab2store.NewMessage{ChannelID: ch.ID, Sender: "pat", Content: "d"})
+		agent := mustAppend(t, s, ab2store.NewMessage{ChannelID: ch.ID, Sender: "pat", SenderKind: ab2store.IdentityAgent, Content: "a"})
+		for seq, want := range map[int64]ab2store.IdentityKind{human: ab2store.IdentityHuman, dflt: ab2store.IdentityAgent, agent: ab2store.IdentityAgent} {
+			if got := messageGet(t, s, seq); got.SenderKind != want {
+				t.Errorf("Message(%d).SenderKind = %q, want %q", seq, got.SenderKind, want)
+			}
+		}
+		for _, bad := range []ab2store.IdentityKind{"robot", "Human"} {
+			err := s.Append(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
+				_, err := tx.AppendMessage(ctx, ab2store.NewMessage{ChannelID: ch.ID, Sender: "pat", SenderKind: bad, Content: "x", CreatedAt: fixedNow})
+				return err
+			})
+			if !errors.Is(err, ab2store.ErrInvalid) {
+				t.Errorf("SenderKind %q err = %v, want ErrInvalid", bad, err)
+			}
+		}
+		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			if n, err := tx.MaxSeq(ctx); err != nil || n != agent {
+				t.Errorf("MaxSeq = %d, %v; want %d (no row from a refused append)", n, err, agent)
 			}
 			return nil
 		})

@@ -21,13 +21,16 @@ type Meta interface {
 	// and embed_failures cascade), subscriptions, tag_subscriptions
 	// (tag_subscription_tags cascades), sessions, memory_access and receipts.
 	// It keeps schema_meta, seq_counter, leases, signing_keys, identities,
-	// identity_keys and enrollment_tokens. Write transactions only
+	// identity_keys, human_bindings, access_refs (the users and admins lists)
+	// and enrollment_tokens. Write transactions only
 	// (ErrReadOnly in Read). Safe to repeat.
 	ResetData(ctx context.Context) error
 	// ResetRegistry deletes every identities row except keep (identity_keys
-	// cascades; keep "" deletes all) and every enrollment_tokens row; it keeps
-	// signing_keys and everything ResetData keeps (the core calls ResetData
-	// first). ErrInvalid when keep fails TextRule. Write transactions only.
+	// cascades; keep "" deletes all; human_bindings cascade with their
+	// identities), every enrollment_tokens row, every users reference and
+	// every admins reference except {admins, identity, "", keep}; it keeps
+	// signing_keys and everything else ResetData keeps (the core calls
+	// ResetData first). The Store adds no admins row for keep. ErrInvalid when keep fails TextRule. Write transactions only.
 	ResetRegistry(ctx context.Context, keep string) error
 }
 

@@ -10,6 +10,7 @@ import (
 type Message struct {
 	Seq, ChannelID         int64
 	Sender, SessionID      string
+	SenderKind             IdentityKind
 	CreatedAt              int64
 	Type, Subject, Content string
 	ReplyTo                *int64
@@ -21,9 +22,12 @@ type Message struct {
 }
 
 // NewMessage is the input of AppendMessage; the Store assigns Seq.
+// SenderKind "" is stored as agent (the documented default); any other value
+// but the two kinds is ErrInvalid.
 type NewMessage struct {
 	ChannelID              int64
 	Sender, SessionID      string
+	SenderKind             IdentityKind
 	CreatedAt              int64
 	Type, Subject, Content string
 	ReplyTo                *int64

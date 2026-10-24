@@ -55,4 +55,5 @@ type Tx interface {
 	EnrollmentTokens
 	SigningKeys
 	AssertionReplays
+	References
 }

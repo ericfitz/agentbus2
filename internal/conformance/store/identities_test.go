@@ -30,7 +30,7 @@ func TestIdentityCreateGetList(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			want := ab2store.Identity{Name: "pat", Admin: false, TagsAckedSeq: 0, CreatedAt: fixedNow}
+			want := ab2store.Identity{Name: "pat", Kind: ab2store.IdentityAgent, Admin: false, TagsAckedSeq: 0, CreatedAt: fixedNow}
 			if got != want {
 				t.Errorf("Identity(pat) = %+v, want %+v", got, want)
 			}
@@ -353,7 +353,7 @@ func TestIdentityRejectsWritesInRead(t *testing.T) {
 		}
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 			ids, err := tx.ListIdentities(ctx)
-			if err != nil || len(ids) != 1 || ids[0] != (ab2store.Identity{Name: "pat", CreatedAt: fixedNow}) {
+			if err != nil || len(ids) != 1 || ids[0] != (ab2store.Identity{Name: "pat", Kind: ab2store.IdentityAgent, CreatedAt: fixedNow}) {
 				t.Errorf("identities after rejected writes = %+v, %v; want only the untouched pat", ids, err)
 			}
 			keys, err := tx.PublicKeys(ctx, "pat")
@@ -412,6 +412,86 @@ func TestIdentityLookupsOfNonUTF8Name(t *testing.T) {
 			if err := s.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error { return tx.PutPublicKey(ctx, k) }); !errors.Is(err, ab2store.ErrInvalid) {
 				t.Errorf("PutPublicKey(identity %q, RS256) err = %v, want ErrInvalid", bad, err)
 			}
+		}
+	})
+}
+
+// TestOpenMigratesVersion4Identities opens a version 4 database holding an
+// admin, an agent and a message, then reopens with the full set: every
+// identity is an agent, the admin flag became an admins reference, and the
+// message reads back as sent by an agent.
+func TestOpenMigratesVersion4Identities(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		full := migrationsFor(e)
+		if len(full) < 5 {
+			t.Fatalf("%d migrations, want at least 5", len(full))
+		}
+		s, reopen, rawDSN := openStore(t, e, sqlstore.Options{Migrations: full[:4]})
+		if got := schemaVersion(t, s); got != 4 {
+			t.Fatalf("SchemaVersion = %d, want 4", got)
+		}
+		db := rawDB(t, e, rawDSN)
+		adm := "1"
+		if e.Name == "postgres" {
+			adm = "TRUE"
+		}
+		for _, q := range []string{
+			"INSERT INTO identities (name, is_admin, tags_acked_seq, created_at) VALUES ('adm', " + adm + ", 0, 7)",
+			"INSERT INTO identities (name, tags_acked_seq, created_at) VALUES ('pat', 0, 8)",
+			"INSERT INTO channels (name, kind, creator, created_seq, created_at) VALUES ('general', 'ordinary', 'adm', 0, 9)",
+			"INSERT INTO messages (seq, channel_id, sender, session_id, created_at, type, subject, content, tombstone) VALUES (1, 1, 'pat', '', 10, '', '', 'hi', " + map[bool]string{false: "0", true: "FALSE"}[e.Name == "postgres"] + ")",
+		} {
+			if _, err := db.Exec(q); err != nil {
+				t.Fatalf("version 4 insert %q: %v", q, err)
+			}
+		}
+		_ = s.Close()
+		s2, err := reopen(sqlstore.Options{})
+		if err != nil {
+			t.Fatalf("reopen: %v", err)
+		}
+		if got := schemaVersion(t, s2); got != len(full) {
+			t.Fatalf("SchemaVersion = %d, want %d", got, len(full))
+		}
+		mustRead(t, s2, func(ctx context.Context, tx ab2store.Tx) error {
+			ids, err := tx.ListIdentities(ctx)
+			if err != nil || len(ids) != 2 {
+				t.Fatalf("ListIdentities = %+v, %v", ids, err)
+			}
+			for _, id := range ids {
+				if id.Kind != ab2store.IdentityAgent {
+					t.Errorf("%s kind = %q, want agent", id.Name, id.Kind)
+				}
+				if id.Name == "adm" && !id.Admin {
+					t.Error("adm lost its admin flag")
+				}
+			}
+			refs, err := tx.ListReferences(ctx, ab2store.ListAdmins)
+			want := ab2store.Reference{List: ab2store.ListAdmins, Kind: ab2store.RefIdentity, Value: "adm", CreatedAt: 7}
+			if err != nil || len(refs) != 1 || refs[0] != want {
+				t.Errorf("admins = %+v, %v; want [%+v]", refs, err, want)
+			}
+			if users, err := tx.ListReferences(ctx, ab2store.ListUsers); err != nil || len(users) != 0 {
+				t.Errorf("users = %+v, %v; want none", users, err)
+			}
+			m, err := tx.Message(ctx, 1)
+			if err != nil || m.SenderKind != ab2store.IdentityAgent {
+				t.Errorf("Message(1) = %+v, %v; want SenderKind agent", m, err)
+			}
+			return nil
+		})
+		// A second open runs nothing more.
+		_ = s2.Close()
+		s3, err := reopen(sqlstore.Options{})
+		if err != nil {
+			t.Fatalf("second reopen: %v", err)
+		}
+		if got := schemaVersion(t, s3); got != len(full) {
+			t.Fatalf("SchemaVersion after second open = %d", got)
+		}
+		_ = s3.Close()
+		if got := scalar[int](t, db, "SELECT count(*) FROM access_refs"); got != 1 {
+			t.Errorf("access_refs rows after second open = %d, want 1", got)
 		}
 	})
 }
