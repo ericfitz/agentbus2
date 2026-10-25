@@ -415,6 +415,18 @@ rest are choices of the plan, not new design decisions.
   deliverables (budget eviction, capacity notices, the usage number) landed
   in Milestone 7 for SQLite only.
 
+## Health addendum (2026-10-25; agent decision, pending Eric's review)
+
+- `Store.SchemaVersion(ctx) (int, error)` is lifted from `sqlstore.Store`
+  onto the `store.Store` contract: it reads `schema_meta.schema_version`
+  outside any transaction and is the reachability ping of the health
+  document (`docs/superpowers/specs/2026-10-25-health-design.md` section 7).
+  The core cannot import `sqlstore`, which is why it is on the interface;
+  `TestSchemaVersionMatchesMigrations` proves it on both engines.
+- The maintenance tick record of the same design is in memory on
+  `core.Core` (agent decision 6 of that spec), so it adds nothing to the
+  Store contract and no schema version.
+
 ## Container base images (Decision (Eric, 2026-10-24))
 
 - The server image builds on Chainguard images: `cgr.dev/chainguard/go`

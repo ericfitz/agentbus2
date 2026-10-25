@@ -266,7 +266,7 @@ func execAll(t *testing.T, db *sql.DB, stmts ...string) {
 
 func schemaVersion(t *testing.T, s ab2store.Store) int {
 	t.Helper()
-	v, err := s.(*sqlstore.Store).SchemaVersion(context.Background())
+	v, err := s.SchemaVersion(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

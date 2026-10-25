@@ -29,6 +29,10 @@ type Store interface {
 	// Read runs fn in a read-only snapshot; a write inside it fails with
 	// ErrReadOnly; it is never retried.
 	Read(ctx context.Context, fn func(ctx context.Context, tx Tx) error) error
+	// SchemaVersion reads schema_meta.schema_version outside any transaction;
+	// a failure means the database is unreachable (the health ping, spec
+	// 2026-10-25 section 7).
+	SchemaVersion(ctx context.Context) (int, error)
 	Close() error
 	Locks
 	Space
