@@ -69,5 +69,5 @@ Requirements: Go 1.27, Docker, golangci-lint v2.14.0. `make verify` needs Docker
 - `make generate`: regenerate `internal/gen` from `api/openapi.yaml`.
 - `make check-gates`: the negative halves of the gate (unreachable Postgres, no Docker and no variable, and others), runnable alone.
 - `make check-gates-selftest`: the harness's own test; mutates a throwaway worktree of `HEAD` and proves each gate check fires.
-- `scripts/ci-sim.sh`: the CI `verify` job locally against a `postgres:17` container (`CI_SIM_NAME`, `CI_SIM_PORT`).
+- `scripts/ci-sim.sh`: the CI `verify` job locally against a Chainguard Postgres 18 container (`CI_SIM_NAME`, `CI_SIM_PORT`).
 - `scripts/ci-gate-negative.sh <expected-text>`: the CI negative jobs' assertion; `make verify` must fail with that text and never print `verify: OK`.

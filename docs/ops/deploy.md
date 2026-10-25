@@ -47,7 +47,7 @@ The server signs its bearer tokens with a key that it creates at first start and
 
 ## 3. Postgres and two replicas
 
-`deploy/docker-compose.yml` runs `postgres:17` and two replicas of the image, `agentbus2-a` (127.0.0.1:8420) and `agentbus2-b` (127.0.0.1:8421).
+`deploy/docker-compose.yml` runs Chainguard Postgres 18 (`cgr.dev/chainguard/postgres`, pinned by digest) and two replicas of the image, `agentbus2-a` (127.0.0.1:8420) and `agentbus2-b` (127.0.0.1:8421).
 
 ```sh
 cp deploy/example.env deploy/.env      # deploy/.env is git-ignored; set POSTGRES_PASSWORD and AGENTBUS2_ISSUER

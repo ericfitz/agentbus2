@@ -57,6 +57,9 @@ func startPostgresContainer(ctx context.Context) (string, func(), error) {
 		postgres.WithUsername("agentbus2"),
 		postgres.WithPassword("agentbus2"),
 		postgres.BasicWaitStrategies(),
+		// The module's command starts with "postgres"; Chainguard's entrypoint already ends with it, so the
+		// server would get "postgres postgres -c fsync=off" and exit. The bare script takes the command as is.
+		testcontainers.WithEntrypoint("/usr/bin/docker-entrypoint.sh"),
 	)
 	if err != nil {
 		// Run can return a created container together with the error.

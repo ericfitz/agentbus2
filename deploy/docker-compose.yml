@@ -1,7 +1,7 @@
 # Two agentbus2 replicas over one Postgres. Copy example.env to .env first (docker compose reads deploy/.env).
 services:
   postgres:
-    image: postgres:17 # the default initdb locale is UTF-8, which the server's Open requires
+    image: cgr.dev/chainguard/postgres:latest@sha256:0926ac7262a2c1963179eb939cd5d610e1be3ecca90b4b5cad8db8df16fab87e # Postgres 18; its LANG is en_US.UTF-8, so the initdb locale is UTF-8, which the server's Open requires
     environment:
       POSTGRES_DB: agentbus2
       POSTGRES_USER: agentbus2

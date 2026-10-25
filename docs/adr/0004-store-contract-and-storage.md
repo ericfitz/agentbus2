@@ -426,6 +426,11 @@ rest are choices of the plan, not new design decisions.
 - Eric's local Docker Desktop test stack runs `cgr.dev/chainguard/postgres`
   (Postgres 18). Its data moved from Postgres 17 by `pg_dump` and
   `pg_restore` into a new volume, since a major version cannot start on the
-  older data directory. The compose example (`deploy/docker-compose.yml`)
-  and the conformance suites' testcontainers image (`internal/dbtest`) stay
-  on `postgres:17` until decided otherwise.
+  older data directory.
+- Decision (Eric, 2026-10-25): every other Postgres the project runs moves
+  to Postgres 18 on the same image, pinned by digest: the conformance
+  suites' testcontainers image (`internal/dbtest`), the CI `verify` service
+  container, `scripts/ci-sim.sh` and the compose example
+  (`deploy/docker-compose.yml`). The suites now prove the Store contract on
+  Postgres 18 (replacing the `postgres:17.11` run of Milestone 2 Gate 0
+  above).

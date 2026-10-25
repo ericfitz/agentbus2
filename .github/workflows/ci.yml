@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:17
+        image: cgr.dev/chainguard/postgres:latest@sha256:0926ac7262a2c1963179eb939cd5d610e1be3ecca90b4b5cad8db8df16fab87e # Postgres 18
         env:
           POSTGRES_USER: agentbus2
           POSTGRES_PASSWORD: agentbus2
@@ -133,4 +133,4 @@ jobs:
           sudo systemctl stop docker.socket docker.service || true
           if docker info >/dev/null 2>&1; then echo "::error::docker still reachable after stop"; exit 1; fi
       - name: make verify must fail for want of Postgres
-        run: bash scripts/ci-gate-negative.sh 'AGENTBUS2_TEST_POSTGRES_DSN is unset and testcontainers could not start postgres:17'
+        run: bash scripts/ci-gate-negative.sh 'AGENTBUS2_TEST_POSTGRES_DSN is unset and testcontainers could not start cgr.dev/chainguard/postgres'

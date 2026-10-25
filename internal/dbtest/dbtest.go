@@ -21,7 +21,7 @@ import (
 
 const (
 	PostgresDSNEnv = "AGENTBUS2_TEST_POSTGRES_DSN"
-	PostgresImage  = "postgres:17"
+	PostgresImage  = "cgr.dev/chainguard/postgres:latest@sha256:0926ac7262a2c1963179eb939cd5d610e1be3ecca90b4b5cad8db8df16fab87e"
 	pingTimeout    = 10 * time.Second
 )
 

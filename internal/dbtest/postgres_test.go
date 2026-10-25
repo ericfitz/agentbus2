@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-const startFailedPrefix = "postgres: AGENTBUS2_TEST_POSTGRES_DSN is unset and testcontainers could not start postgres:17 (start Docker, or set the variable to a reachable server): "
+const startFailedPrefix = "postgres: AGENTBUS2_TEST_POSTGRES_DSN is unset and testcontainers could not start cgr.dev/chainguard/postgres:latest@sha256:0926ac7262a2c1963179eb939cd5d610e1be3ecca90b4b5cad8db8df16fab87e (start Docker, or set the variable to a reachable server): "
 
 func fakeSource(env string, set bool, start func(ctx context.Context) (string, func(), error)) *postgresSource {
 	return &postgresSource{
