@@ -46,8 +46,8 @@ type Bridges interface {
 	// CreateBridge inserts b in state creating (b.State must be "" or
 	// creating) and returns it with its ID. ErrConflict when the channel has
 	// a row or the Slack channel ID is taken; ErrInvalid for an empty
-	// ChannelName, SlackName or Scope, a text failing TextRule or another
-	// State.
+	// ChannelName, SlackName or Scope, a text failing TextRule, another
+	// State, a ChannelID <= 0 or a non-zero ArchivedAt.
 	CreateBridge(ctx context.Context, b Bridge) (Bridge, error)
 	Bridge(ctx context.Context, id int64) (Bridge, error)                            // ErrNotFound
 	BridgeByChannel(ctx context.Context, channelID int64) (Bridge, error)            // ErrNotFound
