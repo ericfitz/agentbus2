@@ -186,8 +186,10 @@ internal/` then prints nothing).
 
 - **Choice 1, the operation table.** `api/openapi.yaml` declared 33
   operations when this addendum was written. After the federated-identity
-  work and the Slack bridge work (2026-10-23) it declares 51, counted from
-  `operationId` and `security: []`: 44 protected and 7 open (the Slack bridge
+  work and the Slack bridge work (2026-10-23) it declares 52, counted from
+  `operationId` and `security: []`: 44 protected, 7 open and 1 with optional
+  security (`health`, issue #11; the cmd test counts it as protected because a
+  bad bearer on it is a 401) (the Slack bridge
   adds the scope, scoped-identity and bridge operations, all admin). There is one `operationId` per
   `Bus` method plus the authentication paths (delete and rename channel
   carry both the `channels` and `admin` tags and serve `Messaging` and

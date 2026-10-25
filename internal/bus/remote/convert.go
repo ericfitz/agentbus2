@@ -165,6 +165,9 @@ func fromGenHealth(g gen.Health) (ab2bus.Health, error) {
 		return ab2bus.Health{}, unknownEnum("tier", string(g.Tier))
 	}
 	if s := g.Store; s != nil {
+		if s.Engine != "sqlite" && s.Engine != "postgres" {
+			return ab2bus.Health{}, unknownEnum("store.engine", string(s.Engine))
+		}
 		out.Store = &ab2bus.HealthStore{Engine: string(s.Engine), SchemaVersion: s.SchemaVersion}
 	}
 	if e := g.Embeddings; e != nil {

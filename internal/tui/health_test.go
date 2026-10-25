@@ -218,12 +218,12 @@ func (b healthFailBus) Health(context.Context) (bus.Health, error) { return bus.
 
 func TestHealthServerLineOnError(t *testing.T) {
 	f := newFixtureWith(t, func(b bus.Bus) bus.Bus {
-		return healthFailBus{Bus: b, err: &bus.Error{Code: bus.CodeUnavailable, Message: "store unreachable: closed"}}
+		return healthFailBus{Bus: b, err: &bus.Error{Code: bus.CodeUnavailable, Message: "store unreachable"}}
 	}, Host{})
 	f.key("esc")
 	f.key("h")
 	body := healthBody(f)
-	if !strings.Contains(body, "server unavailable · unavailable: store unreachable: closed") {
+	if !strings.Contains(body, "server unavailable · unavailable: store unreachable") {
 		t.Errorf("health lacks the unavailable server line:\n%s", body)
 	}
 	if strings.Contains(body, "maintenance ") {

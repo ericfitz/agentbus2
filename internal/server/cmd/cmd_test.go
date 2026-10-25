@@ -345,7 +345,9 @@ func TestRunRejectsUnopenableStore(t *testing.T) {
 
 // The counts fail when a task declares an operation without updating this
 // test. Every request carries a bad bearer: it must never turn an open
-// operation into a 401 (Global Constraints).
+// operation into a 401 (Global Constraints). The one exception is health, whose
+// security is optional (anonymous or bearer): a bad bearer on it is a 401, so
+// it counts among the protected operations here.
 func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 	r := runServer(t, "-listen", "127.0.0.1:0", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"))
 	doc := server.Spec()

@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/version"
 )
 
@@ -121,7 +122,7 @@ func TestHealthStoreDownIs503(t *testing.T) {
 	if r.StatusCode() != 503 || p == nil || p.Code != "unavailable" || !p.Retryable {
 		t.Fatalf("status %d problem %+v", r.StatusCode(), p)
 	}
-	if p.Detail == nil || !strings.HasPrefix(*p.Detail, "store unreachable: ") || strings.Contains(*p.Detail, e.dbPath) {
+	if p.Detail == nil || *p.Detail != "store unreachable" || strings.Contains(*p.Detail, e.dbPath) {
 		t.Fatalf("detail = %v", p.Detail)
 	}
 }
@@ -136,5 +137,21 @@ func TestHealthOptionalSecurityIsInTheDocument(t *testing.T) {
 	}
 	if _, ok := (*sec)[1]["bearerAuth"]; !ok || len((*sec)[1]) != 1 {
 		t.Fatalf("second requirement = %v, want bearerAuth", (*sec)[1])
+	}
+}
+
+func TestHealthProbeBodyOmitsNoticeText(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	err := e.store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
+		return tx.SetNotice(ctx, store.Notice{Kind: "capacity", Message: "SECRET-NOTICE-TEXT", SetAt: fixedNowMs})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://inproc/v1/health", nil)
+	resp := e.raw("", req)
+	body, _ := io.ReadAll(resp.Body)
+	if strings.Contains(string(body), "SECRET-NOTICE-TEXT") || !strings.Contains(string(body), `"degraded"`) {
+		t.Fatalf("probe body = %s", body)
 	}
 }

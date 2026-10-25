@@ -22,6 +22,7 @@ func TestHealthRejectsUnknownEnums(t *testing.T) {
 		"status":     {`{"status":"meh","tier":"probe","version":"v","now":1}`, "status"},
 		"tier":       {`{"status":"ok","tier":"root","version":"v","now":1}`, "tier"},
 		"embeddings": {`{"status":"ok","tier":"identity","version":"v","now":1,"embeddings":{"state":"warm","backlog":0,"rejected":0}}`, "embeddings.state"},
+		"engine":     {`{"status":"ok","tier":"identity","version":"v","now":1,"store":{"engine":"mysql","schema_version":6}}`, "store.engine"},
 		"lock":       {`{"status":"ok","tier":"admin","version":"v","now":1,"maintenance":{"interval_seconds":1,"owner":"o","lock":"maybe","jobs":[]}}`, "maintenance.lock"},
 	}
 	for name, tc := range cases {

@@ -230,7 +230,7 @@ func TestHealthStoreDownIsUnavailable(t *testing.T) {
 		if !errors.As(err, &be) || be.Code != bus.CodeUnavailable || !be.Retryable {
 			t.Fatalf("%q err = %v, want retryable unavailable", who, err)
 		}
-		if !strings.HasPrefix(be.Message, "store unreachable: ") || strings.Contains(be.Message, e.path) {
+		if be.Message != "store unreachable" || strings.Contains(be.Message, e.path) {
 			t.Fatalf("message = %q", be.Message)
 		}
 	}
@@ -310,7 +310,7 @@ func TestHealthStoreFailureAfterPingIsUnavailable(t *testing.T) {
 			e.svc.Store = faultStore{Store: e.svc.Store, usageErr: tc.usageErr, readErr: tc.readErr}
 			_, err := e.svc.Health(context.Background(), tc.who, "v")
 			var be *bus.Error
-			if !errors.As(err, &be) || be.Code != bus.CodeUnavailable || !be.Retryable || !strings.HasPrefix(be.Message, "store unreachable: ") {
+			if !errors.As(err, &be) || be.Code != bus.CodeUnavailable || !be.Retryable || be.Message != "store unreachable" {
 				t.Fatalf("err = %v, want retryable unavailable", err)
 			}
 		})
@@ -324,5 +324,23 @@ func TestHealthBoundsMaintenanceErrorText(t *testing.T) {
 	m := e.health(t, "root").Maintenance
 	if len(m.LockError) != bus.MaxErrorMessageBytes || len(m.Jobs[0].Error) != bus.MaxErrorMessageBytes {
 		t.Fatalf("lock error %d bytes, job error %d bytes, want %d", len(m.LockError), len(m.Jobs[0].Error), bus.MaxErrorMessageBytes)
+	}
+}
+
+func TestHealthUnavailableHidesDriverText(t *testing.T) {
+	leak := errors.New("failed to connect to `host=db.internal user=ab2 database=prod`: dial /var/lib/ab2/secret.db")
+	for _, who := range []string{"", "pat", "root"} {
+		e := newEnv(t, nil)
+		e.svc.Store = faultStore{Store: e.svc.Store, readErr: leak, usageErr: leak}
+		_, err := e.svc.Health(context.Background(), who, "v")
+		var be *bus.Error
+		if !errors.As(err, &be) || be.Code != bus.CodeUnavailable {
+			t.Fatalf("%q err = %v", who, err)
+		}
+		for _, bad := range []string{"host=", "user=", "secret.db", "db.internal"} {
+			if strings.Contains(be.Message, bad) {
+				t.Fatalf("%q message %q leaks %q", who, be.Message, bad)
+			}
+		}
 	}
 }

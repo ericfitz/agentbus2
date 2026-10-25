@@ -101,6 +101,8 @@ Two probes, with different jobs:
 - Liveness: `GET /v1/discover` is unauthenticated (Decision 43), never touches the store and returns 200 while the process serves, with a JSON body including `api_versions`, `capabilities` (`health`, `long_poll`) and `server_version`. A database outage never fails it, so it never restarts a replica for one.
 - Readiness: `GET /v1/health` is 200 when the store answers (`status` `ok` or `degraded`) and a 503 problem with `code` `unavailable` when it does not. Without a bearer it returns only `status`, `tier`, `version` and `now`; a bearer adds more, by tier (an identity, then an administrator).
 
+A probe must send no `Authorization` header: a stale or invalid bearer gets a 401, not the probe tier.
+
 ```sh
 curl -fsS http://127.0.0.1:8420/v1/discover
 curl -fsS http://127.0.0.1:8420/v1/health

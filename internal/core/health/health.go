@@ -20,19 +20,20 @@ const (
 // Service is the health aggregate over a Core.
 type Service struct{ *core.Core }
 
-// unavailable maps a store failure to the retryable unavailable error; only
+// unavailable maps a store failure to the retryable unavailable error with a
+// fixed message; only
 // the core's own checks (not_registered, forbidden) pass through unchanged,
 // so any other *bus.Error from the store path is still a store failure.
-func unavailable(err error) error {
+func (s Service) unavailable(err error) error {
 	var be *bus.Error
 	if errors.As(err, &be) && (be.Code == bus.CodeNotRegistered || be.Code == bus.CodeForbidden) {
 		return be
 	}
-	return &bus.Error{
-		Code:      bus.CodeUnavailable,
-		Retryable: true,
-		Message:   bus.TruncateErrorMessage("store unreachable: " + err.Error()),
-	}
+	// The probe tier is unauthenticated, so the driver text (a Postgres
+	// error names host, user and database; SQLite the file path) goes to the
+	// log and never to the caller.
+	s.Log.Error("health: store unreachable", "err", err)
+	return &bus.Error{Code: bus.CodeUnavailable, Retryable: true, Message: "store unreachable"}
 }
 
 // Health builds the document for identity; "" is the probe tier. version is
@@ -42,7 +43,7 @@ func unavailable(err error) error {
 func (s Service) Health(ctx context.Context, identity, version string) (bus.Health, error) {
 	schema, err := s.Store.SchemaVersion(ctx)
 	if err != nil {
-		return bus.Health{}, unavailable(err)
+		return bus.Health{}, s.unavailable(err)
 	}
 	tier := bus.TierProbe
 	var (
@@ -81,7 +82,7 @@ func (s Service) Health(ctx context.Context, identity, version string) (bus.Heal
 		return nil
 	})
 	if err != nil {
-		return bus.Health{}, unavailable(err)
+		return bus.Health{}, s.unavailable(err)
 	}
 
 	tick, ticked := s.LastMaintenanceTick()
@@ -110,7 +111,7 @@ func (s Service) Health(ctx context.Context, identity, version string) (bus.Heal
 
 	usage, err := channels.Service{Core: s.Core}.Usage(ctx, identity)
 	if err != nil {
-		return bus.Health{}, unavailable(err)
+		return bus.Health{}, s.unavailable(err)
 	}
 	h.Storage = &usage
 	h.Notices = append([]bus.Notice{}, notices...)
