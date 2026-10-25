@@ -58,23 +58,44 @@ func (s Service) Status(ctx context.Context, identity string) (bus.Status, error
 		if s.Embedder() == nil {
 			return nil
 		}
-		model := s.Cfg.EmbeddingModel
-		backlog, err := tx.UnembeddedMemories(ctx, model, rules.SearchPageMax)
+		rep, err := EmbeddingReport(ctx, tx, s.Core)
 		if err != nil {
 			return err
 		}
-		st.EmbeddingBacklog = len(backlog)
-		count, last, err := tx.EmbedFailures(ctx, model)
-		if err != nil {
-			return err
-		}
-		st.EmbeddingRejected, st.EmbeddingRejectedLast = count, last.Error
-		if n, ok, err := tx.Notice(ctx, noticeEmbedding); err != nil {
-			return err
-		} else if ok {
-			st.EmbeddingError, st.EmbeddingErrorAt = n.Message, n.SetAt
-		}
+		st.EmbeddingBacklog, st.EmbeddingRejected, st.EmbeddingRejectedLast = rep.Backlog, rep.Rejected, rep.RejectedLast
+		st.EmbeddingError, st.EmbeddingErrorAt = rep.LastError, rep.LastErrorAt
 		return nil
 	})
 	return st, core.FromStore(err)
+}
+
+// EmbeddingReport reads the embedding state inside tx: off when c has no
+// embedder (counts 0, other members empty); else the backlog (capped at
+// rules.SearchPageMax), the rejection count and latest reason, the model and
+// the embedding notice, with state failing while that notice is set. Status
+// and the health document both call it, so the two views cannot drift.
+func EmbeddingReport(ctx context.Context, tx store.Tx, c *core.Core) (bus.HealthEmbeddings, error) {
+	if c.Embedder() == nil {
+		return bus.HealthEmbeddings{State: bus.EmbeddingsOff}, nil
+	}
+	model := c.Cfg.EmbeddingModel
+	rep := bus.HealthEmbeddings{State: bus.EmbeddingsOK, Model: model}
+	backlog, err := tx.UnembeddedMemories(ctx, model, rules.SearchPageMax)
+	if err != nil {
+		return bus.HealthEmbeddings{}, err
+	}
+	rep.Backlog = len(backlog)
+	count, last, err := tx.EmbedFailures(ctx, model)
+	if err != nil {
+		return bus.HealthEmbeddings{}, err
+	}
+	rep.Rejected, rep.RejectedLast = count, last.Error
+	n, ok, err := tx.Notice(ctx, noticeEmbedding)
+	if err != nil {
+		return bus.HealthEmbeddings{}, err
+	}
+	if ok {
+		rep.State, rep.LastError, rep.LastErrorAt = bus.EmbeddingsFailing, n.Message, n.SetAt
+	}
+	return rep, nil
 }
