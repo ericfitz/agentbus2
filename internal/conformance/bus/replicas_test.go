@@ -137,6 +137,36 @@ func (r *replica) login(t *testing.T, ctx context.Context, w *replicaWho) (strin
 	return at.Token, remote.New(r.clientWith(t, at.Token))
 }
 
+// waitWatchRegistered blocks until a watch has registered on the session (its
+// watch id is set). A fixed sleep alone is not enough: a loaded host can run
+// the send before the Watch request reaches the server, and the watch's first
+// peek then finds the message and returns at once, which passes the wake leaf
+// even with the NOTIFY removed (scripts/check-gates-selftest.sh block
+// notify-append-removed flaked on exactly this). The caller still sleeps a
+// beat after this so the watch is past its first peek and waiting on hints.
+func waitWatchRegistered(t *testing.T, ctx context.Context, st ab2store.Store, session string) {
+	t.Helper()
+	deadline := time.Now().Add(10 * time.Second)
+	for time.Now().Before(deadline) {
+		var id string
+		err := st.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+			sess, err := tx.Session(ctx, session)
+			if err == nil {
+				id = sess.WatchID
+			}
+			return err
+		})
+		if err != nil {
+			t.Fatalf("reading session %s: %v", session, err)
+		}
+		if id != "" {
+			return
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Fatalf("no watch registered on session %s within 10 s", session)
+}
+
 // watchOutcome is the result of a watch armed in a goroutine.
 type watchOutcome struct {
 	res ab2bus.WatchResult
@@ -157,7 +187,7 @@ func TestReplicasWake(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		_, _, dsn := openStoreDSN(t, e)
+		st, _, dsn := openStoreDSN(t, e)
 
 		a := startReplica(t, ctx, "A", e, dsn)
 		b := startReplica(t, ctx, "B", e, dsn)
@@ -274,6 +304,7 @@ func TestReplicasWake(t *testing.T) {
 					res, err := patBusA.Watch(ctx, ab2bus.WatchInput{Session: session.ID, Timeout: 5 * time.Second})
 					out <- watchOutcome{res, err, time.Now()}
 				}()
+				waitWatchRegistered(t, ctx, st, session.ID)
 				time.Sleep(300 * time.Millisecond)
 				sent := send("hello")
 				select {
