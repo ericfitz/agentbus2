@@ -145,6 +145,7 @@ func TestLoginHuman(t *testing.T) {
 	if !re.MatchString(out.String()) {
 		t.Fatalf("stdout %q", out.String())
 	}
+	assertNoTokenOnStderr(t, e, "lab", errb.String())
 	if want := "agentbus2 login: sign in at " + hs.lastURL() + "\n"; errb.String() != want {
 		t.Fatalf("stderr %q, want %q", errb.String(), want)
 	}

@@ -223,6 +223,7 @@ func TestRunTUIServerProfile(t *testing.T) {
 	if _, err := os.Stat(cache); err != nil {
 		t.Fatalf("no human session cache: %v", err)
 	}
+	assertNoTokenOnStderr(t, e, "lab", r.stderr.String())
 	// The next TUI reuses the session: no browser, nothing on stderr.
 	r2 := startTUI(t, e, "-profile", "lab")
 	driveSendAs(t, r2, sam, "eric@corp.example", bus.IdentityHuman, nil)
