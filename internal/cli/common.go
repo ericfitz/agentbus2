@@ -59,6 +59,10 @@ func printJSON(stdout io.Writer, v any) error {
 // command builds from environ and flags, which it could not reach otherwise.
 var testClientOptions func(*client.Options)
 
+// testConn is nil in production. open applies it to the opened Conn, so a
+// test can put a fake Bus in front of the real one.
+var testConn func(*client.Conn)
+
 // open builds the Conn of a command. A profile, identity or credential
 // resolution error is a usage error: it prints through fail and returns exit
 // 2. Any other error returns exit 1. Nothing is dialed here in server mode.
@@ -81,6 +85,9 @@ func open(ctx context.Context, o client.Options, stderr io.Writer) (*client.Conn
 			return nil, 2
 		}
 		return nil, 1
+	}
+	if testConn != nil {
+		testConn(c)
 	}
 	return c, 0
 }

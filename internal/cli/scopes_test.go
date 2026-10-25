@@ -141,3 +141,43 @@ func TestChannelsCreateScope(t *testing.T) {
 		t.Fatalf("plain: %d %q", code, out)
 	}
 }
+
+// A non-administrator is refused by every scopes and identities action with
+// forbidden (exit 1) and prints nothing. The admin runs first so the
+// scope exists and the refusal is about the caller, not a missing scope.
+func TestScopesAndIdentitiesNonAdmin(t *testing.T) {
+	e := adminEnv(t)
+	if code, _, er := runner(e, RunScopes)("create", "job1"); code != 0 {
+		t.Fatalf("scope: %d %s", code, er)
+	}
+	if err := (identities.Service{Core: e.conn(t, "pat").Core}).MakeAdmin(context.Background(), "pat", false); err != nil {
+		t.Fatal(err)
+	}
+	scopes := runner(e, RunScopes)
+	ids := runner(e, RunIdentities)
+	for _, tc := range []struct {
+		run  cliRun
+		args []string
+	}{
+		{scopes, []string{"create", "job2"}},
+		{scopes, []string{"list"}},
+		{scopes, []string{"get", "job1"}},
+		{scopes, []string{"done", "-retire", "normal", "job1"}},
+		{ids, []string{"create", "agent1"}},
+		{ids, []string{"create", "-scope", "job1", "agent1"}},
+	} {
+		code, out, er := tc.run(tc.args...)
+		if code != 1 || !strings.Contains(er, "agentbus2: forbidden:") || out != "" {
+			t.Errorf("%v: exit %d out %q err %q, want exit 1 forbidden and no output", tc.args, code, out, er)
+		}
+	}
+	// The admin still sees the one scope.
+	if err := (identities.Service{Core: e.conn(t, "pat").Core}).MakeAdmin(context.Background(), "pat", true); err != nil {
+		t.Fatal(err)
+	}
+	_, out, _ := scopes("list")
+	var list []struct{ Name, State string }
+	if err := json.Unmarshal([]byte(out), &list); err != nil || len(list) != 1 || list[0].Name != "job1" || list[0].State != "open" {
+		t.Fatalf("scopes after refusals: %q %v", out, err)
+	}
+}
