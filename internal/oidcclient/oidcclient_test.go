@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -22,15 +23,35 @@ import (
 	"github.com/ericfitz/agentbus2/internal/oidctest"
 )
 
-// freePort asks the OS for a loopback port that is free now.
-func freePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
+// watchPort wraps c.Announce (set it first) to record the redirect_uri of the
+// authorization URL SignIn announces. The tests bind port 0, so the OS picks
+// the port at listen time and no free-port probe can race with another
+// process. The returned func reports the port SignIn actually bound.
+func watchPort(c *Config) func() int {
+	var (
+		mu   sync.Mutex
+		port int
+	)
+	prev := c.Announce
+	c.Announce = func(line string) {
+		if u, err := url.Parse(line); err == nil {
+			if r, err := url.Parse(u.Query().Get("redirect_uri")); err == nil && r.Port() != "" {
+				if n, err := strconv.Atoi(r.Port()); err == nil {
+					mu.Lock()
+					port = n
+					mu.Unlock()
+				}
+			}
+		}
+		if prev != nil {
+			prev(line)
+		}
 	}
-	defer func() { _ = l.Close() }()
-	return l.Addr().(*net.TCPAddr).Port
+	return func() int {
+		mu.Lock()
+		defer mu.Unlock()
+		return port
+	}
 }
 
 // browser is the OpenBrowser seam: it GETs the authorization URL with a client
@@ -82,11 +103,11 @@ func config(p *oidctest.Provider, port int, b *browser) Config {
 func TestSignInPKCE(t *testing.T) {
 	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid", RefreshTokens: true,
 		Claims: map[string]any{"sub": "u1", "email": "a@b.example"}})
-	port := freePort(t)
 	b := newBrowser(nil)
 	var announced string
-	c := config(p, port, b)
+	c := config(p, 0, b)
 	c.Announce = func(u string) { announced = u }
+	portOf := watchPort(&c)
 	tok, err := SignIn(context.Background(), c)
 	if err != nil {
 		t.Fatalf("SignIn: %v", err)
@@ -112,7 +133,7 @@ func TestSignInPKCE(t *testing.T) {
 	u, _ := url.Parse(opened)
 	q := u.Query()
 	if q.Get("response_type") != "code" || q.Get("client_id") != "cid" || q.Get("scope") != "openid email" ||
-		q.Get("redirect_uri") != fmt.Sprintf("http://127.0.0.1:%d/callback", port) || q.Get("code_challenge_method") != "S256" {
+		q.Get("redirect_uri") != fmt.Sprintf("http://127.0.0.1:%d/callback", portOf()) || q.Get("code_challenge_method") != "S256" {
 		t.Errorf("authorization URL = %s", opened)
 	}
 	// The provider saw a verifier that hashes to the challenge.
@@ -140,11 +161,14 @@ func TestSignInPKCE(t *testing.T) {
 		t.Errorf("callback page = %q", page)
 	}
 	// The listener is gone once SignIn returns.
-	assertPortFree(t, port)
+	assertPortFree(t, portOf())
 }
 
 func assertPortFree(t *testing.T, port int) {
 	t.Helper()
+	if port == 0 {
+		t.Fatal("no port was recorded from the announced authorization URL; the check would pass vacuously")
+	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
 		l, err := net.Listen("tcp", "127.0.0.1:"+strconv.Itoa(port))
@@ -209,9 +233,9 @@ func TestSignInStrayCallbackDoesNotAbort(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid"})
-			port := freePort(t)
 			statuses := make(chan int, len(strays))
-			c := config(p, port, newBrowser(nil))
+			c := config(p, 0, newBrowser(nil))
+			portOf := watchPort(&c)
 			c.OpenBrowser = strayThen(t, strays, statuses, true)
 			tok, err := SignIn(context.Background(), c)
 			if err != nil || tok.AccessToken == "" {
@@ -227,7 +251,7 @@ func TestSignInStrayCallbackDoesNotAbort(t *testing.T) {
 					t.Errorf("stray status = %d, want %d", st, want)
 				}
 			}
-			assertPortFree(t, port)
+			assertPortFree(t, portOf())
 		})
 	}
 }
@@ -236,9 +260,9 @@ func TestSignInStrayCallbackDoesNotAbort(t *testing.T) {
 // and nothing is exchanged.
 func TestSignInStrayCallbackOnlyTimesOut(t *testing.T) {
 	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid"})
-	port := freePort(t)
 	statuses := make(chan int, 1)
-	c := config(p, port, newBrowser(nil))
+	c := config(p, 0, newBrowser(nil))
+	portOf := watchPort(&c)
 	c.Timeout = 400 * time.Millisecond
 	c.OpenBrowser = strayThen(t, []string{"/callback?state=forged&code=x"}, statuses, false)
 	start := time.Now()
@@ -257,27 +281,27 @@ func TestSignInStrayCallbackOnlyTimesOut(t *testing.T) {
 			t.Error("the code was exchanged for a stray request")
 		}
 	}
-	assertPortFree(t, port)
+	assertPortFree(t, portOf())
 }
 
 // The matching state with an error parameter still ends the sign-in with it.
 func TestSignInMatchingStateErrorEnds(t *testing.T) {
 	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid", AuthorizeError: "access_denied"})
-	port := freePort(t)
 	statuses := make(chan int, 1)
-	c := config(p, port, newBrowser(nil))
+	c := config(p, 0, newBrowser(nil))
+	portOf := watchPort(&c)
 	c.OpenBrowser = strayThen(t, []string{"/callback?state=forged&code=x"}, statuses, true)
 	_, err := SignIn(context.Background(), c)
 	if err == nil || !strings.Contains(err.Error(), "access_denied") {
 		t.Fatalf("err = %v, want one containing access_denied", err)
 	}
-	assertPortFree(t, port)
+	assertPortFree(t, portOf())
 }
 
 func TestSignInProviderError(t *testing.T) {
 	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid", AuthorizeError: "access_denied"})
 	b := newBrowser(nil)
-	_, err := SignIn(context.Background(), config(p, freePort(t), b))
+	_, err := SignIn(context.Background(), config(p, 0, b))
 	if err == nil || !strings.Contains(err.Error(), "access_denied") {
 		t.Fatalf("err = %v, want one containing access_denied", err)
 	}
@@ -305,8 +329,8 @@ func TestSignInPortBusy(t *testing.T) {
 
 func TestSignInTimeout(t *testing.T) {
 	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid"})
-	port := freePort(t)
-	c := config(p, port, newBrowser(nil))
+	c := config(p, 0, newBrowser(nil))
+	portOf := watchPort(&c)
 	c.OpenBrowser = func(string) error { return nil } // never calls back
 	c.Timeout = 200 * time.Millisecond
 	start := time.Now()
@@ -317,27 +341,26 @@ func TestSignInTimeout(t *testing.T) {
 	if d := time.Since(start); d > 2*time.Second {
 		t.Errorf("took %v", d)
 	}
-	assertPortFree(t, port)
+	assertPortFree(t, portOf())
 }
 
 func TestSignInContextCanceled(t *testing.T) {
 	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid"})
-	port := freePort(t)
 	ctx, cancel := context.WithCancel(context.Background())
-	c := config(p, port, newBrowser(nil))
+	c := config(p, 0, newBrowser(nil))
+	portOf := watchPort(&c)
 	c.OpenBrowser = func(string) error { cancel(); return nil }
 	if _, err := SignIn(ctx, c); !errors.Is(err, context.Canceled) {
 		t.Fatalf("err = %v, want context.Canceled", err)
 	}
-	assertPortFree(t, port)
+	assertPortFree(t, portOf())
 }
 
 func TestSignInBrowserFailureIsAnnounced(t *testing.T) {
 	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid"})
-	port := freePort(t)
 	b := newBrowser(nil)
 	var lines []string
-	c := config(p, port, b)
+	c := config(p, 0, b)
 	c.OpenBrowser = func(u string) error {
 		go func() { _ = b.open(u) }() // the user pastes the URL by hand
 		return errors.New("no display")
@@ -361,8 +384,7 @@ func TestSignInDiscoveryIncomplete(t *testing.T) {
 				_, _ = io.WriteString(w, doc)
 			}))
 			defer srv.Close()
-			port := freePort(t)
-			_, err := SignIn(context.Background(), Config{Issuer: srv.URL, ClientID: "cid", RedirectPort: port,
+			_, err := SignIn(context.Background(), Config{Issuer: srv.URL, ClientID: "cid", RedirectPort: 0,
 				OpenBrowser: func(string) error { t.Error("browser opened"); return nil }})
 			if err == nil || !strings.Contains(err.Error(), name) {
 				t.Fatalf("err = %v, want one naming %s", err, name)
@@ -391,7 +413,7 @@ func TestSignInTokenEndpointFailureHasNoToken(t *testing.T) {
 	defer srv.Close()
 	base = srv.URL
 	b := newBrowser(nil)
-	_, err := SignIn(context.Background(), Config{Issuer: srv.URL, ClientID: "cid", RedirectPort: freePort(t),
+	_, err := SignIn(context.Background(), Config{Issuer: srv.URL, ClientID: "cid", RedirectPort: 0,
 		OpenBrowser: b.open, Timeout: 5 * time.Second})
 	if err == nil || !strings.Contains(err.Error(), "token_type") || strings.Contains(err.Error(), secret) {
 		t.Fatalf("err = %v, want one naming token_type and no token", err)
@@ -401,7 +423,7 @@ func TestSignInTokenEndpointFailureHasNoToken(t *testing.T) {
 func TestRefresh(t *testing.T) {
 	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid", RefreshTokens: true})
 	b := newBrowser(nil)
-	first, err := SignIn(context.Background(), config(p, freePort(t), b))
+	first, err := SignIn(context.Background(), config(p, 0, b))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -469,7 +491,7 @@ func TestSignInExpiresInString(t *testing.T) {
 	}))
 	defer srv.Close()
 	base = srv.URL
-	tok, err := SignIn(context.Background(), Config{Issuer: srv.URL, ClientID: "cid", RedirectPort: freePort(t),
+	tok, err := SignIn(context.Background(), Config{Issuer: srv.URL, ClientID: "cid", RedirectPort: 0,
 		OpenBrowser: newBrowser(nil).open, Timeout: 5 * time.Second})
 	if err != nil {
 		t.Fatal(err)
@@ -483,7 +505,7 @@ func TestSignInExpiresInString(t *testing.T) {
 func TestSignInFailurePageDelivered(t *testing.T) {
 	p := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid", AuthorizeError: "access_denied"})
 	b := newBrowser(nil)
-	if _, err := SignIn(context.Background(), config(p, freePort(t), b)); err == nil {
+	if _, err := SignIn(context.Background(), config(p, 0, b)); err == nil {
 		t.Fatal("want an error")
 	}
 	if page := <-b.page; !strings.Contains(page, "Sign-in failed") || !strings.Contains(page, "access_denied") {

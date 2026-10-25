@@ -6,7 +6,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -108,16 +107,6 @@ func (h *humanEnv) advance(d time.Duration) {
 	h.mu.Unlock()
 }
 
-func humanFreePort(t *testing.T) int {
-	t.Helper()
-	l, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer func() { _ = l.Close() }()
-	return l.Addr().(*net.TCPAddr).Port
-}
-
 // openBrowser is the OpenBrowser seam: it GETs the authorization URL and so
 // follows the provider's redirect to the loopback listener.
 func (h *humanEnv) openBrowser(raw string) error {
@@ -141,7 +130,7 @@ func (h *humanEnv) source(t *testing.T, dir string) *HumanSource {
 	return &HumanSource{
 		Server: h.srv.URL,
 		OIDC: oidcclient.Config{
-			Issuer: h.prov.URL(), ClientID: "cid", RedirectPort: humanFreePort(t),
+			Issuer: h.prov.URL(), ClientID: "cid", RedirectPort: 0, // the OS picks the port at listen time; no probe to race
 			Scopes: []string{"openid", "email"}, OpenBrowser: h.openBrowser, Timeout: 5 * time.Second,
 		},
 		Client: gc,
