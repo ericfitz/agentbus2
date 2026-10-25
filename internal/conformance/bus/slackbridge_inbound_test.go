@@ -295,6 +295,21 @@ func TestSlackBridgeInbound(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		ctx := context.Background()
 
+		t.Run("mentions-look-each-user-up-once", func(t *testing.T) {
+			f := newInFix(t, e)
+			before := f.fake.Calls("UserInfo")
+			m := f.fake.Say(f.sl, "U1", "<@U5> <@U5> <@U1> <@UNOPE> <@UNOPE> <@U1>", "")
+			f.want(m, slackbridge.OutcomeSent)
+			// The sender U1 (step 5, then cached), U5 and UNOPE: one call each,
+			// the unknown user's miss included.
+			if n := f.fake.Calls("UserInfo") - before; n != 3 {
+				t.Errorf("users.info calls = %d, want 3", n)
+			}
+			if h := f.human(); len(h) != 1 || h[0].Content != "@Kim @Kim @Alice @UNOPE @UNOPE @Alice" {
+				t.Errorf("content = %+v", h)
+			}
+		})
+
 		t.Run("authorized-top-level", func(t *testing.T) {
 			f := newInFix(t, e)
 			m := f.fake.Say(f.sl, "U1", "hi *there*", "")

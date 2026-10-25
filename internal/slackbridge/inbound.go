@@ -33,6 +33,7 @@ const (
 	slackHint = "slack"
 
 	userCacheTTL = 10 * time.Minute
+	userCacheMax = 1000
 
 	// requeueAttempts is how many times the runner's worker requeues a retry
 	// outcome before leaving the message to the next catch-up; the delay
@@ -47,31 +48,67 @@ type cachedUser struct {
 }
 
 // userCache caches users.info answers for userCacheTTL, by the Service's
-// clock.
+// clock, and holds at most userCacheMax of them: a put drops the expired
+// entries, then the oldest while still full.
 type userCache struct {
 	mu sync.Mutex
 	m  map[string]cachedUser
 }
 
+func (c *userCache) get(id string, now time.Time) (slackapi.User, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	e, ok := c.m[id]
+	if !ok || now.Sub(e.at) >= userCacheTTL {
+		return slackapi.User{}, false
+	}
+	return e.u, true
+}
+
+func (c *userCache) put(id string, u slackapi.User, now time.Time) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.m == nil {
+		c.m = map[string]cachedUser{}
+	}
+	// A put follows a miss (a users.info call), so the sweep is cheap.
+	for k, e := range c.m {
+		if now.Sub(e.at) >= userCacheTTL {
+			delete(c.m, k)
+		}
+	}
+	if _, replace := c.m[id]; !replace {
+		for len(c.m) >= userCacheMax {
+			oldest, first := "", true
+			var at time.Time
+			for k, e := range c.m {
+				if first || e.at.Before(at) {
+					oldest, at, first = k, e.at, false
+				}
+			}
+			delete(c.m, oldest)
+		}
+	}
+	c.m[id] = cachedUser{u: u, at: now}
+}
+
+func (c *userCache) len() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return len(c.m)
+}
+
 // user answers the Slack user, from the cache when it is fresh.
 func (s *Service) user(ctx context.Context, id string) (slackapi.User, error) {
 	now := s.core.Now()
-	s.users.mu.Lock()
-	c, ok := s.users.m[id]
-	s.users.mu.Unlock()
-	if ok && now.Sub(c.at) < userCacheTTL {
-		return c.u, nil
+	if u, ok := s.users.get(id, now); ok {
+		return u, nil
 	}
 	u, err := s.sc.UserInfo(ctx, id)
 	if err != nil {
 		return slackapi.User{}, err
 	}
-	s.users.mu.Lock()
-	if s.users.m == nil {
-		s.users.m = map[string]cachedUser{}
-	}
-	s.users.m[id] = cachedUser{u: u, at: now}
-	s.users.mu.Unlock()
+	s.users.put(id, u, now)
 	return u, nil
 }
 
@@ -330,11 +367,20 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 	if err != nil {
 		return OutcomeRetry, err
 	}
+	// One lookup per distinct mentioned user per message, answers (misses
+	// included) kept for the rest of the message, so a user the cache cannot
+	// answer costs one users.info call however often it is mentioned.
+	names := map[string]string{}
 	name := func(id string) string {
-		if nu, err := s.user(ctx, id); err == nil {
-			return nu.DisplayName
+		if n, ok := names[id]; ok {
+			return n
 		}
-		return ""
+		n := ""
+		if nu, err := s.user(ctx, id); err == nil {
+			n = nu.DisplayName
+		}
+		names[id] = n
+		return n
 	}
 	content := SlackToMarkdown(m.Text, name)
 	if quote != "" {
