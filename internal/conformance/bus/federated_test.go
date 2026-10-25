@@ -168,7 +168,21 @@ func TestFederatedEndToEnd(t *testing.T) {
 			return
 		}
 
-		t.Run("exchange-then-send", func(t *testing.T) {
+		// The leaves share the server and the Store but no state of their own:
+		// each sets up what it needs, and they run in reverse of the order
+		// written here so a hidden dependency on that order fails.
+		var leaves []struct {
+			name string
+			run  func(*testing.T)
+		}
+		leaf := func(name string, run func(*testing.T)) {
+			leaves = append(leaves, struct {
+				name string
+				run  func(*testing.T)
+			}{name, run})
+		}
+
+		leaf("exchange-then-send", func(t *testing.T) {
 			eric := humanBus(corp(ericName, "g-eric", "pai-users"))
 			sess, err := agent.Open(ctx, ab2bus.OpenSessionInput{Hint: "impl"})
 			if err != nil {
@@ -192,7 +206,7 @@ func TestFederatedEndToEnd(t *testing.T) {
 			}
 		})
 
-		t.Run("not-in-users-refused", func(t *testing.T) {
+		leaf("not-in-users-refused", func(t *testing.T) {
 			_, err := remote.TokenExchange(ctx, anon, corp("mallory@corp.example", "g-mal", "elsewhere"))
 			codeOf(t, err, ab2bus.CodeValidation)
 			if found, _, _ := identityRow("mallory@corp.example"); found {
@@ -200,7 +214,7 @@ func TestFederatedEndToEnd(t *testing.T) {
 			}
 		})
 
-		t.Run("precreated-binds", func(t *testing.T) {
+		leaf("precreated-binds", func(t *testing.T) {
 			found, b, before := identityRow(kimName)
 			if !found || b.ProviderSubject != "" {
 				t.Fatalf("precreated kim: found %v, binding %+v", found, b)
@@ -218,30 +232,32 @@ func TestFederatedEndToEnd(t *testing.T) {
 			}
 		})
 
-		var ericAdmin *remote.Bus
-		t.Run("admins-group-sets-flag", func(t *testing.T) {
+		leaf("admins-group-sets-flag", func(t *testing.T) {
 			eric := humanBus(corp(ericName, "g-eric", "pai-users"))
 			if _, err := eric.Status(ctx); ab2bus.CodeOf(err) != ab2bus.CodeForbidden {
 				t.Fatalf("Status without the admins group = %v, want forbidden", err)
 			}
-			ericAdmin = humanBus(corp(ericName, "g-eric", "pai-users", "pai-admins"))
+			ericAdmin := humanBus(corp(ericName, "g-eric", "pai-users", "pai-admins"))
 			if _, err := ericAdmin.Status(ctx); err != nil {
 				t.Fatalf("Status with the admins group: %v", err)
 			}
 		})
 
-		t.Run("group-removed-clears-flag", func(t *testing.T) {
+		leaf("group-removed-clears-flag", func(t *testing.T) {
+			ericAdmin := humanBus(corp(ericName, "g-eric", "pai-users", "pai-admins"))
+			if _, err := ericAdmin.Status(ctx); err != nil {
+				t.Fatalf("Status with the admins group: %v", err)
+			}
 			eric := humanBus(corp(ericName, "g-eric", "pai-users"))
 			_, err := eric.Status(ctx)
 			codeOf(t, err, ab2bus.CodeForbidden)
 			// The flag is the stored evaluation: the older bearer loses it too.
-			if ericAdmin != nil {
-				_, err = ericAdmin.Status(ctx)
-				codeOf(t, err, ab2bus.CodeForbidden)
-			}
+			_, err = ericAdmin.Status(ctx)
+			codeOf(t, err, ab2bus.CodeForbidden)
 		})
 
-		t.Run("key-registration-on-human-refused", func(t *testing.T) {
+		leaf("key-registration-on-human-refused", func(t *testing.T) {
+			humanBus(corp(ericName, "g-eric", "pai-users")) // eric exists, whichever leaf ran first
 			k, err := keys.Generate(keys.EdDSA)
 			if err != nil {
 				t.Fatal(err)
@@ -250,12 +266,15 @@ func TestFederatedEndToEnd(t *testing.T) {
 			codeOf(t, err, ab2bus.CodeForbidden)
 		})
 
-		t.Run("direct-corporate-bearer-refused", func(t *testing.T) {
+		leaf("direct-corporate-bearer-refused", func(t *testing.T) {
 			if status, body := getChannels(t, base, corp(ericName, "g-eric", "pai-users")); status != http.StatusUnauthorized {
 				t.Fatalf("GET /v1/channels with a corporate token = %d %s, want 401", status, body)
 			}
 		})
 
+		for i := len(leaves) - 1; i >= 0; i-- {
+			t.Run(leaves[i].name, leaves[i].run)
+		}
 		stop()
 	})
 }
