@@ -33,6 +33,12 @@ type (
 		usage any
 		err   error
 	}
+	// healthMsg carries the server's tiered health document, requested when
+	// the health overlay opens.
+	healthMsg struct {
+		h   *bus.Health
+		err error
+	}
 	// historyMsg is a window of channel history.
 	historyMsg struct {
 		channel string

@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/core/maintenance"
 	"github.com/ericfitz/agentbus2/internal/version"
 )
 
@@ -30,6 +33,8 @@ func TestHOpensHealthWithLines(t *testing.T) {
 		"sessions 2 live · channels 3 (1 memory, 0 tasks)",
 		"  sam ",
 		"receive long-poll connected · last batch",
+		"server ok · agentbus2 v" + version.Version + " · sqlite schema ",
+		" · embeddings off",
 		"admin no (status and storage are administrator views)",
 		"theme · default",
 		"agent cyan",
@@ -41,7 +46,7 @@ func TestHOpensHealthWithLines(t *testing.T) {
 			t.Errorf("health lacks %q:\n%s", want, body)
 		}
 	}
-	for _, not := range []string{"notice", "embeddings", "\nstorage "} {
+	for _, not := range []string{"notice", "embeddings ok · backlog", "\nstorage ", "maintenance "} {
 		if strings.Contains("\n"+body, not) {
 			t.Errorf("a non-admin's health shows %q:\n%s", not, body)
 		}
@@ -199,6 +204,54 @@ func TestBackgroundEditorForGUI(t *testing.T) {
 		t.Setenv("VISUAL", tc.visual)
 		if _, ok := backgroundEditor("x.json"); ok != tc.bg {
 			t.Errorf("VISUAL=%q: background=%v, want %v", tc.visual, ok, tc.bg)
+		}
+	}
+}
+
+// healthFailBus answers Health with a fixed error and passes the rest on.
+type healthFailBus struct {
+	bus.Bus
+	err error
+}
+
+func (b healthFailBus) Health(context.Context) (bus.Health, error) { return bus.Health{}, b.err }
+
+func TestHealthServerLineOnError(t *testing.T) {
+	f := newFixtureWith(t, func(b bus.Bus) bus.Bus {
+		return healthFailBus{Bus: b, err: &bus.Error{Code: bus.CodeUnavailable, Message: "store unreachable: closed"}}
+	}, Host{})
+	f.key("esc")
+	f.key("h")
+	body := healthBody(f)
+	if !strings.Contains(body, "server unavailable · unavailable: store unreachable: closed") {
+		t.Errorf("health lacks the unavailable server line:\n%s", body)
+	}
+	if strings.Contains(body, "maintenance ") {
+		t.Errorf("an unanswered health shows a maintenance line:\n%s", body)
+	}
+	if f.m.toast != "" {
+		t.Errorf("opening health toasted %q", f.m.toast)
+	}
+}
+
+func TestHealthMaintenanceLines(t *testing.T) {
+	f := newFixture(t)
+	setAdmin(t, f.core, "eric")
+	f.run(f.m.statusCmd())
+	f.key("esc")
+	f.key("h")
+	if body := healthBody(f); !strings.Contains(body, "maintenance unknown · last tick none yet · 0 jobs, 0 failed") {
+		t.Errorf("health before a tick:\n%s", body)
+	}
+	svc := maintenance.New(f.core)
+	svc.Tick(context.Background())
+	n := len(svc.Jobs())
+	f.key("esc")
+	f.key("h")
+	body := healthBody(f)
+	for _, want := range []string{"maintenance held · last tick ", fmt.Sprintf(" · %d jobs, 0 failed", n)} {
+		if !strings.Contains(body, want) {
+			t.Errorf("health lacks %q:\n%s", want, body)
 		}
 	}
 }

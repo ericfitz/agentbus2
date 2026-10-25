@@ -99,7 +99,9 @@ type Model struct {
 	admin        bool
 	status       bus.Status
 	statusOK     bool
-	usage        any // *bus.Usage once the server reports it; nil otherwise
+	usage        any         // *bus.Usage once the server reports it; nil otherwise
+	healthDoc    *bus.Health // the last Bus.Health answer; nil until one arrives
+	healthErr    error       // the last Bus.Health failure; nil after an answer
 	statusErr    error
 
 	msgs         map[string][]bus.Message
@@ -276,6 +278,9 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.usage = msg.usage
 		}
+	case healthMsg:
+		// Never a toast: the overlay's server line says what happened.
+		m.healthDoc, m.healthErr = msg.h, msg.err
 	case statusTickMsg:
 		// The one periodic chain: Init starts it, and only this case
 		// re-arms it, so opening Health (which also calls statusCmd) never

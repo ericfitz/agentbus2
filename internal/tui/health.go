@@ -39,7 +39,20 @@ func (m *Model) recordQuery(ok bool) {
 func (m *Model) openHealth() tea.Cmd {
 	m.mode = modeHealth
 	m.health.scroll = 0
-	return tea.Batch(m.statusCmd(), m.usageCmd())
+	return tea.Batch(m.statusCmd(), m.usageCmd(), m.healthCmd())
+}
+
+// healthCmd asks the server for its health document. A failure is carried in
+// the message and shown on the overlay's server line, never as a toast.
+func (m *Model) healthCmd() tea.Cmd {
+	c := m.c
+	return func() tea.Msg {
+		h, err := c.b.Health(c.ctx)
+		if err != nil {
+			return healthMsg{err: err}
+		}
+		return healthMsg{h: &h}
+	}
 }
 
 // usageCmd fetches storage use for the admin block of the overlay: nil unless
@@ -149,6 +162,7 @@ func (m Model) healthLines() []string {
 		lastB = m.lastBatchAt.Format("15:04:05")
 	}
 	p("%s %s · %s %s · %d gaps\n", dim.Render("receive"), recv, dim.Render("last batch"), lastB, m.gapCount)
+	m.serverLine(p, dim, ok, warn)
 	if m.admin {
 		m.adminLines(p, dim, ok, warn)
 	} else {
@@ -173,6 +187,63 @@ func (m Model) healthLines() []string {
 		b.WriteString("  " + string(js) + "\n")
 	}
 	return strings.Split(strings.TrimSuffix(b.String(), "\n"), "\n")
+}
+
+// serverLine is the server's own verdict from the health endpoint: its
+// version (which may differ from the client's), engine, schema and embedding
+// state.
+func (m Model) serverLine(p func(string, ...any), dim, ok, warn lipgloss.Style) {
+	h := m.healthDoc
+	switch {
+	case m.healthErr != nil:
+		p("%s %s\n", dim.Render("server"), m.theme.Style(m.theme.Error).Render("unavailable · "+errText(m.healthErr)))
+		return
+	case h == nil:
+		p("%s …\n", dim.Render("server"))
+		return
+	}
+	status := ok.Render(string(h.Status))
+	if h.Status != bus.HealthOK {
+		status = warn.Render(string(h.Status))
+	}
+	p("%s %s · agentbus2 v%s", dim.Render("server"), status, h.Version)
+	if h.Store != nil {
+		p(" · %s schema %d", h.Store.Engine, h.Store.SchemaVersion)
+	}
+	if h.Embeddings != nil {
+		p(" · embeddings %s", h.Embeddings.State)
+	}
+	p("\n")
+}
+
+// maintenanceLines is the administrator's view of this process's maintenance
+// loop: the lock, the last tick and the failed jobs.
+func (m Model) maintenanceLines(p func(string, ...any), dim, warn lipgloss.Style) {
+	h := m.healthDoc
+	if h == nil || h.Maintenance == nil {
+		return
+	}
+	mt := h.Maintenance
+	lock := strings.ReplaceAll(string(mt.Lock), "_", " ")
+	last := "none yet"
+	if mt.LastTickAt != 0 {
+		last = time.UnixMilli(mt.LastTickAt).Format("15:04:05")
+	}
+	failed := 0
+	for _, j := range mt.Jobs {
+		if j.Error != "" {
+			failed++
+		}
+	}
+	p("%s %s · %s %s · %d jobs, %d failed\n", dim.Render("maintenance"), lock, dim.Render("last tick"), last, len(mt.Jobs), failed)
+	for _, j := range mt.Jobs {
+		if j.Error != "" {
+			p("  %s\n", warn.Render(j.Name+": "+j.Error))
+		}
+	}
+	if mt.LockError != "" {
+		p("  %s\n", warn.Render("lock error: "+mt.LockError))
+	}
 }
 
 // adminLines is the administrator block: capacity notices, the embedding
@@ -232,6 +303,7 @@ func (m Model) adminLines(p func(string, ...any), dim, ok, warn lipgloss.Style) 
 		bar := strings.Repeat("█", filled) + dim.Render(strings.Repeat("█", 20-filled))
 		p("%s %s of %s %s %d%%\n", dim.Render("storage"), fmtBytes(u.Bytes), fmtBytes(u.BudgetBytes), bar, pct)
 	}
+	m.maintenanceLines(p, dim, warn)
 }
 
 func (m Model) viewHealth() string {
