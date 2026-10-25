@@ -467,3 +467,58 @@ func TestSlackUsers(t *testing.T) {
 		})
 	})
 }
+
+// Every bridge writer fails with ErrReadOnly inside Store.Read, with valid
+// arguments, and changes nothing.
+func TestBridgeWritersReadOnly(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		mustScope(t, s, "job1", 1)
+		mustIdentity(t, s, "pat")
+		c := mustChannel(t, s, "job1-chat", ab2store.KindOrdinary, "", nil)
+		b := newBridge(t, s, c.ID, "job1-chat")
+		mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error { return tx.SetBridgeSlackChannel(ctx, b.ID, "G1") })
+		mustTx(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			return tx.PutSlackUser(ctx, ab2store.SlackUser{Identity: "pat", TeamID: "T1", UserID: "U1", CreatedAt: 1})
+		})
+		for name, write := range map[string]func(context.Context, ab2store.Tx) error{
+			"CreateBridge": func(ctx context.Context, tx ab2store.Tx) error {
+				_, err := tx.CreateBridge(ctx, ab2store.Bridge{ChannelID: c.ID + 100, ChannelName: "x", Scope: "job1", SlackName: "x"})
+				return err
+			},
+			"SetBridgeSlackChannel": func(ctx context.Context, tx ab2store.Tx) error { return tx.SetBridgeSlackChannel(ctx, b.ID, "G1") },
+			"SetBridgeLive":         func(ctx context.Context, tx ab2store.Tx) error { return tx.SetBridgeLive(ctx, b.ID) },
+			"SetBridgeArchived":     func(ctx context.Context, tx ab2store.Tx) error { return tx.SetBridgeArchived(ctx, b.ID, 9) },
+			"AdvanceBridgeCursor":   func(ctx context.Context, tx ab2store.Tx) error { return tx.AdvanceBridgeCursor(ctx, b.ID, ts2) },
+			"DeleteBridge":          func(ctx context.Context, tx ab2store.Tx) error { return tx.DeleteBridge(ctx, b.ID) },
+			"PutBridgeMessage": func(ctx context.Context, tx ab2store.Tx) error {
+				return tx.PutBridgeMessage(ctx, ab2store.BridgeMessage{BridgeID: b.ID, Seq: 1, SlackTS: ts1, RootTS: ts1, CreatedAt: 1})
+			},
+			"PutBridgeDrop": func(ctx context.Context, tx ab2store.Tx) error { return tx.PutBridgeDrop(ctx, b.ID, ts1, 1) },
+			"PutSlackUser": func(ctx context.Context, tx ab2store.Tx) error {
+				return tx.PutSlackUser(ctx, ab2store.SlackUser{Identity: "pat", TeamID: "T2", UserID: "U2", CreatedAt: 1})
+			},
+			"DeleteSlackUser": func(ctx context.Context, tx ab2store.Tx) error {
+				_, err := tx.DeleteSlackUser(ctx, "pat")
+				return err
+			},
+		} {
+			err := s.Read(context.Background(), func(ctx context.Context, tx ab2store.Tx) error { return write(ctx, tx) })
+			if !errors.Is(err, ab2store.ErrReadOnly) {
+				t.Errorf("%s inside Read: err = %v, want ErrReadOnly", name, err)
+			}
+		}
+		if got := getBridge(t, s, b.ID); got.State != ab2store.BridgeCreating || got.CursorTS != "" || got.ArchivedAt != 0 {
+			t.Errorf("bridge after refused writes = %+v, want unchanged", got)
+		}
+		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			if u, err := tx.SlackUserOf(ctx, "pat"); err != nil || u.TeamID != "T1" {
+				t.Errorf("Slack user after refused writes = %+v, %v", u, err)
+			}
+			if d, err := tx.BridgeDropped(ctx, b.ID, ts1); err != nil || d {
+				t.Errorf("BridgeDropped = %v, %v; want false", d, err)
+			}
+			return nil
+		})
+	})
+}
