@@ -117,9 +117,11 @@ type Event struct {
 // other users are still invited; already_in_channel counts as success. A
 // failure that applies to every user is returned as an error (with the
 // failures so far): a channel-level code (channel_not_found, is_archived,
-// not_in_channel), a credential code (invalid_auth, not_authed,
-// account_inactive, token_revoked, missing_scope), a server or HTTP error, a
-// rate limit or a transport error.
+// not_in_channel, method_not_supported_for_channel_type), a credential code
+// (invalid_auth, not_authed, account_inactive, token_revoked, token_expired,
+// missing_scope, access_denied), a Slack server code (fatal_error,
+// internal_error, service_unavailable, request_timeout), an HTTP error, a rate
+// limit or a transport error.
 //
 // History's per-page order is unspecified (real Slack returns newest first);
 // callers that need order read all pages and sort by ts.

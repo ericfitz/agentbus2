@@ -13,8 +13,10 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/slack-go/slack"
+	"github.com/slack-go/slack/socketmode"
 
 	"github.com/ericfitz/agentbus2/internal/slackapi"
 )
@@ -37,6 +39,12 @@ type Options struct {
 type Client struct {
 	api *slack.Client
 	log *slog.Logger
+
+	// socketRun runs the socketmode client (smc.RunContext when nil) and
+	// socketStopWait bounds how long RunSocket waits for it after its context
+	// ends (defaultSocketStopWait when zero); both exist for tests.
+	socketRun      func(context.Context, *socketmode.Client) error
+	socketStopWait time.Duration
 }
 
 var _ slackapi.Client = (*Client)(nil)

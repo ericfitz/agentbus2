@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/slackevents"
@@ -25,13 +26,17 @@ func (c *Client) RunSocket(ctx context.Context, handle func(context.Context, sla
 	smc := socketmode.New(c.api)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
+	run := c.socketRun
+	if run == nil {
+		run = func(ctx context.Context, smc *socketmode.Client) error { return smc.RunContext(ctx) }
+	}
 	runErr := make(chan error, 1)
-	go func() { runErr <- smc.RunContext(ctx) }()
+	go func() { runErr <- run(ctx, smc) }()
 
 	for {
 		select {
 		case <-ctx.Done():
-			<-runErr // no overlap with a restarted socket
+			c.awaitSocketStop(runErr) // no overlap with a restarted socket
 			return nil
 		case err := <-runErr:
 			if ctx.Err() != nil || errors.Is(err, context.Canceled) {
@@ -41,10 +46,32 @@ func (c *Client) RunSocket(ctx context.Context, handle func(context.Context, sla
 		case evt := <-smc.Events:
 			if err := c.onSocketEvent(ctx, smc, evt, handle); err != nil {
 				cancel()
-				<-runErr
+				c.awaitSocketStop(runErr)
 				return err
 			}
 		}
+	}
+}
+
+// defaultSocketStopWait bounds how long RunSocket waits for slack-go's
+// RunContext to return after its context ends.
+const defaultSocketStopWait = 10 * time.Second
+
+// awaitSocketStop waits for the RunContext goroutine to finish so a restarted
+// socket does not overlap it, but only for a bounded time: slack-go does not
+// guarantee that RunContext returns promptly, and shutdown must not hang on
+// it. On timeout the goroutine is abandoned (it holds no lock of ours).
+func (c *Client) awaitSocketStop(runErr <-chan error) {
+	wait := c.socketStopWait
+	if wait <= 0 {
+		wait = defaultSocketStopWait
+	}
+	t := time.NewTimer(wait)
+	defer t.Stop()
+	select {
+	case <-runErr:
+	case <-t.C:
+		c.log.Warn("slack socket: the socket client did not stop in time; abandoning it", "wait", wait.String())
 	}
 }
 
