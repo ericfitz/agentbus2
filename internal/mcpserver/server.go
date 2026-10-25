@@ -231,6 +231,99 @@ type registerOut struct {
 	Others          []identityOut `json:"others"`
 }
 
+type healthOut struct {
+	Status      string                `json:"status"`
+	Tier        string                `json:"tier"`
+	Version     string                `json:"version"`
+	Now         int64                 `json:"now"`
+	StartedAt   *int64                `json:"started_at,omitempty"`
+	Store       *healthStoreOut       `json:"store,omitempty"`
+	Embeddings  *healthEmbeddingsOut  `json:"embeddings,omitempty"`
+	Storage     *usageOut             `json:"storage,omitempty"`
+	Notices     *[]noticeOut          `json:"notices,omitempty"`
+	Maintenance *healthMaintenanceOut `json:"maintenance,omitempty"`
+}
+
+type healthStoreOut struct {
+	Engine        string `json:"engine"`
+	SchemaVersion int    `json:"schema_version"`
+}
+
+type healthEmbeddingsOut struct {
+	State        string `json:"state"`
+	Backlog      int    `json:"backlog"`
+	Rejected     int    `json:"rejected"`
+	Model        string `json:"model,omitempty"`
+	LastError    string `json:"last_error,omitempty"`
+	LastErrorAt  int64  `json:"last_error_at,omitempty"`
+	RejectedLast string `json:"rejected_last,omitempty"`
+}
+
+type usageOut struct {
+	Bytes       int64  `json:"bytes"`
+	BudgetBytes int64  `json:"budget_bytes"`
+	Evictable   bool   `json:"evictable"`
+	Notice      string `json:"notice,omitempty"`
+}
+
+type noticeOut struct {
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
+	SetAt   int64  `json:"set_at"`
+}
+
+type healthMaintenanceOut struct {
+	IntervalSeconds int            `json:"interval_seconds"`
+	Owner           string         `json:"owner"`
+	Lock            string         `json:"lock"`
+	LastTickAt      int64          `json:"last_tick_at,omitempty"`
+	LockError       string         `json:"lock_error,omitempty"`
+	Jobs            []healthJobOut `json:"jobs"`
+}
+
+type healthJobOut struct {
+	Name    string `json:"name"`
+	Changed int    `json:"changed"`
+	Error   string `json:"error,omitempty"`
+	Skipped bool   `json:"skipped"`
+}
+
+// healthToOut maps the Bus document to its tool shape. Arrays at the admin
+// tier (notices, jobs) are present and empty, never null; below it they are
+// absent (Notices is a pointer so an empty slice is not dropped by omitempty).
+func healthToOut(h bus.Health) healthOut {
+	o := healthOut{Status: string(h.Status), Tier: string(h.Tier), Version: h.Version, Now: h.Now}
+	if h.StartedAt != 0 {
+		o.StartedAt = &h.StartedAt
+	}
+	if h.Store != nil {
+		o.Store = &healthStoreOut{Engine: h.Store.Engine, SchemaVersion: h.Store.SchemaVersion}
+	}
+	if e := h.Embeddings; e != nil {
+		o.Embeddings = &healthEmbeddingsOut{State: string(e.State), Backlog: e.Backlog, Rejected: e.Rejected,
+			Model: e.Model, LastError: e.LastError, LastErrorAt: e.LastErrorAt, RejectedLast: e.RejectedLast}
+	}
+	if u := h.Storage; u != nil {
+		o.Storage = &usageOut{Bytes: u.Bytes, BudgetBytes: u.BudgetBytes, Evictable: u.Evictable, Notice: u.Notice}
+	}
+	if h.Tier == bus.TierAdmin {
+		ns := make([]noticeOut, 0, len(h.Notices))
+		for _, n := range h.Notices {
+			ns = append(ns, noticeOut{Kind: n.Kind, Message: n.Message, SetAt: n.SetAt})
+		}
+		o.Notices = &ns
+	}
+	if m := h.Maintenance; m != nil {
+		jobs := make([]healthJobOut, 0, len(m.Jobs))
+		for _, j := range m.Jobs {
+			jobs = append(jobs, healthJobOut{Name: j.Name, Changed: j.Changed, Error: j.Error, Skipped: j.Skipped})
+		}
+		o.Maintenance = &healthMaintenanceOut{IntervalSeconds: m.IntervalSeconds, Owner: m.Owner, Lock: string(m.Lock),
+			LastTickAt: m.LastTickAt, LockError: m.LockError, Jobs: jobs}
+	}
+	return o
+}
+
 func identitiesOut(in []bus.IdentityInfo) []identityOut {
 	out := make([]identityOut, 0, len(in))
 	for _, i := range in {
@@ -591,6 +684,16 @@ func (s *server) addTools(srv *mcp.Server) {
 					return nil, err
 				}
 				return map[string]any{"identities": identitiesOut(ids)}, nil
+			})
+		})
+	mcp.AddTool(srv, &mcp.Tool{Name: "health", Description: "Agentbus2: the server's health as your identity may see it: status (ok or degraded), version, store engine and schema version, embedding state and backlog; an administrator also sees storage, notices and the maintenance lock. Call it when something that should work does not, before reporting a bus problem; a failure means the server or its store is unreachable."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in optSessionIn) (*mcp.CallToolResult, any, error) {
+			return s.do(func(b bus.Bus) (any, error) {
+				h, err := b.Health(ctx)
+				if err != nil {
+					return nil, err
+				}
+				return healthToOut(h), nil
 			})
 		})
 	mcp.AddTool(srv, &mcp.Tool{Name: "task_create", Description: "Agentbus2: add a task to a task list (a channel of kind tasks; create one with create_channel kind=tasks). New tasks are pending and unowned. parent nests it under an existing task in the same list; before or after (a sibling task id) places it, default last. blocked_by lists task ids in the same list that must complete first. One deliverable per task with an imperative subject; blocked_by only for real ordering dependencies, sibling order for priority."},

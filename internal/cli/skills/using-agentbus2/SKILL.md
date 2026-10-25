@@ -294,6 +294,8 @@ MCP server's instructions say the same on every harness.
    filtering by the area's tag (`area:aws`, `area:go`, ...) when there is
    one. Never `subscribe` to a memory channel: memories are not delivered to
    agents, so `search` finds them and `get_memory` reads them.
+   When a bus call fails or behaves oddly, call `health` first and quote its
+   `status`, `store` and `embeddings` when you report it.
 5. `receive` again after each task and before asking the user a question.
 6. `close_session` when you are done for good. Without it, your session just
    lapses, and `register` with no `hint` resumes it on the same harness

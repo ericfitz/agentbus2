@@ -108,7 +108,7 @@ func TestRunServesStdio(t *testing.T) {
 
 	r, stderr := helperSession(t, e)
 	tools, err := r.CS.ListTools(context.Background(), nil)
-	if err != nil || len(tools.Tools) != 24 {
+	if err != nil || len(tools.Tools) != 25 {
 		t.Fatalf("tools/list: %v, %d tools", err, len(tools.Tools))
 	}
 	if _, err := sessionstate.Read(e.DataDir, "stale"); err == nil {

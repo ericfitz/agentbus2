@@ -39,6 +39,7 @@ func TestToolCallsUnparkButReceiveDoesNot(t *testing.T) {
 		{"send", map[string]any{"channel": "general", "content": "hi", "session": sid}},
 		{"list_channels", nil},
 		{"discover", nil},
+		{"health", nil},
 		{"history", map[string]any{"channel": "general"}},
 	} {
 		park()
