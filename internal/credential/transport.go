@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 )
 
 // TokenSource is what Transport needs of a source of bearers: Token returns a
@@ -20,10 +21,34 @@ type TokenSource interface {
 type refreshing struct {
 	base http.RoundTripper
 	s    TokenSource
+
+	// mu serializes refreshes; from and to remember the last one (the bearer
+	// a server refused and the bearer minted for it), so concurrent 401s to
+	// requests that carried the same refused bearer share one refresh.
+	mu       sync.Mutex
+	from, to string
+}
+
+// refresh returns a bearer to replace the refused one: the one a concurrent
+// refresh already minted for it, else a new one.
+func (t *refreshing) refresh(ctx context.Context, refused string) (string, error) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if refused != "" && refused == t.from {
+		return t.to, nil
+	}
+	_ = t.s.Invalidate()
+	tok, err := t.s.Refresh(ctx)
+	if err != nil {
+		return "", err
+	}
+	t.from, t.to = refused, tok
+	return tok, nil
 }
 
 // Transport wraps base so that a 401 to a request that carried a bearer
-// triggers exactly one refresh and one replay of the request. Any other status or error passes through; a refresh
+// triggers one refresh (shared with concurrent 401s to requests that carried
+// the same refused bearer) and one replay of the request. Any other status or error passes through; a refresh
 // that fails returns the original 401 response (the remote maps it to
 // unauthenticated).
 func Transport(base http.RoundTripper, s TokenSource) http.RoundTripper {
@@ -61,8 +86,7 @@ func (t *refreshing) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err != nil || resp.StatusCode != http.StatusUnauthorized {
 		return resp, err
 	}
-	_ = t.s.Invalidate()
-	tok, rerr := t.s.Refresh(req.Context())
+	tok, rerr := t.refresh(req.Context(), strings.TrimPrefix(req.Header.Get("Authorization"), "Bearer "))
 	if rerr != nil {
 		return resp, nil
 	}
