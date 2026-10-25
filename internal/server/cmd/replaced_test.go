@@ -258,7 +258,10 @@ func TestWatchWakesAcrossProcesses(t *testing.T) {
 	if o.resp.JSON200 == nil || o.resp.JSON200.Count != 1 || len(o.resp.JSON200.Channels) != 1 || o.resp.JSON200.Channels[0] != "dev" {
 		t.Fatalf("watch: status %d body %s, want 200 count 1 channels [dev]", o.resp.StatusCode(), o.resp.Body)
 	}
-	if d := o.at.Sub(sent); d > time.Second {
-		t.Fatalf("watch woke %v after the send, want within 1 s", d)
+	// 3 s, not 1: the 100 ms poll woke 1.6 s late on a loaded Windows runner
+	// (windows.yml, 2026-10-24). Still under the watch's 5 s timeout, so only
+	// the polling wake passes.
+	if d := o.at.Sub(sent); d > 3*time.Second {
+		t.Fatalf("watch woke %v after the send, want within 3 s", d)
 	}
 }
