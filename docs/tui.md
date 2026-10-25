@@ -31,6 +31,24 @@ With no usable session the TUI prints `agentbus2 tui: sign in at <url>` on stder
 
 The sign-in URL is announced only before the screen opens. A bearer the server refuses mid-session is refreshed once; when that needs the browser, the request that triggered it (a screen update, a send) blocks for up to 5 minutes, with nothing shown on the screen, until the sign-in completes or times out. The TUI gives its synchronous bus calls a 10 second deadline; the sign-in ignores that deadline, so the browser has the full 5 minutes, but the call that triggered it fails with a timeout and the next one uses the new bearer. Quitting stops a sign-in only while the 10 second deadline has not yet fired (quit cancels the call's context); once it has fired, the wait for the browser runs on until the sign-in completes, its 5 minutes pass or the process exits. Run `agentbus2 login -human` before that happens if the session is long.
 
+### Trying the sign-in against a local Dex
+
+For manual testing against a local server, [Dex](https://dexidp.io) satisfies the token exchange: with a public client it issues a JWT access token (`RS256`, `iss` the Dex issuer, `aud` the client id, `exp`, `email`, `sub`) and, with the `offline_access` scope, a refresh token. Run Dex with a static password user and a public client whose redirect is `http://127.0.0.1:<redirect_port>/callback`:
+
+```yaml
+issuer: http://localhost:5556/dex
+storage: {type: sqlite3, config: {file: /var/dex/dex.db}}
+web: {http: 0.0.0.0:5556}
+oauth2: {skipApprovalScreen: true}
+enablePasswordDB: true
+staticPasswords:
+  - {email: you@example.com, hash: "<bcrypt $2a$ hash>", username: you, userID: local-human-1}
+staticClients:
+  - {id: agentbus2-tui, name: agentbus2 TUI, public: true, redirectURIs: ["http://127.0.0.1:8765/callback"]}
+```
+
+Server side, in a container next to Dex: `AGENTBUS2_SERVER_ISSUERS='[{"name":"dex","issuer":"http://localhost:5556/dex","jwks_uri":"http://dex:5556/dex/keys","audience":"agentbus2-tui","algorithms":["RS256"],"claims":{"email":"email","subject":"sub"}}]'` (the `issuer` is what the token says as seen from the host; `jwks_uri` is how the server container reaches Dex; Dex puts the client id in `aud`, so the entry's `audience` is the client id), then `agentbus2 server admin users add -issuer dex -email you@example.com`. Client profile: `"oidc": {"issuer": "http://localhost:5556/dex", "client_id": "agentbus2-tui", "redirect_port": 8765, "scopes": ["openid", "email", "offline_access"]}`. Notes: without `offline_access` Dex issues no refresh token, so every expiry reopens the browser; Dex v2.46.0 and later (checked up to the 2026-10 `latest`) hang on a refresh-token request (a nested storage transaction in the refresh rotation; the token endpoint never answers, with the memory and sqlite stores alike; the local stack pins v2.45.1), so a hang on the refresh step is the provider, not the client.
+
 ### Terminal
 
 The TUI is built on Bubble Tea v2 (`charm.land/bubbletea/v2` v2.0.10, Bubbles v2.2.1, Lip Gloss v2.0.6). It draws on the alternate screen and quits on `q` or `ctrl+c`. Only `agentbus2 tui` talks to the terminal: once it starts it asks for the background color (OSC 11), which picks the compose line's light or dark colors (dark until the terminal answers), and Bubble Tea asks for its own capabilities. No other command queries the terminal; with Bubble Tea v1 every `agentbus2` process did so at package init and stalled for up to 5 s on a pty that never answered (post-build decision 2; `TestVersionOnSilentPTY` proves the fix).
