@@ -1,13 +1,33 @@
+-- Schema version 1: the whole schema. The migrations of the pre-release
+-- builds (their versions 1 to 6) were flattened into this step before the
+-- first release (Eric's decision 2026-10-25, ADR 0004 addendum); a database
+-- created by one of those builds is refused, not converted.
+--
+-- State: runStep locks, re-reads the version and runs the step in one
+-- transaction, so a second open skips it, two overlapping opens run it once,
+-- and a failed run rolls back to version 0 (DDL is transactional on both
+-- engines) and the next open reruns it from clean.
 CREATE TABLE seq_counter (id INTEGER PRIMARY KEY CHECK (id = 1), v BIGINT NOT NULL);
 INSERT INTO seq_counter (id, v) VALUES (1, 0);
 CREATE TABLE leases (name TEXT PRIMARY KEY, owner TEXT NOT NULL, expires_at BIGINT NOT NULL);
 INSERT INTO leases (name, owner, expires_at) VALUES ('maintenance', '', 0);
 CREATE TABLE notices (kind TEXT PRIMARY KEY, message TEXT NOT NULL, set_at BIGINT NOT NULL);
+CREATE TABLE scopes (
+  name TEXT PRIMARY KEY,
+  state TEXT NOT NULL CHECK (state IN ('open', 'done', 'retired')),
+  retire_mode TEXT NOT NULL DEFAULT '' CHECK (retire_mode IN ('', 'with_bridge', 'normal')),
+  created_at BIGINT NOT NULL,
+  done_at BIGINT NOT NULL DEFAULT 0,
+  retired_at BIGINT NOT NULL DEFAULT 0,
+  last_activity BIGINT NOT NULL
+);
 CREATE TABLE identities (
   name TEXT PRIMARY KEY,
   is_admin BOOLEAN NOT NULL DEFAULT FALSE,
   tags_acked_seq BIGINT NOT NULL DEFAULT 0,
-  created_at BIGINT NOT NULL
+  created_at BIGINT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'agent' CHECK (kind IN ('agent', 'human')),
+  scope TEXT NULL REFERENCES scopes(name)
 );
 CREATE TABLE identity_keys (
   identity TEXT NOT NULL REFERENCES identities(name) ON DELETE CASCADE,
@@ -24,7 +44,8 @@ CREATE TABLE channels (
   creator TEXT NOT NULL DEFAULT '',
   created_seq BIGINT NOT NULL,
   evicted_before_seq BIGINT NOT NULL DEFAULT 0,
-  created_at BIGINT NOT NULL
+  created_at BIGINT NOT NULL,
+  scope TEXT NULL REFERENCES scopes(name)
 );
 CREATE TABLE channel_acl (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -35,6 +56,8 @@ CREATE TABLE channel_acl (
   can_admin BOOLEAN NOT NULL,
   CHECK (can_read OR can_write OR can_admin)
 );
+CREATE INDEX channels_scope ON channels (scope);
+CREATE INDEX identities_scope ON identities (scope);
 CREATE INDEX channel_acl_channel_identity ON channel_acl(channel_id, identity);
 CREATE TABLE subscriptions (
   identity TEXT NOT NULL REFERENCES identities(name) ON DELETE CASCADE,
@@ -97,7 +120,8 @@ CREATE TABLE messages (
   tombstone BOOLEAN NOT NULL DEFAULT FALSE,
   tombstone_at BIGINT NULL,
   fts_subject tsvector GENERATED ALWAYS AS (to_tsvector('simple', regexp_replace(subject, '[^[:alnum:]]+', ' ', 'g'))) STORED,
-  fts_content tsvector GENERATED ALWAYS AS (to_tsvector('simple', regexp_replace(content, '[^[:alnum:]]+', ' ', 'g'))) STORED
+  fts_content tsvector GENERATED ALWAYS AS (to_tsvector('simple', regexp_replace(content, '[^[:alnum:]]+', ' ', 'g'))) STORED,
+  sender_kind TEXT NOT NULL DEFAULT 'agent' CHECK (sender_kind IN ('agent', 'human'))
 );
 CREATE INDEX messages_channel_seq ON messages(channel_id, seq);
 CREATE INDEX messages_memory ON messages(memory_id, tombstone);
@@ -133,3 +157,92 @@ CREATE TABLE receipts (
   PRIMARY KEY (identity, key)
 );
 CREATE INDEX receipts_expires ON receipts(expires_at);
+CREATE TABLE enrollment_tokens (
+  id TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,
+  identity TEXT NOT NULL DEFAULT '',
+  expires_at BIGINT NOT NULL,
+  uses_left INTEGER NOT NULL CHECK (uses_left >= 0),
+  created_at BIGINT NOT NULL
+);
+CREATE TABLE signing_keys (
+  kid TEXT PRIMARY KEY,
+  singleton INTEGER NOT NULL DEFAULT 1 UNIQUE CHECK (singleton = 1),
+  algorithm TEXT NOT NULL CHECK (algorithm IN ('EdDSA', 'ES256')),
+  private_key_pem TEXT NOT NULL,
+  created_at BIGINT NOT NULL
+);
+CREATE TABLE human_bindings (
+  identity TEXT PRIMARY KEY REFERENCES identities(name) ON DELETE CASCADE,
+  issuer TEXT NOT NULL DEFAULT '',
+  claim_type TEXT NOT NULL CHECK (claim_type IN ('email')),
+  value TEXT NOT NULL,
+  provider_subject TEXT NOT NULL DEFAULT '',
+  created_at BIGINT NOT NULL,
+  UNIQUE (claim_type, value)
+);
+CREATE UNIQUE INDEX human_bindings_subject ON human_bindings (issuer, provider_subject) WHERE provider_subject <> '';
+CREATE TABLE access_refs (
+  ref_list TEXT NOT NULL CHECK (ref_list IN ('users', 'admins')),
+  ref_kind TEXT NOT NULL CHECK (ref_kind IN ('email', 'group', 'subject', 'identity')),
+  issuer TEXT NOT NULL DEFAULT '',
+  value TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (ref_list, ref_kind, issuer, value)
+);
+CREATE TABLE assertion_jti (
+  identity TEXT NOT NULL,
+  jti TEXT NOT NULL,
+  expires_at BIGINT NOT NULL,
+  PRIMARY KEY (identity, jti)
+);
+CREATE INDEX assertion_jti_expires ON assertion_jti (expires_at);
+CREATE TABLE retired_identities (
+  name TEXT PRIMARY KEY,
+  scope TEXT NOT NULL,
+  retired_at BIGINT NOT NULL
+);
+-- No foreign key to channels: a bridge outlives a channel removed behind its
+-- back (spec 6.1b); the runner cleans it up.
+CREATE TABLE bridges (
+  id BIGSERIAL PRIMARY KEY,
+  channel_id BIGINT NOT NULL UNIQUE,
+  channel_name TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  slack_channel_id TEXT NOT NULL DEFAULT '',
+  slack_name TEXT NOT NULL,
+  state TEXT NOT NULL CHECK (state IN ('creating', 'live', 'archived')),
+  cursor_ts TEXT NOT NULL DEFAULT '',
+  created_at BIGINT NOT NULL,
+  archived_at BIGINT NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX bridges_slack_channel ON bridges (slack_channel_id) WHERE slack_channel_id <> '';
+CREATE TABLE bridge_messages (
+  bridge_id BIGINT NOT NULL REFERENCES bridges(id) ON DELETE CASCADE,
+  seq BIGINT NOT NULL,
+  slack_ts TEXT NOT NULL,
+  root_ts TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (bridge_id, seq),
+  UNIQUE (bridge_id, slack_ts)
+);
+CREATE INDEX bridge_messages_root ON bridge_messages (bridge_id, root_ts);
+CREATE TABLE slack_users (
+  identity TEXT PRIMARY KEY REFERENCES identities(name) ON DELETE CASCADE,
+  team_id TEXT NOT NULL,
+  user_id TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  UNIQUE (team_id, user_id)
+);
+-- Slack messages dropped as unauthorized; a drop is final and goes with its
+-- bridge, so with the scope (Decision 15).
+CREATE TABLE bridge_dropped (
+  bridge_id BIGINT NOT NULL REFERENCES bridges(id) ON DELETE CASCADE,
+  slack_ts TEXT NOT NULL,
+  created_at BIGINT NOT NULL,
+  PRIMARY KEY (bridge_id, slack_ts)
+);
+-- The reserved slack-bridge identity: a non-admin agent, no scope, no keys.
+INSERT INTO identities (name, is_admin, tags_acked_seq, created_at)
+  VALUES ('slack-bridge', FALSE, 0, (EXTRACT(EPOCH FROM now()) * 1000)::BIGINT)
+  ON CONFLICT (name) DO NOTHING;

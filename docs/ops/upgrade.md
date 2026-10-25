@@ -10,7 +10,7 @@
 
 The database carries a schema version in `schema_meta`. On open:
 
-- a database whose schema is newer than the binary is refused with `database schema is newer than this binary: upgrade agentbus2` (exit 1): run the newer binary;
+- a database whose schema is newer than the binary is refused with `database schema is newer than this binary: upgrade agentbus2, or, if an earlier pre-release build created this database, recreate it (pre-release databases are not converted)` (exit 1): run the newer binary, or, for a database from a pre-release build, recreate it (see Schema versions);
 - an older schema is migrated at start, under a lock (Decision 53; on SQLite an immediate transaction, on Postgres an advisory lock per schema), so two servers starting together migrate once and the second waits and then sees the new version;
 - a database that is not agentbus2's (a wrong or missing `app`, an agentbus 1.x database, another engine's) or whose `schema_meta` is otherwise invalid is refused. agentbus2 does not migrate from agentbus 1.x or between engines.
 
@@ -18,9 +18,8 @@ Each migration step is a transaction of its own that re-reads the version under 
 
 ## Schema versions
 
-- Version 5 (federated identity) adds `identities.kind` (every existing identity becomes `agent`), `messages.sender_kind` (every existing message becomes `agent`), the `human_bindings` table and the `access_refs` table (the `users` and `admins` reference lists). Each identity that has the administrator flag also gets an `admins` entry of kind `identity`, so `admins list` shows it and `admins remove -identity NAME` clears the flag as before. Nothing else changes for existing agents. Stop every replica before starting a binary that migrates from version 4 (procedure step 2): an old replica does not know the new columns.
-
-- Version 6 (scopes and the Slack bridge) adds the `scopes`, `retired_identities`, `bridges`, `bridge_messages`, `slack_users` and `bridge_dropped` tables and the `scope` column of `channels` and `identities` (existing rows are unscoped), and creates the reserved `slack-bridge` identity. The name `slack-bridge` is reserved like `everyone` and `admins`: if an identity already has that name, the migration makes it the reserved shape: a non-admin agent with no scope, keys, sessions, subscriptions, enrollment tokens, human binding or access-list entry. The `closed` registration mode no longer exists (`open` and `enrollment` remain); a server configured with `closed` refuses to start (`registration must be open or enrollment`). Stop every replica before starting a binary that migrates from version 5.
+- Version 1 is the whole schema. Before the first release the migrations of the pre-release builds (their versions 1 to 6) were flattened into it (Eric's decision 2026-10-25, ADR 0004 addendum). A database created by one of those builds carries a version above 1 and is refused at start with the message above; nothing converts it. Recreate it: stop the server, remove the database (the SQLite file and its `-wal` and `-shm` files, or drop and recreate the Postgres database or schema, or remove the Docker volume that holds it), and start the server again. Its data is gone; back up first (`backup.md`) if anything in it matters.
+- Steps after the first release will be numbered 2 and up, each a file of its own per engine. Stop every replica before starting a binary that migrates the schema (procedure step 2): an old replica does not know the new columns.
 
 ## Procedure
 

@@ -51,7 +51,7 @@ const (
 )
 
 // SlackBridge is the reserved identity the Slack bridge acts as. Its row
-// exists from schema version 6; no registration can create it or attach a key
+// exists from schema version 1; no registration can create it or attach a key
 // to it, and it holds no general subscription.
 const SlackBridge = "slack-bridge"
 

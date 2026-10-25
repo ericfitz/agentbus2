@@ -97,7 +97,7 @@ With a bearer: `agentbus2 login -profile P -identity I` on a server profile cach
 ```
 $ BEARER=$(jq -r .access_token "$AGENTBUS2_DATA_DIR/tokens/P/I.json")
 $ curl -sS -H "Authorization: Bearer $BEARER" http://127.0.0.1:8431/v1/health
-{"embeddings":{"backlog":0,"rejected":0,"state":"off"},"maintenance":{"interval_seconds":60,"jobs":[],"lock":"unknown","owner":"3b38e90889724e8727354d4f"},"notices":[],"now":1792911383866,"started_at":1792911383259,"status":"ok","storage":{"budget_bytes":2147483648,"bytes":352256,"evictable":true},"store":{"engine":"sqlite","schema_version":6},"tier":"admin","version":"2.0.0-dev"}
+{"embeddings":{"backlog":0,"rejected":0,"state":"off"},"maintenance":{"interval_seconds":60,"jobs":[],"lock":"unknown","owner":"3b38e90889724e8727354d4f"},"notices":[],"now":1792911383866,"started_at":1792911383259,"status":"ok","storage":{"budget_bytes":2147483648,"bytes":352256,"evictable":true},"store":{"engine":"sqlite","schema_version":1},"tier":"admin","version":"2.0.0-dev"}
 ```
 
 `agentbus2 health [-profile P] [-identity I]` prints the same document, indented, using the profile's own credential. It exits 0 for `ok` and `degraded`, 1 for a `bus.Error` (an unreachable store among them) and 2 for a flag or resolution error.

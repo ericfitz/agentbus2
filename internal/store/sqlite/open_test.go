@@ -188,8 +188,8 @@ func TestOpenRefusesNewerVersion(t *testing.T) {
 	if !errors.Is(err, store.ErrUpgradeNeeded) {
 		t.Fatalf("err = %v, want ErrUpgradeNeeded", err)
 	}
-	if !strings.Contains(err.Error(), "upgrade agentbus2") {
-		t.Fatalf("err %q lacks 'upgrade agentbus2'", err)
+	if !strings.Contains(err.Error(), "upgrade agentbus2") || !strings.Contains(err.Error(), "recreate") {
+		t.Fatalf("err %q lacks 'upgrade agentbus2' or 'recreate'", err)
 	}
 }
 

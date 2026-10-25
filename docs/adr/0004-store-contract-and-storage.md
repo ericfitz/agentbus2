@@ -446,3 +446,25 @@ rest are choices of the plan, not new design decisions.
   (`deploy/docker-compose.yml`). The suites now prove the Store contract on
   Postgres 18 (replacing the `postgres:17.11` run of Milestone 2 Gate 0
   above).
+
+## Migrations flattened to version 1 (Eric's decision 2026-10-25)
+
+- **Decision (Eric, 2026-10-25): migrations flattened to version 1 before the
+  first release.** The six pre-release steps (`0001_initial` to
+  `0006_scopes_bridges`) on both engines are replaced by a single
+  `0001_initial.sql` that creates the final schema directly; `SchemaVersion`
+  reports 1. The migration framework (decisions 13 and 14: lock, re-read,
+  one transaction per step, stamp) is unchanged, and steps after the first
+  release will be numbered 2 and up.
+- No compatibility with databases created by earlier builds. A database
+  stamped with a version above 1 is refused with `ErrUpgradeNeeded`, whose
+  text tells the operator to recreate the database; nothing converts it. The
+  seeds that only converted old data (the `admins` entries derived from the
+  administrator flags, the clean-up of a pre-existing `slack-bridge` name) are
+  gone; the seeds a fresh database needs (the sequence counter, the
+  `maintenance` lease and the reserved `slack-bridge` identity) remain.
+- Equivalence was checked before the old steps were deleted: the schema
+  produced by steps 1 to 6 and by the new single step was dumped and diffed on
+  both engines (SQLite: `sqlite_master` text with whitespace removed, plus
+  the column, foreign key and index pragmas; Postgres: `information_schema`
+  columns, constraints, indexes, triggers and functions) and matched.

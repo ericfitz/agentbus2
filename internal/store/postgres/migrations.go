@@ -14,16 +14,13 @@ import (
 var schemaFS embed.FS
 
 // Migrations is the Postgres migration set, numbered from version 1
-// (Decision 53). Each step executes its embedded file as one statement list;
+// (Decision 53). Version 1 is the whole schema: the pre-release steps were
+// flattened before the first release (ADR 0004 addendum, 2026-10-25); later
+// steps add 0002 and up. Each step executes its embedded file as one statement list;
 // the files must not contain BEGIN or COMMIT.
 func Migrations() []sqlstore.Migration {
 	return []sqlstore.Migration{
 		{Version: 1, Up: runFile("schema/0001_initial.sql")},
-		{Version: 2, Up: runFile("schema/0002_auth.sql")},
-		{Version: 3, Up: runFile("schema/0003_assertion_jti.sql")},
-		{Version: 4, Up: runFile("schema/0004_assertion_jti_identity.sql")},
-		{Version: 5, Up: runFile("schema/0005_human_identity.sql")},
-		{Version: 6, Up: runFile("schema/0006_scopes_bridges.sql")},
 	}
 }
 

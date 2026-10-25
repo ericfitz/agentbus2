@@ -22,7 +22,7 @@ func TestHealthRejectsUnknownEnums(t *testing.T) {
 		"status":     {`{"status":"meh","tier":"probe","version":"v","now":1}`, "status"},
 		"tier":       {`{"status":"ok","tier":"root","version":"v","now":1}`, "tier"},
 		"embeddings": {`{"status":"ok","tier":"identity","version":"v","now":1,"embeddings":{"state":"warm","backlog":0,"rejected":0}}`, "embeddings.state"},
-		"engine":     {`{"status":"ok","tier":"identity","version":"v","now":1,"store":{"engine":"mysql","schema_version":6}}`, "store.engine"},
+		"engine":     {`{"status":"ok","tier":"identity","version":"v","now":1,"store":{"engine":"mysql","schema_version":1}}`, "store.engine"},
 		"lock":       {`{"status":"ok","tier":"admin","version":"v","now":1,"maintenance":{"interval_seconds":1,"owner":"o","lock":"maybe","jobs":[]}}`, "maintenance.lock"},
 	}
 	for name, tc := range cases {
@@ -39,7 +39,7 @@ func TestHealthRejectsUnknownEnums(t *testing.T) {
 
 func TestHealthConvertsEveryMember(t *testing.T) {
 	body := `{"status":"degraded","tier":"admin","version":"v1","now":9,"started_at":3,
-	"store":{"engine":"sqlite","schema_version":6},
+	"store":{"engine":"sqlite","schema_version":1},
 	"embeddings":{"state":"failing","backlog":2,"rejected":1,"model":"m","last_error":"e","last_error_at":4,"rejected_last":"r"},
 	"storage":{"bytes":10,"budget_bytes":20,"evictable":true,"notice":"n"},
 	"notices":[{"kind":"capacity","message":"full","set_at":5}],
@@ -51,7 +51,7 @@ func TestHealthConvertsEveryMember(t *testing.T) {
 	}
 	m := h.Maintenance
 	if h.Status != ab2bus.HealthDegraded || h.Tier != ab2bus.TierAdmin || h.Version != "v1" || h.Now != 9 || h.StartedAt != 3 ||
-		h.Store == nil || *h.Store != (ab2bus.HealthStore{Engine: "sqlite", SchemaVersion: 6}) ||
+		h.Store == nil || *h.Store != (ab2bus.HealthStore{Engine: "sqlite", SchemaVersion: 1}) ||
 		h.Embeddings == nil || *h.Embeddings != (ab2bus.HealthEmbeddings{State: ab2bus.EmbeddingsFailing, Backlog: 2, Rejected: 1, Model: "m", LastError: "e", LastErrorAt: 4, RejectedLast: "r"}) ||
 		h.Storage == nil || *h.Storage != (ab2bus.Usage{Bytes: 10, BudgetBytes: 20, Evictable: true, Notice: "n"}) ||
 		len(h.Notices) != 1 || h.Notices[0] != (ab2bus.Notice{Kind: "capacity", Message: "full", SetAt: 5}) ||

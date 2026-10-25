@@ -155,8 +155,32 @@ func TestOpenRefusesNewerVersion(t *testing.T) {
 		if !errors.Is(err, ab2store.ErrUpgradeNeeded) {
 			t.Fatalf("err = %v, want ErrUpgradeNeeded", err)
 		}
-		if !strings.Contains(err.Error(), "upgrade agentbus2") {
-			t.Fatalf("err %q lacks 'upgrade agentbus2'", err)
+		if !strings.Contains(err.Error(), "upgrade agentbus2") || !strings.Contains(err.Error(), "recreate") {
+			t.Fatalf("err %q lacks 'upgrade agentbus2' or 'recreate'", err)
+		}
+	})
+}
+
+// TestOpenRefusesPreReleaseVersion6 opens a database stamped version 6, as the
+// pre-release builds left them before the migrations were flattened to
+// version 1 (ADR 0004 addendum): refused, naming the version and telling the
+// operator to recreate it, and left untouched.
+func TestOpenRefusesPreReleaseVersion6(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, reopen, rawDSN := openStore(t, e, sqlstore.Options{})
+		_ = s.Close()
+		execAll(t, rawDB(t, e, rawDSN), "UPDATE schema_meta SET schema_version = 6")
+		_, err := reopen(sqlstore.Options{})
+		if !errors.Is(err, ab2store.ErrUpgradeNeeded) {
+			t.Fatalf("err = %v, want ErrUpgradeNeeded", err)
+		}
+		for _, want := range []string{"recreate", "database has version 6", "this binary 1"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Fatalf("err %q lacks %q", err, want)
+			}
+		}
+		if got := scalar[int](t, rawDB(t, e, rawDSN), "SELECT schema_version FROM schema_meta"); got != 6 {
+			t.Fatalf("schema_version = %d after the refusal, want 6 (untouched)", got)
 		}
 	})
 }
@@ -312,41 +336,6 @@ func TestOpenConcurrentEmpty(t *testing.T) {
 		}
 		if got := scalar[int](t, db, "SELECT schema_version FROM schema_meta"); got != len(migrationsFor(e)) {
 			t.Fatalf("schema_version = %d, want %d", got, len(migrationsFor(e)))
-		}
-	})
-}
-
-// TestOpenMigratesVersion1Database opens a database at version 1 (the set cut
-// to its first step), which has neither auth table nor assertion_jti, then
-// reopens with the full set.
-func TestOpenMigratesVersion1Database(t *testing.T) {
-	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		full := migrationsFor(e)
-		s, reopen, rawDSN := openStore(t, e, sqlstore.Options{Migrations: full[:1]})
-		db := rawDB(t, e, rawDSN)
-		if got := schemaVersion(t, s); got != 1 {
-			t.Fatalf("SchemaVersion = %d, want 1", got)
-		}
-		for _, tbl := range []string{"enrollment_tokens", "signing_keys", "assertion_jti"} {
-			if got := tableCount(t, e, db, tbl); got != 0 {
-				t.Fatalf("%s tables at version 1 = %d, want 0", tbl, got)
-			}
-		}
-		_ = s.Close()
-		for i := range 2 { // the second reopen changes nothing
-			s2, err := reopen(sqlstore.Options{})
-			if err != nil {
-				t.Fatalf("reopen %d: %v", i, err)
-			}
-			if got := schemaVersion(t, s2); got != len(full) {
-				t.Fatalf("SchemaVersion = %d, want %d", got, len(full))
-			}
-			for _, tbl := range []string{"enrollment_tokens", "signing_keys", "assertion_jti"} {
-				if got := tableCount(t, e, db, tbl); got != 1 {
-					t.Fatalf("%s tables = %d, want 1", tbl, got)
-				}
-			}
-			_ = s2.Close()
 		}
 	})
 }
