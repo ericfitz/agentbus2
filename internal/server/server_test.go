@@ -268,3 +268,20 @@ func TestSpecLoads(t *testing.T) {
 		t.Fatalf("Spec() = %+v", s)
 	}
 }
+
+// A request body with a member the schema does not declare is a 400
+// validation error (the additionalProperties: false convention), on a body
+// that used to be open.
+func TestRequestBodyUnknownMemberRefused(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	e.identity("pat", false)
+	for path, body := range map[string]string{
+		"/v1/channels": `{"name":"c1","nope":1}`,
+		"/v1/sessions": `{"hint":"h","nope":1}`,
+	} {
+		st, b, _ := e.postBody("pat", path, body)
+		if st != 400 || !strings.Contains(b, `"validation"`) {
+			t.Errorf("%s: %d %s", path, st, b)
+		}
+	}
+}

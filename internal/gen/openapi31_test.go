@@ -440,3 +440,34 @@ func TestProblemRoundTripsAsJSON(t *testing.T) {
 		t.Fatalf("%+v", p)
 	}
 }
+
+// Every JSON request body is a closed object (the convention recorded at the
+// head of components.schemas): a body schema, or the item schema of an array
+// body, sets additionalProperties: false. TokenRequest (form-encoded) is the
+// one open body, because an OAuth endpoint ignores unknown parameters.
+func TestJSONRequestBodiesAreClosed(t *testing.T) {
+	doc := loadDoc(t)
+	checked := 0
+	for path, item := range doc.Paths.Map() {
+		for method, op := range item.Operations() {
+			if op.RequestBody == nil {
+				continue
+			}
+			mt := op.RequestBody.Value.Content.Get("application/json")
+			if mt == nil {
+				continue
+			}
+			sch := mt.Schema.Value
+			if sch.Type.Is("array") {
+				sch = sch.Items.Value
+			}
+			checked++
+			if sch.AdditionalProperties.Has == nil || *sch.AdditionalProperties.Has {
+				t.Errorf("%s %s: request body schema is open (set additionalProperties: false)", method, path)
+			}
+		}
+	}
+	if checked < 15 {
+		t.Fatalf("checked only %d request bodies", checked)
+	}
+}

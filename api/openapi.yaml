@@ -1094,6 +1094,13 @@ components:
           schema:
             $ref: "#/components/schemas/OAuthError"
   schemas:
+    # Convention: every JSON request-body schema (and each object inside a
+    # request body) sets `additionalProperties: false`, so a misspelled or
+    # unknown member is a 400 validation error instead of being silently
+    # dropped. The one exception is TokenRequest: an OAuth token endpoint
+    # ignores parameters it does not know (RFC 6749 section 3.2). Response
+    # schemas stay open so a newer server can add a member. A new request
+    # body follows the convention.
     Problem:
       type: object
       required: [type, title, status, code, retryable]
@@ -1249,6 +1256,7 @@ components:
           format: int64
     OpenSessionRequest:
       type: object
+      additionalProperties: false
       properties:
         hint:
           type: string
@@ -1300,6 +1308,7 @@ components:
             $ref: "#/components/schemas/PendingChannel"
     ReceiveRequest:
       type: object
+      additionalProperties: false
       properties:
         ack:
           type: string
@@ -1448,6 +1457,7 @@ components:
           format: int64
     ACLEntry:
       type: object
+      additionalProperties: false
       required: [identity, permissions]
       properties:
         identity:
@@ -1459,6 +1469,7 @@ components:
             enum: [read, write, admin]
     CreateChannelRequest:
       type: object
+      additionalProperties: false
       required: [name]
       properties:
         name:
@@ -1474,18 +1485,21 @@ components:
           type: string
     RenameChannelRequest:
       type: object
+      additionalProperties: false
       required: [name]
       properties:
         name:
           type: string
     SubscribeRequest:
       type: object
+      additionalProperties: false
       properties:
         from:
           type: string
           enum: [now, oldest]
     TagPatterns:
       type: object
+      additionalProperties: false
       required: [patterns]
       properties:
         patterns:
@@ -1494,6 +1508,7 @@ components:
             type: string
     SendRequest:
       type: object
+      additionalProperties: false
       required: [content]
       properties:
         subject:
@@ -1553,6 +1568,7 @@ components:
         value; a present empty subject, type, metadata or tags clears it.
         Content cannot be cleared (an empty content is a validation error).
         A request with no field is a validation error.
+      additionalProperties: false
       properties:
         if_revision:
           type: integer
@@ -1668,6 +1684,7 @@ components:
           type: boolean
     TaskCreateRequest:
       type: object
+      additionalProperties: false
       required: [subject]
       properties:
         subject:
@@ -1694,6 +1711,7 @@ components:
             type: string
     TaskPatch:
       type: object
+      additionalProperties: false
       properties:
         status:
           type: string
@@ -1746,6 +1764,7 @@ components:
           type: boolean
     ClaimTaskRequest:
       type: object
+      additionalProperties: false
       properties:
         leased_until:
           type: integer
@@ -1871,6 +1890,7 @@ components:
             $ref: "#/components/schemas/JWK"
     RegisterRequest:
       type: object
+      additionalProperties: false
       required: [identity, public_key_jwk]
       properties:
         identity:
