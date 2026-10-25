@@ -195,7 +195,10 @@ type HumanSignIn struct {
 // changes nothing (the admin flag is re-evaluated and written only when it
 // changes); two overlapping first sign-ins end with one identity and one
 // binding (the loser reruns and finds it); a failed run writes nothing, since
-// everything is one transaction.
+// everything is one transaction. A crash after the commit but before the
+// caller mints a bearer leaves the identity, its binding and the admin flag as
+// committed and the client without a token; the client signs in again, which
+// is the second-sign-in case above and changes nothing.
 func (s Service) SignInHuman(ctx context.Context, c HumanClaims) (HumanSignIn, error) {
 	email, err := NormalizeEmail(c.Email)
 	if err != nil {
