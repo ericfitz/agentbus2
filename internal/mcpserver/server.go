@@ -685,8 +685,18 @@ func (s *server) register(ctx context.Context, req *mcp.CallToolRequest, in regi
 
 	token := in.ResumeToken
 	var adopt *sessionstate.File
-	if token == "" && in.Hint == "" && !s.havePrimary {
-		if adopt = s.findResumable(dataDir, conn.Resolved); adopt != nil {
+	if token == "" && in.Hint == "" {
+		// A hintless register is the harness's main session. With no primary
+		// held, a restarted server resumes its dead predecessor's; with one
+		// held, the new conversation (Claude Code's /clear, same harness and
+		// same MCP server) takes over that session instead of opening a
+		// second, non-primary one.
+		if !s.havePrimary {
+			adopt = s.findResumable(dataDir, conn.Resolved)
+		} else {
+			adopt = s.ownPrimary(conn.Resolved)
+		}
+		if adopt != nil {
 			token = adopt.ResumeToken
 		}
 	}
@@ -694,7 +704,7 @@ func (s *server) register(ctx context.Context, req *mcp.CallToolRequest, in regi
 	if err != nil && adopt != nil && (bus.CodeOf(err) == bus.CodeSessionClosed || bus.CodeOf(err) == bus.CodeNotFound) {
 		// The remembered session was closed elsewhere: its file is dead weight.
 		s.log.Warn("discarding the state file of a closed session", "session", adopt.Session, "err", err)
-		delete(s.files, adopt.Session)
+		s.forgetLocked(dataDir, adopt.Session)
 		_ = sessionstate.Remove(dataDir, adopt.Session)
 		adopt = nil
 		sess, err = conn.Bus.Open(ctx, bus.OpenSessionInput{Hint: in.Hint, Cursors: cursors})
@@ -714,8 +724,8 @@ func (s *server) register(ctx context.Context, req *mcp.CallToolRequest, in regi
 		}
 	case adopt != nil:
 		// The retention sweep removed the row: a fresh session replaces the file.
+		s.forgetLocked(dataDir, adopt.Session)
 		_ = sessionstate.Remove(dataDir, adopt.Session)
-		delete(s.files, adopt.Session)
 	}
 	primary := in.Hint == "" && !s.havePrimary
 	if hadBase {

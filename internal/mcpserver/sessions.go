@@ -20,6 +20,9 @@ import (
 //   - Second run: a restart under the same harness finds the primary state
 //     file whose MCP server is dead and resumes that session; the file is
 //     rewritten with the new pid, and the session id and token are unchanged.
+//   - Repeated register: a hintless register while this server already holds
+//     its primary session (Claude Code's /clear) resumes that session, so the
+//     harness keeps exactly one primary file; a hinted one is always new.
 //   - Overlapping runs: two servers under one harness each mark their own
 //     first hintless session primary; the harness's hooks take the earliest
 //     opened_at. register runs under an exclusive lock on the sessions
@@ -57,6 +60,18 @@ func (s *server) findResumable(dataDir string, r client.Resolved) *sessionstate.
 			continue
 		}
 		return &f
+	}
+	return nil
+}
+
+// ownPrimary returns this server's own primary session on r's profile and
+// identity (a copy of its registry entry), or nil. The caller holds s.smu.
+func (s *server) ownPrimary(r client.Resolved) *sessionstate.File {
+	for _, f := range s.files {
+		if f.Primary && f.MCPPID == s.self && f.Profile == r.Profile.Name && f.Identity == r.Identity {
+			f := f
+			return &f
+		}
 	}
 	return nil
 }

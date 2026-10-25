@@ -347,7 +347,10 @@ parts of the choices below. The choice numbers are the plan's
   on purpose, and the start-up sweep removes a file whose MCP server and
   harness are both dead. A `register` without a hint and without a resume
   token resumes the primary file of the same harness whose `mcp_pid` is dead
-  (Decision 79), within the retention window. On Windows the mode bits do not restrict the
+  (Decision 79), within the retention window. A hintless `register` from an MCP
+  server that already holds its primary session (Claude Code's `/clear`: same
+  harness, same server) resumes that session, so a harness has one primary
+  file (agent decision, 2026-10-25, for Eric's review). On Windows the mode bits do not restrict the
   file and no ACL is set on it, unlike the credential files; the resume
   token is protected only by the directory's inherited permissions. Tests: `TestStateFileHoldsResumeToken`;
   `internal/e2e` step `10-mcp-over-stdio` (state file kept after a clean

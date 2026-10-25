@@ -401,14 +401,14 @@ func TestRegisterOpensSession(t *testing.T) {
 		t.Errorf("others does not list pat: %v", others)
 	}
 
-	// A second register without a hint is a new session, and not primary.
+	// A second register without a hint (a /clear) resumes the primary session.
 	reg3 := r.must(t, "register", nil)
-	if str(reg3, "session") == str(reg, "session") {
-		t.Fatalf("second register without a hint reused the session")
+	if str(reg3, "session") != str(reg, "session") || reg3["resumed"] != true {
+		t.Fatalf("second register without a hint did not resume the primary: %v", reg3)
 	}
 	f3, _ := sessionstate.Read(e.DataDir, str(reg3, "session"))
-	if f3.Primary {
-		t.Errorf("only the first hintless session is primary: %+v", f3)
+	if !f3.Primary {
+		t.Errorf("the resumed session stays primary: %+v", f3)
 	}
 
 	// Cursors: subscribe pat to general, then offer one ahead of the channel

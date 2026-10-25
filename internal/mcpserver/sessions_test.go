@@ -59,9 +59,10 @@ func TestRegisterResumesAfterRestart(t *testing.T) {
 			if f.MCPPID != 43 || !f.Primary {
 				t.Errorf("file not rewritten for the new server: %+v", f)
 			}
-			// A third register without a hint in the same server is a new session.
+			// A third hintless register in the same server (a /clear) is the
+			// primary session again, not a new one.
 			third := second.must(t, "register", nil)
-			if third["resumed"] != false || str(third, "session") == sid {
+			if third["resumed"] != true || str(third, "session") != sid {
 				t.Errorf("third register: %v", third)
 			}
 		})
@@ -458,5 +459,62 @@ func TestCloseSweptSession(t *testing.T) {
 	files, err := sessionstate.List(e.DataDir)
 	if err != nil || len(files) != 0 {
 		t.Fatalf("state files after closing a swept session: %+v, %v", files, err)
+	}
+}
+
+// A /clear in Claude Code calls register again without a hint while the same
+// MCP server still holds the pre-clear session: the new conversation takes
+// over that primary session (resumed, same id), and the harness keeps exactly
+// one primary state file.
+func TestHintlessRegisterAgainResumesOwnPrimary(t *testing.T) {
+	e := newTestEnv(t)
+	r := startServer(t, e, newFakeTable(), "claude-code")
+	first := r.must(t, "register", nil)
+	sid := str(first, "session")
+	for i := 0; i < 2; i++ {
+		again := r.must(t, "register", nil)
+		if again["resumed"] != true || str(again, "session") != sid {
+			t.Fatalf("hintless register %d after /clear: %v (first %v)", i+1, again, first)
+		}
+	}
+	// A hinted register is still a new, non-primary session.
+	hinted := r.must(t, "register", map[string]any{"hint": "sub"})
+	if hinted["resumed"] != false || str(hinted, "session") == sid {
+		t.Fatalf("hinted register: %v", hinted)
+	}
+	all, err := sessionstate.List(e.DataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	primaries := 0
+	for _, f := range all {
+		if f.Primary {
+			primaries++
+			if f.Session != sid {
+				t.Errorf("primary is %s, want %s", f.Session, sid)
+			}
+		}
+	}
+	if primaries != 1 || len(all) != 2 {
+		t.Errorf("want 1 primary of 2 files, got %d of %d: %+v", primaries, len(all), all)
+	}
+}
+
+// When the held primary was closed elsewhere, a hintless register replaces it
+// with a fresh session that is primary.
+func TestHintlessRegisterAfterPrimaryClosedElsewhere(t *testing.T) {
+	e := newTestEnv(t)
+	r := startServer(t, e, newFakeTable(), "claude-code")
+	sid := str(r.must(t, "register", nil), "session")
+	if err := e.conn(t, "pat").Bus.Close(context.Background(), bus.CloseSessionInput{Session: sid}); err != nil {
+		t.Fatal(err)
+	}
+	again := r.must(t, "register", nil)
+	if str(again, "session") == sid {
+		t.Fatalf("closed session reused: %v", again)
+	}
+	f, err := sessionstate.Read(e.DataDir, str(again, "session"))
+	if err != nil || !f.Primary {
+		t.Fatalf("replacement not primary: %+v, %v", f, err)
 	}
 }
