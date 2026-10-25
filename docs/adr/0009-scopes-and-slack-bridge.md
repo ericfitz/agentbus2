@@ -75,6 +75,13 @@ Choices made while building, recorded because they change behavior:
 - The agent icon is a stable emoji picked from a fixed list by hashing the identity name.
 - The migration (schema version 6) reshapes any pre-existing `slack-bridge` identity into the reserved shape.
 
+## Decisions (Eric, 2026-10-24)
+
+- Every plan ruling recorded during execution (the "Plan choices" above) is ratified.
+- Duplicate Slack posts: a posted-but-unrecorded message is remembered across a lost runner lock and recorded without reposting; after an uncertain post failure (transport error, timeout, 5xx/408, Slack `internal_error`/`fatal_error`/`service_unavailable`/`request_timeout`) the bridge searches the channel or thread for its own post (matching metadata seq and the app's bot id) before posting again, and posts nothing while the search fails.
+- Channel mentions are neutral in both directions: Slack `<#C…|name>` reaches the bus as plain `#name` and a mention without a name as `#channel`; an agent's `#name` reaches Slack unlinked. Resolving a nameless mention to its channel name (which needs the `channels:read` scope) is deferred.
+- A local OIDC provider for signing a human into the TUI against a local server is deferred (issue #17).
+
 ## Consequences
 
 - Schema version 6 and a new reserved identity name; the upgrade needs every replica stopped first (`docs/ops/upgrade.md`).
