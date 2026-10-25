@@ -288,3 +288,35 @@ func TestCreateIdentityByEmailWire(t *testing.T) {
 		t.Fatalf("as pat = %d, want 403", st)
 	}
 }
+
+// An admin write with the same Idempotency-Key header replays the first answer
+// (the receipt), where the same write without a key is refused as a conflict.
+func TestAdminIdempotencyKeyReplayHTTP(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	e.identity("root", true)
+	send := func(key string) (int, string) {
+		t.Helper()
+		req, err := http.NewRequest(http.MethodPost, "http://inproc/v1/admin/scopes", strings.NewReader(`{"name":"job1"}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if key != "" {
+			req.Header.Set("Idempotency-Key", key)
+		}
+		resp := e.raw("root", req)
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	st1, b1 := send("scope-key-1")
+	st2, b2 := send("scope-key-1")
+	if st1 != 200 || st2 != 200 || b1 != b2 {
+		t.Fatalf("keyed replay: %d %s / %d %s", st1, b1, st2, b2)
+	}
+	if st, b := send(""); st != 409 || !strings.Contains(b, `"conflict"`) {
+		t.Fatalf("unkeyed repeat = %d %s, want 409 conflict", st, b)
+	}
+	if st, b := send("scope-key-2"); st != 409 {
+		t.Fatalf("a new key for the same name = %d %s, want 409", st, b)
+	}
+}
