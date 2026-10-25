@@ -77,10 +77,11 @@ type Service struct {
 	cfg  Config
 	log  *slog.Logger
 
-	// createMu serializes steps 1 and 2 of Create within this process, so two
-	// overlapping Creates never race for the Slack name here; across replicas
-	// the resumed row adopts the winner's channel (see Create).
-	createMu sync.Mutex
+	// createLocks serialize steps 1 and 2 of Create per bus channel within
+	// this process, so two overlapping Creates of one channel never race for
+	// the Slack name here (Creates of different channels run in parallel);
+	// across replicas the resumed row adopts the winner's channel (see Create).
+	createLocks keyedLock
 
 	users userCache // users.info answers, 10 minutes
 

@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"strings"
@@ -525,6 +526,37 @@ func TestSlackBridgeCreateResume(t *testing.T) {
 			}
 			if got, err := x.create("job1-chat", "job1-chat-2"); err != nil || got.Bridge.State != ab2bus.BridgeLive {
 				t.Errorf("create with a new name = %+v, %v", got, err)
+			}
+		})
+		t.Run("a held create lock answers retryable unavailable", func(t *testing.T) {
+			x := newSlackFix(t, e)
+			ch := x.slChannel("job1-chat", "job1", nil)
+			ctx := context.Background()
+			lock := fmt.Sprintf("bridge-create:%d", ch.ID)
+			now := x.h.core.Now()
+			held, err := x.h.raw.TryLock(ctx, lock, "other-replica", now.UnixMilli(), now.Add(time.Hour).UnixMilli())
+			if err != nil || !held {
+				t.Fatalf("pre-hold TryLock = %v, %v", held, err)
+			}
+			_, err = x.create("job1-chat", "")
+			codeOf(t, err, ab2bus.CodeUnavailable)
+			if m := msgOf(err); m != "another create of this bridge is in progress; retry" {
+				t.Errorf("message = %q", m)
+			}
+			if be := new(ab2bus.Error); !errors.As(err, &be) || !be.Retryable {
+				t.Errorf("not retryable: %v", err)
+			}
+			if _, found := x.bridgeRow(ch); found {
+				t.Error("a refused create left a bridge row")
+			}
+			if n := x.fake.Calls("CreatePrivateChannel"); n != 0 {
+				t.Errorf("CreatePrivateChannel calls = %d, want 0", n)
+			}
+			if err := x.h.raw.Unlock(ctx, lock, "other-replica"); err != nil {
+				t.Fatal(err)
+			}
+			if got, err := x.create("job1-chat", ""); err != nil || got.Bridge.State != ab2bus.BridgeLive {
+				t.Errorf("create after the lock was released = %+v, %v", got, err)
 			}
 		})
 		t.Run("two replicas creating concurrently", func(t *testing.T) {

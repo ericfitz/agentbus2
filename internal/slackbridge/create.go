@@ -129,8 +129,6 @@ func (s *Service) Create(ctx context.Context, admin string, in bus.CreateBridgeI
 // resumed row and a fresh one never race for the Slack name; a held lock is a
 // retryable unavailable.
 func (s *Service) reserveAndOpen(ctx context.Context, in bus.CreateBridgeInput) (store.Bridge, reservation, error) {
-	s.createMu.Lock()
-	defer s.createMu.Unlock()
 	var ch store.Channel
 	err := s.core.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		var err error
@@ -140,6 +138,7 @@ func (s *Service) reserveAndOpen(ctx context.Context, in bus.CreateBridgeInput) 
 	if err != nil {
 		return store.Bridge{}, reservation{}, core.FromStore(err)
 	}
+	defer s.createLocks.lock(ch.ID)()
 	owner, err := core.RandomHex(8)
 	if err != nil {
 		return store.Bridge{}, reservation{}, core.FromStore(err)
