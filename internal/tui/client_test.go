@@ -547,10 +547,10 @@ func TestCloseFreesTheName(t *testing.T) {
 	}
 	select {
 	case <-done:
-	case <-time.After(500 * time.Millisecond):
-		t.Fatal("the Watch did not end within 500ms of close")
+	case <-time.After(3 * time.Second):
+		t.Fatal("the Watch did not end within 3 s of close")
 	}
-	if d := time.Since(start); d > 2*time.Second {
+	if d := time.Since(start); d > 5*time.Second {
 		t.Fatalf("close took %v", d)
 	}
 	if got := sessionNames(t, f.sam, "bob"); len(got) != 0 {

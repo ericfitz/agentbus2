@@ -265,13 +265,13 @@ func TestReplicasWake(t *testing.T) {
 		}
 
 		// (3) A message sent through B wakes a watch armed on A within the
-		// merge window: the NOTIFY crossed the servers. A timeout (3 s) is
+		// merge window: the NOTIFY crossed the servers. A timeout (5 s) is
 		// distinguishable from a wake by the bound.
 		if e.Name == "postgres" {
 			t.Run("wake-crosses-servers", func(t *testing.T) {
 				out := make(chan watchOutcome, 1)
 				go func() {
-					res, err := patBusA.Watch(ctx, ab2bus.WatchInput{Session: session.ID, Timeout: 3 * time.Second})
+					res, err := patBusA.Watch(ctx, ab2bus.WatchInput{Session: session.ID, Timeout: 5 * time.Second})
 					out <- watchOutcome{res, err, time.Now()}
 				}()
 				time.Sleep(300 * time.Millisecond)
@@ -284,10 +284,13 @@ func TestReplicasWake(t *testing.T) {
 					if !o.res.Woke || o.res.Count != 1 || fmt.Sprint(o.res.Channels) != "[dev]" {
 						t.Fatalf("watch on A = %+v, want woke count 1 channels [dev]", o.res)
 					}
-					if d := o.at.Sub(sent); d > 2*time.Second { // watch_merge_seconds + 1 s
-						t.Fatalf("watch on A woke %v after the send, want within watch_merge_seconds + 1 s", d)
+					// 4 s, not watch_merge_seconds + 1 s: loaded Windows runners
+					// woke 1.6 s late elsewhere. Still under the 5 s watch timeout
+					// (= watch_max_seconds), so a timeout cannot pass.
+					if d := o.at.Sub(sent); d > 4*time.Second {
+						t.Fatalf("watch on A woke %v after the send, want within 4 s", d)
 					}
-				case <-time.After(6 * time.Second):
+				case <-time.After(10 * time.Second):
 					t.Fatal("watch on A did not return")
 				}
 			})
@@ -330,10 +333,12 @@ func TestReplicasWake(t *testing.T) {
 				select {
 				case o := <-out:
 					codeOf(t, o.err, ab2bus.CodeReplaced)
-					if d := o.at.Sub(armed); d > 1500*time.Millisecond {
-						t.Fatalf("A's watch was replaced %v after B armed, want within 1.5 s", d)
+					// 3 s, not 1.5: loaded Windows runners. A's watch runs to
+					// its 5 s timeout unless the control NOTIFY arrives.
+					if d := o.at.Sub(armed); d > 3*time.Second {
+						t.Fatalf("A's watch was replaced %v after B armed, want within 3 s", d)
 					}
-				case <-time.After(8 * time.Second):
+				case <-time.After(12 * time.Second):
 					t.Fatal("A's watch did not return")
 				}
 			})

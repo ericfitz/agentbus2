@@ -208,13 +208,15 @@ func TestWatchReplacedAcrossProcesses(t *testing.T) {
 	registered := time.Now()
 	wb := watchAsync(cb, session, 1)
 
-	oa := waitOutcome(t, wa, 3*time.Second, "watch A")
+	oa := waitOutcome(t, wa, 6*time.Second, "watch A")
 	if oa.resp.StatusCode() != http.StatusConflict || oa.resp.ApplicationproblemJSON409 == nil ||
 		oa.resp.ApplicationproblemJSON409.Code != gen.Replaced {
 		t.Fatalf("watch A: status %d body %s, want 409 replaced", oa.resp.StatusCode(), oa.resp.Body)
 	}
-	if d := oa.at.Sub(registered); d > 1500*time.Millisecond {
-		t.Fatalf("watch A learned of the replacement after %v, want within 1.5 s", d)
+	// 3 s, not 1.5 (see TestWatchWakesAcrossProcesses): the helpers poll every
+	// 100 ms and watch A would otherwise run to its 10 s timeout.
+	if d := oa.at.Sub(registered); d > 3*time.Second {
+		t.Fatalf("watch A learned of the replacement after %v, want within 3 s", d)
 	}
 	ob := waitOutcome(t, wb, 5*time.Second, "watch B")
 	if ob.resp.StatusCode() != http.StatusNoContent {

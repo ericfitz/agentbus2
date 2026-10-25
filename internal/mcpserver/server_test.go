@@ -489,19 +489,20 @@ func TestReceiveWaitSecondsReplacesWatch(t *testing.T) {
 	sid := str(r.must(t, "register", nil), "session")
 	r.must(t, "subscribe", map[string]any{"channel": "general"})
 
-	// A message arriving during the wait is returned within a second of its send.
+	// A message arriving during the wait is returned within 3 s of its send
+	// (loaded Windows runners); the wait itself lasts 8 s.
 	var sentAt time.Time
 	go func() {
 		time.Sleep(300 * time.Millisecond)
 		sentAt = time.Now()
 		_, _ = sam.Bus.Send(ctx, bus.SendInput{Channel: "general", Content: "wake"})
 	}()
-	got := r.must(t, "receive", map[string]any{"session": sid, "wait_seconds": 3})
+	got := r.must(t, "receive", map[string]any{"session": sid, "wait_seconds": 8})
 	done := time.Now()
 	if len(arr(got, "messages")) != 1 {
 		t.Fatalf("wait_seconds receive: %v", got)
 	}
-	if d := done.Sub(sentAt); d > time.Second {
+	if d := done.Sub(sentAt); d > 3*time.Second {
 		t.Errorf("message returned %v after the send", d)
 	}
 

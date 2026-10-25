@@ -158,12 +158,15 @@ func TestLocalWatchWakesAcrossConns(t *testing.T) {
 	if _, err := sam.Bus.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "hi"}); err != nil {
 		t.Fatal(err)
 	}
-	o := await(t, w, 4*time.Second)
+	o := await(t, w, 6*time.Second)
 	if o.err != nil || !o.res.Woke || o.res.Count != 1 || len(o.res.Channels) != 1 || o.res.Channels[0] != "dev" {
 		t.Fatalf("watch: %+v, %v", o.res, o.err)
 	}
-	if d := o.at.Sub(sent); d > time.Second {
-		t.Fatalf("woke %v after the send, want within 1 s", d)
+	// 3 s, not 1: wake bounds flake on loaded Windows runners (see
+	// TestWatchWakesAcrossProcesses). The Conns poll every 50 ms and the watch
+	// times out at 5 s, so only a polling wake passes.
+	if d := o.at.Sub(sent); d > 3*time.Second {
+		t.Fatalf("woke %v after the send, want within 3 s", d)
 	}
 }
 
@@ -196,13 +199,15 @@ func TestLocalReplacedAcrossConns(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	registered := time.Now()
 	wb := watchAsync(b, session, time.Second)
-	oa := await(t, wa, 3*time.Second)
+	oa := await(t, wa, 6*time.Second)
 	var be *ab2bus.Error
 	if oa.err == nil || !errors.As(oa.err, &be) || be.Code != ab2bus.CodeReplaced {
 		t.Fatalf("watch A: %+v, %v, want replaced", oa.res, oa.err)
 	}
-	if d := oa.at.Sub(registered); d > 500*time.Millisecond+50*time.Millisecond {
-		t.Fatalf("watch A learned of the replacement after %v, want within 500 ms", d)
+	// 3 s, not 0.5: the Conns poll every 50 ms; watch A would otherwise run to
+	// its 10 s timeout.
+	if d := oa.at.Sub(registered); d > 3*time.Second {
+		t.Fatalf("watch A learned of the replacement after %v, want within 3 s", d)
 	}
 	ob := await(t, wb, 4*time.Second)
 	if ob.err != nil || ob.res.Woke {

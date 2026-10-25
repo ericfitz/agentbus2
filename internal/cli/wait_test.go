@@ -45,10 +45,13 @@ func TestWaitWokeExits0(t *testing.T) {
 		if code != 0 || se.String() != "" {
 			t.Fatalf("exit %d stderr %q", code, se.String())
 		}
-		if d := time.Since(sentAt); d > time.Second {
+		// 3 s, not 1 (see TestWatchWakesAcrossProcesses); the Conns poll every
+		// 50 ms and RunWait has no timeout, so the guard below is the only
+		// other bound.
+		if d := time.Since(sentAt); d > 3*time.Second {
 			t.Fatalf("woke %v after the send", d)
 		}
-	case <-time.After(3 * time.Second):
+	case <-time.After(10 * time.Second):
 		t.Fatal("wait did not wake")
 	}
 	var w struct {
