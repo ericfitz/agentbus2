@@ -164,3 +164,47 @@ func TestComposeExampleUsesKnownSettings(t *testing.T) {
 		t.Errorf("config.example.json does not load: %v", err)
 	}
 }
+
+// jsonTags lists the JSON field names of struct type t, descending into struct
+// fields (an issuers entry's claims object).
+func jsonTags(t reflect.Type) []string {
+	var out []string
+	for i := range t.NumField() {
+		f := t.Field(i)
+		tag, _, _ := strings.Cut(f.Tag.Get("json"), ",")
+		if tag == "" || tag == "-" {
+			continue
+		}
+		out = append(out, tag)
+		if f.Type.Kind() == reflect.Struct {
+			out = append(out, jsonTags(f.Type)...)
+		}
+	}
+	return out
+}
+
+// TestIssuersRowDocumentsEveryEntryField: the `issuers` row of the
+// configuration reference names every field of an issuers entry (and of its
+// claims object) in backticks, so a field added to Issuer cannot go
+// undocumented.
+func TestIssuersRowDocumentsEveryEntryField(t *testing.T) {
+	doc := readFile(t, filepath.Join(opsDir, "configuration.md"))
+	var row string
+	for _, line := range strings.Split(doc, "\n") {
+		if strings.HasPrefix(line, "| `issuers` |") {
+			row = line
+		}
+	}
+	if row == "" {
+		t.Fatal("configuration.md has no `issuers` row")
+	}
+	tags := jsonTags(reflect.TypeOf(Issuer{}))
+	if len(tags) < 8 {
+		t.Fatalf("found only %v; the walk over Issuer is broken", tags)
+	}
+	for _, tag := range tags {
+		if !strings.Contains(row, "`"+tag+"`") {
+			t.Errorf("the `issuers` row of configuration.md does not document the entry field %q", tag)
+		}
+	}
+}
