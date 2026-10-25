@@ -107,9 +107,13 @@ func (b *Bus) GetScope(ctx context.Context, name string) (ab2bus.Scope, error) {
 	return fromGenScope(*r.JSON200)
 }
 
-// DoneScope marks a scope done. The retire mode is sent as given: the server
-// refuses a value outside the enum with validation.
+// DoneScope marks a scope done. A retire mode outside the closed set is
+// refused with validation before anything is sent, as the local Bus does.
 func (b *Bus) DoneScope(ctx context.Context, in ab2bus.DoneScopeInput) (ab2bus.Scope, error) {
+	if in.Retire != ab2bus.RetireWithBridge && in.Retire != ab2bus.RetireNormal {
+		return ab2bus.Scope{}, &ab2bus.Error{Code: ab2bus.CodeValidation,
+			Message: fmt.Sprintf("retire must be %q or %q, got %q", ab2bus.RetireWithBridge, ab2bus.RetireNormal, string(in.Retire))}
+	}
 	r, err := b.c.DoneScopeWithResponse(ctx, in.Name, &gen.DoneScopeParams{IdempotencyKey: key(in.IdempotencyKey)},
 		gen.DoneScopeJSONRequestBody{Retire: gen.DoneScopeRequestRetire(in.Retire)})
 	if err != nil {

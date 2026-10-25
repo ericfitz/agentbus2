@@ -154,3 +154,25 @@ func TestCreateAgentIdentityWire(t *testing.T) {
 		t.Fatal("a refused request created the identity")
 	}
 }
+
+// The request validator, not the core, refuses a retire mode outside the enum:
+// the scope does not exist, so a request that reached the core would answer
+// not_found or with the core's own validation text, and neither may appear.
+func TestDoneScopeRetireRefusedByValidator(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	e.identity("root", true)
+	const path = "/v1/admin/scopes/ghost/done"
+	for _, body := range []string{`{"retire":"later"}`, `{"retire":""}`, `{"retire":"NORMAL"}`, `{"retire":1}`} {
+		st, b, ct := e.postBody("root", path, body)
+		if st != 400 || !strings.HasPrefix(ct, "application/problem+json") || !strings.Contains(b, `"validation"`) {
+			t.Errorf("%s: %d %s", body, st, b)
+		}
+		if strings.Contains(b, "retire must be") || strings.Contains(b, "not_found") {
+			t.Errorf("%s: the core answered: %s", body, b)
+		}
+	}
+	// A valid mode does reach the core (unknown scope: not_found).
+	if st, b, _ := e.postBody("root", path, `{"retire":"normal"}`); st != 404 {
+		t.Errorf("valid mode: %d %s, want 404 from the core", st, b)
+	}
+}
