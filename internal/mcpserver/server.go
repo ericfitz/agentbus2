@@ -690,7 +690,7 @@ func (s *server) addTools(srv *mcp.Server) {
 				return map[string]any{"identities": identitiesOut(ids)}, nil
 			})
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "health", Description: "Agentbus2: the server's health as your identity may see it: status (ok or degraded), version, store engine and schema version, embedding state and backlog; an administrator also sees storage, notices and the maintenance lock. Call it when something that should work does not, before reporting a bus problem; a failure means the server or its store is unreachable."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "health", Description: "Agentbus2: the server's health as your identity may see it: status (ok or degraded), version, store engine and schema version, embedding state and backlog; an administrator also sees storage, notices and the maintenance lock. Call it when something that should work does not, before reporting a bus problem; a failure names the cause: an unreachable server or store, an unregistered session or an unresolved identity."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in optSessionIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) {
 				h, err := b.Health(ctx)

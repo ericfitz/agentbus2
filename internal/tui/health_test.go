@@ -218,7 +218,7 @@ func (b healthFailBus) Health(context.Context) (bus.Health, error) { return bus.
 
 func TestHealthServerLineOnError(t *testing.T) {
 	f := newFixtureWith(t, func(b bus.Bus) bus.Bus {
-		return healthFailBus{Bus: b, err: &bus.Error{Code: bus.CodeUnavailable, Message: "store unreachable"}}
+		return healthFailBus{Bus: b, err: &bus.Error{Code: bus.CodeUnavailable, Message: "store unreachable", Retryable: true}}
 	}, Host{})
 	f.key("esc")
 	f.key("h")
@@ -253,5 +253,15 @@ func TestHealthMaintenanceLines(t *testing.T) {
 		if !strings.Contains(body, want) {
 			t.Errorf("health lacks %q:\n%s", want, body)
 		}
+	}
+}
+
+func TestOpenHealthClearsStaleAnswer(t *testing.T) {
+	f := newFixture(t)
+	f.m.healthDoc = &bus.Health{}
+	f.m.healthErr = errors.New("old failure")
+	_ = f.m.openHealth()
+	if f.m.healthDoc != nil || f.m.healthErr != nil {
+		t.Errorf("openHealth kept the old answer: doc=%v err=%v", f.m.healthDoc, f.m.healthErr)
 	}
 }

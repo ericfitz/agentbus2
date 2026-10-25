@@ -39,6 +39,8 @@ func (m *Model) recordQuery(ok bool) {
 func (m *Model) openHealth() tea.Cmd {
 	m.mode = modeHealth
 	m.health.scroll = 0
+	// A reopen must not show the last answer while the new one is in flight.
+	m.healthDoc, m.healthErr = nil, nil
 	return tea.Batch(m.statusCmd(), m.usageCmd(), m.healthCmd())
 }
 
