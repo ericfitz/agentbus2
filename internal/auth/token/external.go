@@ -39,7 +39,7 @@ type External struct {
 	Issuer, JWKSURI, Audience string
 	Algorithms                []jose.SignatureAlgorithm // nil: EdDSA, ES256, RS256
 	Claims                    ClaimNames                // empty members: email, groups, sub
-	HumanLifetime             time.Duration             // lifetime of the human bearer minted for this issuer; the caller applies it
+	HumanLifetime             time.Duration             // lifetime of the human bearer minted for this issuer; 0: DefaultHumanLifetime (see EffectiveHumanLifetime)
 	Client                    *http.Client              // nil: a 10 s client
 	TTL                       time.Duration             // 0: 300 s
 	Now                       func() time.Time          // nil: time.Now

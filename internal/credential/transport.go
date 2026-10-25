@@ -42,15 +42,21 @@ func (t *refreshing) refresh(ctx context.Context, refused string) (string, error
 	if err != nil {
 		return "", err
 	}
-	t.from, t.to = refused, tok
+	// A refresh that hands back the refused bearer minted nothing new: do not
+	// remember it, so the next 401 refreshes again.
+	if tok == refused {
+		t.from, t.to = "", ""
+	} else {
+		t.from, t.to = refused, tok
+	}
 	return tok, nil
 }
 
 // Transport wraps base so that a 401 to a request that carried a bearer
 // triggers one refresh (shared with concurrent 401s to requests that carried
-// the same refused bearer) and one replay of the request. Any other status or error passes through; a refresh
-// that fails returns the original 401 response (the remote maps it to
-// unauthenticated).
+// the same refused bearer) and one replay of the request. Any other status or
+// error passes through; a refresh that fails returns the original 401 response
+// (the remote maps it to unauthenticated).
 func Transport(base http.RoundTripper, s TokenSource) http.RoundTripper {
 	if base == nil {
 		base = http.DefaultTransport
