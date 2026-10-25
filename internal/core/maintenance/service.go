@@ -108,7 +108,9 @@ func (s Service) Jobs() []Job {
 // Release at shutdown. Each job runs in transactions of its own, chunked; an
 // error is logged and recorded in its JobResult and never aborts the tick.
 // Once the deadline (half the interval) has passed, the remaining jobs are
-// Skipped.
+// Skipped. Every path records the tick on the Core (RecordMaintenanceTick):
+// in memory, last writer wins, which the health document reads (spec
+// 2026-10-25 section 8.1).
 //
 // State: every job is idempotent, so a second tick finds nothing; two
 // overlapping ticks are serialized by the lock; a tick killed mid-job leaves
@@ -121,9 +123,11 @@ func (s Service) Tick(ctx context.Context) (ran bool, report []JobResult) {
 	held, err := s.Store.TryLock(ctx, lockName, s.Owner, now, now+2*interval)
 	if err != nil {
 		s.Log.Warn("maintenance lock", "err", err)
+		s.RecordMaintenanceTick(core.MaintenanceTick{At: now, LockErr: err.Error()})
 		return false, nil
 	}
 	if !held {
+		s.RecordMaintenanceTick(core.MaintenanceTick{At: now})
 		return false, nil
 	}
 	dctx := context.WithValue(ctx, deadlineKey{}, now+interval/2)
@@ -139,6 +143,14 @@ func (s Service) Tick(ctx context.Context) (ran bool, report []JobResult) {
 		}
 		report = append(report, JobResult{Name: j.Name, N: n, Err: err})
 	}
+	jobs := make([]core.MaintenanceJob, len(report))
+	for i, r := range report {
+		jobs[i] = core.MaintenanceJob{Name: r.Name, Changed: r.N, Skipped: r.Skipped}
+		if r.Err != nil {
+			jobs[i].Err = r.Err.Error()
+		}
+	}
+	s.RecordMaintenanceTick(core.MaintenanceTick{At: now, Held: true, Jobs: jobs})
 	return true, report
 }
 

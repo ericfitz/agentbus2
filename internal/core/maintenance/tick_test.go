@@ -176,3 +176,67 @@ func TestTickJobErrorDoesNotAbort(t *testing.T) {
 		t.Fatalf("report %+v", rep)
 	}
 }
+
+func TestTickRecordsLastTick(t *testing.T) {
+	ctx := context.Background()
+	a, b, _ := twoCores(t)
+	if _, ok := a.LastMaintenanceTick(); ok {
+		t.Fatal("a record exists before any tick")
+	}
+	if ran, _ := a.Tick(ctx); !ran {
+		t.Fatal("a did not tick")
+	}
+	ra, ok := a.LastMaintenanceTick()
+	if !ok || !ra.Held || ra.At != startMs || ra.LockErr != "" || len(ra.Jobs) != len(a.Jobs()) {
+		t.Fatalf("a record = %+v, %v", ra, ok)
+	}
+	for _, j := range ra.Jobs {
+		if j.Err != "" || j.Skipped {
+			t.Fatalf("job %+v", j)
+		}
+	}
+	if ran, _ := b.Tick(ctx); ran {
+		t.Fatal("b ticked while a holds the lock")
+	}
+	rb, ok := b.LastMaintenanceTick()
+	if !ok || rb.Held || rb.LockErr != "" || len(rb.Jobs) != 0 || rb.At != startMs {
+		t.Fatalf("b record = %+v, %v", rb, ok)
+	}
+	if again, _ := a.LastMaintenanceTick(); len(again.Jobs) != len(ra.Jobs) || !again.Held {
+		t.Fatalf("a record changed by b's tick: %+v", again)
+	}
+
+	a.jobs = []Job{
+		{Name: "bad", Run: func(context.Context, int64) (int, error) { return 2, context.Canceled }},
+		{Name: "good", Run: func(context.Context, int64) (int, error) { return 3, nil }},
+	}
+	a.Tick(ctx)
+	rj, _ := a.LastMaintenanceTick()
+	if len(rj.Jobs) != 2 || rj.Jobs[0].Name != "bad" || rj.Jobs[0].Changed != 2 || rj.Jobs[0].Err != context.Canceled.Error() ||
+		rj.Jobs[1].Name != "good" || rj.Jobs[1].Changed != 3 || rj.Jobs[1].Err != "" {
+		t.Fatalf("job record = %+v", rj.Jobs)
+	}
+
+	// RunJob is the operator command, not a tick: it records nothing.
+	before, _ := a.LastMaintenanceTick()
+	if _, err := a.RunJob(ctx, "good"); err != nil {
+		t.Fatal(err)
+	}
+	if after, _ := a.LastMaintenanceTick(); after.At != before.At || len(after.Jobs) != len(before.Jobs) {
+		t.Fatalf("RunJob changed the record: %+v", after)
+	}
+}
+
+func TestTickRecordsLockError(t *testing.T) {
+	a, _, _ := twoCores(t)
+	if err := a.Store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if ran, _ := a.Tick(context.Background()); ran {
+		t.Fatal("ticked on a closed store")
+	}
+	r, ok := a.LastMaintenanceTick()
+	if !ok || r.Held || r.LockErr == "" || len(r.Jobs) != 0 {
+		t.Fatalf("record = %+v, %v", r, ok)
+	}
+}

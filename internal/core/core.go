@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/core/notify"
@@ -45,6 +46,10 @@ type Core struct {
 	now      func() time.Time
 	notifier notify.Notifier
 	embedder Embedder
+	started  time.Time
+
+	tickMu   sync.Mutex
+	lastTick *MaintenanceTick
 }
 
 // New validates cfg and builds a Core.
@@ -77,6 +82,7 @@ func New(s store.Store, cfg Config, opts Options) (*Core, error) {
 	if c.Log == nil {
 		c.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	c.started = c.now()
 	c.Limits = NewLimiter(cfg.SendMessagesPerSecond, cfg.SendKiBPerSecond, cfg.MaxMessageKiB)
 	return c, nil
 }
