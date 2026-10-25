@@ -683,27 +683,80 @@ func TestTokenOAuthErrors(t *testing.T) {
 		return v
 	}
 
-	wantOAuthError(t, post(url.Values{"client_assertion": {a}}), 400, "invalid_request", "", a)
-	wantOAuthError(t, post(url.Values{"grant_type": {""}, "client_assertion": {a}}), 400, "invalid_request", "", a)
-	wantOAuthError(t, post(cc(map[string]string{"grant_type": "password"})), 400, "unsupported_grant_type", "", a)
-	wantOAuthError(t, e.do("POST", "/v1/auth/token", "application/json", "", `{"grant_type":"client_credentials","client_assertion":"x"}`), 400, "invalid_request", "", "")
-	wantOAuthError(t, post(cc(map[string]string{"client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:saml2-bearer"})), 401, "invalid_client", "", a)
+	wantOAuthError(t, post(url.Values{"client_assertion": {a}}), 400, "invalid_request", "the request is not a well-formed application/x-www-form-urlencoded token request with a grant_type", a)
+	wantOAuthError(t, post(url.Values{"grant_type": {""}, "client_assertion": {a}}), 400, "invalid_request", "grant_type is required", a)
+	wantOAuthError(t, post(cc(map[string]string{"grant_type": "password"})), 400, "unsupported_grant_type", `grant_type "password" is not supported`, a)
+	wantOAuthError(t, e.do("POST", "/v1/auth/token", "application/json", "", `{"grant_type":"client_credentials","client_assertion":"x"}`), 400, "invalid_request", "the request is not a well-formed application/x-www-form-urlencoded token request with a grant_type", "")
+	wantOAuthError(t, post(cc(map[string]string{"client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:saml2-bearer"})), 401, "invalid_client", "client_assertion_type must be "+assertion.Type, a)
 	missing := cc(nil)
 	missing.Del("client_assertion")
-	wantOAuthError(t, post(missing), 401, "invalid_client", "", "")
-	wantOAuthError(t, post(cc(map[string]string{"client_assertion": "not-a-jwt.at.all"})), 401, "invalid_client", "", "not-a-jwt.at.all")
-	wantOAuthError(t, post(cc(map[string]string{"client_id": "kim"})), 401, "invalid_client", "", a)
+	wantOAuthError(t, post(missing), 401, "invalid_client", "client_assertion is required", "")
+	wantOAuthError(t, post(cc(map[string]string{"client_assertion": "not-a-jwt.at.all"})), 401, "invalid_client", "client assertion: assertion: malformed", "not-a-jwt.at.all")
+	wantOAuthError(t, post(cc(map[string]string{"client_id": "kim"})), 401, "invalid_client", "client_id does not match the assertion issuer", a)
 
 	// Replay: the first use mints, the second is refused.
 	if resp := post(cc(nil)); resp.StatusCode != 200 {
 		t.Fatalf("first use: %d %s", resp.StatusCode, readBody(t, resp))
 	}
-	wantOAuthError(t, post(cc(nil)), 401, "invalid_client", "", a)
+	wantOAuthError(t, post(cc(nil)), 401, "invalid_client", "assertion replayed", a)
 
 	// An unconfigured issuer is 503 temporarily_unavailable.
 	off := newEnv(t, envOptions{registration: identities.ModeOpen})
 	resp := off.do("POST", "/v1/auth/token", formCT, "", cc(nil).Encode())
-	wantOAuthError(t, resp, 503, "temporarily_unavailable", "", a)
+	wantOAuthError(t, resp, 503, "temporarily_unavailable", "token issuer not configured", a)
+}
+
+// A store failure behind the token endpoint is a 500 server_error whose
+// description is fixed: it never carries the underlying text (oauthFromBus).
+func TestTokenServerError(t *testing.T) {
+	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
+	key := genKey(t, keys.EdDSA)
+	e.mustRegister("pat", key)
+	a := e.assertionFor("pat", key, "http://inproc", 0)
+	if err := e.store.Close(); err != nil {
+		t.Fatal(err)
+	}
+	form := url.Values{"grant_type": {"client_credentials"}, "client_assertion_type": {assertion.Type}, "client_assertion": {a}}
+	resp := e.do("POST", "/v1/auth/token", "application/x-www-form-urlencoded", "", form.Encode())
+	b := readBody(t, resp)
+	if resp.StatusCode != 500 || resp.Header.Get("Content-Type") != "application/json" || resp.Header.Get("Cache-Control") != "no-store" {
+		t.Fatalf("%d %q %q", resp.StatusCode, resp.Header.Get("Content-Type"), b)
+	}
+	if want := `{"error":"server_error","error_description":"internal error"}`; strings.TrimSpace(b) != want {
+		t.Fatalf("body %q, want %q", b, want)
+	}
+}
+
+// The token endpoint answers every refusal, including the ones made before
+// the handler can run, with the RFC 6749 section 5.2 body (ADR 0002 audit,
+// Decision 84): a wrong method is 405 with Allow, an oversized body is 413 and
+// a path that is not an operation (the trailing slash) is 404.
+func TestTokenEndpointPreHandlerRefusals(t *testing.T) {
+	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
+	const formCT = "application/x-www-form-urlencoded"
+	for _, m := range []string{"GET", "PUT", "DELETE", "PATCH"} {
+		t.Run(m, func(t *testing.T) {
+			resp := e.do(m, "/v1/auth/token", "", "", "")
+			if allow := resp.Header.Get("Allow"); allow != "POST" {
+				t.Errorf("Allow = %q", allow)
+			}
+			wantOAuthError(t, resp, 405, "invalid_request", "POST", "")
+		})
+	}
+	t.Run("oversize", func(t *testing.T) {
+		resp := e.do("POST", "/v1/auth/token", formCT, "", "grant_type="+strings.Repeat("a", 3<<20))
+		wantOAuthError(t, resp, 413, "invalid_request", "request body exceeds", "")
+	})
+	t.Run("trailing-slash", func(t *testing.T) {
+		resp := e.do("POST", "/v1/auth/token/", formCT, "", "grant_type=client_credentials")
+		wantOAuthError(t, resp, 404, "invalid_request", "", "")
+	})
+	t.Run("other-paths-keep-problem-json", func(t *testing.T) {
+		resp := e.do("POST", "/v1/auth/tokens", formCT, "", "x=1")
+		if p := readProblem(t, resp); resp.StatusCode != 404 || p.Code != "not_found" {
+			t.Fatalf("%d %+v", resp.StatusCode, p)
+		}
+	})
 }
 
 func TestTokenAcceptsClientIDAndScope(t *testing.T) {

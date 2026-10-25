@@ -127,7 +127,7 @@ func New(c *core.Core, o Options) http.Handler {
 	})
 
 	limit := int64(c.Cfg.MaxMessageKiB)*1024 + 1<<20
-	return limitBody(rejectRepeatedTokenParams(authenticate(o.Auth, validator(mux))), limit)
+	return limitBody(tokenRouteGuard(rejectRepeatedTokenParams(authenticate(o.Auth, validator(mux)))), limit)
 }
 
 // authenticate never refuses by itself. It always writes the identity key
@@ -163,6 +163,10 @@ func limitBody(next http.Handler, limit int64) http.Handler {
 				return
 			}
 			if int64(len(b)) > limit {
+				if isTokenPath(r) {
+					writeOAuthError(w, oauthFail(http.StatusRequestEntityTooLarge, "invalid_request", "request body exceeds %d bytes", limit))
+					return
+				}
 				WriteProblem(w, r, http.StatusRequestEntityTooLarge, bus.CodeValidation,
 					fmt.Sprintf("request body exceeds %d bytes", limit), false)
 				return
@@ -171,6 +175,31 @@ func limitBody(next http.Handler, limit int64) http.Handler {
 			r.ContentLength = int64(len(b))
 		}
 		next.ServeHTTP(w, r)
+	})
+}
+
+// isTokenPath reports whether r is addressed to the token endpoint, with or
+// without a trailing slash: the slash form is no operation, but a client that
+// sent it meant the token endpoint and reads an OAuth body.
+func isTokenPath(r *http.Request) bool {
+	return r.URL.Path == tokenPath || r.URL.Path == tokenPath+"/"
+}
+
+// tokenRouteGuard answers the two refusals the request validator would
+// otherwise make for the token endpoint, with an RFC 6749 section 5.2 body: a
+// method other than POST is 405 with Allow: POST (RFC 9110 section 15.5.6),
+// and the trailing-slash path, which is not an operation, is 404.
+func tokenRouteGuard(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == tokenPath && r.Method != http.MethodPost:
+			w.Header().Set("Allow", http.MethodPost)
+			writeOAuthError(w, oauthFail(http.StatusMethodNotAllowed, "invalid_request", "the token endpoint accepts POST only"))
+		case r.URL.Path == tokenPath+"/":
+			writeOAuthError(w, oauthFail(http.StatusNotFound, "invalid_request", "no such endpoint; the token endpoint is %s", tokenPath))
+		default:
+			next.ServeHTTP(w, r)
+		}
 	})
 }
 

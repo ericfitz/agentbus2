@@ -709,18 +709,22 @@ the running handler (2026-10-24), and why:
    per grant, so the document cannot say that `none` is valid for the token
    exchange only; the handler enforces it (a `client_credentials` request
    without a valid assertion is `invalid_client`).
-5. **`GET` (or any non-`POST` method) on `/v1/auth/token` answers 400
-   `invalid_request`**, not 405. The request validator refuses the missing
-   operation before routing, and the token endpoint answers every request the
-   validator, mux or strict handler refuses with the same fixed
-   `invalid_request` body, so that the framework's message never echoes an
-   assertion. RFC 6749 section 3.2 requires `POST` and does not name a
-   status for another method.
-6. **Refusals that happen before the token handler can be reached answer
-   problem+json, not the OAuth body.** These are the 413 from the body limit
-   (`limitBody` wraps the whole handler and runs before the validator and the
-   mux), and the routing-level 404 for a path that is not
-   an operation (for example `/v1/auth/token/`). Neither is a token request.
+5. **`GET` (or any non-`POST` method) on `/v1/auth/token` answers 405
+   `invalid_request`** with `Allow: POST` and the section 5.2 body (RFC 6749
+   section 3.2 requires `POST`; RFC 9110 section 15.5.6 requires `Allow` on a
+   405). `tokenRouteGuard` answers it ahead of the validator, so the
+   framework's message, which may echo an assertion, never reaches the body.
+   Any other request the validator, mux or strict handler refuses on this
+   path answers the same fixed `invalid_request` body with status 400.
+   (This closes the earlier departure that answered 400 for a wrong method.)
+6. **The refusals made before the token handler can be reached answer the
+   section 5.2 body too**: the 413 from the body limit (`limitBody` wraps the
+   whole handler; it writes `invalid_request` with status 413 when the path
+   is the token endpoint) and the routing-level 404 for the trailing-slash
+   path `/v1/auth/token/`, which is not an operation (`tokenRouteGuard`,
+   `invalid_request` with status 404). Any other unknown path keeps
+   problem+json. (This closes the earlier departure that answered
+   problem+json for both.)
 7. **The token endpoint's 500 and 503** are not in RFC 6749 section 5.2
    (plan choice, above); the bodies are still the section 5.2 shape.
 8. **Error descriptions echo the caller's own values.** `assertion.Parse`
