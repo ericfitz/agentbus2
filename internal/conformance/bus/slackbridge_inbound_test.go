@@ -70,6 +70,48 @@ func (s *bindRaceStore) Append(ctx context.Context, fn func(context.Context, ab2
 	})
 }
 
+// retryTx counts the map rows written through it.
+type retryTx struct {
+	ab2store.Tx
+	puts *int
+}
+
+func (t retryTx) PutBridgeMessage(ctx context.Context, m ab2store.BridgeMessage) error {
+	*t.puts++
+	return t.Tx.PutBridgeMessage(ctx, m)
+}
+
+// retryOnceStore simulates a serialization retry: the first Append runs fn to
+// the end and then fails (the engine rolls it back), and a second attempt runs
+// fn again, as the engines' own retry loop does after a retryable failure.
+type retryOnceStore struct {
+	ab2store.Store
+	attempts, puts int
+}
+
+var errRetryOnce = errors.New("simulated serialization failure")
+
+func (s *retryOnceStore) Append(ctx context.Context, fn func(context.Context, ab2store.Tx) error) error {
+	first := true
+	for {
+		err := s.Store.Append(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+			s.attempts++
+			if err := fn(ctx, retryTx{Tx: tx, puts: &s.puts}); err != nil {
+				return err
+			}
+			if first {
+				return errRetryOnce
+			}
+			return nil
+		})
+		if errors.Is(err, errRetryOnce) {
+			first = false
+			continue
+		}
+		return err
+	}
+}
+
 // archiveRaceStore archives the bridge inside every Append before the send
 // runs, as a maintenance tick that commits between the lookup and the send.
 type archiveRaceStore struct {
@@ -712,6 +754,28 @@ func TestSlackBridgeInbound(t *testing.T) {
 			if !strings.Contains(log, "slack message ignored") || !strings.Contains(log, "slack_user=U1") || !strings.Contains(log, "code=validation") || strings.Contains(log, "xxxx") {
 				t.Errorf("log = %.300s", log)
 			}
+		})
+
+		t.Run("serialization-retry-reruns-the-hook-and-writes-one-map-row", func(t *testing.T) {
+			f := newInFix(t, e)
+			orig := f.h.core.Store
+			rs := &retryOnceStore{Store: orig}
+			f.h.core.Store = rs
+			defer func() { f.h.core.Store = orig }()
+			m := f.fake.Say(f.sl, "U1", "retried once", "")
+			f.want(m, "sent")
+			f.h.core.Store = orig
+			if rs.attempts != 2 || rs.puts != 2 {
+				t.Errorf("append attempts %d, hook map writes %d; want 2 and 2 (the hook runs again on the retry)", rs.attempts, rs.puts)
+			}
+			if _, ok := f.mapRow(m.TS); !ok {
+				t.Error("no map row after the retry")
+			}
+			if h := f.human(); len(h) != 1 || h[0].Content != "retried once" {
+				t.Errorf("messages after the retry: %+v", h)
+			}
+			// The ts is mapped once: a second pass is a duplicate.
+			f.want(m, "duplicate")
 		})
 
 		t.Run("validation-recorded-logged-once", func(t *testing.T) {
