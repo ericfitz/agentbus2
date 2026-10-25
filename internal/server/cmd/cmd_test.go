@@ -640,12 +640,12 @@ func TestExternalIssuersMapping(t *testing.T) {
 	}
 	if a := got[0]; a.Name != "a" || a.Issuer != "https://a" || a.JWKSURI != "https://a/jwks" || a.Audience != "x" ||
 		a.TTL != 42*time.Second || len(a.Algorithms) != 2 || a.Algorithms[0] != jose.ES256 || a.Algorithms[1] != jose.RS256 ||
-		a.Claims != (token.ClaimNames{Email: "mail", Groups: "groups", Subject: "user_id"}) || a.HumanLifetime != 600*time.Second {
+		a.Claims != (token.ClaimNames{Email: "mail", Subject: "user_id"}) || a.HumanLifetime != 600*time.Second {
 		t.Fatalf("first external %+v", a)
 	}
 	if b := got[1]; b.Name != "b" || b.Algorithms != nil || b.TTL != 42*time.Second ||
-		b.Claims != (token.ClaimNames{Email: "email", Groups: "groups", Subject: "sub"}) || b.HumanLifetime != 900*time.Second {
-		t.Fatalf("second external %+v: want nil algorithms (the verifier's default), the TTL, default claims and 900 s", b)
+		b.Claims != (token.ClaimNames{}) || b.HumanLifetime != 0 || b.EffectiveHumanLifetime() != token.DefaultHumanLifetime {
+		t.Fatalf("second external %+v: want nil algorithms (the verifier's default), the TTL, and claims and lifetime left to token's defaults", b)
 	}
 }
 

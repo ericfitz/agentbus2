@@ -52,6 +52,18 @@ type External struct {
 	inflight    *flight   // the fetch in progress, if any
 }
 
+// DefaultHumanLifetime is the lifetime of the human bearer minted for an
+// issuer that sets none (spec 5.1).
+const DefaultHumanLifetime = 900 * time.Second
+
+// EffectiveHumanLifetime is HumanLifetime, or DefaultHumanLifetime when unset.
+func (e *External) EffectiveHumanLifetime() time.Duration {
+	if e.HumanLifetime > 0 {
+		return e.HumanLifetime
+	}
+	return DefaultHumanLifetime
+}
+
 // ClaimNames are the provider claims that carry the email, the groups and the
 // subject; an empty member means the default (email, groups, sub).
 type ClaimNames struct{ Email, Groups, Subject string }

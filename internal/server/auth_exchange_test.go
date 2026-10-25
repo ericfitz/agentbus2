@@ -366,10 +366,10 @@ func TestClip(t *testing.T) {
 }
 
 func TestTokenExchangeExpiresInFollowsMint(t *testing.T) {
-	// HumanLifetime 0 falls back to the issuer's lifetime (1 h in the env).
+	// HumanLifetime 0 is token.DefaultHumanLifetime, not the issuer's own lifetime (1 h in the env).
 	f := newFedEnv(t, 0, func(e *token.External) { e.HumanLifetime = 0 })
 	_, body, m := f.post(exchangeForm(f.prov.Mint(map[string]any{"sub": "g-1", "email": corpEric}), nil))
-	if m["expires_in"] != float64(3600) {
-		t.Fatalf("expires_in = %v, want 3600 (%s)", m["expires_in"], body)
+	if m["expires_in"] != token.DefaultHumanLifetime.Seconds() {
+		t.Fatalf("expires_in = %v, want the default (%s)", m["expires_in"], body)
 	}
 }

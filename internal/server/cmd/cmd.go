@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"bytes"
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -237,12 +236,9 @@ func logLevel(s string) slog.Level {
 	return slog.LevelInfo
 }
 
-// defaultHumanTokenLifetimeSeconds is the human bearer lifetime of an issuers
-// entry that sets none (spec 5.1).
-const defaultHumanTokenLifetimeSeconds = 900
-
-// externalIssuers maps cfg.Issuers onto token.External, filling the claim name
-// and human lifetime defaults (spec 5.1). Validate has already limited
+// externalIssuers maps cfg.Issuers onto token.External. An unset claim name or
+// human lifetime stays empty: token.External applies the defaults (spec 5.1).
+// Validate has already limited
 // algorithms to EdDSA, ES256 and RS256; an empty list keeps the verifier's
 // default of all three.
 func externalIssuers(cfg config.Config) []*token.External {
@@ -252,19 +248,15 @@ func externalIssuers(cfg config.Config) []*token.External {
 		for _, a := range i.Algorithms {
 			algs = append(algs, jose.SignatureAlgorithm(a))
 		}
-		life := i.HumanTokenLifetimeSeconds
-		if life == 0 {
-			life = defaultHumanTokenLifetimeSeconds
-		}
 		out = append(out, &token.External{
 			Name: i.Name, Issuer: i.Issuer, JWKSURI: i.JWKSURI, Audience: i.Audience,
 			Algorithms: algs,
 			Claims: token.ClaimNames{
-				Email:   cmp.Or(i.Claims.Email, "email"),
-				Groups:  cmp.Or(i.Claims.Groups, "groups"),
-				Subject: cmp.Or(i.Claims.Subject, "sub"),
+				Email:   i.Claims.Email,
+				Groups:  i.Claims.Groups,
+				Subject: i.Claims.Subject,
 			},
-			HumanLifetime: time.Duration(life) * time.Second,
+			HumanLifetime: time.Duration(i.HumanTokenLifetimeSeconds) * time.Second,
 			TTL:           time.Duration(cfg.JWKSRefreshSeconds) * time.Second,
 		})
 	}

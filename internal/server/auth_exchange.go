@@ -126,7 +126,7 @@ func (a *api) tokenExchange(ctx context.Context, b *gen.TokenFormdataRequestBody
 	if clientID == "" {
 		clientID = fed.Subject
 	}
-	raw, exp, err := iss.Mint(token.MintInput{Identity: res.Identity, Kind: token.KindHuman, ClientID: clientID, Lifetime: ext.HumanLifetime})
+	raw, exp, err := iss.Mint(token.MintInput{Identity: res.Identity, Kind: token.KindHuman, ClientID: clientID, Lifetime: ext.EffectiveHumanLifetime()})
 	if err != nil {
 		return a.refuseExchange(ext.Name, oauthFromBus(bus.Internal(err), true), "mint failed", res.Identity)
 	}
