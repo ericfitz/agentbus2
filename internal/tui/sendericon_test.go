@@ -105,3 +105,56 @@ func TestHumanSenderLabel(t *testing.T) {
 		t.Errorf("messageIcon(human) = %q, want %q", got, user)
 	}
 }
+
+// The TUI's own message is labelled with the user icon and the user color
+// whatever its sender_kind says, including when the TUI is itself the human
+// (sender_kind human, sender equal to the TUI's identity): one icon, one
+// label, the display name shown, and never the agent's icon or color.
+func TestOwnMessageLabel(t *testing.T) {
+	f := newFixture(t)
+	th := f.m.theme
+	agentIcon := th.Style(th.Agent).Render(iconAgent)
+	userIcon := th.Style(th.User).Render(iconUser)
+	if agentIcon == userIcon {
+		t.Fatal("agent and user icons render alike")
+	}
+	me := f.c.identity
+	for _, tc := range []struct {
+		name string
+		msg  bus.Message
+	}{
+		{"agent-kind", bus.Message{Seq: 1, Channel: "dev", Sender: me, Display: "Me Myself", SenderKind: bus.IdentityAgent}},
+		{"no-kind", bus.Message{Seq: 2, Channel: "dev", Sender: me, Display: "Me Myself"}},
+		{"human-kind", bus.Message{Seq: 3, Channel: "dev", Sender: me, Display: "Me Myself", SenderKind: bus.IdentityHuman}},
+		{"human-kind-no-display", bus.Message{Seq: 4, Channel: "dev", Sender: me, SenderKind: bus.IdentityHuman}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if !f.m.isOwn(tc.msg) {
+				t.Fatal("message from the TUI's identity is not own")
+			}
+			want := userIcon + th.Style(th.User).Render(senderName(tc.msg))
+			if got := f.m.agentLabel(tc.msg); got != want {
+				t.Errorf("label %q, want %q", got, want)
+			}
+			if got := f.m.messageIcon(tc.msg); got != userIcon {
+				t.Errorf("icon %q, want the user icon %q", got, userIcon)
+			}
+			if strings.Contains(f.m.agentLabel(tc.msg), agentIcon) {
+				t.Errorf("label %q carries the agent icon", f.m.agentLabel(tc.msg))
+			}
+		})
+	}
+	// The display name wins over the bare identity, and the bare identity is
+	// the fallback.
+	if got := ansi.Strip(f.m.agentLabel(bus.Message{Sender: me, Display: "Me Myself"})); !strings.HasSuffix(got, "Me Myself") {
+		t.Errorf("display name not shown: %q", got)
+	}
+	if got := ansi.Strip(f.m.agentLabel(bus.Message{Sender: me})); !strings.HasSuffix(got, me) {
+		t.Errorf("sender fallback not shown: %q", got)
+	}
+	// A different human is not own but is still drawn as a user.
+	other := bus.Message{Seq: 5, Channel: "dev", Sender: "someone-else", SenderKind: bus.IdentityHuman}
+	if f.m.isOwn(other) || f.m.messageIcon(other) != userIcon {
+		t.Errorf("other human: own=%v icon=%q", f.m.isOwn(other), f.m.messageIcon(other))
+	}
+}
