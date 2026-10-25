@@ -273,3 +273,56 @@ func TestEmbeddingReportMatchesStatus(t *testing.T) {
 		t.Fatalf("health embeddings %+v != report %+v", h.Embeddings, rep)
 	}
 }
+
+// faultStore fails Usage and/or Read after the ping (SchemaVersion) answered.
+type faultStore struct {
+	store.Store
+	usageErr, readErr error
+}
+
+func (f faultStore) Usage(ctx context.Context) (store.Usage, error) {
+	if f.usageErr != nil {
+		return store.Usage{}, f.usageErr
+	}
+	return f.Store.Usage(ctx)
+}
+
+func (f faultStore) Read(ctx context.Context, fn func(ctx context.Context, tx store.Tx) error) error {
+	if f.readErr != nil {
+		return f.readErr
+	}
+	return f.Store.Read(ctx, fn)
+}
+
+func TestHealthStoreFailureAfterPingIsUnavailable(t *testing.T) {
+	cases := map[string]struct {
+		who               string
+		usageErr, readErr error
+	}{
+		"usage plain":    {"root", errors.New("disk gone"), nil},
+		"usage internal": {"root", &bus.Error{Code: bus.CodeInternal, Message: "boom"}, nil},
+		"read plain":     {"pat", nil, errors.New("conn reset")},
+		"read internal":  {"", nil, &bus.Error{Code: bus.CodeInternal, Message: "boom"}},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			e := newEnv(t, nil)
+			e.svc.Store = faultStore{Store: e.svc.Store, usageErr: tc.usageErr, readErr: tc.readErr}
+			_, err := e.svc.Health(context.Background(), tc.who, "v")
+			var be *bus.Error
+			if !errors.As(err, &be) || be.Code != bus.CodeUnavailable || !be.Retryable || !strings.HasPrefix(be.Message, "store unreachable: ") {
+				t.Fatalf("err = %v, want retryable unavailable", err)
+			}
+		})
+	}
+}
+
+func TestHealthBoundsMaintenanceErrorText(t *testing.T) {
+	e := newEnv(t, nil)
+	long := strings.Repeat("x", 5000)
+	e.svc.RecordMaintenanceTick(core.MaintenanceTick{LockErr: long, Jobs: []core.MaintenanceJob{{Name: "j", Err: long}}})
+	m := e.health(t, "root").Maintenance
+	if len(m.LockError) != bus.MaxErrorMessageBytes || len(m.Jobs[0].Error) != bus.MaxErrorMessageBytes {
+		t.Fatalf("lock error %d bytes, job error %d bytes, want %d", len(m.LockError), len(m.Jobs[0].Error), bus.MaxErrorMessageBytes)
+	}
+}

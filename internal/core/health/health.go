@@ -20,11 +20,12 @@ const (
 // Service is the health aggregate over a Core.
 type Service struct{ *core.Core }
 
-// unavailable maps a store failure to the retryable unavailable error; a
-// *bus.Error (not_registered, from the core itself) passes through unchanged.
+// unavailable maps a store failure to the retryable unavailable error; only
+// the core's own checks (not_registered, forbidden) pass through unchanged,
+// so any other *bus.Error from the store path is still a store failure.
 func unavailable(err error) error {
 	var be *bus.Error
-	if errors.As(err, &be) {
+	if errors.As(err, &be) && (be.Code == bus.CodeNotRegistered || be.Code == bus.CodeForbidden) {
 		return be
 	}
 	return &bus.Error{
@@ -121,7 +122,7 @@ func (s Service) Health(ctx context.Context, identity, version string) (bus.Heal
 		Jobs:            []bus.HealthJob{},
 	}
 	if ticked {
-		m.LastTickAt, m.LockError = tick.At, tick.LockErr
+		m.LastTickAt, m.LockError = tick.At, bus.TruncateErrorMessage(tick.LockErr)
 		switch {
 		case tick.LockErr != "":
 			m.Lock = bus.LockUnknown
@@ -131,7 +132,7 @@ func (s Service) Health(ctx context.Context, identity, version string) (bus.Heal
 			m.Lock = bus.LockHeldElsewhere
 		}
 		for _, j := range tick.Jobs {
-			m.Jobs = append(m.Jobs, bus.HealthJob{Name: j.Name, Changed: j.Changed, Error: j.Err, Skipped: j.Skipped})
+			m.Jobs = append(m.Jobs, bus.HealthJob{Name: j.Name, Changed: j.Changed, Error: bus.TruncateErrorMessage(j.Err), Skipped: j.Skipped})
 		}
 	}
 	h.Maintenance = m
