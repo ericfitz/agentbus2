@@ -108,4 +108,4 @@ curl -fsS http://127.0.0.1:8420/v1/discover
 curl -fsS http://127.0.0.1:8420/v1/health
 ```
 
-The image has no shell or `curl`, so probe from the host or the orchestrator, not from inside the container.
+The image has no shell or `curl`, so probe from the host or the orchestrator, not from inside the container. The document, its tiers and the 503 are described in [health.md](health.md).

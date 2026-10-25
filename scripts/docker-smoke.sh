@@ -73,6 +73,21 @@ case "$body" in
   *) fail "/v1/discover lacks \"long_poll\": $body" ;;
 esac
 
+echo "step 5b: GET /v1/health answers the probe tier"
+hbody="$(curl -fsS "http://127.0.0.1:$port/v1/health")" || fail "/v1/health did not answer 200; log: $(docker logs "$NAME" 2>&1)"
+case "$hbody" in
+  *'"tier":"probe"'*) ;;
+  *) fail "/v1/health lacks \"tier\":\"probe\": $hbody" ;;
+esac
+case "$hbody" in
+  *'"status":"ok"'*) ;;
+  *) fail "/v1/health lacks \"status\":\"ok\": $hbody" ;;
+esac
+
+echo "step 5c: a rejected bearer on /v1/health is a 401"
+code="$(curl -sS -o /dev/null -w '%{http_code}' -H 'Authorization: Bearer bad' "http://127.0.0.1:$port/v1/health")"
+[ "$code" = 401 ] || fail "/v1/health with a bad bearer: want 401, got $code"
+
 echo "step 6: register with an empty body is a 400 problem"
 hdr="$(curl -sS -o /dev/null -D - -X POST "http://127.0.0.1:$port/v1/auth/register" | tr -d '\r')"
 case "$hdr" in
