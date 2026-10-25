@@ -373,3 +373,27 @@ parts of the choices below. The choice numbers are the plan's
   before treating a second lapse as an error.
 - **Pending item 3** (a Claude proposal, pending Eric): the resume token is not
   persisted across TUI restarts; see the Milestone 8 addendum of ADR 0006.
+
+## Session-start addendum (Eric, 2026-10-24)
+
+- **Decision (Eric, 2026-10-24): the agent is told to join the bus at session
+  start.** In the manual test of 2026-10-24 a new Claude Code session did not
+  register or arm `agentbus2 wait` until a skill or the user asked. Two
+  changes fix it:
+  - `agentbus2 init --global` installs a `SessionStart` hook,
+    `agentbus2 session-start-hook`, on Claude Code (every source) and Codex
+    (`startup|resume|clear`, v1's matcher). It resolves the profile and
+    identity the way `agentbus2 mcp` does, from the hook's `cwd`, and prints
+    the register steps as plain text. It prints nothing when they do not
+    resolve or when the identity is the OS login name (Decision 16, where the
+    MCP server refuses to start). Like the other hooks it always exits 0 and
+    falls open within 500 ms. Grok ignores SessionStart stdout and keeps its
+    rule file.
+  - The MCP server sends `Instructions` in its initialize result: the same
+    register steps (`mcpserver.RegisterSteps`, also the `init` prompt's
+    text), plus the subagent rule, the human-sender rule and a pointer to the
+    skill.
+- **Decision 14 stands.** v1's SessionStart hook ran `agentbus identity` and
+  told the agent which name to register; the new hook names the resolved
+  profile and identity only as information. The identity still comes from
+  the profile, and `register` takes no name.

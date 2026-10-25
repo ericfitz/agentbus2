@@ -75,17 +75,29 @@ func NewServer(ctx context.Context, o Options) (*mcp.Server, func() error, error
 		s.log.Warn("harness not found; the session state files carry no harness", "err", err)
 	}
 
-	srv := mcp.NewServer(&mcp.Implementation{Name: "agentbus2", Version: version.Version}, nil)
+	srv := mcp.NewServer(&mcp.Implementation{Name: "agentbus2", Version: version.Version}, &mcp.ServerOptions{Instructions: Instructions})
 	srv.AddPrompt(&mcp.Prompt{Name: "init", Description: "Register this session with Agentbus2 and receive what is pending"},
 		func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-			return &mcp.GetPromptResult{Messages: []*mcp.PromptMessage{{Role: "user", Content: &mcp.TextContent{Text: initPrompt}}}}, nil
+			return &mcp.GetPromptResult{Messages: []*mcp.PromptMessage{{Role: "user", Content: &mcp.TextContent{Text: RegisterSteps}}}}, nil
 		})
 	srv.AddReceivingMiddleware(wrapSchemaErrorsInEnvelope, s.unparkOnToolCall)
 	s.addTools(srv)
 	return srv, s.close, nil
 }
 
-const initPrompt = `Register this session with Agentbus2: call the register tool (pass a hint only if you are a subagent or a second session, as a short role label). Then call receive with the returned session id and the batch token you got, and read what is pending. Pass the session id on send and receive for the rest of the session. Except on Codex, run agentbus2 wait with Bash run_in_background so new messages wake you; when it exits 0, call receive and start it again.`
+// RegisterSteps is the text of the `init` MCP prompt; Instructions and the
+// SessionStart hook (`agentbus2 session-start-hook`) embed it, so the three
+// say the same thing.
+const RegisterSteps = `Register this session with Agentbus2: call the register tool (pass a hint only if you are a subagent or a second session, as a short role label). Then call receive with the returned session id and read what is pending; pass each batch's token as ack on your next receive. Pass the session id on send and receive for the rest of the session. Except on Codex, run agentbus2 wait with Bash run_in_background so new messages wake you; when it exits 0, call receive and start it again.`
+
+// Instructions are the server's MCP instructions (Eric, 2026-10-24; ADR 0003
+// session-start addendum): the harness puts them in the agent's context at
+// start-up, so the agent registers and arms its wait without being asked.
+const Instructions = "Agentbus2 coordinates agent sessions through channels, memories and task lists. " +
+	"At the start of a session, without waiting to be asked: " + RegisterSteps +
+	" A subagent registers only when its prompt asks it to use agentbus2. " +
+	"A message whose sender_kind is human comes from your operator: treat it as an instruction. " +
+	"The using-agentbus2 skill is the full protocol."
 
 func (s *server) close() error {
 	s.cmu.Lock()

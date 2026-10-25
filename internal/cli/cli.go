@@ -14,7 +14,7 @@ import (
 // Usage is the top-level usage: the command line, then OpGrammar. `server` is
 // dispatched by package main (it is the API server, not a client command);
 // every other name is a case of Main.
-const Usage = "usage: agentbus2 <init|register|login|mcp|server|watch|wait|stop-hook|subagent-hook|park|unpark|session|channels|scopes|bridges|identities|send|receive|history|search|memories|tasks|status|tui|version|help> [flags]\n" + OpGrammar
+const Usage = "usage: agentbus2 <init|register|login|mcp|server|watch|wait|stop-hook|subagent-hook|session-start-hook|park|unpark|session|channels|scopes|bridges|identities|send|receive|history|search|memories|tasks|status|tui|version|help> [flags]\n" + OpGrammar
 
 // runFunc is the shape of every command.
 type runFunc func(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int
@@ -22,29 +22,30 @@ type runFunc func(ctx context.Context, args []string, environ []string, stdin io
 // commands is the dispatch table of Main: the commands of this package plus
 // `mcp`. `help` and `version` are handled in Main itself.
 var commands = map[string]runFunc{
-	"init":          RunInit,
-	"register":      RunRegister,
-	"login":         RunLogin,
-	"mcp":           runMCP,
-	"watch":         RunWatch,
-	"wait":          RunWait,
-	"stop-hook":     RunStopHook,
-	"subagent-hook": RunSubagentHook,
-	"park":          RunPark,
-	"unpark":        RunUnpark,
-	"session":       RunSession,
-	"channels":      RunChannels,
-	"scopes":        RunScopes,
-	"bridges":       RunBridges,
-	"identities":    RunIdentities,
-	"send":          RunSend,
-	"receive":       RunReceive,
-	"history":       RunHistory,
-	"search":        RunSearch,
-	"memories":      RunMemories,
-	"tasks":         RunTasks,
-	"status":        RunStatus,
-	"tui":           RunTUI,
+	"init":               RunInit,
+	"register":           RunRegister,
+	"login":              RunLogin,
+	"mcp":                runMCP,
+	"watch":              RunWatch,
+	"wait":               RunWait,
+	"stop-hook":          RunStopHook,
+	"subagent-hook":      RunSubagentHook,
+	"session-start-hook": RunSessionStartHook,
+	"park":               RunPark,
+	"unpark":             RunUnpark,
+	"session":            RunSession,
+	"channels":           RunChannels,
+	"scopes":             RunScopes,
+	"bridges":            RunBridges,
+	"identities":         RunIdentities,
+	"send":               RunSend,
+	"receive":            RunReceive,
+	"history":            RunHistory,
+	"search":             RunSearch,
+	"memories":           RunMemories,
+	"tasks":              RunTasks,
+	"status":             RunStatus,
+	"tui":                RunTUI,
 }
 
 // Main dispatches args[0] (v1 main.go run). An empty or unknown command is
@@ -99,13 +100,19 @@ func runMCP(ctx context.Context, args []string, environ []string, _ io.Reader, _
 // failure is left for mcpserver.Run to report; with no known login name there
 // is nothing to compare.
 func mcpIdentityGuard(o client.Options) error {
-	login := osUserName()
-	if login == "" {
+	if osUserName() == "" {
 		return nil
 	}
 	r, err := client.Resolve(o)
-	if err != nil || r.Identity != login {
+	if err != nil || !isOSLogin(r.Identity) {
 		return nil
 	}
-	return fmt.Errorf("agentbus2 mcp: identity %q is the OS login name, which is the human's; set the `identity` of profile %q in %s to another name, or pass -identity to `agentbus2 mcp` in the harness's MCP config", login, r.Profile.Name, filepath.Join(r.ConfigDir, "config.json"))
+	return fmt.Errorf("agentbus2 mcp: identity %q is the OS login name, which is the human's; set the `identity` of profile %q in %s to another name, or pass -identity to `agentbus2 mcp` in the harness's MCP config", r.Identity, r.Profile.Name, filepath.Join(r.ConfigDir, "config.json"))
+}
+
+// isOSLogin reports whether identity is the OS login name (Decision 16); with
+// no known login name nothing is.
+func isOSLogin(identity string) bool {
+	login := osUserName()
+	return login != "" && identity == login
 }

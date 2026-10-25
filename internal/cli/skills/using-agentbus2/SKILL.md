@@ -275,6 +275,11 @@ and results page with the returned `next` cursor.
 
 ## Session protocol
 
+Start this protocol on your own at the start of every session; do not wait to
+be asked. On Claude Code and Codex the SessionStart hook
+(`agentbus2 session-start-hook`) says so when the session begins, and the
+MCP server's instructions say the same on every harness.
+
 1. `register`, optionally with a `hint` (a short label such as `reviewer`
    that becomes part of your display name). It opens a session for your
    profile's identity and returns `session`, `display_name`, a

@@ -48,8 +48,11 @@ func TestInitGlobalClaude(t *testing.T) {
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		t.Fatal(err)
 	}
-	if len(parsed.Hooks) != 3 {
-		t.Fatalf("want exactly the Stop, SubagentStart and UserPromptSubmit events (no SessionStart), got %s", body)
+	if len(parsed.Hooks) != 4 {
+		t.Fatalf("want exactly the SessionStart, Stop, SubagentStart and UserPromptSubmit events, got %s", body)
+	}
+	if h := parsed.Hooks["SessionStart"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentbus2 session-start-hook" {
+		t.Fatalf("SessionStart: %s", body)
 	}
 	if h := parsed.Hooks["Stop"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentbus2 stop-hook" {
 		t.Fatalf("Stop: %s", body)
@@ -183,7 +186,8 @@ func TestInitGlobalCodex(t *testing.T) {
 		t.Fatalf("config.toml:\n%s", toml)
 	}
 	hooks, _ := os.ReadFile(filepath.Join(e.Home, ".codex", "hooks.json"))
-	if strings.Count(string(hooks), "agentbus2 stop-hook") != 1 || strings.Contains(string(hooks), "SessionStart") {
+	if strings.Count(string(hooks), "agentbus2 stop-hook") != 1 || strings.Count(string(hooks), "agentbus2 session-start-hook") != 1 ||
+		!strings.Contains(string(hooks), `"matcher": "startup|resume|clear"`) {
 		t.Fatalf("hooks.json:\n%s", hooks)
 	}
 	prompt, _ := os.ReadFile(filepath.Join(e.Home, ".codex", "prompts", "agentbus2.md"))

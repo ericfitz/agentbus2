@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -40,7 +41,21 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 	}
-	os.Exit(m.Run())
+	// Run from an empty directory: the server finds the nearest
+	// .local/agentbus2.json from the working directory (the helper inherits
+	// it), so a checkout where `agentbus2 init` has run would otherwise select
+	// its profile.
+	dir, err := os.MkdirTemp("", "agentbus2-mcpserver-test-")
+	if err == nil {
+		err = os.Chdir(dir)
+	}
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "TestMain:", err)
+		os.Exit(1)
+	}
+	code := m.Run()
+	_ = os.RemoveAll(dir)
+	os.Exit(code)
 }
 
 // helperSession starts the helper process over e and connects an SDK client

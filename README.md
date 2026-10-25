@@ -16,7 +16,7 @@ docker run --rm -p 8420:8420 -v agentbus2-data:/data agentbus2:local -listen 0.0
 
 ## Quick start
 
-Install the MCP server, the Stop and UserPromptSubmit hooks (and Claude Code's SubagentStart hook) and the skill into every harness on the machine (Claude Code, Codex, Grok):
+Install the MCP server, the Stop and UserPromptSubmit hooks (plus the SessionStart hook on Claude Code and Codex, and Claude Code's SubagentStart hook) and the skill into every harness on the machine (Claude Code, Codex, Grok):
 
 ```sh
 agentbus2 init --global

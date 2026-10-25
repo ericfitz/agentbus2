@@ -220,6 +220,17 @@ func str(m map[string]any, k string) string { s, _ := m[k].(string); return s }
 
 func arr(m map[string]any, k string) []any { a, _ := m[k].([]any); return a }
 
+// TestInstructions: the initialize result carries the server's instructions,
+// which embed the register steps (Eric, 2026-10-24).
+func TestInstructions(t *testing.T) {
+	e := newTestEnv(t)
+	r := startServer(t, e, newFakeTable(), "test-client")
+	got := r.CS.InitializeResult().Instructions
+	if got != mcpserver.Instructions || !strings.Contains(got, mcpserver.RegisterSteps) || !strings.Contains(got, "without waiting to be asked") {
+		t.Fatalf("instructions = %q", got)
+	}
+}
+
 func TestToolListIsExact(t *testing.T) {
 	e := newTestEnv(t)
 	r := startServer(t, e, newFakeTable(), "test-client")

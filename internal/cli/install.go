@@ -4,7 +4,8 @@ package cli
 // hooks, the skill and the prompts. Ported from v1 internal/cli/init.go
 // (initer, write with .bak, run, wants, global, claude, codex, grok, mcpEntry,
 // codexTimeout, hook, hasHookCommand, mcpConfigured, requireOnPath) with the
-// agentbus2 names, no SessionStart hook (Decision 14) and no identity file.
+// agentbus2 names and no identity file (Decision 14). The SessionStart hook
+// returned without the identity it carried in v1 (Eric, 2026-10-24).
 //
 // Every edit is idempotent: a file whose content would not change is not
 // written, and a file that does change is first copied to <file>.bak.
@@ -30,6 +31,11 @@ const (
 	// unparkHookCommand is the UserPromptSubmit hook of every harness
 	// (decision 18): a prompt from the user unparks the session.
 	unparkHookCommand = "agentbus2 unpark"
+	// sessionStartHookCommand is the SessionStart hook of Claude Code and
+	// Codex; Grok ignores SessionStart stdout, so grokRule does its job.
+	sessionStartHookCommand = "agentbus2 session-start-hook"
+	// codexSessionStartMatcher is v1's: every Codex session source.
+	codexSessionStartMatcher = "startup|resume|clear"
 )
 
 // InitPrompt is what the `init` MCP prompt (Claude Code) and the Codex custom
@@ -259,7 +265,8 @@ func (in *initer) claude(dir string) error {
 		return err
 	}
 	if err := in.hooks(filepath.Join(dir, "settings.json"),
-		hookSpec{"Stop", stopHookCommand, ""}, hookSpec{"SubagentStart", subagentHookCommand, ""}, hookSpec{"UserPromptSubmit", unparkHookCommand, ""}); err != nil {
+		hookSpec{"SessionStart", sessionStartHookCommand, ""}, hookSpec{"Stop", stopHookCommand, ""},
+		hookSpec{"SubagentStart", subagentHookCommand, ""}, hookSpec{"UserPromptSubmit", unparkHookCommand, ""}); err != nil {
 		return err
 	}
 	return in.write(filepath.Join(dir, skillPath), SkillMD)
@@ -274,7 +281,8 @@ func (in *initer) codex(dir string) error {
 	if err := in.codexTimeout(filepath.Join(dir, "config.toml")); err != nil {
 		return err
 	}
-	if err := in.hooks(filepath.Join(dir, "hooks.json"), hookSpec{"Stop", stopHookCommand, ""}, hookSpec{"UserPromptSubmit", unparkHookCommand, ""}); err != nil {
+	if err := in.hooks(filepath.Join(dir, "hooks.json"), hookSpec{"SessionStart", sessionStartHookCommand, codexSessionStartMatcher},
+		hookSpec{"Stop", stopHookCommand, ""}, hookSpec{"UserPromptSubmit", unparkHookCommand, ""}); err != nil {
 		return err
 	}
 	if err := in.write(filepath.Join(dir, "prompts", "agentbus2.md"), []byte(codexPrompt)); err != nil {
@@ -283,7 +291,7 @@ func (in *initer) codex(dir string) error {
 	if err := in.write(filepath.Join(in.Home, ".agents", skillPath), SkillMD); err != nil {
 		return err
 	}
-	in.say("  Codex asks you to trust the Stop and UserPromptSubmit hooks the first time they run; accept it")
+	in.say("  Codex asks you to trust the SessionStart, Stop and UserPromptSubmit hooks the first time they run; accept them")
 	return nil
 }
 
