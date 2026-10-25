@@ -780,16 +780,15 @@ func (s *faultyStore) set(fn func()) {
 func (s *faultyStore) Tx(ctx context.Context, fn func(context.Context, ab2store.Tx) error) error {
 	return s.Store.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error {
 		s.mu.Lock()
-		hook, when := s.nextTxHok, s.hookWhen
-		s.mu.Unlock()
-		if hook != nil && when != nil && !when() {
+		// Check and clear in one critical section: the hook is one-shot even
+		// with concurrent Txs. when only calls the fake's Calls.
+		hook := s.nextTxHok
+		if hook != nil && (s.hookWhen == nil || s.hookWhen()) {
+			s.nextTxHok, s.hookWhen = nil, nil
+		} else {
 			hook = nil // not yet: the hook waits for its condition
 		}
-		if hook != nil {
-			s.mu.Lock()
-			s.nextTxHok, s.hookWhen = nil, nil
-			s.mu.Unlock()
-		}
+		s.mu.Unlock()
 		if hook != nil {
 			if err := hook(ctx, tx); err != nil {
 				return err

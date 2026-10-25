@@ -138,13 +138,14 @@ func (r *replica) login(t *testing.T, ctx context.Context, w *replicaWho) (strin
 }
 
 // waitWatchRegistered blocks until a watch has registered on the session (its
-// watch id is set). A fixed sleep alone is not enough: a loaded host can run
+// watch id is set and differs from prev, the id seen before; "" for none) and
+// returns that id. A fixed sleep alone is not enough: a loaded host can run
 // the send before the Watch request reaches the server, and the watch's first
 // peek then finds the message and returns at once, which passes the wake leaf
 // even with the NOTIFY removed (scripts/check-gates-selftest.sh block
 // notify-append-removed flaked on exactly this). The caller still sleeps a
 // beat after this so the watch is past its first peek and waiting on hints.
-func waitWatchRegistered(t *testing.T, ctx context.Context, st ab2store.Store, session string) {
+func waitWatchRegistered(t *testing.T, ctx context.Context, st ab2store.Store, session, prev string) string {
 	t.Helper()
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
@@ -159,12 +160,13 @@ func waitWatchRegistered(t *testing.T, ctx context.Context, st ab2store.Store, s
 		if err != nil {
 			t.Fatalf("reading session %s: %v", session, err)
 		}
-		if id != "" {
-			return
+		if id != "" && id != prev {
+			return id
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
-	t.Fatalf("no watch registered on session %s within 10 s", session)
+	t.Fatalf("no new watch registered on session %s within 10 s", session)
+	return ""
 }
 
 // watchOutcome is the result of a watch armed in a goroutine.
@@ -297,6 +299,7 @@ func TestReplicasWake(t *testing.T) {
 		// (3) A message sent through B wakes a watch armed on A within the
 		// merge window: the NOTIFY crossed the servers. A timeout (5 s) is
 		// distinguishable from a wake by the bound.
+		var firstWatch string
 		if e.Name == "postgres" {
 			t.Run("wake-crosses-servers", func(t *testing.T) {
 				out := make(chan watchOutcome, 1)
@@ -304,7 +307,7 @@ func TestReplicasWake(t *testing.T) {
 					res, err := patBusA.Watch(ctx, ab2bus.WatchInput{Session: session.ID, Timeout: 5 * time.Second})
 					out <- watchOutcome{res, err, time.Now()}
 				}()
-				waitWatchRegistered(t, ctx, st, session.ID)
+				firstWatch = waitWatchRegistered(t, ctx, st, session.ID, "")
 				time.Sleep(300 * time.Millisecond)
 				sent := send("hello")
 				select {
@@ -358,6 +361,7 @@ func TestReplicasWake(t *testing.T) {
 					res, err := patBusA.Watch(ctx, ab2bus.WatchInput{Session: session.ID, Timeout: 5 * time.Second})
 					out <- watchOutcome{res, err, time.Now()}
 				}()
+				waitWatchRegistered(t, ctx, st, session.ID, firstWatch)
 				time.Sleep(300 * time.Millisecond)
 				armed := time.Now()
 				go func() { _, _ = patBusB.Watch(ctx, ab2bus.WatchInput{Session: session.ID, Timeout: time.Second}) }()
