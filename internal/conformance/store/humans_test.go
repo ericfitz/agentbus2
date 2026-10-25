@@ -265,3 +265,33 @@ func TestValidIdentityKind(t *testing.T) {
 		}
 	}
 }
+
+// PutPublicKey refuses a human identity (ErrConflict, as MarkHuman refuses a
+// keyed one), so the rule does not rest on every core caller.
+func TestPutPublicKeyRefusesHuman(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		mustHuman(t, s, humanEric)
+		mustIdentity(t, s, "pat")
+		put := func(name string) error {
+			return txErr(s, func(ctx context.Context, tx ab2store.Tx) error {
+				return tx.PutPublicKey(ctx, ab2store.PublicKey{Identity: name, KID: "k", Algorithm: "EdDSA", Key: []byte{1}, CreatedAt: fixedNow})
+			})
+		}
+		if err := put(humanEric); !errors.Is(err, ab2store.ErrConflict) {
+			t.Errorf("PutPublicKey(human) err = %v, want ErrConflict", err)
+		}
+		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+			if ks, err := tx.PublicKeys(ctx, humanEric); err != nil || len(ks) != 0 {
+				t.Errorf("human keys = %+v, %v; want none", ks, err)
+			}
+			return nil
+		})
+		if err := put("pat"); err != nil {
+			t.Errorf("PutPublicKey(agent) err = %v", err)
+		}
+		if err := put("nobody"); !errors.Is(err, ab2store.ErrNotFound) {
+			t.Errorf("PutPublicKey(unknown) err = %v, want ErrNotFound", err)
+		}
+	})
+}

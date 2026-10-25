@@ -72,6 +72,9 @@ type Identities interface {
 	// AdvanceTagAckedMark sets the mark to max(current, seq).
 	AdvanceTagAckedMark(ctx context.Context, name string, seq int64) error
 	// CreateHuman creates the identity row (kind human) and its binding.
+	// The identity row is inserted before the binding, so a caller must roll
+	// the transaction back on any error it returns (or any later one): a
+	// committed transaction could hold a human with no binding.
 	// ErrInvalid: a name failing NameRule or reserved, a ClaimType other than
 	// ClaimEmail, an empty Value, a subject without an issuer (or the reverse),
 	// or text failing TextRule. ErrConflict: the name exists, the
@@ -93,7 +96,8 @@ type Identities interface {
 	SetHumanSubject(ctx context.Context, identity, issuer, subject string) error
 	// PutPublicKey upserts by (identity, kid); ErrInvalid on slack-bridge, an
 	// unknown Algorithm, an empty KID or one failing TextRule (not valid UTF-8, or a
-	// NUL) or an empty Key; ErrNotFound on an unknown identity.
+	// NUL) or an empty Key; ErrConflict on a human identity (as MarkHuman
+	// refuses a keyed one); ErrNotFound on an unknown identity.
 	PutPublicKey(ctx context.Context, k PublicKey) error
 	// PublicKeys lists by kid in byte order; an unknown identity has none (an
 	// empty list, no error).

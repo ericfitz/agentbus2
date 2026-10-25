@@ -149,8 +149,9 @@ func (t *tx) AdvanceTagAckedMark(ctx context.Context, name string, seq int64) er
 
 // PutPublicKey validates the key before the upsert: Algorithm (Decision 55:
 // EdDSA or ES256), a non-empty KID passing TextRule and a non-empty Key (PKIX
-// DER); the foreign key maps an unknown identity to ErrNotFound, as does an
-// identity failing TextRule (no such identity can exist).
+// DER); a human identity is ErrConflict (the rule MarkHuman applies from the
+// other side); an unknown identity, and one failing TextRule (no such
+// identity can exist), is ErrNotFound.
 func (t *tx) PutPublicKey(ctx context.Context, k store.PublicKey) error {
 	if k.Algorithm != "EdDSA" && k.Algorithm != "ES256" {
 		return fmt.Errorf("%w: unknown public key algorithm %q (want EdDSA or ES256)", store.ErrInvalid, k.Algorithm)
@@ -169,6 +170,15 @@ func (t *tx) PutPublicKey(ctx context.Context, k store.PublicKey) error {
 	}
 	if k.Identity == store.SlackBridge {
 		return fmt.Errorf("%w: identity %q is reserved and takes no key", store.ErrInvalid, k.Identity)
+	}
+	var kind string
+	switch err := t.get(ctx, &kind, "SELECT kind FROM identities WHERE name = ?", k.Identity); {
+	case errors.Is(err, sql.ErrNoRows):
+		return fmt.Errorf("%w: identity %q", store.ErrNotFound, k.Identity)
+	case err != nil:
+		return err
+	case store.IdentityKind(kind) == store.IdentityHuman:
+		return fmt.Errorf("%w: identity %q is a human and takes no key", store.ErrConflict, k.Identity)
 	}
 	_, err := t.execW(ctx, `INSERT INTO identity_keys (identity, kid, algorithm, public_key, created_at) VALUES (?, ?, ?, ?, ?)
 ON CONFLICT (identity, kid) DO UPDATE SET algorithm = excluded.algorithm, public_key = excluded.public_key, created_at = excluded.created_at`,
