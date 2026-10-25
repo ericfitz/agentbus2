@@ -414,3 +414,18 @@ rest are choices of the plan, not new design decisions.
 - **Milestone 3 item 3, closed as Eric decided.** The deferred maintenance
   deliverables (budget eviction, capacity notices, the usage number) landed
   in Milestone 7 for SQLite only.
+
+## Container base images (Decision (Eric, 2026-10-24))
+
+- The server image builds on Chainguard images: `cgr.dev/chainguard/go`
+  for the build stage and `cgr.dev/chainguard/static` for the runtime
+  (static binary, no shell, `nonroot` uid and gid 65532), each pinned by
+  digest in the `Dockerfile`. They replace `golang:1.27-alpine` and
+  `gcr.io/distroless/static-debian12:nonroot`; `make docker-smoke` passes
+  on them unchanged.
+- Eric's local Docker Desktop test stack runs `cgr.dev/chainguard/postgres`
+  (Postgres 18). Its data moved from Postgres 17 by `pg_dump` and
+  `pg_restore` into a new volume, since a major version cannot start on the
+  older data directory. The compose example (`deploy/docker-compose.yml`)
+  and the conformance suites' testcontainers image (`internal/dbtest`) stay
+  on `postgres:17` until decided otherwise.

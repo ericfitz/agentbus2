@@ -23,7 +23,7 @@ make docker-image          # docker build -t agentbus2:local .
 docker build --build-arg VERSION=2.0.0 -t agentbus2:2.0.0 .
 ```
 
-`make docker-image` builds with `VERSION=dev`; give a release build its version with `--build-arg VERSION=...` and use the tag as the version (the value is what `agentbus2 version` and `server_version` in `GET /v1/discover` report). The image is a static binary on a distroless base, entrypoint `/agentbus2 server`, runs as `nonroot` (uid and gid 65532), declares `VOLUME /data` (owned by 65532) and has no shell.
+`make docker-image` builds with `VERSION=dev`; give a release build its version with `--build-arg VERSION=...` and use the tag as the version (the value is what `agentbus2 version` and `server_version` in `GET /v1/discover` report). The image is a static binary on a Chainguard `static` base (built with Chainguard `go`), entrypoint `/agentbus2 server`, runs as `nonroot` (uid and gid 65532), declares `VOLUME /data` (owned by 65532) and has no shell.
 
 ```sh
 docker run -d --name agentbus2 -p 127.0.0.1:8420:8420 -v agentbus2-data:/data \
