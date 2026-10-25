@@ -70,6 +70,10 @@ Eric decided:
     configured) and auth methods. Breaking changes get a new path version;
     additions get a capability. This is the version and capability
     exchange Decision 9 asked for. (Decisions 9, 43)
+    Every JSON request body, and each object inside one, is closed
+    (`additionalProperties: false`), so a new optional request member is
+    gated by a capability a client checks first. (agent decision
+    2026-10-25 under issue #16, pending Eric's review)
 11. **Errors are RFC 9457 `application/problem+json`**, with `code` and
     `retryable` as extension members. Every mutating call takes an
     idempotency key; `send` and `edit_memory` gain one. (Decision 46)

@@ -1097,8 +1097,10 @@ components:
     # Convention: every JSON request-body schema (and each object inside a
     # request body) sets `additionalProperties: false`, so a misspelled or
     # unknown member is a 400 validation error instead of being silently
-    # dropped. The one exception is TokenRequest: an OAuth token endpoint
-    # ignores parameters it does not know (RFC 6749 section 3.2). Response
+    # dropped. Two exceptions: TokenRequest, because an OAuth token endpoint
+    # ignores parameters it does not know (RFC 6749 section 3.2); and JWK
+    # (RegisterRequest.public_key_jwk), which is `additionalProperties: true`
+    # because a key carries members that differ per key type (RFC 7517). Response
     # schemas stay open so a newer server can add a member. A new request
     # body follows the convention.
     Problem:
@@ -1247,6 +1249,7 @@ components:
             type: string
     OfferedCursor:
       type: object
+      additionalProperties: false
       required: [channel, seq]
       properties:
         channel:

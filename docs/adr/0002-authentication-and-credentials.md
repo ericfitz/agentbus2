@@ -573,7 +573,9 @@ later tasks extend it.
 - **Item 8.1, token endpoint errors (RFC 6749 section 5.2).** Only
   `/v1/auth/token` answers `{"error", "error_description"}` as
   `application/json` (with the section 5.1 cache headers): status 400, or
-  401 for `invalid_client`. Every other endpoint keeps problem+json
+  401 for `invalid_client`; also 405 for a method other than `POST`, 413 for
+  an oversized body and 404 for the trailing-slash path (audit items 5 and 6
+  below). Every other endpoint keeps problem+json
   (Decision 46). This supersedes Milestone 5 addendum item 3, which put
   problem+json on the token endpoint. A request the validator, mux or strict
   handler refuses before the handler runs (no `grant_type`, a JSON body)

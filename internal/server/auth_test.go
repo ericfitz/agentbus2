@@ -749,7 +749,7 @@ func TestTokenEndpointPreHandlerRefusals(t *testing.T) {
 	})
 	t.Run("trailing-slash", func(t *testing.T) {
 		resp := e.do("POST", "/v1/auth/token/", formCT, "", "grant_type=client_credentials")
-		wantOAuthError(t, resp, 404, "invalid_request", "", "")
+		wantOAuthError(t, resp, 404, "invalid_request", "no such endpoint; the token endpoint is /v1/auth/token", "")
 	})
 	t.Run("other-paths-keep-problem-json", func(t *testing.T) {
 		resp := e.do("POST", "/v1/auth/tokens", formCT, "", "x=1")

@@ -441,12 +441,47 @@ func TestProblemRoundTripsAsJSON(t *testing.T) {
 	}
 }
 
-// Every JSON request body is a closed object (the convention recorded at the
-// head of components.schemas): a body schema, or the item schema of an array
-// body, sets additionalProperties: false. TokenRequest (form-encoded) is the
-// one open body, because an OAuth endpoint ignores unknown parameters.
+// Every JSON request body is a closed object, and so is every object nested
+// in it (the convention recorded at the head of components.schemas): a schema
+// reached from a request body through properties, items, additionalProperties
+// or allOf/anyOf/oneOf that has object properties sets additionalProperties:
+// false. A map (additionalProperties with a schema) is closed by its value
+// type. The JWK is the one open object, because a key carries members per key
+// type. TokenRequest (form-encoded) is not a JSON body.
 func TestJSONRequestBodiesAreClosed(t *testing.T) {
 	doc := loadDoc(t)
+	open := map[*openapi3.Schema]bool{}
+	for name, ref := range doc.Components.Schemas {
+		if name == "JWK" {
+			open[ref.Value] = true
+		}
+	}
+	seen := map[*openapi3.Schema]bool{}
+	var walk func(where string, sch *openapi3.Schema)
+	walk = func(where string, sch *openapi3.Schema) {
+		if sch == nil || seen[sch] {
+			return
+		}
+		seen[sch] = true
+		if sch.Type.Is("object") && !open[sch] && sch.AdditionalProperties.Schema == nil &&
+			(sch.AdditionalProperties.Has == nil || *sch.AdditionalProperties.Has) {
+			t.Errorf("%s: request schema is open (set additionalProperties: false)", where)
+		}
+		for n, p := range sch.Properties {
+			walk(where+"."+n, p.Value)
+		}
+		if sch.Items != nil {
+			walk(where+"[]", sch.Items.Value)
+		}
+		if sch.AdditionalProperties.Schema != nil {
+			walk(where+"{}", sch.AdditionalProperties.Schema.Value)
+		}
+		for _, group := range []openapi3.SchemaRefs{sch.AllOf, sch.AnyOf, sch.OneOf} {
+			for _, r := range group {
+				walk(where, r.Value)
+			}
+		}
+	}
 	checked := 0
 	for path, item := range doc.Paths.Map() {
 		for method, op := range item.Operations() {
@@ -457,14 +492,8 @@ func TestJSONRequestBodiesAreClosed(t *testing.T) {
 			if mt == nil {
 				continue
 			}
-			sch := mt.Schema.Value
-			if sch.Type.Is("array") {
-				sch = sch.Items.Value
-			}
 			checked++
-			if sch.AdditionalProperties.Has == nil || *sch.AdditionalProperties.Has {
-				t.Errorf("%s %s: request body schema is open (set additionalProperties: false)", method, path)
-			}
+			walk(method+" "+path, mt.Schema.Value)
 		}
 	}
 	if checked < 15 {

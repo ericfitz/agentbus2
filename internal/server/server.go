@@ -159,6 +159,10 @@ func limitBody(next http.Handler, limit int64) http.Handler {
 			b, err := io.ReadAll(io.LimitReader(r.Body, limit+1))
 			_ = r.Body.Close()
 			if err != nil {
+				if isTokenPath(r) {
+					writeOAuthError(w, oauthFail(http.StatusBadRequest, "invalid_request", "the request body could not be read"))
+					return
+				}
 				WriteProblem(w, r, http.StatusBadRequest, bus.CodeValidation, "reading the request body: "+err.Error(), false)
 				return
 			}
