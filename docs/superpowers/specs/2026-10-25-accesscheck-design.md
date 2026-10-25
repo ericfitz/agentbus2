@@ -2,10 +2,11 @@
 
 Status: Agent design of 2026-10-25 for Eric's decisions of the same day.
 Section 1 records his two framing decisions; section 4 records his
-answers to the twelve questions the first draft raised, each labeled
-**Eric's decision 2026-10-25**; section 4.1 is the one remaining question
-(the exact meaning of "outside its scope", with sub-items). Nothing else
-in this document is a decision. The implementation plan is
+answers to the twelve questions the first draft raised and section 4.1
+his rulings on the scope edges, each labeled **Eric's decision
+2026-10-25**; section 4.2 is the one item still needing him (a create or
+rename that collides with an out-of-scope name). Nothing else in this
+document is a decision. The implementation plan is
 `docs/superpowers/plans/2026-10-25-accesscheck.md`.
 
 Related: `docs/superpowers/specs/2026-10-19-agentbus2-design.md` sections
@@ -226,7 +227,9 @@ Listed so the gate of section 3.7 is scoped on purpose, not by omission:
   question 8). The code is declared once, in the access package's table
   (section 3.3), so I4 becomes a list in one file rather than a scatter:
   channel and server denials are `forbidden`; a session that is not the
-  caller's is `not_found` (Eric's answer to question 2); an agent
+  caller's is `not_found` (Eric's answer to question 2); an object outside
+  a scoped principal's scope is `not_found` with the unknown-object text
+  (Eric's decision 4.1 (d)); an agent
   subscribing to a memory channel keeps today's `validation` with its
   explanatory text. `Require` turns a denial into the `*bus.Error`.
 
@@ -253,10 +256,15 @@ principal is never restricted), and otherwise only when the object is in
 scope) but always for `CreateChannel` (the new channel takes `p.Scope`,
 ADR 0009 decision 8, so creation is inside the scope by construction; the
 one exemption of the gate); a session always (a session is the caller's
-own or `not_found`). A denial by the scope gate is `forbidden`, Reason
-`out_of_scope`, text `%s is scoped to %q; %s %q is outside it`; in the set
-forms the object is simply absent. Inside its scope a scoped principal is
-governed by the ACL rows like anyone else.
+own or `not_found`). A denial by the scope gate is `not_found` with the
+object kind's own not-found text (`channel %q does not exist`, `memory %d
+does not exist`, the task text, `identity %q is not registered`), Reason
+`out_of_scope`: a scoped identity cannot learn what exists outside its
+scope (Eric's decision, section 4.1 (d)); in the set forms the object is
+simply absent; a server-level operation answers what every
+non-administrator gets. Inside its scope a scoped principal is governed by
+the ACL rows like anyone else. The one answer that still discloses an
+out-of-scope name, a create or rename `conflict`, is section 4.2.
 
 | Object | Action | Allowed when (after the scope gate) |
 | --- | --- | --- |
@@ -522,9 +530,11 @@ changes, each decided by Eric in section 4 or intended by section 3:
 - **No implicit creator entry** (question 6; section 3.13): a creator
   without a stored `admin` row no longer administers its channel and
   lists it only through a stored row.
-- **Scope enforced** (question 11; section 3.12): a scoped identity is
-  `forbidden` outside its scope and its set forms (list, receive, search,
-  tag matches, identities) show in-scope objects only. Today a scoped
+- **Scope enforced** (question 11; section 3.12): a scoped identity gets
+  `not_found` outside its scope, worded as for a thing that does not
+  exist (4.1 (d)), and its set forms (list, receive, search, tag matches,
+  identities) show in-scope objects only; the create/rename collision is
+  the open item 4.2. Today a scoped
   identity sees and reads `general` and every default-ACL channel.
   `channels.Service.List` moves to `Access.Channels(p, List)` in this
   plan so the scoped list is filtered now; for an unscoped principal the
@@ -593,12 +603,13 @@ unaffected." Made precise, per object kind, as the scope gate of section
 
 | Object kind | In scope when | Outside: what happens |
 | --- | --- | --- |
-| Channel (`channels.scope`) | `channel.scope == p.Scope`; an unscoped channel (`""`), `general` included, is outside every scope | every channel action is `forbidden` (Reason `out_of_scope`); `List`, `Channels(Read/Deliver)` and so Receive, Peek, Watch, Search and tag matching omit it; `Subscribe` is `forbidden`; `history` is `forbidden`, not `not_found` (no name secrecy, Eric's visibility decision 2) |
-| Task, memory | their channel's scope | as the channel; `task_get`/`get_memory` by id on an out-of-scope channel is `forbidden` |
-| Server (status, usage, reset, reset-credential, scopes, identities create, bridges) | never | `Administer` is `forbidden` for a scoped principal whatever its `Admin` flag (the server is outside every scope; section 4.1 (a) asks whether a scoped identity may hold the flag at all) |
+| Channel (`channels.scope`) | `channel.scope == p.Scope`; an unscoped channel (`""`), `general` included, is outside every scope | every channel action by name is `not_found` `channel %q does not exist` (Reason `out_of_scope`; Eric's decision 4.1 (d): a scoped identity cannot learn what exists outside its scope, which supersedes the visibility decision's "no name secrecy" for scoped identities only); `List`, `Channels(Read/Deliver)` and so Receive, Peek, Watch, Search and tag matching omit it; a create or rename onto an existing out-of-scope name is the open item of section 4.2 |
+| Task, memory | their channel's scope | as the channel; `task_get`/`get_memory` and the other by-id operations on an out-of-scope channel are `not_found` with the unknown-id text |
+| Server (status, usage, reset, reset-credential, scopes, identities create, bridges create/list) | never | `Administer` is `forbidden` `administrator privilege required` for a scoped principal whatever its `Admin` flag (Eric's decision 4.1 (a): it cannot be or act as an administrator; `MakeAdmin` and `admins add` refuse it); the answer is the one every non-administrator gets and reveals nothing |
+| Bridge by channel (`bridges get/remove`) | its channel's scope | administrator-only, so `forbidden` as above; were a scoped principal ever an administrator it would be `not_found` `channel %q has no bridge` |
 | Channel creation | always (the one exemption of the gate: the new channel takes `p.Scope`, ADR 0009 decision 8) | `CreateChannel` follows Decision 93; naming any scope in the request is `Administer` and so `forbidden`; `channel_creation: admins` denies a scoped principal (it cannot be an effective administrator) |
 | Session | the caller's own | unchanged: another identity's session is `not_found` (question 2); a scoped identity's sessions are its own |
-| Identity (`Identities` listing, the MCP `discover`) | `identity.scope == p.Scope` | omitted from the listing (`See`) |
+| Identity (`Identities` listing, the MCP `discover`; a task `owner`; an ACL identity named by a scoped granter) | `identity.scope == p.Scope` | omitted from the listing (`See`); as a task owner `not_found` `identity %q is not registered`; as an ACL identity the Decision 96 `validation` text (4.1 (b) and (d)) |
 | Health | no object | the identity tier as today; a scoped administrator-flagged identity is tier `identity`, not `admin` (consistent with the Server row) |
 | Bridge | server operation | `forbidden` |
 | Human principals | always unscoped (`identities.scope` is set only by `CreateScopedIdentity`) | unaffected |
@@ -744,53 +755,116 @@ draft, commit 69e2c64; each item restates the question in its answer).
     is still ambiguous. (Neither option as drafted.)
 12. **Moot with 1**: there is no `Force` to grant.
 
-### 4.1 Remaining question for Eric: the edges of "outside its scope"
+### 4.1 Eric's decisions on the edges of "outside its scope" (2026-10-25, closed)
 
-Section 3.12 is the agent's precise reading of decision 11. These
-sub-items are not determined by it; each carries the reading the plan
-implements unless Eric says otherwise.
+Each is **Eric's decision 2026-10-25**, ruling on the six sub-items the
+first version of this section raised and on the two choices the review
+made (section 3.9 and 3.10):
 
-- (a) **A scoped identity flagged administrator.** `MakeAdmin` (host) and
-  the `admins` reference list can flag a scoped identity today. Reading:
-  the server is outside every scope, so `Administer` is denied to a scoped
-  principal whatever its flag, and the health tier is `identity`; the
-  plan also makes `MakeAdmin` and `admins add` refuse a scoped identity
-  (`validation`, "a scoped identity cannot be an administrator") so the
-  flag is never set in vain. Alternative: let the flag override the scope
-  gate (an administrator for one scope's channels only is a different
-  feature, not this one).
+- (a) **A scoped identity cannot be or act as a server administrator.**
+  `Administer` is denied to a scoped principal whatever its `Admin` flag;
+  `MakeAdmin` and `admins add` refuse a scoped identity (`validation`, "a
+  scoped identity cannot be an administrator"). (Accepted.)
 - (b) **An ACL row naming a scoped identity on a channel outside its
-  scope.** Reading: the row is allowed (Decision 96 asks only that the
-  name be registered) and grants nothing, since the scope gate runs
-  first. Alternative: `SetACL` and `CreateChannel` refuse such a row with
-  `validation` ("%s is scoped to %q and cannot be granted on %q"), which
-  tells the granter at once. The agent recommends the alternative; the
-  plan implements the reading unless Eric picks the alternative, because
-  the refusal changes `SetACL`'s error surface.
-- (c) **The `Identities` listing** (MCP `discover`): a scoped principal
-  sees identities of its scope only (the `See` action). Alternative: it
-  sees every identity, since names are not secret (the visibility
-  decision 2 reasoning). The plan implements the scoped listing.
-- (d) **Denial code outside the scope**: `forbidden` with Reason
-  `out_of_scope` everywhere, never `not_found` (channel names are not
-  secret). Alternative: `not_found`, hiding other scopes' channels.
-- (e) **`general`** is outside every scope. A scoped agent has no
-  `general` subscription today (ADR 0009 decision 19) and after this
-  change cannot read it either; the plan removes nothing else. If Eric
-  wants scoped agents to read `general`, that is a stored `everyone` row
-  the scope gate would have to exempt, which is a rule change to record.
-- (f) **The implicit administrator right of decision 6** on channels: the
-  plan reads "change any channel's ACL" as the `admin` permission of
-  Decision 80 (the ACL and the channel's metadata: rename and delete),
-  which is what today's implicit `admins` entry grants. Alternative: ACL
-  changes only, with rename and delete needing a stored `admin` row the
-  administrator first grants itself.
+  scope is accepted but inert**: the scope gate runs first, so the row
+  grants nothing; `SetACL` does not refuse it. (Accepted.) One
+  refinement follows from (d): when the *granter* is scoped and names an
+  identity it cannot `See`, `SetACL` and `CreateChannel` answer the
+  Decision 96 text `ACL identity %q is not a registered identity`
+  (`validation`), exactly as for an unregistered name, so the granter
+  learns nothing.
+- (c) **A scoped identity lists only the identities of its own scope**
+  (`Identities`, the MCP `discover`). (Accepted.)
+- (d) **An out-of-scope denial answers `not_found`, not `forbidden`**: a
+  scoped identity cannot learn what exists outside its scope. (The
+  draft's `forbidden` reading is rejected.) Applied consistently, with
+  the text the operation uses for a thing that does not exist, so the two
+  cases are indistinguishable:
+  - channel by name (`history`, `subscribe`, `unsubscribe`, `send`,
+    `search` with a channel, `get_acl`, `set_acl`, `rename`, `delete`,
+    `task_list`, `task_create`, `bridges get/remove`): `not_found`
+    `channel %q does not exist` (`core.ChannelByName`'s text);
+  - task or memory by id on an out-of-scope channel (`task_get`,
+    `task_update`, `task_claim`, `task_release`, `get_memory`,
+    `edit_memory`, `delete_memory`, `memory revisions`): `not_found`
+    `memory %d does not exist` / the task operations' not-found text
+    (`taskChannelOf`);
+  - identity: omitted from `Identities`; as a task `owner` it is
+    `not_found` `identity %q is not registered` (the rule 6 text);
+    as an ACL identity named by a scoped granter it is the Decision 96
+    `validation` text (item (b));
+  - session: already `not_found` (question 2);
+  - set forms (`List`, Receive, Peek, Watch, Search without a channel,
+    tag matching, `Identities`): the object is absent;
+  - server-level operations (status, usage, reset, reset-credential,
+    scopes, identities create, bridges create/list): a scoped principal
+    gets exactly what every non-administrator gets, `forbidden`
+    `administrator privilege required` (item (a)); that reveals nothing,
+    since the answer does not depend on what exists.
+  The scope gate's `Decision` therefore carries Reason `out_of_scope`
+  with Code `not_found` and the object kind's not-found text; `Require`
+  emits it unchanged. Section 4.2 is the one place where `not_found`
+  cannot be produced without a further decision.
+- (e) **`general` is outside every scope.** (Accepted.)
+- (f) **The administrators' implicit right on every channel is the full
+  channel-admin set** of Decision 80: the ACL, rename, delete.
+  (Accepted.)
+- (review 1) **Scoped identities may create channels in their own scope**:
+  the gate exempts `CreateChannel`, and the channel takes `p.Scope`.
+  (Accepted.)
+- (review 2) **Interim `List`**: an unscoped principal's list is unfiltered
+  until the channel-visibility rebuild; a scoped principal's list is its
+  scope's channels now. (Accepted.)
+
+### 4.2 The one item needing Eric: a create or rename that collides with an out-of-scope name
+
+Channel names are globally unique (`channels.name TEXT NOT NULL UNIQUE`,
+`internal/store/sqlite/schema/0001_initial.sql:22`, the same on Postgres),
+not unique per scope; identity names likewise (`identities.name` is the
+primary key). So when a scoped identity creates (or renames onto) a name
+that an out-of-scope channel already holds, the Store answers `conflict`
+`channel %q` and the caller learns that the name exists outside its
+scope, against decision (d). No other operation leaks: every other answer
+of 4.1 (d) is indistinguishable from "does not exist", and identity
+creation is administrator-only.
+
+Options:
+
+- **A. Scope-prefixed namespaces (recommended).** A scoped identity may
+  create or rename to names of the form `<scope>-<rest>` only
+  (`validation`, "a channel of scope %q is named %q-<name>"); nobody may
+  create or rename to a name starting with `<s>-` for an existing scope
+  `s` (open, done, or retired and not yet purged) unless the channel is
+  given that scope (`validation`, "names starting with %q- belong to scope
+  %q"); `CreateScope` refuses a name `s` while any channel of another or
+  no scope is named `s-*` (`conflict`). Then every channel named
+  `<scope>-*` is in that scope, so a scoped creator's `conflict` always
+  names a channel it can list: no leak. Identities already follow the
+  convention (ADR 0009 ratified call: "a bridged agent posts under its
+  short name, the scope name and a following `-` removed"); an
+  administrator naming a scoped channel without the prefix stays allowed
+  (`k-chat` in `TestScopedChannels`), since the rule only has to make
+  prefixed names exclusive. Cost: one name rule at create, rename and
+  scope creation, no schema change, a `validation` for unscoped callers
+  who pick a scope-prefixed name.
+- **B. Per-scope uniqueness** (`UNIQUE (scope, name)`): changes name
+  resolution on the wire for every unscoped caller (which `job1-chat`?)
+  and every client; a schema migration. Rejected unless Eric prefers it.
+- **C. Answer `conflict` without a text** for a scoped creator whose name
+  collides outside its scope: the code itself is the leak. Rejected.
+- **D. Accept the leak** for this one operation as a name-level
+  disclosure: contradicts (d) as stated.
+
+Until Eric rules, the plan implements (d) everywhere else and leaves the
+create and rename collision answering `conflict` (today's behavior),
+marked in Task 2 and in Task 11, which implements option A when he
+accepts it.
 
 ## 5. Documents that change
 
 - New ADR 0011 "One access check" (status: accepted, Eric 2026-10-25, for
-  sections 1 and 4; section 4.1's sub-items marked proposed until he
-  answers): the table of 3.2 with the scope gate, the denial codes, the
+  sections 1, 4 and 4.1; section 4.2 recorded as the open item with
+  option A proposed): the table of 3.2 with the scope gate, the denial codes, the
   gate, the anchor move, the removal of the task owner guard and of the
   `force` wire member; the protocol-versioning decision (Context) is
   recorded there too, marked as context for the visibility rebuild.
