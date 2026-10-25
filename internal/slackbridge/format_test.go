@@ -232,6 +232,30 @@ func TestTruncateKeepsMarkup(t *testing.T) {
 			t.Errorf("closed span damaged: %q", got)
 		}
 	})
+	t.Run("a literal backtick with no closer is not closed", func(t *testing.T) {
+		in := "x ` " + strings.Repeat("y", 400)
+		body := strings.TrimSuffix(check(t, "lone backtick", in), note)
+		if n := strings.Count(body, "`"); n != 1 {
+			t.Errorf("%d backticks in %q, want the 1 the text had", n, body)
+		}
+		// An earlier literal backtick must not hide a span the cut opens.
+		in = "x ` a `" + strings.Repeat("c", 400) + "` tail"
+		body = strings.TrimSuffix(check(t, "lone then span", in), note)
+		if n := strings.Count(body, "`"); n%2 != 0 {
+			t.Errorf("unbalanced backticks in %q", body)
+		}
+	})
+	t.Run("no bare quote line before the note", func(t *testing.T) {
+		budget := max - runes("\n"+note)
+		for off := budget - 6; off <= budget; off++ {
+			in := strings.Repeat("a", off) + "\n> " + strings.Repeat("q", 300)
+			body := strings.TrimSuffix(Truncate(in, max, note), "\n"+note)
+			last := body[strings.LastIndex(body, "\n")+1:]
+			if strings.TrimSpace(last) == ">" {
+				t.Errorf("off %d: bare quote line before the note: %q", off, body[len(body)-min(12, len(body)):])
+			}
+		}
+	})
 	t.Run("fuzz-ish sweep", func(t *testing.T) {
 		parts := []string{"é", "日", "😀", "<http://x.y/z|t>", "```\n", "```", "\n", "`c`", "&amp;", "a < b", "> q", "**b**"}
 		seed := uint32(1)

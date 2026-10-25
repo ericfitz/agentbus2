@@ -102,7 +102,11 @@ func scanState(r []rune, c int) (inFence bool, linkStart, partial, codeStart int
 				}
 			}
 			if le == c && cutMid {
-				codeStart = openCodeSpan(r[ls:le])
+				end := ls
+				for end < len(r) && r[end] != '\n' {
+					end++
+				}
+				codeStart = openCodeSpan(r[ls:end], le-ls)
 				if codeStart >= 0 {
 					codeStart += ls
 				}
@@ -113,10 +117,12 @@ func scanState(r []rune, c int) (inFence bool, linkStart, partial, codeStart int
 	return inFence, linkStart, partial, codeStart
 }
 
-// openCodeSpan returns the index in line of the backtick that opens a span
-// still open at the end of line, or -1. It mirrors inlineToMrkdwn: a span runs
-// from a backtick to the next one with at least one rune between.
-func openCodeSpan(line []rune) int {
+// openCodeSpan returns the index in line of the backtick that opens a span the
+// cut at index cut leaves open (its closing backtick lies at or after cut), or
+// -1. line is the whole line. It mirrors inlineToMrkdwn: a span runs from a
+// backtick to the next one with at least one rune between; a backtick with no
+// closer is literal and opens nothing.
+func openCodeSpan(line []rune, cut int) int {
 	for i := 0; i < len(line); {
 		if line[i] != '`' {
 			i++
@@ -128,9 +134,11 @@ func openCodeSpan(line []rune) int {
 		}
 		switch {
 		case j >= len(line):
-			return i
+			return -1
 		case j == i+1:
 			i++ // "``" is no span; the second backtick may open one
+		case i < cut && j >= cut:
+			return i
 		default:
 			i = j + 1
 		}
@@ -187,6 +195,20 @@ func Truncate(s string, max int, note string) string {
 			inCode = true
 		}
 		break
+	}
+	// A cut right after a quote prefix would leave a bare "> " line.
+	if !inFence {
+		ls := c
+		for ls > 0 && r[ls-1] != '\n' {
+			ls--
+		}
+		if strings.TrimSpace(string(r[ls:c])) == ">" {
+			c = ls - 1
+			if c < 0 {
+				c = 0
+			}
+			inCode = false
+		}
 	}
 	if c <= 0 {
 		return note

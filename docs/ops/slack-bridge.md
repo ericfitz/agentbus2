@@ -14,7 +14,7 @@ The app is internal to one workspace and is never distributed publicly (a Socket
 6. Write each token to its own file readable only by the server user (mode 0600), for example `/etc/agentbus2/slack-app-token` and `/etc/agentbus2/slack-bot-token`. The files hold the token alone; leading and trailing whitespace is trimmed.
 7. Set `slack_app_token_file` and `slack_bot_token_file` (see [configuration.md](configuration.md)); both or neither. The server reads the files once at start. A missing file, an app token that does not start with `xapp-` or a bot token that does not start with `xoxb-` stops the start with exit 2, naming the setting and never the token. Slack answering `invalid_auth` to the bot token also stops the start. Any other failure to reach Slack at start (network, a 5xx, a rate limit) does not: the server starts, bridge calls answer `unavailable` ("the Slack bridge is not connected to Slack yet; retry", retryable) and the bridge retries `auth.test` until Slack answers.
 
-Two more settings tune it: `slack_archive_after_done_hours` (default 168) and `slack_max_message_chars` (default 3000; a longer message is cut by characters and ends with a note pointing to agentbus2). Every replica needs both token files to serve bridge calls, and the same settings.
+Two more settings tune it: `slack_archive_after_done_hours` (default 168) and `slack_max_message_chars` (default 3000; a longer message is cut by characters and ends with a note pointing to agentbus2; a very long channel name makes the note shorter, so some of the message still shows). The bridge keeps Slack user lookups (`users.info`) in a cache of at most 1000 entries that expire after 10 minutes. Every replica needs both token files to serve bridge calls, and the same settings.
 
 ## What a job looks like
 
@@ -72,4 +72,4 @@ Channel mentions and broadcast mentions are neutral in both directions. Bus to S
 
 ## Logging
 
-No Slack token, bus message content or Slack message text is ever logged. A Slack message dropped as unauthorized is logged with the Slack user ID, the Slack channel ID and the reason only.
+No Slack token, bus message content or Slack message text is ever logged. A Slack message dropped as unauthorized is logged with the Slack user ID, the Slack channel ID and the reason only. A Slack message the bus refuses as invalid (for example one over `max_message_kib`) is logged once, with the same fields and the code `validation`, and recorded as a drop: the decision is final, so raising `max_message_kib` later does not redeliver it, and a stalled catch-up cursor does not log it again.
