@@ -22,8 +22,11 @@
 # A forbidden entry also forbids every package below it (internal/core covers
 # internal/core/notify; github.com/jackc/pgx covers github.com/jackc/pgx/v5).
 # Prints deps_ok=1 when nothing matched; otherwise one
-# deps_violation=<package> imports <forbidden> line per hit and exits 1.
-# A go list failure exits 2.
+# deps_violation=<package> imports <forbidden> [rule <name>] line per hit and
+# exits 1. A go list failure exits 2. <name> is the rule in the lists here
+# (store-no-core, notify-leaf, pgnotify-no-server, slackapi-allowlist,
+# slack-go-importers, slackbridge-isolation, slack-consumers); the self-test
+# (scripts/check-gates-selftest.sh) requires each probe to trip exactly one.
 #
 # The Slack bridge rules (same output):
 #   ./internal/slackapi              imports only the standard library and
@@ -31,26 +34,34 @@
 #   ./internal/slackapi/slackfake    imports only the standard library and
 #                                    internal/slackapi (allowlist)
 #   github.com/slack-go/slack        is imported (directly) only by
-#                                    internal/slackapi/slackgo
-#   ./internal/slackapi, slackfake   never import internal/core, store, server,
-#                                    bus or slack-go
+#                                    internal/slackapi/slackgo, in any file:
+#                                    production, _test.go (internal and
+#                                    external) and every GOOS (linux, darwin,
+#                                    windows). The allowlists above already
+#                                    bar slackapi and slackfake from core,
+#                                    store, server, bus and slack-go, so no
+#                                    separate rule repeats that.
+#   ./internal/slackbridge           never imports internal/server,
+#                                    internal/gen, internal/slackapi/slackgo
+#                                    or slack-go
 #   ./internal/core/..., ./internal/bus/..., ./internal/cli,
 #   ./internal/mcpserver, ./internal/client, ./internal/server
 #                                    never import internal/slackapi,
-#                                    internal/slackbridge or slack-go
+#                                    internal/slackbridge or slackapi/slackgo
+#                                    (slack-go itself: the importer rule)
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MOD=github.com/ericfitz/agentbus2
 
-# check_deps PATTERN FORBIDDEN...: an entry is an in-module path (relative to
+# check_deps RULE PATTERN FORBIDDEN...: an entry is an in-module path (relative to
 # the module) or, when it starts with "github.com/", a third-party path; each
 # is matched as a whole line of `go list -deps` or as the prefix "<entry>/" of
 # one. Sets the global violations.
 violations=0
 check_deps() {
-	local pattern="$1" pkg dep f
-	shift
+	local rule="$1" pattern="$2" pkg dep f
+	shift 2
 	local pkgs deps
 	# Explicit exits: set -e is off inside `import_check || rc=1`, and a go
 	# list failure must never read as a package with no imports.
@@ -70,19 +81,19 @@ check_deps() {
 				dep="$MOD/$f"
 			fi
 			if printf '%s\n' "$deps" | grep -F -x -q -- "$dep" || printf '%s\n' "$deps" | grep -F -q -- "$dep/"; then
-				echo "deps_violation=$pkg imports $dep"
+				echo "deps_violation=$pkg imports $dep [rule $rule]"
 				violations=$((violations + 1))
 			fi
 		done
 	done
 }
 
-# check_allowlist PATTERN ALLOWED...: every non-standard production dependency
+# check_allowlist RULE PATTERN ALLOWED...: every non-standard production dependency
 # of each package PATTERN matches must equal an allowed entry or lie below it
 # ("<entry>/..."). Entries are full import paths. Sets the global violations.
 check_allowlist() {
-	local pattern="$1" pkg dep a ok
-	shift
+	local rule="$1" pattern="$2" pkg dep a ok
+	shift 2
 	local pkgs deps
 	pkgs="$(cd "$ROOT" && go list "$pattern")" || {
 		echo "m7-exit-checks: go list $pattern failed" >&2
@@ -101,51 +112,56 @@ check_allowlist() {
 				esac
 			done
 			if [ "$ok" -eq 0 ]; then
-				echo "deps_violation=$pkg imports $dep"
+				echo "deps_violation=$pkg imports $dep [rule $rule]"
 				violations=$((violations + 1))
 			fi
 		done
 	done
 }
 
-# check_importers IMPORT ALLOWED_PKG: only ALLOWED_PKG (a full import path) may
-# import IMPORT (or a package below it) directly; every package of ./... is
-# scanned. Sets the global violations.
+# check_importers RULE IMPORT ALLOWED_PKG: only ALLOWED_PKG (a full import
+# path) may import IMPORT (or a package below it) directly; every package of
+# ./... is scanned for each of GOOS linux, darwin and windows (CGO off), and
+# for its production, test and external-test files alike. A package is
+# reported once however many GOOS values show it. Sets the global violations.
 check_importers() {
-	local target="$1" allowed="$2" lines pkg imp rest
-	lines="$(cd "$ROOT" && go list -f '{{.ImportPath}} {{join .Imports " "}}' ./...)" || {
-		echo "m7-exit-checks: go list ./... failed" >&2
-		exit 2
-	}
-	while IFS= read -r line; do
-		pkg="${line%% *}"
-		rest="${line#"$pkg"}"
-		[ "$pkg" = "$allowed" ] && continue
-		for imp in $rest; do
-			case "$imp" in
-			"$target" | "$target"/*)
-				echo "deps_violation=$pkg imports $target"
-				violations=$((violations + 1))
-				break
-				;;
-			esac
-		done
-	done <<<"$lines"
+	local rule="$1" target="$2" allowed="$3" goos lines line pkg imp rest
+	local seen=" "
+	for goos in linux darwin windows; do
+		lines="$(cd "$ROOT" && GOOS="$goos" CGO_ENABLED=0 go list -f '{{.ImportPath}} {{join .Imports " "}} {{join .TestImports " "}} {{join .XTestImports " "}}' ./...)" || {
+			echo "m7-exit-checks: GOOS=$goos go list ./... failed" >&2
+			exit 2
+		}
+		while IFS= read -r line; do
+			pkg="${line%% *}"
+			rest="${line#"$pkg"}"
+			[ "$pkg" = "$allowed" ] && continue
+			case "$seen" in *" $pkg "*) continue ;; esac
+			for imp in $rest; do
+				case "$imp" in
+				"$target" | "$target"/*)
+					echo "deps_violation=$pkg imports $target [rule $rule]"
+					violations=$((violations + 1))
+					seen="$seen$pkg "
+					break
+					;;
+				esac
+			done
+		done <<<"$lines"
+	done
 }
 
 import_check() {
-	check_deps './internal/store/...' internal/core
-	check_deps ./internal/core/notify internal/store github.com/jackc/pgx
-	check_deps ./internal/core/notify/pgnotify internal/server internal/gen
-	check_allowlist ./internal/slackapi "$MOD/internal/slackapi"
-	check_allowlist ./internal/slackapi/slackfake "$MOD/internal/slackapi"
-	check_importers github.com/slack-go/slack "$MOD/internal/slackapi/slackgo"
-	check_deps ./internal/slackapi internal/core internal/store internal/server internal/bus github.com/slack-go/slack
-	check_deps ./internal/slackapi/slackfake internal/core internal/store internal/server internal/bus github.com/slack-go/slack
-	check_deps ./internal/slackbridge internal/server internal/gen internal/slackapi/slackgo github.com/slack-go/slack
+	check_deps store-no-core './internal/store/...' internal/core
+	check_deps notify-leaf ./internal/core/notify internal/store github.com/jackc/pgx
+	check_deps pgnotify-no-server ./internal/core/notify/pgnotify internal/server internal/gen
+	check_allowlist slackapi-allowlist ./internal/slackapi "$MOD/internal/slackapi"
+	check_allowlist slackapi-allowlist ./internal/slackapi/slackfake "$MOD/internal/slackapi"
+	check_importers slack-go-importers github.com/slack-go/slack "$MOD/internal/slackapi/slackgo"
+	check_deps slackbridge-isolation ./internal/slackbridge internal/server internal/gen internal/slackapi/slackgo github.com/slack-go/slack
 	local p
 	for p in './internal/core/...' './internal/bus/...' ./internal/cli ./internal/mcpserver ./internal/client ./internal/server; do
-		check_deps "$p" internal/slackapi internal/slackbridge github.com/slack-go/slack
+		check_deps slack-consumers "$p" internal/slackapi internal/slackbridge internal/slackapi/slackgo
 	done
 	if [ "$violations" -ne 0 ]; then
 		return 1

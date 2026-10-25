@@ -337,6 +337,25 @@ block_m5_deps_rule_fires() {
 	revert
 }
 
+# m7_probe LABEL FILE IMPORT WANT RULE [PKG]: like deps_probe over the m7
+# script, and every deps_violation line must carry "[rule RULE]": a probe
+# trips exactly one rule. PKG is the package clause (default: the directory's
+# name); a _test.go file is compiled by go list as a test file.
+m7_probe() {
+	local label="$1" file="$2" import="$3" want="$4" rule="$5" pkgname="${6:-}" log="$tmp/b22.log" rc=0 other
+	[ -n "$pkgname" ] || pkgname="$(basename "$(dirname "$file")")"
+	printf 'package %s\n\nimport _ "%s"\n' "$pkgname" "$import" >"$wt/$file"
+	bash "$wt/scripts/m7-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
+	if [ "$rc" -ne 1 ]; then
+		problem "$label" "$file importing $import: exit $rc, expected 1: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	grep -qF -- "$want" "$log" || problem "$label" "$file importing $import: log lacks '$want': $(tail -n 3 "$log" | tr '\n' ' ')"
+	grep -qF -- "[rule $rule]" "$log" || problem "$label" "$file importing $import: log lacks '[rule $rule]'"
+	other="$(grep '^deps_violation=' "$log" | grep -vF -- "[rule $rule]" | head -n 2 | tr '\n' ' ' || true)"
+	[ -z "$other" ] || problem "$label" "$file importing $import: another rule fired too: $other"
+	rm -f "$wt/$file"
+}
+
 # --- 22. m7-deps-rule-fires ------------------------------------------------------------
 # Docker-free. The Milestone 7 import rule: store never imports core, notify
 # stays a leaf (pgx/v5 is caught only by the prefix match), pgnotify never
@@ -349,15 +368,29 @@ block_m5_deps_rule_fires() {
 block_m7_deps_rule_fires() {
 	local label=m7-deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b22z.log" rc=0
 	begin
-	deps_probe "$label" internal/store/sqlstore/probe_m7.go "$m/internal/core/notify" "deps_violation=$m/internal/store/sqlstore imports $m/internal/core" m7-exit-checks.sh
-	deps_probe "$label" internal/core/notify/probe_m7.go github.com/jackc/pgx/v5 "deps_violation=$m/internal/core/notify imports github.com/jackc/pgx" m7-exit-checks.sh
-	deps_probe "$label" internal/core/notify/pgnotify/probe_m7.go "$m/internal/server/config" "deps_violation=$m/internal/core/notify/pgnotify imports $m/internal/server" m7-exit-checks.sh
-	deps_probe "$label" internal/slackapi/probe_m7.go "$m/internal/store" "deps_violation=$m/internal/slackapi imports $m/internal/store" m7-exit-checks.sh
-	deps_probe "$label" internal/slackapi/slackfake/probe_m7.go github.com/jmoiron/sqlx "deps_violation=$m/internal/slackapi/slackfake imports github.com/jmoiron/sqlx" m7-exit-checks.sh
-	deps_probe "$label" internal/auth/keys/probe_m7.go github.com/slack-go/slack "deps_violation=$m/internal/auth/keys imports github.com/slack-go/slack" m7-exit-checks.sh
-	deps_probe "$label" internal/auth/keys/probe_m7.go github.com/slack-go/slack/socketmode "deps_violation=$m/internal/auth/keys imports github.com/slack-go/slack" m7-exit-checks.sh
-	deps_probe "$label" internal/core/scopes/probe_m7.go github.com/slack-go/slack "deps_violation=$m/internal/core/scopes imports github.com/slack-go/slack" m7-exit-checks.sh
-	deps_probe "$label" internal/cli/probe_m7.go "$m/internal/slackapi" "deps_violation=$m/internal/cli imports $m/internal/slackapi" m7-exit-checks.sh
+	# Each probe must trip exactly one rule (the [rule NAME] tag on every
+	# violation line). A probe host must be a package no other probe's rule
+	# reaches transitively: internal/oidctest is imported by no production
+	# code, so a slack-go import there trips the importer rule alone.
+	# Probes that trip two rules by design (a slackapi file importing slack-go
+	# is both an allowlist and an importer violation) are not used.
+	m7_probe "$label" internal/store/sqlstore/probe_m7.go "$m/internal/core/notify" "deps_violation=$m/internal/store/sqlstore imports $m/internal/core" store-no-core
+	m7_probe "$label" internal/core/notify/probe_m7.go github.com/jackc/pgx/v5 "deps_violation=$m/internal/core/notify imports github.com/jackc/pgx" notify-leaf
+	m7_probe "$label" internal/core/notify/pgnotify/probe_m7.go "$m/internal/server/config" "deps_violation=$m/internal/core/notify/pgnotify imports $m/internal/server" pgnotify-no-server
+	m7_probe "$label" internal/slackapi/probe_m7.go "$m/internal/store" "deps_violation=$m/internal/slackapi imports $m/internal/store" slackapi-allowlist
+	m7_probe "$label" internal/slackapi/slackfake/probe_m7.go github.com/jmoiron/sqlx "deps_violation=$m/internal/slackapi/slackfake imports github.com/jmoiron/sqlx" slackapi-allowlist
+	m7_probe "$label" internal/slackbridge/probe_m7.go "$m/internal/slackapi/slackgo" "deps_violation=$m/internal/slackbridge imports $m/internal/slackapi/slackgo" slackbridge-isolation
+	m7_probe "$label" internal/slackbridge/probe_m7.go "$m/internal/server/config" "deps_violation=$m/internal/slackbridge imports $m/internal/server" slackbridge-isolation
+	m7_probe "$label" internal/cli/probe_m7.go "$m/internal/slackapi" "deps_violation=$m/internal/cli imports $m/internal/slackapi" slack-consumers
+	m7_probe "$label" internal/cli/probe_m7.go "$m/internal/slackapi/slackgo" "deps_violation=$m/internal/cli imports $m/internal/slackapi/slackgo" slack-consumers
+	m7_probe "$label" internal/oidctest/probe_m7.go github.com/slack-go/slack "deps_violation=$m/internal/oidctest imports github.com/slack-go/slack" slack-go-importers
+	m7_probe "$label" internal/oidctest/probe_m7.go github.com/slack-go/slack/socketmode "deps_violation=$m/internal/oidctest imports github.com/slack-go/slack" slack-go-importers
+	# A test file (internal and external) and a GOOS-suffixed file of any
+	# package other than slackgo count too.
+	m7_probe "$label" internal/oidctest/probe_m7_test.go github.com/slack-go/slack "deps_violation=$m/internal/oidctest imports github.com/slack-go/slack" slack-go-importers
+	m7_probe "$label" internal/oidctest/probe_m7_x_test.go github.com/slack-go/slack "deps_violation=$m/internal/oidctest imports github.com/slack-go/slack" slack-go-importers oidctest_test
+	m7_probe "$label" internal/oidctest/probe_m7_windows.go github.com/slack-go/slack "deps_violation=$m/internal/oidctest imports github.com/slack-go/slack" slack-go-importers
+	m7_probe "$label" internal/oidctest/probe_m7_darwin.go github.com/slack-go/slack "deps_violation=$m/internal/oidctest imports github.com/slack-go/slack" slack-go-importers
 	printf 'package notify\n\nimport _ "%s"\n' "$m/internal/no/such/package" >"$wt/internal/core/notify/probe_m7.go"
 	bash "$wt/scripts/m7-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 2 ]; then
@@ -492,6 +525,39 @@ block_assertion_replay_ignored() {
 		'^TestReplicasWake$/sqlite' TestReplicasWake/sqlite/assertion-single-use-across-replicas
 }
 
+# --- 27 and 28. the Slack bridge's duplicate guards (issue 16 item 86) -----------------
+# Docker-free: the SQLite half of TestSlackBridgeState. Each mutation must fail
+# the named subtest.
+# 27. A record that writes the map row without asking whether an overlapping
+# runner already did: the subtest's hook plants the other runner's row between
+# the Slack post and the record, so the overwrite is what it sees.
+block_slackbridge_overlap_row() {
+	mutate_replicas_block slackbridge-overlap-row internal/slackbridge/outbound.go \
+		'_, err := tx.BridgeMessageBySeq(ctx, b.ID, seq)' \
+		'_, err := tx.BridgeMessageBySeq(ctx, b.ID, seq); err = store.ErrNotFound' \
+		'^TestSlackBridgeState$/sqlite/overlap-row-already-written' TestSlackBridgeState/sqlite/overlap-row-already-written
+}
+
+# 28. A runner that drains before it catches up: the catch-up that follows
+# the first drain would repair the row too late, after the second post. The
+# subtest delays the socket's connect so the worker's catch-up cannot do the
+# repair. The line is replaced by an awk pass because the same call also
+# appears in the worker.
+block_slackbridge_catchup_before_drain() {
+	local label=slackbridge-catchup-before-drain log="$tmp/b28.log" f="$wt/internal/slackbridge/runner.go"
+	local want=TestSlackBridgeState/sqlite/crash-repair-before-drain
+	begin
+	awk '/Catch-up first: it repairs/ { armed = 1 } armed && /s\.CatchUp\(ctx\)/ { sub(/s\.CatchUp\(ctx\)/, "error(nil)"); armed = 0 } { print }' "$f" >"$tmp/x" && cp "$tmp/x" "$f"
+	if [ "$(grep -c 's\.CatchUp(ctx)' "$f" || true)" -ne 1 ] || [ "$(grep -c 'err := error(nil); err != nil' "$f" || true)" -ne 1 ]; then
+		problem "$label" "mutation changed nothing (the runner's first CatchUp is still there)"
+	else
+		(cd "$wt" && go test -count=1 -p 1 -v -run '^TestSlackBridgeState$/sqlite/crash-repair-before-drain' ./internal/conformance/bus/ >"$log" 2>&1) || true
+		grep -qF -- "--- FAIL: $want" "$log" || problem "$label" "log lacks '--- FAIL: $want': $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	finish "$label"
+	revert
+}
+
 # --- 23. m6-exit-script-fires ----------------------------------------------------------
 # Docker-free and without running the e2e test. The Milestone 6 exit script:
 # the import rule per group (the leaf group's internal/core row, the consumer
@@ -534,6 +600,7 @@ block_m6_exit_script_fires() {
 	deps_probe "$label" internal/mcpserver/probe_m6.go "$m/internal/gen" "deps_violation=$m/internal/mcpserver imports $m/internal/gen" m6-exit-checks.sh
 	deps_probe "$label" internal/cli/probe_m6.go "$m/internal/store/sqlite" "deps_violation=$m/internal/cli imports $m/internal/store/sqlite" m6-exit-checks.sh
 	deps_probe "$label" internal/oidcclient/probe_m6.go "$m/internal/bus" "deps_violation=$m/internal/oidcclient imports $m/internal/bus" m6-exit-checks.sh
+	deps_probe "$label" internal/oidctest/probe_m6.go "$m/internal/bus" "deps_violation=$m/internal/oidctest imports $m/internal/bus" m6-exit-checks.sh
 	rc=0
 	bash "$wt/scripts/m6-exit-checks.sh" "$tmp/does-not-exist.log" >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 2 ]; then problem "$label" "missing log: exit $rc, expected 2"; fi
@@ -787,6 +854,8 @@ block_m6_exit_script_fires
 block_replaced_exit_ignored
 block_m8_exit_script_fires
 block_tui_hint_mutation
+block_slackbridge_overlap_row
+block_slackbridge_catchup_before_drain
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"
