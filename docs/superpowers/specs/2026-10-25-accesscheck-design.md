@@ -4,9 +4,9 @@ Status: Agent design of 2026-10-25 for Eric's decisions of the same day.
 Section 1 records his two framing decisions; section 4 records his
 answers to the twelve questions the first draft raised and section 4.1
 his rulings on the scope edges, each labeled **Eric's decision
-2026-10-25**; section 4.2 is the one item still needing him (a create or
-rename that collides with an out-of-scope name). Nothing else in this
-document is a decision. The implementation plan is
+2026-10-25**; section 4.2 is his decision on the one item that followed
+(scope-prefixed channel names). Nothing else in this document is a
+decision and nothing is open. The implementation plan is
 `docs/superpowers/plans/2026-10-25-accesscheck.md`.
 
 Related: `docs/superpowers/specs/2026-10-19-agentbus2-design.md` sections
@@ -263,8 +263,9 @@ does not exist`, the task text, `identity %q is not registered`), Reason
 scope (Eric's decision, section 4.1 (d)); in the set forms the object is
 simply absent; a server-level operation answers what every
 non-administrator gets. Inside its scope a scoped principal is governed by
-the ACL rows like anyone else. The one answer that still discloses an
-out-of-scope name, a create or rename `conflict`, is section 4.2.
+the ACL rows like anyone else. The one answer that would still disclose an
+out-of-scope name, a create or rename `conflict`, is closed by the
+scope-prefixed names of section 4.2.
 
 | Object | Action | Allowed when (after the scope gate) |
 | --- | --- | --- |
@@ -533,8 +534,9 @@ changes, each decided by Eric in section 4 or intended by section 3:
 - **Scope enforced** (question 11; section 3.12): a scoped identity gets
   `not_found` outside its scope, worded as for a thing that does not
   exist (4.1 (d)), and its set forms (list, receive, search, tag matches,
-  identities) show in-scope objects only; the create/rename collision is
-  the open item 4.2. Today a scoped
+  identities) show in-scope objects only; it creates and renames only
+  `<scope>-*` names and nobody else may take such a name (4.2), so a
+  `conflict` never discloses an out-of-scope channel. Today a scoped
   identity sees and reads `general` and every default-ACL channel.
   `channels.Service.List` moves to `Access.Channels(p, List)` in this
   plan so the scoped list is filtered now; for an unscoped principal the
@@ -603,7 +605,7 @@ unaffected." Made precise, per object kind, as the scope gate of section
 
 | Object kind | In scope when | Outside: what happens |
 | --- | --- | --- |
-| Channel (`channels.scope`) | `channel.scope == p.Scope`; an unscoped channel (`""`), `general` included, is outside every scope | every channel action by name is `not_found` `channel %q does not exist` (Reason `out_of_scope`; Eric's decision 4.1 (d): a scoped identity cannot learn what exists outside its scope, which supersedes the visibility decision's "no name secrecy" for scoped identities only); `List`, `Channels(Read/Deliver)` and so Receive, Peek, Watch, Search and tag matching omit it; a create or rename onto an existing out-of-scope name is the open item of section 4.2 |
+| Channel (`channels.scope`) | `channel.scope == p.Scope`; an unscoped channel (`""`), `general` included, is outside every scope | every channel action by name is `not_found` `channel %q does not exist` (Reason `out_of_scope`; Eric's decision 4.1 (d): a scoped identity cannot learn what exists outside its scope, which supersedes the visibility decision's "no name secrecy" for scoped identities only); `List`, `Channels(Read/Deliver)` and so Receive, Peek, Watch, Search and tag matching omit it; a create or rename onto a name without the `<scope>-` prefix is `validation` (section 4.2), so a scoped creator's `conflict` only ever names a channel of its own scope |
 | Task, memory | their channel's scope | as the channel; `task_get`/`get_memory` and the other by-id operations on an out-of-scope channel are `not_found` with the unknown-id text |
 | Server (status, usage, reset, reset-credential, scopes, identities create, bridges create/list) | never | `Administer` is `forbidden` `administrator privilege required` for a scoped principal whatever its `Admin` flag (Eric's decision 4.1 (a): it cannot be or act as an administrator; `MakeAdmin` and `admins add` refuse it); the answer is the one every non-administrator gets and reveals nothing |
 | Bridge by channel (`bridges get/remove`) | its channel's scope | administrator-only, so `forbidden` as above; were a scoped principal ever an administrator it would be `not_found` `channel %q has no bridge` |
@@ -816,55 +818,50 @@ made (section 3.9 and 3.10):
   until the channel-visibility rebuild; a scoped principal's list is its
   scope's channels now. (Accepted.)
 
-### 4.2 The one item needing Eric: a create or rename that collides with an out-of-scope name
+### 4.2 Eric's decision 2026-10-25: scope-prefixed channel names (closed)
 
 Channel names are globally unique (`channels.name TEXT NOT NULL UNIQUE`,
 `internal/store/sqlite/schema/0001_initial.sql:22`, the same on Postgres),
 not unique per scope; identity names likewise (`identities.name` is the
-primary key). So when a scoped identity creates (or renames onto) a name
-that an out-of-scope channel already holds, the Store answers `conflict`
-`channel %q` and the caller learns that the name exists outside its
-scope, against decision (d). No other operation leaks: every other answer
-of 4.1 (d) is indistinguishable from "does not exist", and identity
-creation is administrator-only.
+primary key). So a scoped identity that creates (or renames onto) a name
+an out-of-scope channel already holds would be told `conflict` and learn
+that the name exists outside its scope, against decision 4.1 (d). No other
+operation leaks: every other answer of 4.1 (d) is indistinguishable from
+"does not exist", and identity creation is administrator-only.
 
-Options:
+**Eric's decision 2026-10-25 (option A): scope-prefixed namespaces.**
 
-- **A. Scope-prefixed namespaces (recommended).** A scoped identity may
-  create or rename to names of the form `<scope>-<rest>` only
-  (`validation`, "a channel of scope %q is named %q-<name>"); nobody may
-  create or rename to a name starting with `<s>-` for an existing scope
-  `s` (open, done, or retired and not yet purged) unless the channel is
-  given that scope (`validation`, "names starting with %q- belong to scope
-  %q"); `CreateScope` refuses a name `s` while any channel of another or
-  no scope is named `s-*` (`conflict`). Then every channel named
-  `<scope>-*` is in that scope, so a scoped creator's `conflict` always
-  names a channel it can list: no leak. Identities already follow the
-  convention (ADR 0009 ratified call: "a bridged agent posts under its
-  short name, the scope name and a following `-` removed"); an
-  administrator naming a scoped channel without the prefix stays allowed
-  (`k-chat` in `TestScopedChannels`), since the rule only has to make
-  prefixed names exclusive. Cost: one name rule at create, rename and
-  scope creation, no schema change, a `validation` for unscoped callers
-  who pick a scope-prefixed name.
-- **B. Per-scope uniqueness** (`UNIQUE (scope, name)`): changes name
-  resolution on the wire for every unscoped caller (which `job1-chat`?)
-  and every client; a schema migration. Rejected unless Eric prefers it.
-- **C. Answer `conflict` without a text** for a scoped creator whose name
-  collides outside its scope: the code itself is the leak. Rejected.
-- **D. Accept the leak** for this one operation as a name-level
-  disclosure: contradicts (d) as stated.
+- A scoped identity creates or renames to names of the form
+  `<scope>-<rest>` only; any other name is `validation` (`a channel of
+  scope %q is named %q-<name>`).
+- Nobody outside scope `S` may take an `S-*` name: a create or rename to a
+  name starting with `<s>-`, for any scope `s` that exists in any state
+  (open, done, or retired and not yet purged by `DeleteRetiredScopes`),
+  must give the channel `Scope: s`; otherwise `validation` (`names
+  starting with %q- belong to scope %q`). An administrator may still name
+  a scoped channel without the prefix (`k-chat` with `Scope: job1`): the
+  rule only makes prefixed names exclusive to their scope.
+- `CreateScope` refuses a name `s` while any channel of another or no
+  scope is named `s-*` (`conflict`, `scope %q: the name prefix %q- is in
+  use by channel %q`).
 
-Until Eric rules, the plan implements (d) everywhere else and leaves the
-create and rename collision answering `conflict` (today's behavior),
-marked in Task 2 and in Task 11, which implements option A when he
-accepts it.
+Consequence: every channel named `<scope>-*` is in that scope, so a scoped
+creator's `conflict` always names a channel it can list, and nothing
+outside its scope is disclosed. Options rejected: per-scope uniqueness
+(`UNIQUE (scope, name)`: a schema migration and ambiguous name resolution
+on the wire for unscoped callers), a text-less `conflict` (the code is the
+leak), accepting the leak (contradicts 4.1 (d)).
+
+**Existing names (Eric's decision 2026-10-25).** Existing names that violate the prefix rule get no migration and no compatibility handling; the rule is
+enforced at create, rename and scope creation from the first release, and the
+local stack's existing channels and scopes (`manual1`, `manual1-chat`) are
+deleted and recreated by hand.
 
 ## 5. Documents that change
 
 - New ADR 0011 "One access check" (status: accepted, Eric 2026-10-25, for
-  sections 1, 4 and 4.1; section 4.2 recorded as the open item with
-  option A proposed): the table of 3.2 with the scope gate, the denial codes, the
+  sections 1, 4, 4.1 and 4.2): the table of 3.2 with the scope gate, the
+  scope-prefixed name rule, the denial codes, the
   gate, the anchor move, the removal of the task owner guard and of the
   `force` wire member; the protocol-versioning decision (Context) is
   recorded there too, marked as context for the visibility rebuild.
