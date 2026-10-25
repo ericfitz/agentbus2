@@ -288,6 +288,10 @@ type healthJobOut struct {
 	Skipped bool   `json:"skipped"`
 }
 
+// HealthJSON is the health document in its tool (and wire) shape, for the
+// CLI's `health` command to print.
+func HealthJSON(h bus.Health) any { return healthToOut(h) }
+
 // healthToOut maps the Bus document to its tool shape. Arrays at the admin
 // tier (notices, jobs) are present and empty, never null; below it they are
 // absent (Notices is a pointer so an empty slice is not dropped by omitempty).
