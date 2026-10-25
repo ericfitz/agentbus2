@@ -46,7 +46,7 @@ The administrator flag is the one that gates `GET /v1/admin/status` (see `admin-
 | `store.engine` | `sqlite`, `postgres` | identity | the store engine |
 | `store.schema_version` | integer | identity | the schema version the database holds |
 | `embeddings.state` | `off`, `ok`, `failing` | identity | `off` with no embedder; `failing` while the `embedding` notice is set |
-| `embeddings.backlog` | integer | identity | memories waiting for an embedding |
+| `embeddings.backlog` | integer | identity | memories waiting for an embedding, capped at 1000 (`rules.SearchPageMax`), so 1000 means at least 1000 |
 | `embeddings.rejected` | integer | identity | memories whose embedding was rejected |
 | `embeddings.model` | string | admin | the embedding model (absent when `off`) |
 | `embeddings.last_error`, `last_error_at` | string, integer | admin | the `embedding` notice's text and time (absent when unset) |
@@ -104,7 +104,7 @@ $ curl -sS -H "Authorization: Bearer $BEARER" http://127.0.0.1:8431/v1/health
 
 ## Reading `maintenance`
 
-The maintenance block is this process's view, kept in memory; nothing about a run is stored in the database. The loop ticks once per `maintenance_interval_seconds`, the first tick one interval after start, so `lock` is `unknown` and `jobs` is empty until then (and after a lock error). After a tick (here with an interval of 1 second):
+The maintenance block is this process's view, kept in memory; nothing about a run is stored in the database. The loop ticks once per `maintenance_interval_seconds`, the first tick one interval after start on the server (in local mode, in `agentbus2 mcp` and `agentbus2 tui`, after a random delay of up to one interval), so `lock` is `unknown` and `jobs` is empty until then (and after a lock error). After a tick (here with an interval of 1 second):
 
 ```
 "maintenance":{"interval_seconds":1,"jobs":[{"changed":0,"name":"lapsed sessions","skipped":false}, ...13 jobs...],"last_tick_at":1792911399430,"lock":"held","owner":"724fe2f04ea92cd30e839391"}

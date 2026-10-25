@@ -186,7 +186,7 @@ internal/` then prints nothing).
 
 - **Choice 1, the operation table.** `api/openapi.yaml` declared 33
   operations when this addendum was written. After the federated-identity
-  work and the Slack bridge work (2026-10-23) it declares 52, counted from
+  work and the Slack bridge work (2026-10-23) it declares 52 (the 52nd is the `health` operation, 2026-10-25), counted from
   `operationId` and `security: []`: 44 protected, 7 open and 1 with optional
   security (`health`, issue #11; the cmd test counts it as protected because a
   bad bearer on it is a 401) (the Slack bridge

@@ -676,6 +676,7 @@ type HealthTier string
 
 // HealthEmbeddings defines model for HealthEmbeddings.
 type HealthEmbeddings struct {
+	// Backlog Memories waiting for an embedding, capped at 1000 (the search page maximum), so 1000 means "at least 1000".
 	Backlog      int                   `json:"backlog"`
 	LastError    *string               `json:"last_error,omitempty"`
 	LastErrorAt  *int64                `json:"last_error_at,omitempty"`

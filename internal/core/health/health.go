@@ -29,6 +29,12 @@ func (s Service) unavailable(err error) error {
 	if errors.As(err, &be) && (be.Code == bus.CodeNotRegistered || be.Code == bus.CodeForbidden) {
 		return be
 	}
+	// A canceled or timed-out request is the caller giving up, not a store
+	// failure: answer unavailable but do not log it as one.
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		s.Log.Debug("health: request ended", "err", err)
+		return &bus.Error{Code: bus.CodeUnavailable, Retryable: true, Message: "store unreachable"}
+	}
 	// The probe tier is unauthenticated, so the driver text (a Postgres
 	// error names host, user and database; SQLite the file path) goes to the
 	// log and never to the caller.

@@ -1,8 +1,10 @@
 package health
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -342,5 +344,30 @@ func TestHealthUnavailableHidesDriverText(t *testing.T) {
 				t.Fatalf("%q message %q leaks %q", who, be.Message, bad)
 			}
 		}
+	}
+}
+
+func TestHealthCanceledContextNotLoggedAsError(t *testing.T) {
+	for _, cause := range []error{context.Canceled, context.DeadlineExceeded} {
+		e := newEnv(t, nil)
+		var buf bytes.Buffer
+		e.svc.Log = slog.New(slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		e.svc.Store = faultStore{Store: e.svc.Store, readErr: cause, usageErr: cause}
+		_, err := e.svc.Health(context.Background(), "", "v")
+		var be *bus.Error
+		if !errors.As(err, &be) || be.Code != bus.CodeUnavailable || !be.Retryable {
+			t.Fatalf("%v: err = %v, want retryable unavailable", cause, err)
+		}
+		if strings.Contains(buf.String(), "level=ERROR") {
+			t.Fatalf("%v logged at Error: %s", cause, buf.String())
+		}
+	}
+	e := newEnv(t, nil)
+	var buf bytes.Buffer
+	e.svc.Log = slog.New(slog.NewTextHandler(&buf, nil))
+	e.svc.Store = faultStore{Store: e.svc.Store, readErr: errors.New("boom"), usageErr: errors.New("boom")}
+	_, _ = e.svc.Health(context.Background(), "", "v")
+	if !strings.Contains(buf.String(), "level=ERROR") {
+		t.Fatalf("a real store failure must log at Error: %q", buf.String())
 	}
 }

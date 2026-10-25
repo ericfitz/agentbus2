@@ -92,12 +92,6 @@ func (c *userCache) put(id string, u slackapi.User, now time.Time) {
 	c.m[id] = cachedUser{u: u, at: now}
 }
 
-func (c *userCache) len() int {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return len(c.m)
-}
-
 // user answers the Slack user, from the cache when it is fresh.
 func (s *Service) user(ctx context.Context, id string) (slackapi.User, error) {
 	now := s.core.Now()

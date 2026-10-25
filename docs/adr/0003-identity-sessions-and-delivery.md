@@ -350,7 +350,13 @@ parts of the choices below. The choice numbers are the plan's
   (Decision 79), within the retention window. A hintless `register` from an MCP
   server that already holds its primary session (Claude Code's `/clear`: same
   harness, same server) resumes that session, so a harness has one primary
-  file (agent decision, 2026-10-25, for Eric's review). On Windows the mode bits do not restrict the
+  file (agent decision, 2026-10-25, for Eric's review). Consequence of that
+  rule (agent decision, 2026-10-25, pending Eric's review): a subagent that
+  calls `register` without a hint on its parent's MCP server is that
+  server's hintless register, so it takes over the parent's primary session:
+  it receives the parent's unacked batch, and its `close_session` closes the
+  parent's session. Mitigation: a subagent passes a hint (the SubagentStart
+  text suggests one and SKILL.md says so). On Windows the mode bits do not restrict the
   file and no ACL is set on it, unlike the credential files; the resume
   token is protected only by the directory's inherited permissions. Tests: `TestStateFileHoldsResumeToken`;
   `internal/e2e` step `10-mcp-over-stdio` (state file kept after a clean

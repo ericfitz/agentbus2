@@ -1117,9 +1117,10 @@ components:
     # dropped. Two exceptions: TokenRequest, because an OAuth token endpoint
     # ignores parameters it does not know (RFC 6749 section 3.2); and JWK
     # (RegisterRequest.public_key_jwk), which is `additionalProperties: true`
-    # because a key carries members that differ per key type (RFC 7517). Response
-    # schemas stay open so a newer server can add a member. A new request
-    # body follows the convention.
+    # because a key carries members that differ per key type (RFC 7517). A schema
+    # used only in responses stays open so a newer server can add a member; a
+    # schema shared by a request and a response (ACLEntry) follows the request
+    # rule. A new request body follows the convention.
     Problem:
       type: object
       required: [type, title, status, code, retryable]
@@ -1895,6 +1896,9 @@ components:
           enum: [off, ok, failing]
         backlog:
           type: integer
+          description: >-
+            Memories waiting for an embedding, capped at 1000 (the search page
+            maximum), so 1000 means "at least 1000".
         rejected:
           type: integer
         model:
