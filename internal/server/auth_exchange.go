@@ -98,7 +98,11 @@ func (a *api) tokenExchange(ctx context.Context, b *gen.TokenFormdataRequestBody
 	}
 	fed, err := ext.Verify(ctx, raw)
 	switch {
-	case errors.Is(err, token.ErrJWKSUnavailable), errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
+	case !errors.Is(err, token.ErrJWKSUnavailable) && (errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded)):
+		// The caller gave up or ran out of time; the provider is not known to be down.
+		return a.refuseExchange(ext.Name, oauthFail(http.StatusServiceUnavailable, "temporarily_unavailable", "the request was canceled or timed out"),
+			"request canceled or timed out while verifying", "")
+	case errors.Is(err, token.ErrJWKSUnavailable):
 		return a.refuseExchange(ext.Name, oauthFail(http.StatusServiceUnavailable, "temporarily_unavailable", "the issuer's key set is unavailable"),
 			"issuer key set unavailable", "")
 	case errors.Is(err, token.ErrNoEmail):
