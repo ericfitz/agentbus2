@@ -475,8 +475,8 @@ func TestExternalJWKSDownIsUnavailable(t *testing.T) {
 	if _, err := e.Verify(context.Background(), extToken(t, k, nil)); !errors.Is(err, ErrJWKSUnavailable) {
 		t.Errorf("500: %v, want ErrJWKSUnavailable", err)
 	}
-	// A 200 with a body that is no key set, and one over the size limit.
-	for name, body := range map[string]string{"garbage": "not json", "oversize": strings.Repeat("x", maxJWKSBytes+10)} {
+	// A 200 with a body that is no key set (the size limit: TestExternalJWKSSizeGuard).
+	for name, body := range map[string]string{"garbage": "not json"} {
 		bad := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte(body)) }))
 		eb := newExternal(&jwksServer{Server: bad}, &clock{t: t0})
 		if _, err := eb.Verify(context.Background(), extToken(t, k, nil)); !errors.Is(err, ErrJWKSUnavailable) {
