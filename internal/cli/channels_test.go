@@ -83,10 +83,11 @@ func TestChannelsLifecycle(t *testing.T) {
 	if code, _, _ := run("", "acl", "-set", "nope", "dev"); code != 2 {
 		t.Fatalf("-set nope: exit %d, want 2", code)
 	}
-	// "[]" is an empty list, not the default.
+	// "[]" is an empty list, not the default: the creator keeps no right on the
+	// channel (the implicit creator entry is retired, accesscheck spec 3.13).
 	ok("create", "-acl", "[]", "closed")
-	if out := strings.TrimSpace(ok("acl", "closed")); out != "[]" {
-		t.Fatalf("empty acl: %q", out)
+	if code, _, errOut := run("", "acl", "closed"); code != 1 || !strings.Contains(errOut, "forbidden") {
+		t.Fatalf("empty acl: exit %d, stderr %q; want exit 1, forbidden", code, errOut)
 	}
 
 	ok("rename", "dev", "dev2")

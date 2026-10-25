@@ -5,6 +5,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/rules"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -27,12 +28,12 @@ func (s Service) Subscribe(ctx context.Context, identity string, in bus.Subscrib
 	}
 	payload := struct{ Op, Channel, From string }{"subscribe", in.Channel, from}
 	var res struct{}
-	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx) error {
+	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx, p access.Principal) error {
 		ch, err := s.ChannelByName(ctx, tx, in.Channel)
 		if err != nil {
 			return err
 		}
-		if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermRead); err != nil {
+		if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.Deliver); err != nil {
 			return err
 		}
 		var acked int64
@@ -51,9 +52,15 @@ func (s Service) Subscribe(ctx context.Context, identity string, in bus.Subscrib
 func (s Service) Unsubscribe(ctx context.Context, identity string, in bus.UnsubscribeInput) error {
 	payload := struct{ Op, Channel string }{"unsubscribe", in.Channel}
 	var res struct{}
-	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx) error {
+	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx, p access.Principal) error {
 		ch, err := s.ChannelByName(ctx, tx, in.Channel)
 		if err != nil {
+			return err
+		}
+		// No permission is needed (Decision 95), but a channel outside the
+		// principal's scope does not exist for it: List is the scope gate
+		// alone until the channel-visibility rebuild.
+		if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.List); err != nil {
 			return err
 		}
 		return tx.Unsubscribe(ctx, identity, ch.ID)
@@ -84,7 +91,7 @@ func (s Service) SubscribeTags(ctx context.Context, identity string, in bus.TagS
 		Patterns []string
 	}{"subscribe_tags", ps}
 	var res struct{}
-	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx) error {
+	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx, p access.Principal) error {
 		seq, err := tx.MaxSeq(ctx)
 		if err != nil {
 			return err
@@ -110,7 +117,7 @@ func (s Service) UnsubscribeTags(ctx context.Context, identity string, in bus.Ta
 		Patterns []string
 	}{"unsubscribe_tags", ps}
 	var res struct{}
-	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx) error {
+	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx, p access.Principal) error {
 		return tx.UnsubscribeTags(ctx, identity, rules.TagsKey(ps))
 	})
 }
@@ -118,7 +125,7 @@ func (s Service) UnsubscribeTags(ctx context.Context, identity string, in bus.Ta
 // TagSubscriptions lists the identity's sets in order of their key.
 func (s Service) TagSubscriptions(ctx context.Context, identity string) ([][]string, error) {
 	out := [][]string{}
-	err := s.read(ctx, identity, func(ctx context.Context, tx store.Tx) error {
+	err := s.read(ctx, identity, func(ctx context.Context, tx store.Tx, p access.Principal) error {
 		out = out[:0]
 		subs, err := tx.TagSubscriptions(ctx, identity)
 		if err != nil {

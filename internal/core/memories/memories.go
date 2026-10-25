@@ -5,6 +5,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/core/rules"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -20,14 +21,15 @@ const taskListMsg = "%s is a task list; use task_create, task_update, task_claim
 func (s Service) Get(ctx context.Context, identity string, id int64) (bus.Message, error) {
 	var out bus.Message
 	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		p, err := access.Resolve(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
 		m, ch, err := s.LiveRevision(ctx, tx, id)
 		if err != nil {
 			return err
 		}
-		if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermRead); err != nil {
+		if err := s.RequireChannelOr(ctx, tx, p, ch.ID, access.Read, func() error { return noLiveRevision(id) }); err != nil {
 			return err
 		}
 		if ch.Kind != store.KindTasks {
@@ -54,7 +56,8 @@ func (s Service) Get(ctx context.Context, identity string, id int64) (bus.Messag
 func (s Service) Revisions(ctx context.Context, identity string, id int64) ([]bus.Message, error) {
 	var out []bus.Message
 	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		p, err := access.Resolve(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
 		rows, err := tx.MemoryRevisions(ctx, id)
@@ -64,7 +67,7 @@ func (s Service) Revisions(ctx context.Context, identity string, id int64) ([]bu
 		if len(rows) == 0 {
 			return core.E(bus.CodeNotFound, "memory %d does not exist", id)
 		}
-		if err := s.Authorize(ctx, tx, identity, rows[0].ChannelID, store.PermRead); err != nil {
+		if err := s.RequireChannelOr(ctx, tx, p, rows[0].ChannelID, access.Read, func() error { return core.E(bus.CodeNotFound, "memory %d does not exist", id) }); err != nil {
 			return err
 		}
 		out, err = s.ToBusMessages(ctx, tx, rows)
@@ -122,7 +125,7 @@ func (s Service) Edit(ctx context.Context, identity string, in bus.EditMemoryInp
 	)
 	err := s.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {
 		res, size, chanID, replayed = bus.EditResult{}, 0, 0, false // fn may run again (Decision 26)
-		who, err := s.RequireIdentity(ctx, tx, identity)
+		p, err := access.Resolve(ctx, tx, identity)
 		if err != nil {
 			return err
 		}
@@ -134,7 +137,7 @@ func (s Service) Edit(ctx context.Context, identity string, in bus.EditMemoryInp
 			if ch.Kind == store.KindTasks {
 				return core.E(bus.CodeValidation, taskListMsg, ch.Name)
 			}
-			if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermWrite); err != nil {
+			if err := s.RequireChannelOr(ctx, tx, p, ch.ID, access.Write, func() error { return noLiveRevision(in.ID) }); err != nil {
 				return err
 			}
 			live := int64(1)
@@ -162,7 +165,7 @@ func (s Service) Edit(ctx context.Context, identity string, in bus.EditMemoryInp
 				tags = in.Tags
 			}
 			ai := core.AppendInput{
-				ChannelID: ch.ID, Channel: ch.Name, Kind: store.KindMemory, Sender: identity, SenderKind: who.Kind,
+				ChannelID: ch.ID, Channel: ch.Name, Kind: store.KindMemory, Sender: identity, SenderKind: p.Kind,
 				Type: mtype, Subject: subject, Content: content, Metadata: meta, Tags: tags,
 			}
 			size, err = s.EnvelopeSize(ai, identity)
@@ -221,10 +224,10 @@ func (s Service) Delete(ctx context.Context, identity string, in bus.DeleteMemor
 	var replayed bool
 	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		replayed = false // fn may run again (Decision 26)
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		p, err := access.Resolve(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
-		var err error
 		var ignored *struct{}
 		replayed, err = s.WithReceipt(ctx, tx, identity, in.IdempotencyKey, payload, &ignored, func() error {
 			m, ch, err := s.LiveRevision(ctx, tx, in.ID)
@@ -234,7 +237,7 @@ func (s Service) Delete(ctx context.Context, identity string, in bus.DeleteMemor
 			if ch.Kind == store.KindTasks {
 				return core.E(bus.CodeValidation, taskListMsg, ch.Name)
 			}
-			if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermWrite); err != nil {
+			if err := s.RequireChannelOr(ctx, tx, p, ch.ID, access.Write, func() error { return noLiveRevision(in.ID) }); err != nil {
 				return err
 			}
 			if !s.Limits.Check(identity, 0, s.Now()) {
@@ -258,4 +261,10 @@ func (s Service) Delete(ctx context.Context, identity string, in bus.DeleteMemor
 		s.Limits.Charge(identity, 0, s.Now())
 	}
 	return nil
+}
+
+// noLiveRevision is the answer for an id with no live revision: also the
+// answer for a memory on a channel outside the caller's scope.
+func noLiveRevision(id int64) error {
+	return core.E(bus.CodeNotFound, "memory %d has no live revision", id)
 }

@@ -5,6 +5,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/rules"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -24,14 +25,14 @@ func (s Service) Get(ctx context.Context, identity string, id int64) (bus.Task, 
 		)
 		err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 			t, abandoned = task{}, false
-			if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+			pr, err := access.Resolve(ctx, tx, identity)
+			if err != nil {
 				return err
 			}
-			var err error
 			if ch, err = s.taskChannelOf(ctx, tx, id); err != nil {
 				return err
 			}
-			if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermRead); err != nil {
+			if err := s.RequireChannelOr(ctx, tx, pr, ch.ID, access.Read, func() error { return noLiveRevision(id) }); err != nil {
 				return err
 			}
 			ts, err := loadTasks(ctx, tx, ch)
@@ -79,14 +80,14 @@ func (s Service) List(ctx context.Context, identity string, in bus.TaskListInput
 		)
 		err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 			ts, abandoned = nil, false
-			if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+			pr, err := access.Resolve(ctx, tx, identity)
+			if err != nil {
 				return err
 			}
-			var err error
 			if ch, err = s.taskChannel(ctx, tx, in.Channel); err != nil {
 				return err
 			}
-			if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermRead); err != nil {
+			if err := s.Access.Require(ctx, tx, pr, access.Channel{ID: ch.ID}, access.Read); err != nil {
 				return err
 			}
 			if ts, err = loadTasks(ctx, tx, ch); err != nil {

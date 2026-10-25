@@ -375,7 +375,7 @@ func TestScopeRetirementScrub(t *testing.T) {
 		h := newHarness(t, e, harnessOptions{})
 		ctx := context.Background()
 		h.rtScope("job1")
-		coder := h.scopedIdentity("job1-coder", "job1")
+		h.scopedIdentity("job1-coder", "job1")
 		h.session("job1-coder", "coder") // a live session: its claim is not abandoned yet
 		pat := h.as("pat")
 		eric := h.human("eric@corp.example")
@@ -385,20 +385,26 @@ func TestScopeRetirementScrub(t *testing.T) {
 		}
 		ops := h.channel("ops", ab2store.KindOrdinary, "pat", acl)
 		h.channel("backlog", ab2store.KindTasks, "pat", acl)
-		if err := coder.Subscribe(ctx, ab2bus.SubscribeInput{Channel: "ops"}); err != nil {
-			t.Fatal(err)
-		}
+		// The scope gate (accesscheck spec 3.12) keeps a scoped identity off
+		// these unscoped channels, so the coder's footprint on them is seeded
+		// past the Bus: a raw subscription, a task assigned to it by pat and
+		// a message written through the Store.
+		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+			seq, err := tx.MaxSeq(ctx)
+			if err != nil {
+				return err
+			}
+			return tx.Subscribe(ctx, "job1-coder", ops.ID, seq, h.core.NowMs())
+		})
 		made, err := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "backlog", Subject: "first"})
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := coder.Claim(ctx, ab2bus.TaskClaimInput{ID: made.ID}); err != nil {
+		coderID, inProgress := "job1-coder", "in_progress"
+		if _, err := pat.Update(ctx, ab2bus.TaskPatch{ID: made.ID, Owner: &coderID, Status: &inProgress}); err != nil {
 			t.Fatal(err)
 		}
-		sent, err := coder.Send(ctx, ab2bus.SendInput{Channel: "ops", Content: "hello from the coder"})
-		if err != nil {
-			t.Fatal(err)
-		}
+		sentSeq := h.append(ops, "job1-coder", "", "hello from the coder")
 		h.rtDone("job1", ab2bus.RetireNormal) // no channel: due by rule 2
 
 		ran, rep := retireMaint(h, nil).Tick(ctx)
@@ -443,7 +449,7 @@ func TestScopeRetirementScrub(t *testing.T) {
 		if err != nil || got.Status != "pending" || got.Owner != "" {
 			t.Errorf("task after retirement = %+v, %v; want pending with no owner", got, err)
 		}
-		if live := h.liveSeqs(sent.Seq); !sameSeqs(live, sent.Seq) {
+		if live := h.liveSeqs(sentSeq); !sameSeqs(live, sentSeq) {
 			t.Errorf("the coder's message is gone: %v", live)
 		}
 		if _, err := eric.ListChannels(ctx); err != nil {

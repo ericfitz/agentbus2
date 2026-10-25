@@ -1,7 +1,7 @@
 // Package channels holds the rules of channels, their ACLs, subscriptions,
 // tag subscriptions and the administrator's status (spec sections 3.2, 4.6).
 // Every operation is one Store transaction; authorization is
-// Core.Authorize inside it (Decision 80).
+// Core.Access (the one access check, internal/core/access) inside it.
 package channels
 
 import (
@@ -9,6 +9,7 @@ import (
 	"errors"
 
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -57,24 +58,26 @@ func (s Service) EnsureGeneral(ctx context.Context) error {
 // idempotency receipt. payload is what the key's fingerprint covers (not the
 // key itself); result is stored and replayed. fn has no side effects
 // (Decision 26): it may run more than once.
-func (s Service) mutate(ctx context.Context, identity, key string, payload, result any, fn func(ctx context.Context, tx store.Tx) error) error {
+func (s Service) mutate(ctx context.Context, identity, key string, payload, result any, fn func(ctx context.Context, tx store.Tx, p access.Principal) error) error {
 	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		p, err := access.Resolve(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
-		_, err := s.WithReceipt(ctx, tx, identity, key, payload, result, func() error { return fn(ctx, tx) })
+		_, err = s.WithReceipt(ctx, tx, identity, key, payload, result, func() error { return fn(ctx, tx, p) })
 		return err
 	})
 	return core.FromStore(err)
 }
 
 // read runs fn in a read-only transaction as a registered identity.
-func (s Service) read(ctx context.Context, identity string, fn func(ctx context.Context, tx store.Tx) error) error {
+func (s Service) read(ctx context.Context, identity string, fn func(ctx context.Context, tx store.Tx, p access.Principal) error) error {
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		p, err := access.Resolve(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
-		return fn(ctx, tx)
+		return fn(ctx, tx, p)
 	})
 	return core.FromStore(err)
 }

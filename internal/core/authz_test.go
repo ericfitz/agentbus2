@@ -9,67 +9,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
-func TestAuthorizeUsesImplicitEntries(t *testing.T) {
-	c, _ := newTestCore(t, nil)
-	mustIdentity(t, c, "pat", false)
-	mustIdentity(t, c, "kim", false)
-	// ACL names the creator's own row empty of permissions: only the
-	// implicit creator-admin entry and the everyone read row apply.
-	ch := mustChannel(t, c, store.ChannelCreate{
-		Name: "work", Kind: store.KindOrdinary, Creator: "pat",
-		ACL: []store.ACLEntry{{Identity: store.Everyone, Permissions: []store.Permission{store.PermRead}}},
-	})
-	check := func(identity string, p store.Permission) error {
-		var err error
-		mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
-			err = c.Authorize(ctx, tx, identity, ch.ID, p)
-			return nil
-		})
-		return err
-	}
-	if err := check("pat", store.PermAdmin); err != nil {
-		t.Errorf("creator admin: %v", err)
-	}
-	if err := check("pat", store.PermWrite); bus.CodeOf(err) != bus.CodeForbidden {
-		t.Errorf("creator write (implicit entry grants admin only) = %v, want forbidden", err)
-	}
-	if err := check("kim", store.PermRead); err != nil {
-		t.Errorf("stranger read via everyone: %v", err)
-	}
-	err := check("kim", store.PermWrite)
-	if bus.CodeOf(err) != bus.CodeForbidden {
-		t.Fatalf("stranger write = %v, want forbidden", err)
-	}
-	if msg := err.(*bus.Error).Message; !strings.Contains(msg, "write") || !strings.Contains(msg, `"work"`) || !strings.Contains(msg, "kim") {
-		t.Errorf("forbidden text %q does not name identity, permission and channel", msg)
-	}
-	if err.(*bus.Error).Retryable {
-		t.Error("forbidden is retryable")
-	}
-}
-
-// Authorize evaluates the literal name it is given, so it refuses "" and the
-// reserved names itself: the default ACL gives everyone read, which must not
-// make "everyone" (or an unauthenticated "") a reader.
-func TestAuthorizeRefusesReservedNames(t *testing.T) {
-	c, _ := newTestCore(t, nil)
-	mustIdentity(t, c, "pat", false)
-	ch := mustChannel(t, c, store.ChannelCreate{Name: "work", Kind: store.KindOrdinary, Creator: "pat"})
-	for _, name := range []string{"", store.Everyone, store.Admins} {
-		for _, p := range []store.Permission{store.PermRead, store.PermWrite, store.PermAdmin} {
-			var err error
-			mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
-				err = c.Authorize(ctx, tx, name, ch.ID, p)
-				return nil
-			})
-			if bus.CodeOf(err) != bus.CodeNotRegistered {
-				t.Errorf("Authorize(%q, %s) = %v, want not_registered", name, p, err)
-			}
-		}
-	}
-}
-
-// ReadableChannelIDs takes the same precondition as Authorize.
+// ReadableChannelIDs takes the same precondition as access.Resolve.
 func TestReadableChannelIDsRefusesReservedNames(t *testing.T) {
 	c, _ := newTestCore(t, nil)
 	mustIdentity(t, c, "pat", false)
@@ -85,16 +25,6 @@ func TestReadableChannelIDsRefusesReservedNames(t *testing.T) {
 			t.Errorf("ReadableChannelIDs(%q) = %v, %v; want not_registered", name, ids, err)
 		}
 	}
-}
-
-func TestAuthorizeUnknownPermissionPanics(t *testing.T) {
-	c, _ := newTestCore(t, nil)
-	defer func() {
-		if recover() == nil {
-			t.Error("Authorize with an unknown permission did not panic")
-		}
-	}()
-	_ = c.Authorize(context.Background(), nil, "pat", 1, store.Permission("owner"))
 }
 
 func TestRequireIdentityRejectsReservedAndUnknown(t *testing.T) {

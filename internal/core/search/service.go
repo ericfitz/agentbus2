@@ -13,6 +13,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/rules"
 	query "github.com/ericfitz/agentbus2/internal/search"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -51,7 +52,8 @@ func (s Service) Search(ctx context.Context, identity string, in bus.SearchInput
 	var out bus.SearchResult
 	err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		out = bus.SearchResult{SemanticUnavailable: res.SemanticUnavailable}
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		pr, err := access.Resolve(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
 		var channelIDs []int64
@@ -60,12 +62,12 @@ func (s Service) Search(ctx context.Context, identity string, in bus.SearchInput
 			if err != nil {
 				return err
 			}
-			if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermRead); err != nil {
+			if err := s.Access.Require(ctx, tx, pr, access.Channel{ID: ch.ID}, access.Read); err != nil {
 				return err
 			}
 			channelIDs = []int64{ch.ID}
 		} else {
-			ids, err := s.ReadableChannelIDs(ctx, tx, identity)
+			ids, err := s.Access.Channels(ctx, tx, pr, access.Read)
 			if err != nil {
 				return err
 			}
@@ -73,7 +75,6 @@ func (s Service) Search(ctx context.Context, identity string, in bus.SearchInput
 		}
 
 		var ranked []scored
-		var err error
 		switch {
 		case useSemantic && p.mode == "semantic":
 			ranked, err = s.semanticRank(ctx, tx, qvec, channelIDs, p.filter)

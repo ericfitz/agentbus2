@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -36,6 +37,9 @@ type Core struct {
 	Store  store.Store
 	Cfg    Config
 	Limits *Limiter
+	// Access is the one access check (internal/core/access); every site that
+	// decides who may do what calls it.
+	Access access.Checker
 	// Owner is random per instance; the maintenance lease owner.
 	Owner string
 	// EmbedSoon is set by the search aggregate; Send and Edit call it after
@@ -82,6 +86,7 @@ func New(s store.Store, cfg Config, opts Options) (*Core, error) {
 	if c.Log == nil {
 		c.Log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	}
+	c.Access = access.Checker{Cfg: access.Config{ChannelCreation: cfg.ChannelCreation}}
 	c.started = c.now()
 	c.Limits = NewLimiter(cfg.SendMessagesPerSecond, cfg.SendKiBPerSecond, cfg.MaxMessageKiB)
 	return c, nil

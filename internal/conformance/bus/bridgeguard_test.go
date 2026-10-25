@@ -134,5 +134,12 @@ func TestBridgedChannelGuards(t *testing.T) {
 		if err := h.as("plain-owner").SetACL(ctx, ab2bus.SetACLInput{Channel: "plain", Entries: []ab2bus.ACLEntry{perm("plain-owner", R, W, A), perm(ab2store.Everyone, R)}}); err != nil {
 			t.Fatalf("unbridged SetACL: %v", err)
 		}
+		// The creator administers through its stored row only (the implicit
+		// creator entry is retired): once the row is gone it is forbidden.
+		plain := h.as("plain-owner")
+		if err := plain.SetACL(ctx, ab2bus.SetACLInput{Channel: "plain", Entries: []ab2bus.ACLEntry{perm(ab2store.Everyone, R)}}); err != nil {
+			t.Fatalf("SetACL dropping the creator's row: %v", err)
+		}
+		codeOf(t, plain.SetACL(ctx, ab2bus.SetACLInput{Channel: "plain", Entries: []ab2bus.ACLEntry{perm("plain-owner", R, W, A)}}), ab2bus.CodeForbidden)
 	})
 }

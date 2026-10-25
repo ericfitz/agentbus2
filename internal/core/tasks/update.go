@@ -7,6 +7,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -240,13 +241,13 @@ func (s Service) Update(ctx context.Context, identity string, p bus.TaskPatch) (
 	)
 	err := s.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {
 		out, fx, replayed = bus.TaskUpdateResult{}, effects{}, false
-		who, err := s.RequireIdentity(ctx, tx, identity)
+		pr, err := access.Resolve(ctx, tx, identity)
 		if err != nil {
 			return err
 		}
 		replayed, err = s.WithReceipt(ctx, tx, identity, key, p, &out, func() error {
 			var err error
-			out, err = s.update(ctx, tx, identity, who.Kind, p, &fx)
+			out, err = s.update(ctx, tx, identity, pr, p, &fx)
 			return err
 		})
 		return err
@@ -260,12 +261,13 @@ func (s Service) Update(ctx context.Context, identity string, p bus.TaskPatch) (
 	return out, nil
 }
 
-func (s Service) update(ctx context.Context, tx store.Tx, identity string, kind store.IdentityKind, p bus.TaskPatch, fx *effects) (bus.TaskUpdateResult, error) {
+func (s Service) update(ctx context.Context, tx store.Tx, identity string, pr access.Principal, p bus.TaskPatch, fx *effects) (bus.TaskUpdateResult, error) {
+	kind := pr.Kind
 	ch, err := s.taskChannelOf(ctx, tx, p.ID)
 	if err != nil {
 		return bus.TaskUpdateResult{}, err
 	}
-	if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermWrite); err != nil {
+	if err := s.RequireChannelOr(ctx, tx, pr, ch.ID, access.Write, func() error { return noLiveRevision(p.ID) }); err != nil {
 		return bus.TaskUpdateResult{}, err
 	}
 	if _, err := s.reclaimAbandoned(ctx, tx, ch, s.NowMs(), []int64{p.ID}, fx); err != nil {
@@ -279,7 +281,7 @@ func (s Service) update(ctx context.Context, tx store.Tx, identity string, kind 
 	if cur == nil {
 		return bus.TaskUpdateResult{}, core.E(bus.CodeNotFound, "memory %d is not a task", p.ID)
 	}
-	ownerKnown := s.ownerKnown(ctx, tx)
+	ownerKnown := s.ownerKnown(ctx, tx, pr)
 	patched, err := applyPatch(ts, *cur, p, identity, s.NowMs(), ownerKnown)
 	var rc *rankCollision
 	if errors.As(err, &rc) {

@@ -79,11 +79,15 @@ func TestChannelCreateWithKindAndACL(t *testing.T) {
 		if acl, err := pat.ACL(ctx, "jobs"); err != nil || !reflect.DeepEqual(acl, own) {
 			t.Fatalf("ACL = %+v, %v; want the ACL as given", acl, err)
 		}
-		// [] stores no entries; the creator still administers (Decision 80).
+		// [] stores no entries; the creator holds no right on it (the implicit
+		// creator entry is retired, accesscheck spec 3.13) and a server
+		// administrator reads it.
 		if _, err := pat.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "bare", ACL: []ab2bus.ACLEntry{}}); err != nil {
 			t.Fatal(err)
 		}
-		if acl, err := pat.ACL(ctx, "bare"); err != nil || len(acl) != 0 {
+		_, err = pat.ACL(ctx, "bare")
+		codeOf(t, err, ab2bus.CodeForbidden)
+		if acl, err := h.admin("root").ACL(ctx, "bare"); err != nil || len(acl) != 0 {
 			t.Fatalf("ACL of bare = %+v, %v; want none", acl, err)
 		}
 	})
@@ -194,20 +198,26 @@ func TestChannelACLNeedsAdmin(t *testing.T) {
 		}
 		_, err = pat.ACL(ctx, "missing")
 		codeOf(t, err, ab2bus.CodeNotFound)
-		// Removing the creator's rows leaves the creator able to edit (Decision 80).
+		// Removing the creator's rows leaves the creator without a right: the
+		// implicit creator entry is retired (accesscheck spec 3.13), so only a
+		// server administrator edits afterwards.
 		if err := pat.SetACL(ctx, ab2bus.SetACLInput{Channel: "c", Entries: []ab2bus.ACLEntry{{Identity: "kim", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}}); err != nil {
 			t.Fatal(err)
 		}
-		if acl, err := pat.ACL(ctx, "c"); err != nil || len(acl) != 1 || acl[0].Identity != "kim" {
+		if _, err := pat.ACL(ctx, "c"); ab2bus.CodeOf(err) != ab2bus.CodeForbidden {
+			t.Fatalf("creator after removing its rows: %v", err)
+		}
+		root := h.admin("root")
+		if acl, err := root.ACL(ctx, "c"); err != nil || len(acl) != 1 || acl[0].Identity != "kim" {
 			t.Fatalf("ACL after SetACL = %+v, %v", acl, err)
 		}
-		if err := pat.SetACL(ctx, ab2bus.SetACLInput{Channel: "c", Entries: []ab2bus.ACLEntry{{Identity: "kim", Permissions: []ab2bus.Permission{"owner"}}}}); ab2bus.CodeOf(err) != ab2bus.CodeValidation {
+		if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "c", Entries: []ab2bus.ACLEntry{{Identity: "kim", Permissions: []ab2bus.Permission{"owner"}}}}); ab2bus.CodeOf(err) != ab2bus.CodeValidation {
 			t.Fatalf("unknown permission: %v", err)
 		}
-		if err := pat.SetACL(ctx, ab2bus.SetACLInput{Channel: "c", Entries: []ab2bus.ACLEntry{{Identity: "ghost", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}}); ab2bus.CodeOf(err) != ab2bus.CodeValidation {
+		if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "c", Entries: []ab2bus.ACLEntry{{Identity: "ghost", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}}); ab2bus.CodeOf(err) != ab2bus.CodeValidation {
 			t.Fatalf("unregistered entry: %v", err)
 		}
-		if err := pat.SetACL(ctx, ab2bus.SetACLInput{Channel: "c", Entries: []ab2bus.ACLEntry{{Identity: "kim"}}}); ab2bus.CodeOf(err) != ab2bus.CodeValidation {
+		if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "c", Entries: []ab2bus.ACLEntry{{Identity: "kim"}}}); ab2bus.CodeOf(err) != ab2bus.CodeValidation {
 			t.Fatalf("empty permission list: %v", err)
 		}
 	})

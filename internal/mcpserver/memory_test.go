@@ -42,11 +42,10 @@ func TestRegisterDropsMemorySubscriptions(t *testing.T) {
 	if _, err := pat.Bus.CreateChannel(ctx, bus.CreateChannelInput{Name: "mem", Kind: bus.KindMemory}); err != nil {
 		t.Fatal(err)
 	}
-	for _, ch := range []string{"mem", "general"} {
-		if err := pat.Bus.Subscribe(ctx, bus.SubscribeInput{Channel: ch}); err != nil {
-			t.Fatal(err)
-		}
+	if err := pat.Bus.Subscribe(ctx, bus.SubscribeInput{Channel: "general"}); err != nil {
+		t.Fatal(err)
 	}
+	e.subscribeRaw(t, "pat", "mem")
 	r := startServer(t, e, newFakeTable(), "test-client")
 	reg := r.must(t, "register", nil)
 	for _, p := range arr(reg, "pending") {
@@ -122,9 +121,7 @@ func TestBusStillDeliversMemoryToObservers(t *testing.T) {
 	if _, err := pat.Bus.CreateChannel(ctx, bus.CreateChannelInput{Name: "mem", Kind: bus.KindMemory}); err != nil {
 		t.Fatal(err)
 	}
-	if err := pat.Bus.Subscribe(ctx, bus.SubscribeInput{Channel: "mem"}); err != nil {
-		t.Fatal(err)
-	}
+	e.subscribeRaw(t, "pat", "mem")
 	s, err := pat.Bus.Open(ctx, bus.OpenSessionInput{Hint: "tui"})
 	if err != nil {
 		t.Fatal(err)

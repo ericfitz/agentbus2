@@ -300,7 +300,10 @@ func matrixRows() []aclRow {
 				allow: func(t *testing.T, h *harness, b ab2bus.Bus, ch string) {
 					want := []ab2bus.ACLEntry{{Identity: "everyone", Permissions: aclPerms(ab2bus.PermRead)}}
 					must(t, b.SetACL(ctx(), ab2bus.SetACLInput{Channel: ch, Entries: want}))
-					got, err := h.as("pat").ACL(ctx(), ch)
+					// Read back as a server administrator: the success leg replaced the
+					// ACL, so the creator's stored row (its only way to read it, the
+					// implicit creator entry being retired) is gone.
+					got, err := h.admin("root").ACL(ctx(), ch)
 					must(t, err)
 					if len(got) != 1 || got[0].Identity != "everyone" || !slices.Equal(got[0].Permissions, want[0].Permissions) {
 						t.Fatalf("ACL = %+v", got)

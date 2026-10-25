@@ -6,6 +6,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/rules"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -19,14 +20,15 @@ func (s Service) History(ctx context.Context, identity string, in bus.HistoryInp
 	var out []bus.Message
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		out = nil
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		p, err := access.Resolve(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
 		ch, err := s.ChannelByName(ctx, tx, in.Channel)
 		if err != nil {
 			return err
 		}
-		if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermRead); err != nil {
+		if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.Read); err != nil {
 			return err
 		}
 		// The inputs are checked after registration, the channel and the read

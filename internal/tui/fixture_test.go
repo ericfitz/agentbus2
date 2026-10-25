@@ -56,8 +56,27 @@ func newCore(t *testing.T) *core.Core {
 
 // ensureIdentity creates the identity through the raw store path, which
 // creates no general subscription (unlike identities.Service.CreateIdentity),
-// so every mark in a test is set by the test itself.
+// so every mark in a test is set by the test itself. Every identity is a
+// human, as the TUI's is in both modes: the Bus refuses an agent a memory
+// channel's subscription (accesscheck spec 3.9) and these tests subscribe to
+// one.
 func ensureIdentity(t *testing.T, c *core.Core, name string) {
+	t.Helper()
+	err := c.Store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
+		_, err := tx.Identity(ctx, name)
+		if errors.Is(err, store.ErrNotFound) {
+			return tx.CreateHuman(ctx, store.HumanBinding{Identity: name, ClaimType: store.ClaimEmail, Value: name + "@example.test"}, c.NowMs())
+		}
+		return err
+	})
+	if err != nil {
+		t.Fatalf("ensureIdentity(%q): %v", name, err)
+	}
+}
+
+// agentBus creates name as an agent (sam, the sender whose icon the tests
+// read) and returns a core-direct Bus bound to it.
+func agentBus(t *testing.T, c *core.Core, name string) bus.Bus {
 	t.Helper()
 	err := c.Store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
 		_, err := tx.Identity(ctx, name)
@@ -67,8 +86,9 @@ func ensureIdentity(t *testing.T, c *core.Core, name string) {
 		return err
 	})
 	if err != nil {
-		t.Fatalf("ensureIdentity(%q): %v", name, err)
+		t.Fatalf("agentBus(%q): %v", name, err)
 	}
+	return local.New(c, name)
 }
 
 // identityBus is ensureIdentity, then a core-direct Bus bound to name.
@@ -118,7 +138,7 @@ func newBusFixture(t *testing.T) *busFixture {
 	t.Helper()
 	ctx := context.Background()
 	c := newCore(t)
-	sam := identityBus(t, c, "sam")
+	sam := agentBus(t, c, "sam")
 	for _, in := range []bus.CreateChannelInput{
 		{Name: "dev"},
 		{Name: "dev-notes", Kind: bus.KindMemory},
@@ -127,10 +147,21 @@ func newBusFixture(t *testing.T) *busFixture {
 			t.Fatalf("CreateChannel %q: %v", in.Name, err)
 		}
 	}
-	for _, ch := range []string{"general", "dev", "dev-notes"} {
+	for _, ch := range []string{"general", "dev"} {
 		if err := sam.Subscribe(ctx, bus.SubscribeInput{Channel: ch, From: "oldest"}); err != nil {
 			t.Fatalf("sam Subscribe %q: %v", ch, err)
 		}
+	}
+	// The Bus refuses an agent a memory channel's subscription: seed it raw.
+	err := c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		ch, err := tx.ChannelByName(ctx, "dev-notes")
+		if err != nil {
+			return err
+		}
+		return tx.Subscribe(ctx, "sam", ch.ID, 0, c.NowMs())
+	})
+	if err != nil {
+		t.Fatalf("sam raw Subscribe dev-notes: %v", err)
 	}
 	ss, err := sam.Open(ctx, bus.OpenSessionInput{})
 	if err != nil {

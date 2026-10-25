@@ -6,6 +6,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/rules"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -31,13 +32,13 @@ func (s Service) Create(ctx context.Context, identity string, in bus.TaskCreateI
 	)
 	err := s.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {
 		out, fx, replayed = bus.Task{}, effects{}, false
-		who, err := s.RequireIdentity(ctx, tx, identity)
+		pr, err := access.Resolve(ctx, tx, identity)
 		if err != nil {
 			return err
 		}
 		replayed, err = s.WithReceipt(ctx, tx, identity, key, in, &out, func() error {
 			var err error
-			out, err = s.create(ctx, tx, identity, who.Kind, in, &fx)
+			out, err = s.create(ctx, tx, identity, pr, in, &fx)
 			return err
 		})
 		return err
@@ -51,12 +52,13 @@ func (s Service) Create(ctx context.Context, identity string, in bus.TaskCreateI
 	return out, nil
 }
 
-func (s Service) create(ctx context.Context, tx store.Tx, identity string, kind store.IdentityKind, in bus.TaskCreateInput, fx *effects) (bus.Task, error) {
+func (s Service) create(ctx context.Context, tx store.Tx, identity string, pr access.Principal, in bus.TaskCreateInput, fx *effects) (bus.Task, error) {
+	kind := pr.Kind
 	ch, err := s.taskChannel(ctx, tx, in.Channel)
 	if err != nil {
 		return bus.Task{}, err
 	}
-	if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermWrite); err != nil {
+	if err := s.Access.Require(ctx, tx, pr, access.Channel{ID: ch.ID}, access.Write); err != nil {
 		return bus.Task{}, err
 	}
 	ts, err := loadTasks(ctx, tx, ch)

@@ -2,10 +2,10 @@ package tasks
 
 import (
 	"context"
-	"errors"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -60,6 +60,12 @@ func (s Service) taskChannel(ctx context.Context, tx store.Tx, name string) (sto
 
 // taskChannelOf returns the channel of the live revision of memory id, which
 // must be a task list.
+// noLiveRevision is the answer for an id with no live revision: also the
+// answer for a task on a channel outside the caller's scope.
+func noLiveRevision(id int64) error {
+	return core.E(bus.CodeNotFound, "memory %d has no live revision", id)
+}
+
 func (s Service) taskChannelOf(ctx context.Context, tx store.Tx, id int64) (store.Channel, error) {
 	_, ch, err := s.LiveRevision(ctx, tx, id)
 	if err != nil {
@@ -73,19 +79,16 @@ func (s Service) taskChannelOf(ctx context.Context, tx store.Tx, id int64) (stor
 
 // ownerKnown is rule 6 (Decision 81): an owner must be a registered
 // identity. The reserved names everyone and admins are not.
-func (s Service) ownerKnown(ctx context.Context, tx store.Tx) func(string) (bool, error) {
+func (s Service) ownerKnown(ctx context.Context, tx store.Tx, pr access.Principal) func(string) (bool, error) {
 	return func(owner string) (bool, error) {
 		if owner == "" || owner == store.Everyone || owner == store.Admins {
 			return false, nil
 		}
-		_, err := tx.Identity(ctx, owner)
-		if errors.Is(err, store.ErrNotFound) {
-			return false, nil
-		}
+		d, err := s.Access.Check(ctx, tx, pr, access.Identity{Name: owner}, access.See)
 		if err != nil {
-			return false, core.FromStore(err)
+			return false, err
 		}
-		return true, nil
+		return d.Allowed, nil
 	}
 }
 

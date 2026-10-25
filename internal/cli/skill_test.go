@@ -41,9 +41,7 @@ func TestSkillDeliveryClaims(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := pat.Bus.Subscribe(ctx, bus.SubscribeInput{Channel: "mem"}); err != nil {
-		t.Fatal(err)
-	}
+	e.subscribeRaw(t, "pat", "mem")
 	if err := pat.Bus.SubscribeTags(ctx, bus.TagSubscribeInput{Patterns: []string{"area:go"}}); err != nil {
 		t.Fatal(err)
 	}

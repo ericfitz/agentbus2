@@ -6,6 +6,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/core/rules"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -54,7 +55,7 @@ func (s Service) SendWith(ctx context.Context, identity string, in bus.SendInput
 	)
 	err := s.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {
 		res, replayed, size, chanID, kind = bus.SendResult{}, false, 0, 0, ""
-		who, err := s.RequireIdentity(ctx, tx, identity)
+		p, err := access.Resolve(ctx, tx, identity)
 		if err != nil {
 			return err
 		}
@@ -103,12 +104,12 @@ func (s Service) SendWith(ctx context.Context, identity string, in bus.SendInput
 			if ch.Kind == store.KindTasks {
 				return core.E(bus.CodeValidation, "%s is a task list; use task_create, task_update, task_claim, task_release", in.Channel)
 			}
-			if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermWrite); err != nil {
+			if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.Write); err != nil {
 				return err
 			}
 			ai := core.AppendInput{
 				ChannelID: ch.ID, Channel: ch.Name, Display: display, Kind: ch.Kind,
-				Sender: identity, SenderKind: who.Kind, SessionID: in.Session, Type: in.Type, Subject: subject,
+				Sender: identity, SenderKind: p.Kind, SessionID: in.Session, Type: in.Type, Subject: subject,
 				Content: in.Content, ReplyTo: in.ReplyTo, Metadata: metadata, Tags: tags,
 			}
 			n, err := s.EnvelopeSize(ai, identity)

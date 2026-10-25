@@ -6,6 +6,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/core/scopes"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -15,18 +16,30 @@ import (
 // deleteChannel without the subscriber refusal, RenameChannel on the id),
 // under the channel ACL (Decisions 80, 89, 93, 94).
 
-// List returns every channel by name with its kind and nothing else; no
-// permission is needed (Decision 94).
+// List returns the channels the identity may list, by name with their kind
+// and nothing else. Until the channel-visibility rebuild the List action
+// admits every channel of the principal's scope (Decision 94 for an unscoped
+// principal: every channel; accesscheck spec 3.2).
 func (s Service) List(ctx context.Context, identity string) ([]bus.Channel, error) {
 	out := []bus.Channel{}
-	err := s.read(ctx, identity, func(ctx context.Context, tx store.Tx) error {
+	err := s.read(ctx, identity, func(ctx context.Context, tx store.Tx, p access.Principal) error {
 		out = out[:0]
+		ids, err := s.Access.Channels(ctx, tx, p, access.List)
+		if err != nil {
+			return err
+		}
+		visible := make(map[int64]bool, len(ids))
+		for _, id := range ids {
+			visible[id] = true
+		}
 		chs, err := tx.ListChannels(ctx)
 		if err != nil {
 			return err
 		}
 		for _, c := range chs {
-			out = append(out, core.ChannelToBus(c))
+			if visible[c.ID] {
+				out = append(out, core.ChannelToBus(c))
+			}
 		}
 		return nil
 	})
@@ -56,29 +69,23 @@ func (s Service) Create(ctx context.Context, identity string, in bus.CreateChann
 		Scope string
 	}{"create_channel", in.Name, kind, acl, in.Scope}
 	var res bus.ChannelInfo
-	err = s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx) error {
-		creator, err := s.RequireIdentity(ctx, tx, identity)
-		if err != nil {
+	err = s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx, p access.Principal) error {
+		if err := s.Access.Require(ctx, tx, p, access.Server{}, access.CreateChannel); err != nil {
 			return err
-		}
-		if s.Cfg.ChannelCreation == core.ChannelCreationAdmins {
-			if _, err := s.RequireAdmin(ctx, tx, identity); err != nil {
-				return err
-			}
 		}
 		// The scope (Slack bridge spec 4.2): only an administrator names
 		// one; otherwise the channel takes the creator's. Either must be
 		// open.
-		scope := creator.Scope
+		scope := p.Scope
 		if in.Scope != "" {
-			if _, err := s.RequireAdmin(ctx, tx, identity); err != nil {
-				var be *bus.Error
-				if errors.As(err, &be) && be.Code == bus.CodeForbidden {
-					return core.E(bus.CodeForbidden, "only an administrator may name a scope")
-				}
+			if err := s.Access.Require(ctx, tx, p, access.Server{}, access.Administer,
+				access.WithText("only an administrator may name a scope")); err != nil {
 				return err
 			}
 			scope = in.Scope
+		}
+		if err := s.visibleACL(ctx, tx, p, acl); err != nil {
+			return err
 		}
 		if scope != "" {
 			if _, err := scopes.RequireOpen(ctx, tx, scope); err != nil {
@@ -102,15 +109,36 @@ func (s Service) Create(ctx context.Context, identity string, in bus.CreateChann
 }
 
 // adminChannel resolves a channel and requires admin on it.
-func (s Service) adminChannel(ctx context.Context, tx store.Tx, identity, name string) (store.Channel, error) {
+func (s Service) adminChannel(ctx context.Context, tx store.Tx, p access.Principal, name string) (store.Channel, error) {
 	ch, err := s.ChannelByName(ctx, tx, name)
 	if err != nil {
 		return store.Channel{}, err
 	}
-	if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermAdmin); err != nil {
+	if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.Admin); err != nil {
 		return store.Channel{}, err
 	}
 	return ch, nil
+}
+
+// visibleACL refuses, with the Decision 96 text, an ACL entry naming an
+// identity the granter may not see (an unregistered one, or one outside a
+// scoped granter's scope: the granter learns nothing, accesscheck spec 4.1
+// (b) and (d)). The reserved names are not identities of the listing and are
+// the Store's to validate.
+func (s Service) visibleACL(ctx context.Context, tx store.Tx, p access.Principal, entries []store.ACLEntry) error {
+	for _, e := range entries {
+		if store.ReservedIdentity(e.Identity) {
+			continue
+		}
+		d, err := s.Access.Check(ctx, tx, p, access.Identity{Name: e.Identity}, access.See)
+		if err != nil {
+			return err
+		}
+		if !d.Allowed {
+			return core.E(bus.CodeValidation, "ACL identity %q is not a registered identity", e.Identity)
+		}
+	}
+	return nil
 }
 
 // liveBridge reports whether the channel has a bridge in state creating or
@@ -154,8 +182,8 @@ func protected(ch store.Channel, what string) error {
 func (s Service) Delete(ctx context.Context, identity string, in bus.DeleteChannelInput) error {
 	payload := struct{ Op, Name string }{"delete_channel", in.Name}
 	var res struct{}
-	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx) error {
-		ch, err := s.adminChannel(ctx, tx, identity, in.Name)
+	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx, p access.Principal) error {
+		ch, err := s.adminChannel(ctx, tx, p, in.Name)
 		if err != nil {
 			return err
 		}
@@ -174,8 +202,8 @@ func (s Service) Delete(ctx context.Context, identity string, in bus.DeleteChann
 func (s Service) Rename(ctx context.Context, identity string, in bus.RenameChannelInput) error {
 	payload := struct{ Op, Name, NewName string }{"rename_channel", in.Name, in.NewName}
 	var res struct{}
-	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx) error {
-		ch, err := s.adminChannel(ctx, tx, identity, in.Name)
+	return s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx, p access.Principal) error {
+		ch, err := s.adminChannel(ctx, tx, p, in.Name)
 		if err != nil {
 			return err
 		}
@@ -193,8 +221,8 @@ func (s Service) Rename(ctx context.Context, identity string, in bus.RenameChann
 // channel.
 func (s Service) ACL(ctx context.Context, identity, channel string) ([]bus.ACLEntry, error) {
 	out := []bus.ACLEntry{}
-	err := s.read(ctx, identity, func(ctx context.Context, tx store.Tx) error {
-		ch, err := s.adminChannel(ctx, tx, identity, channel)
+	err := s.read(ctx, identity, func(ctx context.Context, tx store.Tx, p access.Principal) error {
+		ch, err := s.adminChannel(ctx, tx, p, channel)
 		if err != nil {
 			return err
 		}
@@ -230,9 +258,9 @@ func (s Service) SetACL(ctx context.Context, identity string, in bus.SetACLInput
 	}{"set_acl", in.Channel, entries}
 	var res struct{}
 	var channelID int64
-	err = s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx) error {
+	err = s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx, p access.Principal) error {
 		channelID = 0
-		ch, err := s.adminChannel(ctx, tx, identity, in.Channel)
+		ch, err := s.adminChannel(ctx, tx, p, in.Channel)
 		if err != nil {
 			return err
 		}
@@ -241,16 +269,16 @@ func (s Service) SetACL(ctx context.Context, identity string, in bus.SetACLInput
 			return err
 		}
 		if pinned {
-			if _, err := s.RequireAdmin(ctx, tx, identity); err != nil {
-				var be *bus.Error
-				if errors.As(err, &be) && be.Code == bus.CodeForbidden {
-					return core.E(bus.CodeForbidden, "only a server administrator may change the ACL of a bridged channel")
-				}
+			if err := s.Access.Require(ctx, tx, p, access.Server{}, access.Administer,
+				access.WithText("only a server administrator may change the ACL of a bridged channel")); err != nil {
 				return err
 			}
 			if err := scopes.CheckBridgeACL(entries); err != nil {
 				return err
 			}
+		}
+		if err := s.visibleACL(ctx, tx, p, entries); err != nil {
+			return err
 		}
 		if err := tx.SetACL(ctx, ch.ID, entries); err != nil {
 			return err

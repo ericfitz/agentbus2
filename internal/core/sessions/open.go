@@ -6,6 +6,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -163,6 +164,10 @@ func (s Service) offered(ctx context.Context, tx store.Tx, identity string, offe
 	if len(offers) == 0 {
 		return nil, nil
 	}
+	p, err := access.Resolve(ctx, tx, identity)
+	if err != nil {
+		return nil, err
+	}
 	maxSeq, err := tx.MaxSeq(ctx)
 	if err != nil {
 		return nil, core.FromStore(err)
@@ -184,12 +189,11 @@ func (s Service) offered(ctx context.Context, tx store.Tx, identity string, offe
 			reject("unsubscribed")
 			continue
 		}
-		if err := s.Authorize(ctx, tx, identity, ch.ID, store.PermRead); err != nil {
-			if bus.CodeOf(err) == bus.CodeForbidden {
-				reject("unreadable")
-				continue
-			}
+		if d, err := s.Access.Check(ctx, tx, p, access.Channel{ID: ch.ID}, access.Deliver); err != nil {
 			return nil, err
+		} else if !d.Allowed {
+			reject("unreadable")
+			continue
 		}
 		switch {
 		case oc.Seq < ch.EvictedBeforeSeq-1:
@@ -208,6 +212,10 @@ func (s Service) offered(ctx context.Context, tx store.Tx, identity string, offe
 // subscription to count them, where v1 used count(*); a CountAfter Store
 // method is a later amendment if it shows in profiling.
 func (s Service) pending(ctx context.Context, tx store.Tx, identity string, pos map[int64]int64) ([]bus.PendingChannel, error) {
+	p, err := access.Resolve(ctx, tx, identity)
+	if err != nil {
+		return nil, err
+	}
 	subs, err := tx.Subscriptions(ctx, identity)
 	if err != nil {
 		return nil, core.FromStore(err)
@@ -218,11 +226,10 @@ func (s Service) pending(ctx context.Context, tx store.Tx, identity string, pos 
 		if !ok {
 			after = sub.AckedSeq
 		}
-		if err := s.Authorize(ctx, tx, identity, sub.ChannelID, store.PermRead); err != nil {
-			if bus.CodeOf(err) == bus.CodeForbidden {
-				continue // Receive skips an unreadable subscription too
-			}
+		if d, err := s.Access.Check(ctx, tx, p, access.Channel{ID: sub.ChannelID}, access.Deliver); err != nil {
 			return nil, err
+		} else if !d.Allowed {
+			continue // Receive skips an unreadable subscription too
 		}
 		ch, err := tx.Channel(ctx, sub.ChannelID)
 		if err != nil {
