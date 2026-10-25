@@ -10,9 +10,17 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
-// HoldsKeysText is the detail RegisterLocalHuman's conflict carries when the
-// identity holds keys, so a caller can tell it from an exhausted rerun.
-const HoldsKeysText = "holds keys, so it cannot be a human"
+// ErrHoldsKeys is what RegisterLocalHuman's holds-keys conflict matches under
+// errors.Is, so a caller can tell it from a conflict left by exhausted reruns
+// without reading message text. The error is still a conflict *bus.Error.
+var ErrHoldsKeys = errors.New("identity holds keys, so it cannot be a human")
+
+// holdsKeysError is the conflict *bus.Error that also matches ErrHoldsKeys.
+type holdsKeysError struct{ be *bus.Error }
+
+func (e holdsKeysError) Error() string        { return e.be.Error() }
+func (e holdsKeysError) Unwrap() error        { return e.be }
+func (e holdsKeysError) Is(target error) bool { return target == ErrHoldsKeys }
 
 // CreateIdentityByEmail creates the human identity named by email (spec 4):
 // the email is normalized, the identity's name is the normalized address, and
@@ -158,7 +166,7 @@ func (s Service) RegisterLocalHuman(ctx context.Context, name string) error {
 				return err
 			}
 			if len(ks) > 0 {
-				return core.E(bus.CodeConflict, "identity %q "+HoldsKeysText, name)
+				return holdsKeysError{core.E(bus.CodeConflict, "identity %q holds keys, so it cannot be a human", name)}
 			}
 			return tx.MarkHuman(ctx, name)
 		})

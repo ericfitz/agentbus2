@@ -3,6 +3,7 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -457,15 +458,18 @@ func TestOpenLocalOSUserWithKeysRefused(t *testing.T) {
 }
 
 func TestHumanRegisterErrorMapping(t *testing.T) {
-	holds := core.E(ab2bus.CodeConflict, "identity %q "+identities.HoldsKeysText, "eric")
+	// The typed error, not message text, selects the mapping.
+	holds := fmt.Errorf("register: %w", identities.ErrHoldsKeys)
 	var re *ResolveError
 	if err := humanRegisterError("eric", holds); !errors.As(err, &re) || !strings.Contains(err.Error(), "pass -identity") {
 		t.Fatalf("holds-keys = %v, want a ResolveError", err)
 	}
 	// A conflict from exhausted reruns is not the user's to fix with -identity.
-	for _, other := range []error{core.FromStore(store.ErrConflict), errors.New("disk full")} {
+	// A conflict that merely reads like it is not matched either.
+	lookalike := core.E(ab2bus.CodeConflict, "identity %q holds keys, so it cannot be a human", "eric")
+	for _, other := range []error{core.FromStore(store.ErrConflict), errors.New("disk full"), lookalike} {
 		err := humanRegisterError("eric", other)
-		if errors.As(err, &re) || strings.Contains(err.Error(), "holds keys") {
+		if errors.As(err, &re) || strings.Contains(err.Error(), "pass -identity") {
 			t.Fatalf("%v mapped to %v", other, err)
 		}
 	}

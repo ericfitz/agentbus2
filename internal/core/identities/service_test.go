@@ -1416,7 +1416,11 @@ func TestRegisterLocalHuman(t *testing.T) {
 	if _, err := s.Register(ctx, ModeOpen, RegisterInput{Identity: "kim", Key: genKey(t)}); err != nil {
 		t.Fatal(err)
 	}
-	wantCode(t, s.RegisterLocalHuman(ctx, "kim"), bus.CodeConflict)
+	holdsErr := s.RegisterLocalHuman(ctx, "kim")
+	wantCode(t, holdsErr, bus.CodeConflict)
+	if !errors.Is(holdsErr, ErrHoldsKeys) {
+		t.Fatalf("holds-keys conflict = %v, want errors.Is ErrHoldsKeys", holdsErr)
+	}
 	if got := identityOf(t, s, "kim"); got.Kind != store.IdentityAgent {
 		t.Fatalf("kim kind = %q", got.Kind)
 	}

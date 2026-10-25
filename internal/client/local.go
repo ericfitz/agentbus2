@@ -8,11 +8,9 @@ import (
 	"math/rand/v2"
 	"net/http"
 	"os"
-	"strings"
 	"sync"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/bus/remote"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/channels"
@@ -121,8 +119,7 @@ func openLocal(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 // conflict is the user's to fix with -identity (a ResolveError); any other
 // error, a conflict left by exhausted reruns included, is reported as is.
 func humanRegisterError(name string, err error) error {
-	var be *bus.Error
-	if errors.As(err, &be) && be.Code == bus.CodeConflict && strings.Contains(be.Message, identities.HoldsKeysText) {
+	if errors.Is(err, identities.ErrHoldsKeys) {
 		return resolveErr(fmt.Errorf("identity %q holds keys, so it cannot be the TUI's human identity; pass -identity", name))
 	}
 	return fmt.Errorf("registering %q: %w", name, err)
