@@ -279,6 +279,8 @@ scope-prefixed names of section 4.2.
 | Session | Use | the session's identity is `p.Name` (ADR 0003; the five sites of 2.1; `not_found`) |
 | Identity | See | the scope gate alone (the `Identities` listing; an unscoped principal sees every identity) |
 
+An administrator is never scoped (Eric's decision 2026-10-25, replaces 4.1 (a); section 4.3): `decide` reads `p.Admin` alone, and the identity read path guarantees that a principal with `Admin` has `Scope == ""`. A scoped principal is therefore never an administrator.
+
 The implicit `admins` entry grants `admin` only, never `read` or `write`
 (ADR 0008; an administrator grants itself `read` through `SetACL`, which
 is what Eric's answer to question 6 names). There is no task row: write
@@ -607,12 +609,12 @@ unaffected." Made precise, per object kind, as the scope gate of section
 | --- | --- | --- |
 | Channel (`channels.scope`) | `channel.scope == p.Scope`; an unscoped channel (`""`), `general` included, is outside every scope | every channel action by name is `not_found` `channel %q does not exist` (Reason `out_of_scope`; Eric's decision 4.1 (d): a scoped identity cannot learn what exists outside its scope, which supersedes the visibility decision's "no name secrecy" for scoped identities only); `List`, `Channels(Read/Deliver)` and so Receive, Peek, Watch, Search and tag matching omit it; a create or rename onto a name without the `<scope>-` prefix is `validation` (section 4.2), so a scoped creator's `conflict` only ever names a channel of its own scope |
 | Task, memory | their channel's scope | as the channel; `task_get`/`get_memory` and the other by-id operations on an out-of-scope channel are `not_found` with the unknown-id text |
-| Server (status, usage, reset, reset-credential, scopes, identities create, bridges create/list) | never | `Administer` is `forbidden` `administrator privilege required` for a scoped principal whatever its `Admin` flag (Eric's decision 4.1 (a): it cannot be or act as an administrator; `MakeAdmin` and `admins add` refuse it); the answer is the one every non-administrator gets and reveals nothing |
+| Server (status, usage, reset, reset-credential, scopes, identities create, bridges create/list) | never (a scoped identity is not an administrator, section 4.3) | `Administer` is `forbidden` `administrator privilege required` for a scoped principal whatever its `Admin` flag (Eric's decision 4.1 (a): it cannot be or act as an administrator; `MakeAdmin` and `admins add` refuse it); the answer is the one every non-administrator gets and reveals nothing |
 | Bridge by channel (`bridges get/remove`) | its channel's scope | administrator-only, so `forbidden` as above; were a scoped principal ever an administrator it would be `not_found` `channel %q has no bridge` |
 | Channel creation | always (the one exemption of the gate: the new channel takes `p.Scope`, ADR 0009 decision 8) | `CreateChannel` follows Decision 93; naming any scope in the request is `Administer` and so `forbidden`; `channel_creation: admins` denies a scoped principal (it cannot be an effective administrator) |
 | Session | the caller's own | unchanged: another identity's session is `not_found` (question 2); a scoped identity's sessions are its own |
 | Identity (`Identities` listing, the MCP `discover`; a task `owner`; an ACL identity named by a scoped granter) | `identity.scope == p.Scope` | omitted from the listing (`See`); as a task owner `not_found` `identity %q is not registered`; as an ACL identity the Decision 96 `validation` text (4.1 (b) and (d)) |
-| Health | no object | the identity tier as today; a scoped administrator-flagged identity is tier `identity`, not `admin` (consistent with the Server row) |
+| Health | no object | the identity tier as today; a scoped identity is tier `identity` (it cannot be an administrator, section 4.3) |
 | Bridge | server operation | `forbidden` |
 | Human principals | always unscoped (`identities.scope` is set only by `CreateScopedIdentity`) | unaffected |
 | `slack-bridge` | never a principal | n/a |
@@ -763,10 +765,9 @@ Each is **Eric's decision 2026-10-25**, ruling on the six sub-items the
 first version of this section raised and on the two choices the review
 made (section 3.9 and 3.10):
 
-- (a) **A scoped identity cannot be or act as a server administrator.**
-  `Administer` is denied to a scoped principal whatever its `Admin` flag;
-  `MakeAdmin` and `admins add` refuse a scoped identity (`validation`, "a
-  scoped identity cannot be an administrator"). (Accepted.)
+- (a) **Replaced by section 4.3.** (Was: a scoped identity cannot be or act
+  as a server administrator; `MakeAdmin` and `admins add` refused a scoped
+  identity.)
 - (b) **An ACL row naming a scoped identity on a channel outside its
   scope is accepted but inert**: the scope gate runs first, so the row
   grants nothing; `SetACL` does not refuse it. (Accepted.) One
@@ -817,6 +818,48 @@ made (section 3.9 and 3.10):
 - (review 2) **Interim `List`**: an unscoped principal's list is unfiltered
   until the channel-visibility rebuild; a scoped principal's list is its
   scope's channels now. (Accepted.)
+
+### 4.3 Eric's decision 2026-10-25, replaces 4.1 (a): an administrator is never scoped
+
+**Eric's decision 2026-10-25:** "An admin is an admin. Admin is
+incompatible with scopes. If an entry is flagged as admin, any scope
+assigned must be removed. Any attempt to assign a scope to an admin must
+fail. When reading identity information from the store, if an identity has
+both admin and a scope, the scope must be removed and an error logged." And:
+the stored row is repaired, not only the value in memory.
+
+Consequences (implemented in Task 5 of the plan; Task 1's `decide` already
+reads `p.Admin` alone):
+
+- `MakeAdmin` and `admins add` on a scoped identity **clear its scope** (one
+  transaction: `SetAdmin` true and the scope cleared) and no longer refuse.
+  The identity's ACL rows and sessions are untouched; its in-scope channels
+  stay in their scope, so the former member now reaches them as an
+  unscoped principal.
+- Creating a scoped identity that is an administrator, or setting a scope on
+  an administrator (`CreateScopedIdentity` for a name on the `admins` list,
+  any future scope assignment), fails with `validation` (`an administrator
+  cannot be scoped`): the input names an impossible combination, as the
+  existing `validation` refusals of the Store do. `Store.CreateScopedIdentity`
+  and the sign-in path enforce it in the Store (one rule at the write).
+- Every identity read normalizes `admin` + a scope to `admin` with no scope
+  and logs an error naming the identity. This is done in the one place that
+  builds an `Identity` from a row (the `sqlstore` identity scan helper, which
+  receives the Store's logger through `sqlstore.Options`, defaulting to
+  `slog.Default()`), so `Resolve`, `Identities`, `Holders` and every other
+  reader see the repaired value. A read transaction cannot write, so the
+  normalization alone is in memory.
+- **Repair of the stored row.** A new Store method
+  `Identities.ClearScopeOfAdmins(ctx) ([]string, error)` runs one statement
+  (`UPDATE identities SET scope = NULL WHERE is_admin AND scope IS NOT NULL`
+  returning the names) and the maintenance loop calls it each pass under the
+  existing maintenance lock (`Store.Locks`), logging an error per name. A
+  second run finds no rows and does nothing (idempotent); two overlapping
+  runs (replicas) are excluded by the lock, and if the lock were lost the
+  statement is still safe because it only ever clears a scope on an
+  administrator and a lost race changes no row twice; a run that starts from a
+  failed run's leftovers simply repairs what remains. Until the next pass
+  the read path's in-memory normalization keeps the behavior correct.
 
 ### 4.2 Eric's decision 2026-10-25: scope-prefixed channel names (closed)
 

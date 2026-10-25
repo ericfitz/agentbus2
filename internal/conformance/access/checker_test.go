@@ -139,7 +139,7 @@ func TestRequireTexts(t *testing.T) {
 		check("agent memory", "pat", access.Channel{ID: mem.ID}, access.Deliver, &want{bus.CodeValidation, "mem is a memory channel: agents do not subscribe to memories (decision 20); use search to find a memory and get_memory to read it", false})
 		check("agent memory read", "pat", access.Channel{ID: mem.ID}, access.Read, nil)
 		check("identity scope", "job1-coder", access.Identity{Name: "pat"}, access.See, &want{bus.CodeNotFound, `identity "pat" is not registered`, false})
-		check("undefined pair", "pat", access.Server{}, access.Read, &want{bus.CodeInternal, `access: action "read" is not defined for server`, true})
+		check("undefined pair", "pat", access.Server{}, access.Read, &want{bus.CodeInternal, `access: action "read" is not defined for server`, false})
 		check("unknown channel", "pat", access.Channel{ID: 99999}, access.Read, &want{bus.CodeNotFound, "channel 99999 does not exist", false})
 		// Check never panics on an undefined pair.
 		mustRead(t, s, func(ctx context.Context, tx store.Tx) error {
@@ -182,6 +182,7 @@ func TestChannelsAgreesWithCheck(t *testing.T) {
 			mkChannel(t, s, "c"+string(rune('a'+i/26))+string(rune('a'+i%26)), kinds[rng.IntN(len(kinds))], creators[rng.IntN(len(creators))], scopes[rng.IntN(len(scopes))], acl)
 		}
 		actions := []access.Action{access.Read, access.Write, access.Admin, access.List, access.Deliver, access.Post}
+		allowedN, deniedN := 0, 0
 		mustRead(t, s, func(ctx context.Context, tx store.Tx) error {
 			for _, who := range []string{"root", "pat", "kim", halName, hal2Name, "job1-coder"} {
 				p, err := access.Resolve(ctx, tx, who)
@@ -201,6 +202,9 @@ func TestChannelsAgreesWithCheck(t *testing.T) {
 						}
 						if d.Allowed {
 							want = append(want, c.ID)
+							allowedN++
+						} else {
+							deniedN++
 						}
 					}
 					slices.Sort(want)
@@ -215,6 +219,17 @@ func TestChannelsAgreesWithCheck(t *testing.T) {
 			}
 			if _, err := checker.Channels(ctx, tx, access.Principal{Name: "pat"}, access.Administer); bus.CodeOf(err) != bus.CodeInternal {
 				t.Errorf("Channels with a server action = %v, want internal", err)
+			}
+			var be *bus.Error
+			if _, err := checker.Holders(ctx, tx, access.Channel{ID: 1}, access.Administer); !errors.As(err, &be) || be.Code != bus.CodeInternal || be.Retryable {
+				t.Errorf("Holders with a server action = %v, want non-retryable internal", err)
+			}
+			if _, err := checker.Channels(ctx, tx, access.Principal{Name: "pat"}, access.Administer); !errors.As(err, &be) || be.Retryable {
+				t.Errorf("Channels internal error retryable: %v", err)
+			}
+			// no vacuous pass: the random data must produce both outcomes
+			if allowedN == 0 || deniedN == 0 {
+				t.Errorf("random data produced %d allowed and %d denied (principal, action, channel) cases", allowedN, deniedN)
 			}
 			return nil
 		})

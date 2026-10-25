@@ -72,6 +72,17 @@ func TestDecideChannelRules(t *testing.T) {
 	}
 }
 
+func TestDeliverMemoryFailsClosedOnUnknownKind(t *testing.T) {
+	f := chFacts("", store.KindMemory, entry(store.Everyone, r))
+	unknown := Principal{Name: "x", Kind: "robot"}
+	if d := decide(unknown, f, Deliver); d.Allowed || d.Reason != ReasonMemoryChannel {
+		t.Errorf("unknown kind on a memory channel = %+v, want memory_channel denial", d)
+	}
+	if !decide(unknown, chFacts("", store.KindOrdinary, entry(store.Everyone, r)), Deliver).Allowed {
+		t.Error("unknown kind denied an ordinary channel it may read")
+	}
+}
+
 func TestDecideDenialTexts(t *testing.T) {
 	d := decide(pat, chFacts("", store.KindOrdinary, entry("pat", r)), Write)
 	if d.Code != bus.CodeForbidden || d.Text != `pat needs write on channel "work"` {
@@ -106,9 +117,8 @@ func TestDecideServer(t *testing.T) {
 	if !decide(root, admins, CreateChannel).Allowed {
 		t.Error("admins creation denied an admin")
 	}
-	scopedAdmin := Principal{Name: "job1-boss", Kind: store.IdentityAgent, Admin: true, Scope: "job1"}
-	if decide(scopedAdmin, admins, CreateChannel).Allowed {
-		t.Error("a scoped identity acted as an administrator for CreateChannel")
+	if decide(coder, admins, CreateChannel).Allowed {
+		t.Error("a scoped non-administrator created a channel under admins")
 	}
 	if d := decide(pat, serverFacts{ChannelCreation: "bogus"}, CreateChannel); d.Allowed || d.Code != bus.CodeInternal {
 		t.Errorf("unknown channel_creation = %+v, want internal", d)
@@ -153,13 +163,13 @@ func TestScopeGate(t *testing.T) {
 			}
 		}
 	}
-	// a scoped administrator-flagged identity is not an administrator
-	scopedAdmin := Principal{Name: "job1-boss", Kind: store.IdentityAgent, Admin: true, Scope: "job1"}
-	d := decide(scopedAdmin, serverFacts{}, Administer)
+	// a scoped identity is never an administrator (an administrator is never
+	// scoped, so the flag and a scope do not occur together after Resolve)
+	d := decide(coder, serverFacts{}, Administer)
 	if d.Allowed || d.Reason != ReasonNotAdmin || d.Code != bus.CodeForbidden || d.Text != "administrator privilege required" {
 		t.Errorf("scoped Administer = %+v", d)
 	}
-	if decide(scopedAdmin, chFacts("job1", ord), Admin).Allowed {
+	if decide(coder, chFacts("job1", ord), Admin).Allowed {
 		t.Error("a scoped identity got the implicit admins entry on a channel")
 	}
 	// identities

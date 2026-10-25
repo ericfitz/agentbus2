@@ -100,7 +100,7 @@ func (c Checker) Require(ctx context.Context, tx store.Tx, p Principal, o Object
 	if ro.text != "" && d.Code == bus.CodeForbidden {
 		text = ro.text
 	}
-	return bus.Errorf(d.Code, d.Code == bus.CodeInternal, "%s", text)
+	return bus.Errorf(d.Code, false, "%s", text) // never retryable, internal included (spec 3.6)
 }
 
 // channelActions are the actions Channels accepts.
@@ -117,7 +117,7 @@ func channelAction(a Action) bool {
 func (c Checker) Channels(ctx context.Context, tx store.Tx, p Principal, a Action) ([]int64, error) {
 	if !channelAction(a) {
 		d := undefined(channelFacts{}, a)
-		return nil, bus.Errorf(d.Code, true, "%s", d.Text)
+		return nil, bus.Errorf(d.Code, false, "%s", d.Text)
 	}
 	if p == Anonymous {
 		return nil, nil
@@ -177,6 +177,10 @@ func (c Checker) Identities(ctx context.Context, tx store.Tx, p Principal) ([]st
 // allows a on the channel, by name. The reserved names are not principals and
 // never appear.
 func (c Checker) Holders(ctx context.Context, tx store.Tx, o Channel, a Action) ([]Principal, error) {
+	if !channelAction(a) {
+		d := undefined(channelFacts{}, a)
+		return nil, bus.Errorf(d.Code, false, "%s", d.Text)
+	}
 	f, _, err := c.load(ctx, tx, o)
 	if err != nil {
 		return nil, err

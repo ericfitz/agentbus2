@@ -58,8 +58,10 @@ func deny(code bus.Code, reason, format string, args ...any) Decision {
 }
 
 // actsAsAdmin reports whether p holds the server administrator right: the
-// flag, and never for a scoped identity (Eric's decision 4.1 (a)).
-func actsAsAdmin(p Principal) bool { return p.Admin && p.Scope == "" }
+// flag. An administrator is never scoped (Eric's decision 2026-10-25, replaces
+// 4.1 (a)); the identity read path guarantees it, so the rule does not
+// consult the scope.
+func actsAsAdmin(p Principal) bool { return p.Admin }
 
 // inScope is the scope gate (spec 3.12): an unscoped principal is never
 // restricted; a scoped one reaches only objects of its scope. The server is
@@ -136,9 +138,6 @@ func decide(p Principal, f facts, a Action) Decision {
 func decideServer(p Principal, f serverFacts, a Action) Decision {
 	switch a {
 	case Administer:
-		if p.Scope != "" {
-			return deny(bus.CodeForbidden, ReasonNotAdmin, "administrator privilege required")
-		}
 		if !p.Admin {
 			return deny(bus.CodeForbidden, ReasonNotAdmin, "administrator privilege required")
 		}
@@ -218,7 +217,7 @@ func decideChannel(p Principal, f channelFacts, a Action) Decision {
 		if !perms.Read {
 			return needs(p, store.PermRead, f.Channel)
 		}
-		if p.Kind == store.IdentityAgent && f.Channel.Kind == store.KindMemory {
+		if p.Kind != store.IdentityHuman && f.Channel.Kind == store.KindMemory { // fail closed: only a human is delivered a memory channel
 			return deny(bus.CodeValidation, ReasonMemoryChannel,
 				"%s is a memory channel: agents do not subscribe to memories (decision 20); use search to find a memory and get_memory to read it", f.Channel.Name)
 		}
