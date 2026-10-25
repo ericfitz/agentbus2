@@ -448,6 +448,15 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 	case bus.CodeConflict:
 		return OutcomeDuplicate, nil
 	case bus.CodeValidation:
+		// The refusal is deterministic, so record the ts in the drop set: a
+		// stalled cursor re-reads the message on every catch-up pass, which
+		// then ignores it above without logging it again.
+		perr := s.core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+			return tx.PutBridgeDrop(ctx, b.ID, m.TS, s.core.NowMs())
+		})
+		if perr != nil && !errors.Is(perr, store.ErrNotFound) { // not found: the bridge was removed meanwhile
+			return OutcomeRetry, perr
+		}
 		s.log.Info("slack message ignored", "slack_user", m.User, "slack_channel", b.SlackChannelID, "code", bus.CodeValidation)
 		return OutcomeIgnored, nil
 	case bus.CodeForbidden:

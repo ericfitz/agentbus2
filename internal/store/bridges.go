@@ -82,7 +82,7 @@ type Bridges interface {
 	// slack_ts >= sinceTS, the most recently active thread first, at most
 	// limit (ErrInvalid when limit < 1).
 	ThreadRoots(ctx context.Context, bridgeID int64, sinceTS string, limit int) ([]string, error)
-	// PutBridgeDrop records a Slack message dropped as unauthorized;
+	// PutBridgeDrop records a Slack message dropped as unauthorized, or ignored for validation;
 	// idempotent; ErrNotFound for an unknown bridge; ErrInvalid for an empty ts.
 	PutBridgeDrop(ctx context.Context, bridgeID int64, ts string, now int64) error
 	BridgeDropped(ctx context.Context, bridgeID int64, ts string) (bool, error)

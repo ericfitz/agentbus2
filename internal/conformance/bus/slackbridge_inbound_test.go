@@ -714,6 +714,26 @@ func TestSlackBridgeInbound(t *testing.T) {
 			}
 		})
 
+		t.Run("validation-recorded-logged-once", func(t *testing.T) {
+			f := newInFix(t, e)
+			m := f.fake.Say(f.sl, "U1", strings.Repeat("x", 2<<20), "")
+			f.want(m, "ignored")
+			if !f.dropped(m.TS) {
+				t.Error("an ignored-for-validation message was not recorded")
+			}
+			// A stalled cursor re-reads it on every pass: ignored again, not logged again.
+			f.want(m, "ignored")
+			if err := f.svc.CatchUp(ctx); err != nil {
+				t.Fatalf("CatchUp: %v", err)
+			}
+			if n := strings.Count(f.logs.String(), "slack message ignored"); n != 1 {
+				t.Errorf("ignored log lines = %d, want 1", n)
+			}
+			if len(f.human()) != 0 {
+				t.Error("an over-limit message was delivered")
+			}
+		})
+
 		t.Run("drop-is-final", func(t *testing.T) {
 			f := newInFix(t, e)
 			first := f.fake.Say(f.sl, "U4", "denied", "")
