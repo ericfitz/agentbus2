@@ -758,6 +758,7 @@ type faultyStore struct {
 	failPuts  int
 	puts      int // PutBridgeMessage calls that reached the Store
 	nextTxHok func(context.Context, ab2store.Tx) error
+	hookWhen  func() bool // when set, nextTxHok runs only in the first Tx after this reports true
 }
 
 func (s *faultyStore) TryLock(ctx context.Context, name, owner string, now, until int64) (bool, error) {
@@ -779,9 +780,16 @@ func (s *faultyStore) set(fn func()) {
 func (s *faultyStore) Tx(ctx context.Context, fn func(context.Context, ab2store.Tx) error) error {
 	return s.Store.Tx(ctx, func(ctx context.Context, tx ab2store.Tx) error {
 		s.mu.Lock()
-		hook := s.nextTxHok
-		s.nextTxHok = nil
+		hook, when := s.nextTxHok, s.hookWhen
 		s.mu.Unlock()
+		if hook != nil && when != nil && !when() {
+			hook = nil // not yet: the hook waits for its condition
+		}
+		if hook != nil {
+			s.mu.Lock()
+			s.nextTxHok, s.hookWhen = nil, nil
+			s.mu.Unlock()
+		}
 		if hook != nil {
 			if err := hook(ctx, tx); err != nil {
 				return err
@@ -864,7 +872,15 @@ func TestSlackBridgeState(t *testing.T) {
 			fs, svc := f.faulty()
 			seq := f.send("job1-coder", ab2bus.SendInput{Content: "shared"})
 			bid := f.bridge().ID
+			posts := f.fake.Calls("Post")
 			fs.set(func() {
+				// The row must appear after the Slack post and before the
+				// record, so record's own "already written" check is what
+				// is exercised; an earlier hook would make the drain skip
+				// the message and leave record untouched (the mutation in
+				// scripts/check-gates-selftest.sh block
+				// slackbridge-overlap-row proves it).
+				fs.hookWhen = func() bool { return f.fake.Calls("Post") > posts }
 				fs.nextTxHok = func(ctx context.Context, tx ab2store.Tx) error {
 					// A second runner recorded the same message first.
 					return tx.PutBridgeMessage(ctx, ab2store.BridgeMessage{BridgeID: bid, Seq: seq, SlackTS: "1700000500.000001", RootTS: "1700000500.000001", CreatedAt: 1})
@@ -924,6 +940,13 @@ func TestSlackBridgeState(t *testing.T) {
 			seq := f.send("job1-coder", ab2bus.SendInput{Content: "posted before the crash"})
 			f.fake.SayAsBot(f.sl, "BBOT", "posted before the crash", "", seq)
 			before := f.fake.Calls("Post")
+			// Slow every History read, so a drain that does not wait for the
+			// runner's first catch-up posts the message long before any
+			// catch-up (the runner's, the worker's on connect, the lifecycle
+			// request) could repair the row. The mutation in
+			// scripts/check-gates-selftest.sh block
+			// slackbridge-catchup-before-drain removes that first catch-up.
+			f.fake.DelayHistory(500 * time.Millisecond)
 			h2 := f.h.sibling(harnessOptions{})
 			svc2 := f.newService(h2, nil)
 			runBridge(t, svc2)

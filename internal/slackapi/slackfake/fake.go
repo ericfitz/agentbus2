@@ -69,6 +69,16 @@ type Fake struct {
 	done      chan struct{}
 	doneShut  bool
 	echo      bool
+
+	historyDelay time.Duration // DelayHistory
+}
+
+// DelayHistory makes every History call wait d before it runs (0 clears it),
+// so a test can show that an action happened before any catch-up finished.
+func (f *Fake) DelayHistory(d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.historyDelay = d
 }
 
 // New returns a Fake whose AuthTest reports self.
@@ -285,7 +295,17 @@ func (f *Fake) page(method string, msgs []slackapi.Message, cursor string) (slac
 // History returns the channel's top-level messages and thread_broadcast
 // replies (other thread replies excluded) newer than oldest. The fake keeps
 // ascending order; the interface leaves per-page order unspecified.
-func (f *Fake) History(_ context.Context, channelID, oldest, cursor string) (slackapi.Page, error) {
+func (f *Fake) History(ctx context.Context, channelID, oldest, cursor string) (slackapi.Page, error) {
+	f.mu.Lock()
+	d := f.historyDelay
+	f.mu.Unlock()
+	if d > 0 {
+		select {
+		case <-ctx.Done():
+			return slackapi.Page{}, ctx.Err()
+		case <-time.After(d):
+		}
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if err := f.begin("History"); err != nil {
