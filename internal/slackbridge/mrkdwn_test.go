@@ -56,6 +56,19 @@ func TestMarkdownToMrkdwn(t *testing.T) {
 		{"pipe in url", "[t](https://x/a|b)", "<https://x/a%7Cb|t>"},
 		{"mention in heading and list", "# <!here>\n- <@U1>", "*&lt;!here&gt;*\n• &lt;@U1&gt;"},
 		{"link needs url", "[t] (x)", "[t] (x)"},
+		{"paren in url", "[w](https://en.wikipedia.org/wiki/Go_(language)) x", "<https://en.wikipedia.org/wiki/Go_(language)|w> x"},
+		{"link inside parens", "(see [a](https://x.y))", "(see <https://x.y|a>)"},
+		{"unbalanced paren in url", "[a](https://x.y/(z)", "<https://x.y/(z|a>"},
+		{"mention in paren url", "[a](https://x.y/(<!here>))", "<https://x.y/(&lt;!here&gt;)|a>"},
+		{"blockquote", "> a **b**\n> c", "> a *b*\n> c"},
+		{"blockquote no space", ">x", "> x"},
+		{"nested blockquote", "> > x\n>> y", "> x\n> y"},
+		{"empty blockquote line", "a\n>\nb", "a\n> \nb"},
+		{"blockquote mention", "> <!here> <@U1>", "> &lt;!here&gt; &lt;@U1&gt;"},
+		{"blockquote list", "> - a", "> • a"},
+		{"gt mid line", "a > b", "a &gt; b"},
+		{"indented gt is not a quote", "    > x", "    &gt; x"},
+		{"gt in fence", "```\n> x\n```", "```\n&gt; x\n```"},
 	}
 	for _, c := range cases {
 		if got := MarkdownToMrkdwn(c.in); got != c.want {

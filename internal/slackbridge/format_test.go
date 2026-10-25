@@ -214,6 +214,24 @@ func TestTruncateKeepsMarkup(t *testing.T) {
 			t.Errorf("%d runes", runes(got))
 		}
 	})
+	t.Run("inline code is not left open", func(t *testing.T) {
+		budget := max - runes("\n"+note)
+		for off := 0; off <= budget+3; off++ {
+			in := strings.Repeat("a", off) + " `" + strings.Repeat("c", 400) + "` tail"
+			got := check(t, "code", in)
+			body := strings.TrimSuffix(got, note)
+			if strings.Count(body, "`")%2 != 0 {
+				t.Fatalf("off %d: unbalanced inline code in %q", off, got)
+			}
+		}
+	})
+	t.Run("a closed inline code span stays whole", func(t *testing.T) {
+		in := "x `code` " + strings.Repeat("y", 400)
+		got := check(t, "closed code", in)
+		if !strings.HasPrefix(got, "x `code` y") {
+			t.Errorf("closed span damaged: %q", got)
+		}
+	})
 	t.Run("fuzz-ish sweep", func(t *testing.T) {
 		parts := []string{"é", "日", "😀", "<http://x.y/z|t>", "```\n", "```", "\n", "`c`", "&amp;", "a < b", "> q", "**b**"}
 		seed := uint32(1)
@@ -340,5 +358,28 @@ func TestFormatPostLinkSpecials(t *testing.T) {
 				t.Errorf("%q %s: live markup %q", in, name, got)
 			}
 		}
+	}
+}
+
+// A long channel name makes the note nearly as long as the limit; the post
+// then uses a shorter note so some of the message still shows.
+func TestFormatPostLongNoteLeavesContent(t *testing.T) {
+	long := strings.Repeat("c", 150)
+	for _, maxChars := range []int{200, 250, 300} {
+		p := FormatPost(bus.Message{Seq: 9, Channel: long, Sender: "a", Content: strings.Repeat("word ", 400)}, "", maxChars, "")
+		if runes(p.Section) > maxChars {
+			t.Fatalf("max %d: %d runes", maxChars, runes(p.Section))
+		}
+		if !strings.Contains(p.Section, "seq 9") || !strings.Contains(p.Section, "truncated") {
+			t.Errorf("max %d: note lost: %q", maxChars, p.Section)
+		}
+		if n := strings.Count(p.Section, "word"); n < 5 {
+			t.Errorf("max %d: only %d words of content kept: %q", maxChars, n, p.Section)
+		}
+	}
+	// A short channel name keeps the full note.
+	p := FormatPost(bus.Message{Seq: 9, Channel: "chan", Sender: "a", Content: strings.Repeat("word ", 400)}, "", 200, "")
+	if !strings.HasSuffix(p.Section, "(truncated; the full message is seq 9 on agentbus2 channel chan)") {
+		t.Errorf("full note dropped: %q", p.Section)
 	}
 }

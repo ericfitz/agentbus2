@@ -43,19 +43,39 @@ func MarkdownToMrkdwn(md string) string {
 			lines[i] = escapeSlack(line)
 			continue
 		}
-		if m := headingRE.FindStringSubmatch(line); m != nil {
-			h := strings.NewReplacer("**", "", "__", "").Replace(m[1])
-			lines[i] = "*" + inlineToMrkdwn(h) + "*"
-			continue
-		}
-		prefix := ""
-		if m := listRE.FindStringSubmatch(line); m != nil {
-			prefix = m[1] + "• "
-			line = line[len(m[0]):]
-		}
-		lines[i] = prefix + inlineToMrkdwn(line)
+		lines[i] = lineToMrkdwn(line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// quoteRE matches a Markdown blockquote line (up to three spaces of indent,
+// then ">").
+var quoteRE = regexp.MustCompile(`^ {0,3}>`)
+
+// lineToMrkdwn converts one line outside a fenced block. A blockquote line
+// becomes Slack's "> " quote, the one place a raw ">" is emitted: it is the
+// fixed two-character prefix, never agent text, and the rest of the line is
+// converted and escaped like any other line. Nested markers are flattened
+// (Slack has no nested quotes).
+func lineToMrkdwn(line string) string {
+	if quoteRE.MatchString(line) {
+		rest := line
+		for quoteRE.MatchString(rest) {
+			rest = strings.TrimPrefix(strings.TrimLeft(rest, " "), ">")
+			rest = strings.TrimPrefix(rest, " ")
+		}
+		return "> " + lineToMrkdwn(rest)
+	}
+	if m := headingRE.FindStringSubmatch(line); m != nil {
+		h := strings.NewReplacer("**", "", "__", "").Replace(m[1])
+		return "*" + inlineToMrkdwn(h) + "*"
+	}
+	prefix := ""
+	if m := listRE.FindStringSubmatch(line); m != nil {
+		prefix = m[1] + "• "
+		line = line[len(m[0]):]
+	}
+	return prefix + inlineToMrkdwn(line)
 }
 
 func isWordRune(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }
@@ -172,16 +192,38 @@ func parseLink(r []rune, i int) (text, url string, next int, ok bool) {
 	if j >= len(r) || j+1 >= len(r) || r[j+1] != '(' {
 		return "", "", 0, false
 	}
-	k := j + 2
-	for ; k < len(r) && r[k] != ')'; k++ {
-		if unicode.IsSpace(r[k]) {
-			return "", "", 0, false
-		}
+	// The URL ends at the ")" that balances the opening "(" (a URL may hold
+	// balanced parentheses, as Wikipedia ones do); with no such ")" it ends at
+	// the first one.
+	k := urlEnd(r, j+2, true)
+	if k < 0 {
+		k = urlEnd(r, j+2, false)
 	}
-	if k >= len(r) || k == j+2 {
+	if k < 0 || k == j+2 {
 		return "", "", 0, false
 	}
 	return string(r[i+1 : j]), string(r[j+2 : k]), k + 1, true
+}
+
+// urlEnd returns the index of the ")" that ends a link URL starting at r[from],
+// or -1 when the URL meets whitespace or the end first. With balanced, a ")"
+// closes only a "(" the URL itself opened.
+func urlEnd(r []rune, from int, balanced bool) int {
+	depth := 0
+	for k := from; k < len(r); k++ {
+		switch {
+		case unicode.IsSpace(r[k]):
+			return -1
+		case r[k] == '(' && balanced:
+			depth++
+		case r[k] == ')':
+			if depth == 0 {
+				return k
+			}
+			depth--
+		}
+	}
+	return -1
 }
 
 var slackTagRE = regexp.MustCompile(`<([^<>]*)>`)

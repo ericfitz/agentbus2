@@ -62,11 +62,15 @@ func IconEmoji(identity string) string {
 }
 
 // scanState reports, for the prefix r[:c], whether a fenced block is open,
-// the index of an unterminated "<" link start (-1 for none) and the index of
-// a partial fence marker ending the prefix (-1 for none). A "<" inside a
-// fenced block is code, not a link.
-func scanState(r []rune, c int) (inFence bool, linkStart, partial int) {
-	linkStart, partial = -1, -1
+// the index of an unterminated "<" link start (-1 for none), the index of a
+// partial fence marker ending the prefix (-1 for none) and the index of the
+// backtick opening an inline code span that the cut leaves open (-1 for
+// none). A "<" inside a fenced block is code, not a link.
+func scanState(r []rune, c int) (inFence bool, linkStart, partial, codeStart int) {
+	linkStart, partial, codeStart = -1, -1, -1
+	// cutMid: the cut falls inside a line, so a span open at its end may close
+	// after the cut.
+	cutMid := c < len(r) && r[c] != '\n'
 	for ls := 0; ls < c; {
 		le := ls
 		for le < c && r[le] != '\n' {
@@ -97,16 +101,48 @@ func scanState(r []rune, c int) (inFence bool, linkStart, partial int) {
 					linkStart = -1
 				}
 			}
+			if le == c && cutMid {
+				codeStart = openCodeSpan(r[ls:le])
+				if codeStart >= 0 {
+					codeStart += ls
+				}
+			}
 		}
 		ls = le + 1
 	}
-	return inFence, linkStart, partial
+	return inFence, linkStart, partial, codeStart
+}
+
+// openCodeSpan returns the index in line of the backtick that opens a span
+// still open at the end of line, or -1. It mirrors inlineToMrkdwn: a span runs
+// from a backtick to the next one with at least one rune between.
+func openCodeSpan(line []rune) int {
+	for i := 0; i < len(line); {
+		if line[i] != '`' {
+			i++
+			continue
+		}
+		j := i + 1
+		for j < len(line) && line[j] != '`' {
+			j++
+		}
+		switch {
+		case j >= len(line):
+			return i
+		case j == i+1:
+			i++ // "``" is no span; the second backtick may open one
+		default:
+			i = j + 1
+		}
+	}
+	return -1
 }
 
 // Truncate shortens s to at most max runes including "\n" + note. A string of
 // max runes or fewer is returned unchanged. The cut counts runes, never lands
 // inside a "<url|text>" link or an entity, and closes a fenced block it
-// leaves open. A note too long to fit is itself cut to max runes.
+// leaves open; an inline code span the cut leaves open is closed. A note too
+// long to fit is itself cut to max runes.
 func Truncate(s string, max int, note string) string {
 	if utf8.RuneCountInString(s) <= max {
 		return s
@@ -122,10 +158,11 @@ func Truncate(s string, max int, note string) string {
 	const closer = "\n```"
 	r := []rune(s)
 	c := budget
-	inFence := false
+	inFence, inCode := false, false
 	for c > 0 {
-		var linkStart, partial int
-		inFence, linkStart, partial = scanState(r, c)
+		var linkStart, partial, codeStart int
+		inFence, linkStart, partial, codeStart = scanState(r, c)
+		inCode = false
 		if partial >= 0 {
 			c = partial
 			continue
@@ -142,6 +179,13 @@ func Truncate(s string, max int, note string) string {
 			c = budget - len(closer)
 			continue
 		}
+		if codeStart >= 0 {
+			if c+1 > budget {
+				c = budget - 1 // room for the closing backtick
+				continue
+			}
+			inCode = true
+		}
 		break
 	}
 	if c <= 0 {
@@ -150,6 +194,9 @@ func Truncate(s string, max int, note string) string {
 	out := string(r[:c])
 	if inFence {
 		out += closer
+	}
+	if inCode {
+		out += "`"
 	}
 	return out + "\n" + note
 }
@@ -169,6 +216,26 @@ func entityStart(r []rune, c int) int {
 }
 
 const quoteMaxRunes = 200
+
+// minContentRunes is the room for message text a truncation note must leave.
+const minContentRunes = 40
+
+// truncationNote is the note that ends a truncated post: the full text, or,
+// when a long channel name would leave under minContentRunes for the message,
+// a shorter one that drops the channel (then the wording).
+func truncationNote(m bus.Message, maxChars int) string {
+	notes := []string{
+		fmt.Sprintf("(truncated; the full message is seq %d on agentbus2 channel %s)", m.Seq, m.Channel),
+		fmt.Sprintf("(truncated; the full message is seq %d)", m.Seq),
+		fmt.Sprintf("(truncated; seq %d)", m.Seq),
+	}
+	for _, n := range notes {
+		if maxChars-1-utf8.RuneCountInString(n) >= minContentRunes {
+			return n
+		}
+	}
+	return notes[len(notes)-1]
+}
 
 // FormatPost builds the Slack post for a bus message (spec 6.2). maxChars is
 // slack_max_message_chars. parentQuote, when set, is the text of a parent that
@@ -194,7 +261,7 @@ func FormatPost(m bus.Message, scope string, maxChars int, parentQuote string) s
 	if m.Content != "" {
 		parts = append(parts, MarkdownToMrkdwn(m.Content))
 	}
-	note := fmt.Sprintf("(truncated; the full message is seq %d on agentbus2 channel %s)", m.Seq, m.Channel)
+	note := truncationNote(m, maxChars)
 	var ctx []string
 	for _, t := range m.Tags {
 		ctx = append(ctx, "`"+t+"`")
