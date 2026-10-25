@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/dbtest"
@@ -105,6 +106,21 @@ func TestBridgeLifecycle(t *testing.T) {
 			_, err := tx.CreateBridge(ctx, ab2store.Bridge{ChannelID: 999, ChannelName: "z", Scope: "job1", SlackName: "z", SlackChannelID: "G1"})
 			return err
 		}), ab2store.ErrConflict)
+		// The two unique violations read differently.
+		slackTaken := run(func(ctx context.Context, tx ab2store.Tx) error {
+			_, err := tx.CreateBridge(ctx, ab2store.Bridge{ChannelID: 999, ChannelName: "z", Scope: "job1", SlackName: "z", SlackChannelID: "G1"})
+			return err
+		})
+		if slackTaken == nil || !strings.Contains(slackTaken.Error(), "Slack channel") || strings.Contains(slackTaken.Error(), "already bridged") {
+			t.Errorf("taken Slack id = %v, want a Slack channel message", slackTaken)
+		}
+		chanTaken := run(func(ctx context.Context, tx ab2store.Tx) error {
+			_, err := tx.CreateBridge(ctx, ab2store.Bridge{ChannelID: c1.ID, ChannelName: "job1-chat", Scope: "job1", SlackName: "x"})
+			return err
+		})
+		if chanTaken == nil || !strings.Contains(chanTaken.Error(), "already bridged") {
+			t.Errorf("bridged channel = %v, want the already-bridged message", chanTaken)
+		}
 	})
 }
 
@@ -142,13 +158,16 @@ func TestBridgeRejects(t *testing.T) {
 		s, _, _ := openStore(t, e, sqlstore.Options{})
 		ok := ab2store.Bridge{ChannelID: 1, ChannelName: "c", Scope: "job1", SlackName: "n"}
 		for name, mut := range map[string]func(*ab2store.Bridge){
-			"empty SlackName": func(b *ab2store.Bridge) { b.SlackName = "" },
-			"empty Scope":     func(b *ab2store.Bridge) { b.Scope = "" },
-			"empty channel":   func(b *ab2store.Bridge) { b.ChannelName = "" },
-			"state paused":    func(b *ab2store.Bridge) { b.State = "paused" },
-			"state live":      func(b *ab2store.Bridge) { b.State = ab2store.BridgeLive },
-			"NUL in name":     func(b *ab2store.Bridge) { b.SlackName = "a\x00b" },
-			"bad UTF-8":       func(b *ab2store.Bridge) { b.Scope = "a\xffb" },
+			"empty SlackName":  func(b *ab2store.Bridge) { b.SlackName = "" },
+			"empty Scope":      func(b *ab2store.Bridge) { b.Scope = "" },
+			"empty channel":    func(b *ab2store.Bridge) { b.ChannelName = "" },
+			"channel zero":     func(b *ab2store.Bridge) { b.ChannelID = 0 },
+			"channel negative": func(b *ab2store.Bridge) { b.ChannelID = -3 },
+			"archived at set":  func(b *ab2store.Bridge) { b.ArchivedAt = 7 },
+			"state paused":     func(b *ab2store.Bridge) { b.State = "paused" },
+			"state live":       func(b *ab2store.Bridge) { b.State = ab2store.BridgeLive },
+			"NUL in name":      func(b *ab2store.Bridge) { b.SlackName = "a\x00b" },
+			"bad UTF-8":        func(b *ab2store.Bridge) { b.Scope = "a\xffb" },
 		} {
 			b := ok
 			mut(&b)

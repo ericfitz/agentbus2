@@ -114,6 +114,18 @@ func isConflict(err error) bool {
 	return constraintErr(err, []int{1555, 2067}, "UNIQUE constraint failed", "23505")
 }
 
+// uniqueOn reports whether a unique violation names the given column (SQLite
+// puts "table.column" in the message) or index (Postgres puts the constraint
+// name in the error), to tell two unique constraints on one table apart.
+func uniqueOn(err error, sqliteColumn, pgConstraint string) bool {
+	var se *sqlitedrv.Error
+	if errors.As(err, &se) {
+		return strings.Contains(se.Error(), sqliteColumn)
+	}
+	var pe *pgconn.PgError
+	return errors.As(err, &pe) && pe.ConstraintName == pgConstraint
+}
+
 // isForeignKey reports a foreign-key violation (SQLITE_CONSTRAINT_FOREIGNKEY
 // 787; Postgres 23503).
 func isForeignKey(err error) bool {

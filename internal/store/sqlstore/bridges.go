@@ -46,6 +46,12 @@ func (t *tx) CreateBridge(ctx context.Context, b store.Bridge) (store.Bridge, er
 	if b.State != "" && b.State != store.BridgeCreating {
 		return store.Bridge{}, fmt.Errorf("%w: new bridge state %q (want creating)", store.ErrInvalid, b.State)
 	}
+	if b.ChannelID <= 0 {
+		return store.Bridge{}, fmt.Errorf("%w: bridge channel ID %d must be positive", store.ErrInvalid, b.ChannelID)
+	}
+	if b.ArchivedAt != 0 {
+		return store.Bridge{}, fmt.Errorf("%w: a new bridge has no archive time (got %d)", store.ErrInvalid, b.ArchivedAt)
+	}
 	for _, f := range []struct{ name, v string }{{"channel name", b.ChannelName}, {"Slack name", b.SlackName}, {"scope", b.Scope}} {
 		if f.v == "" {
 			return store.Bridge{}, fmt.Errorf("%w: bridge %s must not be empty", store.ErrInvalid, f.name)
@@ -59,6 +65,9 @@ func (t *tx) CreateBridge(ctx context.Context, b store.Bridge) (store.Bridge, er
 	err := t.getW(ctx, &id, "INSERT INTO bridges (channel_id, channel_name, scope, slack_channel_id, slack_name, state, cursor_ts, created_at) VALUES (?, ?, ?, ?, ?, 'creating', ?, ?) RETURNING id",
 		b.ChannelID, b.ChannelName, b.Scope, b.SlackChannelID, b.SlackName, b.CursorTS, b.CreatedAt)
 	if isConflict(err) {
+		if uniqueOn(err, "bridges.slack_channel_id", "bridges_slack_channel") {
+			return store.Bridge{}, fmt.Errorf("%w: Slack channel %q is already used by another bridge", store.ErrConflict, b.SlackChannelID)
+		}
 		return store.Bridge{}, fmt.Errorf("%w: channel %q is already bridged", store.ErrConflict, b.ChannelName)
 	}
 	if err != nil {
