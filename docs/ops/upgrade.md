@@ -19,6 +19,7 @@ Each migration step is a transaction of its own that re-reads the version under 
 ## Schema versions
 
 - Version 1 is the whole schema. Before the first release the migrations of the pre-release builds (their versions 1 to 6) were flattened into it (Eric's decision 2026-10-25, ADR 0004 addendum). A database created by one of those builds carries a version above 1 and is refused at start with the message above; nothing converts it. Recreate it: stop the server, remove the database (the SQLite file and its `-wal` and `-shm` files, or drop and recreate the Postgres database or schema, or remove the Docker volume that holds it), and start the server again. Its data is gone; back up first (`backup.md`) if anything in it matters.
+- A pre-release database that misbehaves in any other way is recreated the same way, not repaired.
 - Steps after the first release will be numbered 2 and up, each a file of its own per engine. Stop every replica before starting a binary that migrates the schema (procedure step 2): an old replica does not know the new columns.
 
 ## Procedure

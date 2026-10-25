@@ -73,7 +73,7 @@ Choices made while building, recorded because they change behavior:
 - `ResetData` keeps `bridge_dropped`: like `bridges`, `bridge_messages` and `slack_users`, so a dropped Slack message stays dropped across a data reset.
 - Archive and create logs may name the bus channel and the Slack channel id; they never carry a token, message text or email.
 - The agent icon is a stable emoji picked from a fixed list by hashing the identity name.
-- The migration (schema version 6) reshapes any pre-existing `slack-bridge` identity into the reserved shape.
+- Schema version 1 seeds the reserved `slack-bridge` identity. (It was a version 6 migration that reshaped any pre-existing `slack-bridge` identity; that reshape is gone with the flattening to version 1, see the ADR 0004 addendum "Migrations flattened to version 1".)
 
 ## Decisions (Eric, 2026-10-24)
 
@@ -84,7 +84,7 @@ Choices made while building, recorded because they change behavior:
 
 ## Consequences
 
-- Schema version 6 and a new reserved identity name; the upgrade needs every replica stopped first (`docs/ops/upgrade.md`).
+- A new reserved identity name and, originally, schema version 6; the pre-release versions were flattened to version 1 (ADR 0004 addendum "Migrations flattened to version 1"), so no upgrade step applies before the first release.
 - Every channel gets the `reply_to` same-channel check, a visible change for agents that replied across channels.
 - The empty-channel reaper now ignores subscriptions held by `slack-bridge` or by identities without a live or resumable session.
 - Registration has two modes, `open` and `enrollment`.

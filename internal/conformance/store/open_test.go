@@ -339,3 +339,47 @@ func TestOpenConcurrentEmpty(t *testing.T) {
 		}
 	})
 }
+
+// TestRealStepFailureRollsBack runs the real version 1 step to its end, fails
+// before the commit and checks that no table is left and the version is 0,
+// then reopens with the real set: the schema exists and each seed row once.
+func TestRealStepFailureRollsBack(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		reopen, rawDSN := isolate(t, e)
+		db := rawDB(t, e, rawDSN)
+		real := migrationsFor(e)[0]
+		failing := sqlstore.Migration{Version: 1, Up: func(ctx context.Context, tx *sqlx.Tx) error {
+			if err := real.Up(ctx, tx); err != nil {
+				return err
+			}
+			return errors.New("fail after the real step")
+		}}
+		if _, err := reopen(sqlstore.Options{Migrations: []sqlstore.Migration{failing}}); err == nil {
+			t.Fatal("Open with a failing real step succeeded")
+		}
+		if got := scalar[int](t, db, "SELECT schema_version FROM schema_meta"); got != 0 {
+			t.Fatalf("schema_version = %d, want 0", got)
+		}
+		for _, tbl := range []string{"identities", "channels", "messages", "scopes", "bridges", "seq_counter", "leases", "signing_keys"} {
+			if got := tableCount(t, e, db, tbl); got != 0 {
+				t.Fatalf("table %s left behind after the rolled back step", tbl)
+			}
+		}
+		for i := range 2 {
+			s, err := reopen(sqlstore.Options{})
+			if err != nil {
+				t.Fatalf("reopen %d: %v", i, err)
+			}
+			_ = s.Close()
+			for q, want := range map[string]int{
+				"SELECT count(*) FROM seq_counter":                            1,
+				"SELECT count(*) FROM leases WHERE name = 'maintenance'":      1,
+				"SELECT count(*) FROM identities WHERE name = 'slack-bridge'": 1,
+			} {
+				if got := scalar[int](t, db, q); got != want {
+					t.Fatalf("reopen %d: %s = %d, want %d", i, q, got, want)
+				}
+			}
+		}
+	})
+}

@@ -461,7 +461,7 @@ func TestResetDataKeepsBridgeTables(t *testing.T) {
 }
 
 // withoutBridge drops the reserved slack-bridge row, which every store holds
-// from schema version 6.
+// from schema version 1.
 func withoutBridge(ids []ab2store.Identity) []ab2store.Identity {
 	return slices.DeleteFunc(slices.Clone(ids), func(i ab2store.Identity) bool { return i.Name == ab2store.SlackBridge })
 }
