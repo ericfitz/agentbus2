@@ -144,3 +144,62 @@ func toGenTaskSummary(s ab2bus.TaskSummary) gen.TaskSummary {
 	}
 	return out
 }
+
+func unknownEnum(member, v string) error {
+	return &ab2bus.Error{Code: ab2bus.CodeInternal, Message: fmt.Sprintf("server sent unknown health %s %q", member, v)}
+}
+
+// fromGenHealth maps the wire health document; an enum value outside spec
+// 2026-10-25 section 4 is an internal error naming the member (a server
+// speaking another protocol). Absent members stay nil; the arrays of the
+// admin tier are never nil.
+func fromGenHealth(g gen.Health) (ab2bus.Health, error) {
+	out := ab2bus.Health{
+		Status: ab2bus.HealthStatus(g.Status), Tier: ab2bus.HealthTier(g.Tier),
+		Version: g.Version, Now: g.Now, StartedAt: deref(g.StartedAt),
+	}
+	if !ab2bus.ValidHealthStatus(out.Status) {
+		return ab2bus.Health{}, unknownEnum("status", string(g.Status))
+	}
+	if !ab2bus.ValidHealthTier(out.Tier) {
+		return ab2bus.Health{}, unknownEnum("tier", string(g.Tier))
+	}
+	if s := g.Store; s != nil {
+		out.Store = &ab2bus.HealthStore{Engine: string(s.Engine), SchemaVersion: s.SchemaVersion}
+	}
+	if e := g.Embeddings; e != nil {
+		st := ab2bus.EmbeddingState(e.State)
+		if !ab2bus.ValidEmbeddingState(st) {
+			return ab2bus.Health{}, unknownEnum("embeddings.state", string(e.State))
+		}
+		out.Embeddings = &ab2bus.HealthEmbeddings{
+			State: st, Backlog: e.Backlog, Rejected: e.Rejected, Model: deref(e.Model),
+			LastError: deref(e.LastError), LastErrorAt: deref(e.LastErrorAt), RejectedLast: deref(e.RejectedLast),
+		}
+	}
+	if u := g.Storage; u != nil {
+		out.Storage = &ab2bus.Usage{Bytes: u.Bytes, BudgetBytes: u.BudgetBytes, Evictable: u.Evictable, Notice: deref(u.Notice)}
+	}
+	if g.Notices != nil {
+		out.Notices = make([]ab2bus.Notice, len(*g.Notices))
+		for i, n := range *g.Notices {
+			out.Notices[i] = ab2bus.Notice{Kind: n.Kind, Message: n.Message, SetAt: n.SetAt}
+		}
+	}
+	if m := g.Maintenance; m != nil {
+		lock := ab2bus.MaintenanceLock(m.Lock)
+		if !ab2bus.ValidMaintenanceLock(lock) {
+			return ab2bus.Health{}, unknownEnum("maintenance.lock", string(m.Lock))
+		}
+		hm := &ab2bus.HealthMaintenance{
+			IntervalSeconds: m.IntervalSeconds, Owner: m.Owner, Lock: lock,
+			LastTickAt: deref(m.LastTickAt), LockError: deref(m.LockError),
+			Jobs: make([]ab2bus.HealthJob, len(m.Jobs)),
+		}
+		for i, j := range m.Jobs {
+			hm.Jobs[i] = ab2bus.HealthJob{Name: j.Name, Changed: j.Changed, Error: deref(j.Error), Skipped: j.Skipped}
+		}
+		out.Maintenance = hm
+	}
+	return out, nil
+}

@@ -14,6 +14,7 @@ security:
   - bearerAuth: []
 tags:
   - name: discovery
+  - name: health
   - name: sessions
   - name: channels
   - name: messages
@@ -81,6 +82,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Discovery"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/health:
+    get:
+      operationId: health
+      tags: [health]
+      security:
+        - {}
+        - bearerAuth: []
+      responses:
+        "200":
+          description: The health document, as the caller's tier may see it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
         default:
           $ref: "#/components/responses/Problem"
   /v1/sessions:
@@ -1825,6 +1842,102 @@ components:
         notice:
           type: string
           description: The capacity notice text, when one is set.
+    Health:
+      type: object
+      description: >-
+        The server's health as the caller's tier may see it (spec
+        2026-10-25 section 4). Members above the probe tier are absent, never
+        null, below their tier. An unreachable store is a 503 problem with
+        code unavailable, never a document.
+      required: [status, tier, version, now]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        tier:
+          type: string
+          enum: [probe, identity, admin]
+        version:
+          type: string
+        now:
+          type: integer
+          format: int64
+        started_at:
+          type: integer
+          format: int64
+        store:
+          $ref: "#/components/schemas/HealthStore"
+        embeddings:
+          $ref: "#/components/schemas/HealthEmbeddings"
+        storage:
+          $ref: "#/components/schemas/Usage"
+        notices:
+          type: array
+          items:
+            $ref: "#/components/schemas/Notice"
+        maintenance:
+          $ref: "#/components/schemas/HealthMaintenance"
+    HealthStore:
+      type: object
+      required: [engine, schema_version]
+      properties:
+        engine:
+          type: string
+          enum: [sqlite, postgres]
+        schema_version:
+          type: integer
+    HealthEmbeddings:
+      type: object
+      required: [state, backlog, rejected]
+      properties:
+        state:
+          type: string
+          enum: [off, ok, failing]
+        backlog:
+          type: integer
+        rejected:
+          type: integer
+        model:
+          type: string
+        last_error:
+          type: string
+        last_error_at:
+          type: integer
+          format: int64
+        rejected_last:
+          type: string
+    HealthMaintenance:
+      type: object
+      required: [interval_seconds, owner, lock, jobs]
+      properties:
+        interval_seconds:
+          type: integer
+        owner:
+          type: string
+        lock:
+          type: string
+          enum: [held, held_elsewhere, unknown]
+        last_tick_at:
+          type: integer
+          format: int64
+        lock_error:
+          type: string
+        jobs:
+          type: array
+          items:
+            $ref: "#/components/schemas/HealthJob"
+    HealthJob:
+      type: object
+      required: [name, changed, skipped]
+      properties:
+        name:
+          type: string
+        changed:
+          type: integer
+        error:
+          type: string
+        skipped:
+          type: boolean
     TokenRequest:
       type: object
       description: >-

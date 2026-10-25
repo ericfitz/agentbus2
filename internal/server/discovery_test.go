@@ -68,10 +68,10 @@ func TestDiscoverListsConfiguredExternalIssuers(t *testing.T) {
 }
 
 func TestCapabilitiesComputed(t *testing.T) {
-	if got := Capabilities(newEnv(t, envOptions{}).core); !slices.Equal(got, []string{"long_poll"}) {
+	if got := Capabilities(newEnv(t, envOptions{}).core); !slices.Equal(got, []string{"health", "long_poll"}) {
 		t.Errorf("no embedder: %v", got)
 	}
-	if got := Capabilities(newEnv(t, envOptions{embedder: true}).core); !slices.Equal(got, []string{"long_poll", "semantic_search"}) {
+	if got := Capabilities(newEnv(t, envOptions{embedder: true}).core); !slices.Equal(got, []string{"health", "long_poll", "semantic_search"}) {
 		t.Errorf("embedder: %v", got)
 	}
 }

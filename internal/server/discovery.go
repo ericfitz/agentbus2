@@ -25,10 +25,10 @@ func baseURLFrom(ctx context.Context) string {
 	return s
 }
 
-// Capabilities is what this server offers, sorted: long_poll always,
+// Capabilities is what this server offers, sorted: health and long_poll always,
 // semantic_search when an embedder is configured (choice 7).
 func Capabilities(c *core.Core) []string {
-	caps := []string{"long_poll"}
+	caps := []string{"health", "long_poll"}
 	if c.Embedder() != nil {
 		caps = append(caps, "semantic_search")
 	}

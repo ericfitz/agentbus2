@@ -21,19 +21,19 @@ import (
 
 // Defines values for ACLEntryPermissions.
 const (
-	Admin ACLEntryPermissions = "admin"
-	Read  ACLEntryPermissions = "read"
-	Write ACLEntryPermissions = "write"
+	ACLEntryPermissionsAdmin ACLEntryPermissions = "admin"
+	ACLEntryPermissionsRead  ACLEntryPermissions = "read"
+	ACLEntryPermissionsWrite ACLEntryPermissions = "write"
 )
 
 // Valid indicates whether the value is a known member of the ACLEntryPermissions enum.
 func (e ACLEntryPermissions) Valid() bool {
 	switch e {
-	case Admin:
+	case ACLEntryPermissionsAdmin:
 		return true
-	case Read:
+	case ACLEntryPermissionsRead:
 		return true
-	case Write:
+	case ACLEntryPermissionsWrite:
 		return true
 	default:
 		return false
@@ -136,6 +136,105 @@ func (e DoneScopeRequestRetire) Valid() bool {
 	case DoneScopeRequestRetireNormal:
 		return true
 	case DoneScopeRequestRetireWithBridge:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HealthStatus.
+const (
+	HealthStatusDegraded HealthStatus = "degraded"
+	HealthStatusOk       HealthStatus = "ok"
+)
+
+// Valid indicates whether the value is a known member of the HealthStatus enum.
+func (e HealthStatus) Valid() bool {
+	switch e {
+	case HealthStatusDegraded:
+		return true
+	case HealthStatusOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HealthTier.
+const (
+	HealthTierAdmin    HealthTier = "admin"
+	HealthTierIdentity HealthTier = "identity"
+	HealthTierProbe    HealthTier = "probe"
+)
+
+// Valid indicates whether the value is a known member of the HealthTier enum.
+func (e HealthTier) Valid() bool {
+	switch e {
+	case HealthTierAdmin:
+		return true
+	case HealthTierIdentity:
+		return true
+	case HealthTierProbe:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HealthEmbeddingsState.
+const (
+	HealthEmbeddingsStateFailing HealthEmbeddingsState = "failing"
+	HealthEmbeddingsStateOff     HealthEmbeddingsState = "off"
+	HealthEmbeddingsStateOk      HealthEmbeddingsState = "ok"
+)
+
+// Valid indicates whether the value is a known member of the HealthEmbeddingsState enum.
+func (e HealthEmbeddingsState) Valid() bool {
+	switch e {
+	case HealthEmbeddingsStateFailing:
+		return true
+	case HealthEmbeddingsStateOff:
+		return true
+	case HealthEmbeddingsStateOk:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HealthMaintenanceLock.
+const (
+	Held          HealthMaintenanceLock = "held"
+	HeldElsewhere HealthMaintenanceLock = "held_elsewhere"
+	Unknown       HealthMaintenanceLock = "unknown"
+)
+
+// Valid indicates whether the value is a known member of the HealthMaintenanceLock enum.
+func (e HealthMaintenanceLock) Valid() bool {
+	switch e {
+	case Held:
+		return true
+	case HeldElsewhere:
+		return true
+	case Unknown:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for HealthStoreEngine.
+const (
+	Postgres HealthStoreEngine = "postgres"
+	Sqlite   HealthStoreEngine = "sqlite"
+)
+
+// Valid indicates whether the value is a known member of the HealthStoreEngine enum.
+func (e HealthStoreEngine) Valid() bool {
+	switch e {
+	case Postgres:
+		return true
+	case Sqlite:
 		return true
 	default:
 		return false
@@ -554,6 +653,70 @@ type Gap struct {
 	From    int64  `json:"from"`
 	To      int64  `json:"to"`
 }
+
+// Health The server's health as the caller's tier may see it (spec 2026-10-25 section 4). Members above the probe tier are absent, never null, below their tier. An unreachable store is a 503 problem with code unavailable, never a document.
+type Health struct {
+	Embeddings  *HealthEmbeddings  `json:"embeddings,omitempty"`
+	Maintenance *HealthMaintenance `json:"maintenance,omitempty"`
+	Notices     *[]Notice          `json:"notices,omitempty"`
+	Now         int64              `json:"now"`
+	StartedAt   *int64             `json:"started_at,omitempty"`
+	Status      HealthStatus       `json:"status"`
+	Storage     *Usage             `json:"storage,omitempty"`
+	Store       *HealthStore       `json:"store,omitempty"`
+	Tier        HealthTier         `json:"tier"`
+	Version     string             `json:"version"`
+}
+
+// HealthStatus defines model for Health.Status.
+type HealthStatus string
+
+// HealthTier defines model for Health.Tier.
+type HealthTier string
+
+// HealthEmbeddings defines model for HealthEmbeddings.
+type HealthEmbeddings struct {
+	Backlog      int                   `json:"backlog"`
+	LastError    *string               `json:"last_error,omitempty"`
+	LastErrorAt  *int64                `json:"last_error_at,omitempty"`
+	Model        *string               `json:"model,omitempty"`
+	Rejected     int                   `json:"rejected"`
+	RejectedLast *string               `json:"rejected_last,omitempty"`
+	State        HealthEmbeddingsState `json:"state"`
+}
+
+// HealthEmbeddingsState defines model for HealthEmbeddings.State.
+type HealthEmbeddingsState string
+
+// HealthJob defines model for HealthJob.
+type HealthJob struct {
+	Changed int     `json:"changed"`
+	Error   *string `json:"error,omitempty"`
+	Name    string  `json:"name"`
+	Skipped bool    `json:"skipped"`
+}
+
+// HealthMaintenance defines model for HealthMaintenance.
+type HealthMaintenance struct {
+	IntervalSeconds int                   `json:"interval_seconds"`
+	Jobs            []HealthJob           `json:"jobs"`
+	LastTickAt      *int64                `json:"last_tick_at,omitempty"`
+	Lock            HealthMaintenanceLock `json:"lock"`
+	LockError       *string               `json:"lock_error,omitempty"`
+	Owner           string                `json:"owner"`
+}
+
+// HealthMaintenanceLock defines model for HealthMaintenance.Lock.
+type HealthMaintenanceLock string
+
+// HealthStore defines model for HealthStore.
+type HealthStore struct {
+	Engine        HealthStoreEngine `json:"engine"`
+	SchemaVersion int               `json:"schema_version"`
+}
+
+// HealthStoreEngine defines model for HealthStore.Engine.
+type HealthStoreEngine string
 
 // HumanIdentity defines model for HumanIdentity.
 type HumanIdentity struct {
@@ -1427,6 +1590,9 @@ type ClientInterface interface {
 	// Discover performs a GET /v1/discover (the `Discover` operationId) request.
 	Discover(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// Health performs a GET /v1/health (the `Health` operationId) request.
+	Health(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// ListIdentities performs a GET /v1/identities (the `ListIdentities` operationId) request.
 	ListIdentities(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -2146,6 +2312,19 @@ func (c *Client) CreateTask(ctx context.Context, channel ChannelParam, params *C
 // Discover performs a GET /v1/discover (the `Discover` operationId) request.
 func (c *Client) Discover(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDiscoverRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// Health performs a GET /v1/health (the `Health` operationId) request.
+func (c *Client) Health(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewHealthRequest(c.Server)
 	if err != nil {
 		return nil, err
 	}
@@ -3983,6 +4162,33 @@ func NewDiscoverRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewHealthRequest constructs an http.Request for the Health method
+func NewHealthRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/health")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewListIdentitiesRequest constructs an http.Request for the ListIdentities method
 func NewListIdentitiesRequest(server string) (*http.Request, error) {
 	var err error
@@ -5282,6 +5488,11 @@ type ClientWithResponsesInterface interface {
 	//
 	// Returns a wrapper object for the known response body format(s).
 	DiscoverWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*DiscoverResponse, error)
+
+	// HealthWithResponse performs a GET /v1/health (the `Health` operationId) request.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	HealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthResponse, error)
 
 	// ListIdentitiesWithResponse performs a GET /v1/identities (the `ListIdentities` operationId) request.
 	//
@@ -6962,6 +7173,54 @@ func (r DiscoverResponse) ContentType() string {
 	return ""
 }
 
+type HealthResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Health
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r HealthResponse) GetJSON200() *Health {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r HealthResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r HealthResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r HealthResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r HealthResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r HealthResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type ListIdentitiesResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8329,6 +8588,17 @@ func (c *ClientWithResponses) DiscoverWithResponse(ctx context.Context, reqEdito
 	return ParseDiscoverResponse(rsp)
 }
 
+// HealthWithResponse performs a GET /v1/health (the `Health` operationId) request.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) HealthWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*HealthResponse, error) {
+	rsp, err := c.Health(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseHealthResponse(rsp)
+}
+
 // ListIdentitiesWithResponse performs a GET /v1/identities (the `ListIdentities` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -9677,6 +9947,39 @@ func ParseDiscoverResponse(rsp *http.Response) (*DiscoverResponse, error) {
 	return response, nil
 }
 
+// ParseHealthResponse parses an HTTP response from a HealthWithResponse call
+func ParseHealthResponse(rsp *http.Response) (*HealthResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &HealthResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Health
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseListIdentitiesResponse parses an HTTP response from a ListIdentitiesWithResponse call
 func ParseListIdentitiesResponse(rsp *http.Response) (*ListIdentitiesResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -10366,6 +10669,9 @@ type ServerInterface interface {
 
 	// (GET /v1/discover)
 	Discover(w http.ResponseWriter, r *http.Request)
+
+	// (GET /v1/health)
+	Health(w http.ResponseWriter, r *http.Request)
 
 	// (GET /v1/identities)
 	ListIdentities(w http.ResponseWriter, r *http.Request)
@@ -11507,6 +11813,20 @@ func (siw *ServerInterfaceWrapper) Discover(w http.ResponseWriter, r *http.Reque
 	handler.ServeHTTP(w, r)
 }
 
+// Health operation middleware
+func (siw *ServerInterfaceWrapper) Health(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.Health(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // ListIdentities operation middleware
 func (siw *ServerInterfaceWrapper) ListIdentities(w http.ResponseWriter, r *http.Request) {
 
@@ -12432,6 +12752,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/oauth-authorization-server", wrapper.AuthorizationServerMetadata)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/openid-configuration", wrapper.OpenidConfiguration)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/discover", wrapper.Discover)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/health", wrapper.Health)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions", wrapper.OpenSession)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/sessions/{session}", wrapper.CloseSession)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions/{session}/receive", wrapper.Receive)
@@ -13781,6 +14102,44 @@ func (response DiscoverdefaultApplicationProblemPlusJSONResponse) VisitDiscoverR
 	return err
 }
 
+type HealthRequestObject struct {
+}
+
+type HealthResponseObject interface {
+	VisitHealthResponse(w http.ResponseWriter) error
+}
+
+type Health200JSONResponse Health
+
+func (response Health200JSONResponse) VisitHealthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type HealthdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response HealthdefaultApplicationProblemPlusJSONResponse) VisitHealthResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type ListIdentitiesRequestObject struct {
 }
 
@@ -14593,6 +14952,9 @@ type StrictServerInterface interface {
 
 	// (GET /v1/discover)
 	Discover(ctx context.Context, request DiscoverRequestObject) (DiscoverResponseObject, error)
+
+	// (GET /v1/health)
+	Health(ctx context.Context, request HealthRequestObject) (HealthResponseObject, error)
 
 	// (GET /v1/identities)
 	ListIdentities(ctx context.Context, request ListIdentitiesRequestObject) (ListIdentitiesResponseObject, error)
@@ -15617,6 +15979,30 @@ func (sh *strictHandler) Discover(w http.ResponseWriter, r *http.Request) {
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DiscoverResponseObject); ok {
 		if err := validResponse.VisitDiscoverResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// Health operation middleware
+func (sh *strictHandler) Health(w http.ResponseWriter, r *http.Request) {
+	var request HealthRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.Health(ctx, request.(HealthRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "Health")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(HealthResponseObject); ok {
+		if err := validResponse.VisitHealthResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {
