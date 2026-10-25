@@ -135,10 +135,11 @@ func TestOperationTable(t *testing.T) {
 		"getBridge":                   "GET /v1/admin/bridges/{channel}",
 		"removeBridge":                "DELETE /v1/admin/bridges/{channel}",
 		"authorizationServerMetadata": "GET /.well-known/oauth-authorization-server",
+		"health":                      "GET /v1/health",
 	}
 	doc := loadDoc(t)
 	got := map[string]string{}
-	open, protected := 0, 0
+	open, protected, optional := 0, 0, 0
 	for path, item := range doc.Paths.Map() {
 		for method, op := range item.Operations() {
 			id := lowerFirst(op.OperationID)
@@ -150,6 +151,8 @@ func TestOperationTable(t *testing.T) {
 				open++
 			} else if op.Security == nil {
 				protected++
+			} else if id == "health" && len(*op.Security) == 2 && len((*op.Security)[0]) == 0 {
+				optional++ // the bearer is optional: the handler tiers the document
 			} else {
 				t.Fatalf("%s: unexpected own security %v", op.OperationID, *op.Security)
 			}
@@ -165,8 +168,8 @@ func TestOperationTable(t *testing.T) {
 			t.Errorf("unexpected operation %s", id)
 		}
 	}
-	if open != 7 || protected != 44 {
-		t.Fatalf("security: %d open, %d protected; want 7 and 44", open, protected)
+	if open != 7 || protected != 44 || optional != 1 {
+		t.Fatalf("security: %d open, %d protected, %d optional; want 7, 44 and 1", open, protected, optional)
 	}
 }
 
