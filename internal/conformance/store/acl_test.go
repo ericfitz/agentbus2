@@ -327,3 +327,61 @@ func TestACLReadableChannels(t *testing.T) {
 		wantPerms(t, s, c4.ID, "ghost", perm{})
 	})
 }
+
+// TestACLRowsFor: the fact query returns the stored rows for the names it is
+// given and nothing else, in (channel_id, identity) order; a name that fails
+// TextRule matches nothing and is not an error.
+func TestACLRowsFor(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s, _, _ := openStore(t, e, sqlstore.Options{})
+		mustIdentity(t, s, "pat")
+		mustIdentity(t, s, "kim")
+		rw := []ab2store.Permission{"read", "write"}
+		c1 := mustChannel(t, s, "c1", ab2store.KindOrdinary, "", []ab2store.ACLEntry{
+			{Identity: "pat", Permissions: rw},
+			{Identity: "everyone", Permissions: []ab2store.Permission{"read"}},
+			{Identity: "kim", Permissions: []ab2store.Permission{"admin"}},
+		})
+		c2 := mustChannel(t, s, "c2", ab2store.KindOrdinary, "", []ab2store.ACLEntry{
+			{Identity: "pat", Permissions: []ab2store.Permission{"admin"}},
+		})
+		c3 := mustChannel(t, s, "c3", ab2store.KindOrdinary, "", []ab2store.ACLEntry{
+			{Identity: "admins", Permissions: []ab2store.Permission{"admin"}},
+		})
+		rows := func(names ...string) []ab2store.ACLRow {
+			var got []ab2store.ACLRow
+			mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) (err error) {
+				got, err = tx.ACLRowsFor(ctx, names...)
+				return err
+			})
+			return got
+		}
+		want := []ab2store.ACLRow{
+			{ChannelID: c1.ID, Identity: "everyone", Read: true},
+			{ChannelID: c1.ID, Identity: "pat", Read: true, Write: true},
+			{ChannelID: c2.ID, Identity: "pat", Admin: true},
+		}
+		if got := rows("pat", "everyone"); !reflect.DeepEqual(got, want) {
+			t.Errorf("rows(pat, everyone) = %+v, want %+v", got, want)
+		}
+		if got := rows("pat", "pat", "everyone"); !reflect.DeepEqual(got, want) {
+			t.Errorf("a repeated name changed the result: %+v", got)
+		}
+		// No administrator join and no creator clause: the admins row comes
+		// back for whoever asks for it by name.
+		if got := rows("admins"); !reflect.DeepEqual(got, []ab2store.ACLRow{{ChannelID: c3.ID, Identity: "admins", Admin: true}}) {
+			t.Errorf("rows(admins) = %+v", got)
+		}
+		for _, bad := range []string{"", "bad\x00name", "ghost"} {
+			if got := rows(bad); len(got) != 0 {
+				t.Errorf("rows(%q) = %+v, want none", bad, got)
+			}
+		}
+		if got := rows(); len(got) != 0 {
+			t.Errorf("rows() = %+v, want none", got)
+		}
+		if got := rows("bad\x00name", "kim"); !reflect.DeepEqual(got, []ab2store.ACLRow{{ChannelID: c1.ID, Identity: "kim", Admin: true}}) {
+			t.Errorf("a bad name hid a good one: %+v", got)
+		}
+	})
+}

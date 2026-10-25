@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -118,6 +119,41 @@ func (t *tx) SetACL(ctx context.Context, id int64, entries []store.ACLEntry) err
 		return err
 	}
 	return t.insertACL(ctx, id, entries)
+}
+
+// ACLRowsFor returns the stored rows whose identity is one of names, in
+// (channel_id, identity) order, with no rule applied. A name failing TextRule
+// matches nothing.
+func (t *tx) ACLRowsFor(ctx context.Context, names ...string) ([]store.ACLRow, error) {
+	seen := make(map[string]bool, len(names))
+	var args []any
+	for _, n := range names {
+		if badText(n) || seen[n] {
+			continue
+		}
+		seen[n] = true
+		args = append(args, n)
+	}
+	if len(args) == 0 {
+		return nil, nil
+	}
+	q := "SELECT channel_id, identity, can_read, can_write, can_admin FROM channel_acl WHERE identity IN (?" +
+		strings.Repeat(", ?", len(args)-1) + ") ORDER BY channel_id, identity"
+	var rows []struct {
+		ChannelID int64  `db:"channel_id"`
+		Identity  string `db:"identity"`
+		Read      bool   `db:"can_read"`
+		Write     bool   `db:"can_write"`
+		Admin     bool   `db:"can_admin"`
+	}
+	if err := t.sel(ctx, &rows, q, args...); err != nil {
+		return nil, err
+	}
+	out := make([]store.ACLRow, len(rows))
+	for i, r := range rows {
+		out[i] = store.ACLRow{ChannelID: r.ChannelID, Identity: r.Identity, Read: r.Read, Write: r.Write, Admin: r.Admin}
+	}
+	return out, nil
 }
 
 func (t *tx) isAdmin(ctx context.Context, name string) (bool, error) {

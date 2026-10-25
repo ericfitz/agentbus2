@@ -6,6 +6,8 @@
 // and AppendMessage work) and Read (a read-only snapshot, never retried).
 // SchemaVersion reads the schema version outside a transaction and is the
 // reachability ping the health document uses.
+// The Store serves facts and holds no access rule: the rule over the ACL rows
+// (ACLRowsFor) is internal/core/access.
 // The one implementation is internal/store/sqlstore, driven by the engines in
 // internal/store/sqlite and internal/store/postgres.
 package store

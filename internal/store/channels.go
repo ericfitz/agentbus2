@@ -34,6 +34,14 @@ type ChannelCreate struct {
 	CreatedSeq, CreatedAt int64
 }
 
+// ACLRow is one stored channel_acl row with its channel id (the result of
+// ACLRowsFor).
+type ACLRow struct {
+	ChannelID          int64
+	Identity           string
+	Read, Write, Admin bool
+}
+
 type Channels interface {
 	// CreateChannel: ErrInvalid (name, kind, ACL), ErrConflict (name).
 	CreateChannel(ctx context.Context, c ChannelCreate) (Channel, error)
@@ -65,6 +73,12 @@ type Channels interface {
 	ACL(ctx context.Context, id int64) ([]ACLEntry, error) // insertion order
 	// SetACL validates all entries, then replaces all, in one transaction.
 	SetACL(ctx context.Context, id int64, entries []ACLEntry) error
+	// ACLRowsFor returns the stored channel_acl rows whose identity is one of
+	// names, ordered by (channel_id, identity). It is a fact query: no
+	// permission filter, no administrator join, no binding of an unregistered
+	// or malformed name (such a name matches nothing). The rule over these
+	// rows is internal/core/access.
+	ACLRowsFor(ctx context.Context, names ...string) ([]ACLRow, error)
 	// EffectivePermissions is the union of stored rows for identity,
 	// everyone, and admins (when identity is admin), plus the implicit
 	// entries. An unregistered identity is not admin and gets the everyone
