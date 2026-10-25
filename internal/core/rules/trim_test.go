@@ -61,6 +61,30 @@ func TestEnvelopeUpperBoundMemoryKind(t *testing.T) {
 	}
 }
 
+// The bound covers a human sender whatever sender_kind the caller put in the
+// message: unset, agent or human.
+func TestEnvelopeUpperBoundSenderKindHuman(t *testing.T) {
+	base := bus.Message{Channel: "c", Sender: "eric@corp.example", Content: "hello", Subject: "x", Tags: []string{"a"}}
+	real := base
+	real.SenderKind = bus.IdentityHuman
+	real.Seq = 9_223_372_036_854_775_807
+	real.CreatedAt = 9_999_999_999_999
+	for _, kind := range []bus.IdentityKind{"", bus.IdentityAgent, bus.IdentityHuman} {
+		m := base
+		m.SenderKind = kind
+		if bound, got := EnvelopeUpperBound(m, false), EnvelopeBytes(real); got > bound {
+			t.Errorf("SenderKind %q: real human envelope %d exceeds the bound %d", kind, got, bound)
+		}
+	}
+	// Both kinds are sized alike, so the bound does not depend on which one m
+	// carries.
+	h, a := base, base
+	h.SenderKind, a.SenderKind = bus.IdentityHuman, bus.IdentityAgent
+	if bh, ba := EnvelopeUpperBound(h, false), EnvelopeUpperBound(a, false); bh != ba {
+		t.Errorf("bound for human = %d, for agent = %d; want equal (both sized as the longer kind)", bh, ba)
+	}
+}
+
 func TestMarshalLen(t *testing.T) {
 	v := map[string]int{"a": 1}
 	j, _ := json.Marshal(v)
