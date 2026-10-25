@@ -1,9 +1,12 @@
 # Access check design (one `accesscheck(principal, object, action)` for every access decision)
 
-Status: Agent design of 2026-10-25 for Eric's decisions of the same day
-(section 1). Section 4 lists what his rule does not determine, each with
-options and a recommendation; nothing in section 4 is decided. The
-implementation plan is `docs/superpowers/plans/2026-10-25-accesscheck.md`.
+Status: Agent design of 2026-10-25 for Eric's decisions of the same day.
+Section 1 records his two framing decisions; section 4 records his
+answers to the twelve questions the first draft raised, each labeled
+**Eric's decision 2026-10-25**; section 4.1 is the one remaining question
+(the exact meaning of "outside its scope", with sub-items). Nothing else
+in this document is a decision. The implementation plan is
+`docs/superpowers/plans/2026-10-25-accesscheck.md`.
 
 Related: `docs/superpowers/specs/2026-10-19-agentbus2-design.md` sections
 4.6 and 4.6.1 (Decisions 8, 24, 59, 73, 80, 88, 89, 93, 94, 95, 96; the
@@ -34,6 +37,13 @@ anchor); `internal/conformance/bus/aclmatrix_test.go` and
    rule "any ACL entry lists the channel; administrators see everything",
    is exactly what decision 1 forbids: that rule is one more action of
    the single access check (section 3.10), not a Store query of its own.
+
+Section 4 holds twelve more decisions of the same day (questions 1 to 12),
+which change the rule table itself: no task owner guard (1 and 12), no
+implicit creator entry (6), scope enforced by the access check (11), the
+agent memory filter inside the access check (4), `unavailable` for an
+unconfigured bridge (7).
+
 ## Context: protocol versioning (Eric's decision 2026-10-25, not implemented here)
 
 Recorded for the rebuilt channel-visibility plan (section 3.10); this
@@ -168,11 +178,13 @@ Listed so the gate of section 3.7 is scoped on purpose, not by omission:
   token, a keyless administrator needs a token, the registration mode)
   and `SignInHuman` (`human.go:253, 287-296`: the `users` list admits, the
   `admins` list sets the flag). These decide who becomes a principal and
-  with which flag; the access check consumes the result. Section 4
-  question 5 asks Eric to confirm.
-- Presentation: `agentview` and its call sites (decision 20: agents never
-  receive memory channels) filter by channel kind and client type, not by
-  principal; the Bus is unfiltered by design. Section 4 question 4.
+  with which flag; the access check consumes the result (Eric's answer to
+  question 5: they stay in `identities`).
+- `agentview` and its call sites (decision 20: agents never receive memory
+  channels) were listed here in the first draft as presentation; Eric's
+  answer to question 4 moves the rule into the access check (the
+  `Deliver` action), so it is **not** outside the gate; the TUI is
+  unfiltered because its identity is human, not because it is a client.
 - Retention: `EmptyChannelsBefore`'s `slack-bridge` exclusion (ADR 0009
   decision 20) and `RetireIdentity`'s removal of ACL rows (decision 19)
   mutate or weigh ACL data; they decide nothing for a caller.
@@ -184,31 +196,39 @@ Listed so the gate of section 3.7 is scoped on purpose, not by omission:
 ### 3.1 Vocabulary
 
 - **Principal**: who asks. `access.Principal` is the identity row as the
-  Store holds it: `Name`, `Kind` (`agent` or `human`), `Admin`, `Scope`.
+  Store holds it: `Name`, `Kind` (`agent` or `human`), `Admin`, `Scope`
+  (`""` for an unscoped identity; every human is unscoped).
   `access.Resolve(ctx, tx, name)` builds it: `""`, `everyone`, `admins`
   and `slack-bridge` and an unknown name are `not_registered` (today's
   `RequireIdentity`, moved). `access.Anonymous` is the unauthenticated
   caller (the health probe tier) and holds nothing.
 - **Object**: what is asked about. One Go type per kind, each carrying
   only what the rule needs: `Channel{ID}` (facts loaded inside the check:
-  creator, stored rows), `Server` (the server-wide administrator
-  operations: status, usage, scopes, identities, bridges, reset,
-  reset-credential, creation when `channel_creation` is `admins`, naming a
-  scope on creation, changing the ACL of a bridged channel), `Session{ID}`
-  (facts: the owning identity), and, if Eric answers question 1 with
-  option A, `Task{Channel, Owner, Status}`.
+  the channel row with its kind and scope, the stored ACL rows), `Server`
+  (the server-wide administrator operations: status, usage, scopes,
+  identities, bridges, reset, reset-credential, creation when
+  `channel_creation` is `admins`, naming a scope on creation, changing the
+  ACL of a bridged channel), `Session{ID}` (facts: the owning identity),
+  `Identity{Name}` (facts: its scope; for the `Identities` listing). Tasks
+  and memories are messages on a channel and are checked as that channel
+  (Eric's decision, question 1: no task object).
 - **Action**: `Read`, `Write`, `Admin` on a channel (Decision 80's three
   discrete sets); `List` on a channel (the channel-visibility rule, section
-  3.10); `Administer` on the server; `Use` on a session; `Post` on a
-  channel for the Slack bridge (`Write` held by a human, Decision 11).
-  An action that is not defined for the object's kind is an `internal`
-  error, never a panic (Definition of Done B; fixes I10).
-- **Decision**: allowed, or denied with the object kind's denial code and
-  text. The code is declared once, in the access package's table (section
-  3.3), so I4 becomes a list in one file rather than a scatter: channel
-  and server denials are `forbidden`; a session that is not the caller's
-  is `not_found` (as built); a task owned by another is `conflict` (as
-  built, if tasks join). Changing any of them later is one line.
+  3.10); `Deliver` on a channel (`Read`, minus memory channels for an agent
+  principal: decision 20, moved in by Eric's answer to question 4; used by
+  Subscribe, Receive, Peek, Watch and so the Stop hook and `wait`);
+  `Post` on a channel for the Slack bridge (`Write` held by a human,
+  Decision 11); `Administer` and `CreateChannel` on the server; `Use` on a
+  session; `See` on an identity. An action that is not defined for the
+  object's kind is an `internal` error, never a panic (Definition of Done
+  B; fixes I10).
+- **Decision**: a value `{Allowed, Code, Text, Reason}` (Eric's answer to
+  question 8). The code is declared once, in the access package's table
+  (section 3.3), so I4 becomes a list in one file rather than a scatter:
+  channel and server denials are `forbidden`; a session that is not the
+  caller's is `not_found` (Eric's answer to question 2); an agent
+  subscribing to a memory channel keeps today's `validation` with its
+  explanatory text. `Require` turns a denial into the `*bus.Error`.
 
 ### 3.2 The rule
 
@@ -218,26 +238,43 @@ One pure function, the only place the business rules live:
 decide(p Principal, o facts, a Action) (ok bool)
 ```
 
-with the channel facts being the channel row (creator) and the stored ACL
-rows of the channel for the names `p.Name`, `everyone` and, when
-`p.Admin`, `admins`. The table it implements, transcribed from ADR 0008 and
-ADR 0009 and the section 4.6 table (no rule changes):
+with the channel facts being the channel row (kind, scope) and the stored
+ACL rows of the channel for the names `p.Name`, `everyone` and, when
+`p.Admin`, `admins`. The table it implements, transcribed from ADR 0008
+and ADR 0009 and the section 4.6 table **as amended by Eric's answers in
+section 4** (questions 1, 4, 6, 11):
 
-| Object | Action | Allowed when |
+**Scope gate (Eric's decision, question 11), applied first to every row
+below.** `inScope(p, o)` is true when `p.Scope == ""` (an unscoped
+principal is never restricted), and otherwise only when the object is in
+`p.Scope`: a channel when `channel.scope == p.Scope` (an unscoped channel,
+`general` included, is outside every scope); an identity when its scope is
+`p.Scope`; the server never for `Administer` (the server is outside every
+scope) but always for `CreateChannel` (the new channel takes `p.Scope`,
+ADR 0009 decision 8, so creation is inside the scope by construction; the
+one exemption of the gate); a session always (a session is the caller's
+own or `not_found`). A denial by the scope gate is `forbidden`, Reason
+`out_of_scope`, text `%s is scoped to %q; %s %q is outside it`; in the set
+forms the object is simply absent. Inside its scope a scoped principal is
+governed by the ACL rows like anyone else.
+
+| Object | Action | Allowed when (after the scope gate) |
 | --- | --- | --- |
 | Channel | Read, Write | the union of the stored rows for `p.Name`, `everyone`, and `admins` if `p.Admin`, holds that permission (Decision 80) |
-| Channel | Admin | that union holds `admin`, or `p.Admin`, or `p.Name == creator` and creator is not `""` (the implicit entries; ADR 0008 decision 1) |
-| Channel | List | `p.Admin`, or any stored row for `p.Name`/`everyone`/`admins`-if-admin, or `p.Name == creator` (Eric's visibility decision 1 and question 1, section 3.10) |
-| Channel | Post (bridge) | `p.Kind == human` and Channel/Write (ADR 0009 decision 11; equal to the stored-row scan under decision 12, and now checked, see 3.7) |
-| Server | Administer | `p.Admin` (Decision 73; ADR 0009 decision 9) |
-| Server | CreateChannel | `ChannelCreation == open`, or `p.Admin` (Decision 93; the one configuration value the rule reads) |
-| Session | Use | the session's identity is `p.Name` (ADR 0003; the five sites of 2.1) |
-| Task | Modify (question 1) | the task is unowned, or owned by `p.Name`, or not `in_progress` and the patch does not take it from another owner; `Force` bypasses (as `ownerGuardBlocked` today) |
+| Channel | Admin | that union holds `admin`, or `p.Admin` (the implicit `admins` entry; ADR 0008 decision 1 as amended by Eric's answer to question 6: there is no implicit creator entry any more) |
+| Channel | List | **interim, until the channel-visibility rebuild**: every channel for an unscoped principal (Decision 94 stands until that plan lands), so only the scope gate filters a scoped principal's list now; the rebuild replaces this clause with `p.Admin`, or any stored row for `p.Name`/`everyone`/`admins`-if-admin (Eric's visibility decision 1 as amended by question 6: creator-ship lists nothing) |
+| Channel | Deliver | Channel/Read, and not (`p.Kind == agent` and `channel.kind == memory`) (decision 20 moved in by Eric's answer to question 4; Reason `memory_channel`, code `validation`, today's text) |
+| Channel | Post (bridge) | `p.Kind == human` and Channel/Write (ADR 0009 decision 11; Reasons `not_human`, `no_write`) |
+| Server | Administer | `p.Admin` (Decision 73; ADR 0009 decision 9); never for a scoped principal (scope gate) |
+| Server | CreateChannel | `ChannelCreation == open`, or `p.Admin` (Decision 93; the one configuration value the rule reads); a scoped principal creates in its own scope only (naming any scope is Administer) |
+| Session | Use | the session's identity is `p.Name` (ADR 0003; the five sites of 2.1; `not_found`) |
+| Identity | See | the scope gate alone (the `Identities` listing; an unscoped principal sees every identity) |
 
-The implicit entries grant `admin` only, never `read` or `write` (ADR
-0008; `TestACLImplicitEntriesGrantAdmin`). Scope is carried on the
-principal and read by no rule today; a scope rule, if one is ever decided,
-lands in this table and nowhere else.
+The implicit `admins` entry grants `admin` only, never `read` or `write`
+(ADR 0008; an administrator grants itself `read` through `SetACL`, which
+is what Eric's answer to question 6 names). There is no task row: write
+access to a task list permits changing any task on it (Eric's answers to
+questions 1 and 12; section 3.9 lists what that removes).
 
 ### 3.3 The API (`internal/core/access`)
 
@@ -252,23 +289,25 @@ func Resolve(ctx context.Context, tx store.Tx, name string) (Principal, error) /
 type Action string
 const (
     Read Action = "read"; Write Action = "write"; Admin Action = "admin"; List Action = "list"
+    Deliver Action = "deliver"      // channel: Read, minus memory channels for an agent (decision 20)
     Post Action = "post"            // channel: Write held by a human (bridge)
     Administer Action = "administer"       // server
     CreateChannel Action = "create_channel" // server (Decision 93)
     Use Action = "use"              // session
-    Modify Action = "modify"        // task (question 1)
+    See Action = "see"              // identity (the Identities listing)
 )
 
 type Object interface{ accessObject() }
 type Channel struct{ ID int64 }
 type Server struct{}
 type Session struct{ ID string }
-type Task struct{ Channel int64; Owner, Status string; TakesOwner, Force bool } // question 1
+type Identity struct{ Name string }
 
-// Decision is the answer: Reason names the denial (not_human, no_write,
-// in_progress, owned, ...) so a caller can map it to a fixed text without
-// parsing Message.
-type Decision struct{ Allowed bool; Code bus.Code; Message, Reason string }
+// Decision is the answer (Eric's decision, question 8): Reason names the
+// denial (out_of_scope, not_human, no_write, memory_channel, no_permission,
+// not_admin, not_owner) so a caller can map it to a fixed text without
+// parsing Text.
+type Decision struct{ Allowed bool; Code bus.Code; Text, Reason string }
 
 // Checker holds the one configuration the rule reads (ChannelCreation,
 // Decision 93) and nothing else.
@@ -280,16 +319,19 @@ func (c Checker) Check(ctx context.Context, tx store.Tx, p Principal, o Object, 
 // Require is Check, returning the denial as the object kind's *bus.Error.
 func (c Checker) Require(ctx context.Context, tx store.Tx, p Principal, o Object, a Action) error
 // Channels is the set form: the ids of every channel for which Check
-// would allow a, ascending. Used by Receive, Peek, Watch, Search and
-// List (section 3.4).
+// would allow a, ascending. Used by Receive, Peek, Watch (Deliver),
+// Search (Read) and List (List) (section 3.4).
 func (c Checker) Channels(ctx context.Context, tx store.Tx, p Principal, a Action) ([]int64, error)
+// Identities is the set form over identities: those p may See (the scope
+// gate), by name.
+func (c Checker) Identities(ctx context.Context, tx store.Tx, p Principal) ([]store.Identity, error)
 // Holders is the reverse set form: the registered principals for whom
 // Check allows a on the channel, by name (the bridge's invite list,
 // Decision 11; everyone and admins are not principals and never appear).
 func (c Checker) Holders(ctx context.Context, tx store.Tx, o Channel, a Action) ([]Principal, error)
 ```
 
-`Require` builds the message as `Authorize` does today (`"%s needs %s on channel
+`Require` builds the text as `Authorize` does today (`"%s needs %s on channel
 %q"`, `"administrator privilege required"`, `"session %q does not exist"`),
 so the ACL matrix and the e2e assertions on codes are unchanged; sites
 that today rewrite the text (`channels.go:74-80, 244-250`) pass their text
@@ -314,7 +356,8 @@ restate the rule in SQL. Three options were weighed:
   `ListChannels` (already carrying `creator`) and `ACLRowsFor(p.Name,
   everyone[, admins])`, groups the rows by channel and calls `decide` per
   channel. `Check` on one channel calls the existing `tx.Channel` and
-  `tx.ACL`. Cost: `channel_acl` holds about three rows per channel and
+  `tx.ACL`; the scope gate and the memory-kind test read the channel row
+  that is already loaded. Cost: `channel_acl` holds about three rows per channel and
   `ReadableChannels` already returned a list of all readable ids, so the
   order of work is unchanged; the only index is `(channel_id, identity)`
   (`schema/0001_initial.sql:38`), so `WHERE identity IN (...)` scans the
@@ -409,14 +452,26 @@ code.
    `internal/slackbridge/...` and `internal/bus/local` (the server side;
    clients are excluded by design, question 3):
    - no `if`, `switch` case or `&&`/`||` operand mentions a selector
-     named `Admin`, `Creator` or `Owner`, or compares a `Kind` to
-     `store.IdentityHuman`/`IdentityAgent`, outside
-     `internal/core/access`; the allowlist holds the sites that **copy**
-     the flag (`sessions/identities.go Identities`, the converters) and
-     the sites that **set** it (`identities/human.go signInHumanTx`,
-     `identities/admin.go MakeAdmin`); a `Kind` test in registration and
-     sign-in (`register.go`, `human.go`, `agent.go`, question 5) is
-     allowlisted by function name;
+     named `Admin`, `Creator`, `Owner` or `Scope`, or compares a `Kind` to
+     `store.IdentityHuman`/`IdentityAgent` or to `store.KindMemory`/
+     `bus.KindMemory`, outside `internal/core/access`; the allowlist holds
+     the sites that **copy** the flag or the scope (`sessions/identities.go
+     Identities`, the converters, `channels.Create`'s `scope :=
+     p.Scope`), the sites that **set** it (`identities/human.go
+     signInHumanTx`, `identities/admin.go MakeAdmin`), the state rules that
+     read a scope's own row (`scopes.RequireOpen`, `scopes/retire.go`,
+     `identities/agent.go ensureAgent`, `slackbridge/create.go` "a bridge
+     requires a scoped channel"), the task-list and memory **kind**
+     validations that refuse `send` on a task list and `edit_memory` on a
+     task list (`messaging/send.go`, `memories.go`, `tasks/*`: they judge
+     the operation's shape, not a principal), and a `Kind` test in
+     registration and sign-in (`register.go`, `human.go`, `agent.go`,
+     question 5), all by function name. For the memory filter (Eric's
+     answer to question 4) the `KindMemory` clause also walks
+     `internal/mcpserver` and `internal/cli`: after Task 4 of the plan no
+     client decides what an agent is delivered (`internal/agentview` is
+     deleted); `internal/tui` is allowlisted (rail sections are
+     presentation);
    - `tx.ACL(` is called only by `access`, `channels.Service.ACL` (the
      get-ACL display) and `slackbridge/archive.go Remove`,
      `slackbridge/create.go` step 4 (the two ACL mutations), named
@@ -445,19 +500,50 @@ code.
 | `SetACL` on a bridged channel | `Access.Require(p, Server{}, Administer)` with its text; `CheckBridgeACL` unchanged |
 | `Status`, `Usage`, scopes (4), identities `As` operations (4), `slackbridge.requireAdmin` | `Access.Require(p, Server{}, Administer)` |
 | `health.go:68, :111` | `Access.Check(p, Server{}, Administer).Allowed` picks the tier; `Anonymous` is the probe tier |
-| `ReadableChannelIDs` in `delivery.load` (Receive, Peek, Watch), `search` | `Access.Channels(p, Read)`; the principal is `Resolve(identity)`, the caller's identity, resolved once per call before any session lookup (I5: a deleted identity is `not_registered`) |
+| `ReadableChannelIDs` in `delivery.load` (Receive, Peek, Watch) | `Access.Channels(p, Deliver)` (readable, minus memory channels for an agent); the principal is `Resolve(identity)`, the caller's identity, resolved once per call before any session lookup (I5: a deleted identity is `not_registered`) |
+| `ReadableChannelIDs` in `search` | `Access.Channels(p, Read)` (an agent still searches memories) |
+| `channels.Subscribe` `Authorize(read)` | `Require(p, Channel{ID}, Deliver)`: an agent subscribing to a memory channel is refused by the server with today's `validation` text; the MCP and CLI pre-checks go |
+| `internal/agentview` and its call sites (`mcpserver/server.go:545, 870`, `cli/channels.go:238`, `cli/stophook.go:148`, `cli/receive.go`, `cli/wait.go`) | deleted: Receive, Peek and Watch already exclude memory channels for an agent principal, so the Stop hook's count, `wait`'s wake and `receive -session` need no client filter (Eric's answer to question 4) |
+| `sessions/identities.go Identities` | `Access.Identities(p)` (the scope gate; an unscoped principal sees every identity) |
 | `sessions/service.go:77`, `open.go:82`, `close.go:30`, `watch.go:100`, `peek_counts.go:29` | `Access.Require(p, Session{ID}, Use)`: the rule compares the session row's identity to `p.Name` (`not_found` as built) |
 | `slackbridge/inbound.go trust` (human + stored write) | `Access.Require(p, Channel{ID}, Post)`; the human-kind and write denials come back as two distinct `Decision` reasons so `dropReason` keeps its fixed texts (`reasonNotHuman`, `reasonNoWrite`); the Slack binding checks stay in `trust` (they are about the Slack account, not the bus) |
 | `slackbridge/create.go writeHumans` | `Access.Holders(Channel{ID}, Post)`, then the email binding as today |
-| `tasks/update.go ownerGuardBlocked` | question 1: `Access.Require(p, Task{...}, Modify)` (option A) or unchanged (option B) |
-| `tui/tasks.go taskEditable`, `tui/model.go statusCmd` | question 3 |
+| `tasks/update.go ownerGuardBlocked`, `Force`, the `forced` revision | deleted (Eric's answers to questions 1 and 12; section 3.14 lists every trace) |
+| `server/bridges.go notConfigured`, `bus/local/scopes.go errBridgeNotConfigured` | `unavailable`, not retryable, same text (Eric's answer to question 7); `problem.go` already maps `unavailable` to 503 |
+| `tui/tasks.go taskEditable` and `ownedToast`, `tui/model.go statusCmd`'s admin gate | deleted; the TUI sends the patch and shows the server's answer, calls `Status` and treats `forbidden` as "not an administrator" (Eric's answer to question 3) |
 
 ### 3.9 Observable behavior changes
 
-None on the wire for a registered identity acting on existing objects:
-every matrix row, every `TestAuthEndToEnd` leaf and the e2e code table
-keep their codes. Edge changes, each intended:
+Every matrix row (its channels store the creator's `[read, write, admin]`
+row, so retiring the implicit creator entry does not move it), every
+`TestAuthEndToEnd` leaf and the e2e code table keep their codes. The
+changes, each decided by Eric in section 4 or intended by section 3:
 
+- **No implicit creator entry** (question 6; section 3.13): a creator
+  without a stored `admin` row no longer administers its channel and
+  lists it only through a stored row.
+- **Scope enforced** (question 11; section 3.12): a scoped identity is
+  `forbidden` outside its scope and its set forms (list, receive, search,
+  tag matches, identities) show in-scope objects only. Today a scoped
+  identity sees and reads `general` and every default-ACL channel.
+  `channels.Service.List` moves to `Access.Channels(p, List)` in this
+  plan so the scoped list is filtered now; for an unscoped principal the
+  interim `List` clause keeps Decision 94 (every channel) until the
+  visibility rebuild, so the matrix's `list channels` row is unchanged.
+- **No task owner guard** (questions 1 and 12; section 3.14): any writer
+  on a task list changes any task; `force` leaves the wire; the `forced`
+  revision type is never written again.
+- **Memory filtering on the server** (question 4): an agent principal's
+  Receive, Peek and Watch never carry a memory channel; an agent's
+  Subscribe to a memory channel is refused by the server (`validation`,
+  today's text). The TUI's identity is human in both modes (local:
+  `client/local.go:85-90` `RegisterLocalHuman` for the OS-login identity;
+  server: the sign-in), so it is unaffected; a TUI run with `-identity`
+  naming an agent identity on a local profile is an agent principal and is
+  filtered like one (`RegisterLocal`, `local.go:91`).
+- **Bridge not configured is `unavailable`** (question 7): HTTP 503 with
+  `retryable: false` and the same text; `agentbus2 bridges ...` exits 1
+  with `agentbus2: unavailable: the Slack bridge is not configured`.
 - A session whose identity row was deleted (host `reset`, scope
   retirement) answers `not_registered` on Receive, Peek and Watch instead
   of being evaluated as an unregistered reader with stored rows (I5).
@@ -470,8 +556,17 @@ keep their codes. Edge changes, each intended:
 The visibility spec's section 3.1 (`Tx.VisibleChannels`), its plan's Task
 1 and Review Focus 1 are superseded. The rule "any ACL entry lists the
 channel; administrators see everything" is the `List` action of section
-3.2; `channels.Service.List` becomes `Access.Channels(p, List)` filtering
-`ListChannels`, in one read transaction, with no new Store query. The
+3.2, where "administrators see everything" is the implicit right Eric gave
+server administrators in his answer to question 6 (discover any channel,
+change any channel's ACL) and "any ACL entry" means a stored row (no
+creator clause: question 6 retired the implicit creator entry, so the
+visibility spec's 3.7 "a creator lists a channel it created with
+`acl: []`" no longer holds). `channels.Service.List` already calls
+`Access.Channels(p, List)` after this plan (interim clause: every channel
+for an unscoped principal, the scope's channels for a scoped one); the
+rebuild replaces the interim clause in `decide` with the stored-row rule,
+touches no Store query, and changes the matrix `list channels` row's
+content as its plan already says. The
 `capabilities` array, the bridged icon and the client tasks of that plan
 stand; its discovery-capability item is replaced by a minor protocol
 version bump (the Context section). The rebuilt plan is written after this one
@@ -489,90 +584,234 @@ lands, against the then-current tree.
 - Putting the checker in `internal/bus` so clients could run it: clients
   have no Store and must not; the Bus error code is their answer.
 
-## 4. Open questions for Eric
+### 3.12 Scope enforcement by object kind (Eric's decision, question 11)
 
-Each is undetermined by decision 1; the recommendation is the agent's.
+"A scoped identity gets no access to anything outside its scope; inside
+it, access is governed by ACL entries; unscoped identities are
+unaffected." Made precise, per object kind, as the scope gate of section
+3.2 implements it:
 
-1. **Task ownership.** `ownerGuardBlocked` (an `in_progress` or owned task
-   is changed only by its owner; `Force` bypasses; `conflict`): (A) a
-   principal-to-object relation inside the access check, object `Task`,
-   action `Modify`, code stays `conflict`; (B) a task-state rule that stays
-   in `tasks` because any writer may `Force` it, so it is concurrency
-   control, not access. **Recommend A**: Eric named "owner" as a business
-   rule to centralize, and A puts the TUI's mirror (question 3) on one
-   definition.
-2. **Session ownership's denial code.** A session that is not the caller's
-   answers `not_found` (hides); channels answer `forbidden` (Eric's
-   visibility decision: no name secrecy). (A) keep as built, declared in
-   the access table; (B) unify on `forbidden`. **Recommend A**: session
-   ids are capabilities handed to one client, and the `watch`/`wait` exit
-   codes and the e2e table depend on `not_found` today.
-3. **Client-side mirrors** (`tui/tasks.go taskEditable`, `tui/model.go
-   statusCmd`'s admin pre-check, `cli/status.go`'s tolerated `forbidden`):
-   (A) remove the two that decide (call `Status` and swallow `forbidden`;
-   send the task patch and show the server's `conflict`), keep the ones
-   that only react; (B) keep them as UX hints outside the gate; (C) add a
-   Bus `Can(object, action)` operation (protocol minor bump) that clients
-   call instead of mirroring. **Recommend A now**, C when a second client
-   needs it.
-4. **Presentation filters** (`agentview` and its MCP, CLI and Stop-hook
-   call sites: agents never receive memory channels, decision 20): (A)
-   stay separate, documented as presentation, outside the gate; (B) become
-   an action of the access check keyed on a client-type attribute of the
-   principal. **Recommend A**: the rule depends on the client, not the
-   identity, and the TUI sees everything on purpose.
-5. **Registration, enrollment and sign-in rules** (`register.go`,
-   `SignInHuman`'s `users`/`admins` matching): (A) stay in `identities`
-   (they decide who becomes a principal and with which flag; the access
-   check consumes the flag); (B) move into `access` as actions on an
-   `Identity` object (`Register`, `SignIn`). **Recommend A**; the gate
-   allowlists them by function name.
-6. **The creator relation.** The implicit creator entry grants `admin`
-   (ADR 0008) and, for listing, visibility (visibility question 1). Is
-   "creator" a relation of channels only (A), or a general owner relation
-   for every object kind the design may add (scopes have none, sessions
-   have an identity, tasks an owner) (B)? **Recommend A**, as ADR 0008
-   defines it; a session's identity and a task's owner are their own
-   relations in the table.
-7. **Feature absence** (`BridgeNotConfigured` is `forbidden`): (A) leave
-   as built (it is not an access decision and stays outside the gate);
-   (B) make it `unavailable` or a new code. **Recommend A**; changing the
-   code is a wire change for another day.
-8. **Denial text and code ownership.** (A) `Check` returns a `Decision`
-   carrying the code and text, declared in the access table; callers may
-   substitute a text for the same code (the scope-naming and bridged-ACL
-   messages); (B) `Check` returns a boolean and each caller owns its
-   error. **Recommend A** (it is what makes I4 a list).
-9. **Store contract.** (A) delete `EffectivePermissions` and
-   `ReadableChannels` (ADR 0004 addendum; the store suite loses one test
-   and gains one); (B) keep them, unused, as fact queries. **Recommend A**:
-   an unused rule on the contract is a rule someone will call.
-10. **The gate anchor.** Approve moving `check-gates-selftest.sh` block 15
-    from `internal/core/authz.go` `if !id.Admin {` to
-    `internal/core/access/decide.go` `if !p.Admin {` (section 3.7 item 2).
-    Without this the anchor file ceases to exist and the self-test job
-    fails. **Recommend yes**; there is no option B that keeps one rule.
-11. **Scope on the principal.** No rule reads `Scope` today (ADR 0009
-    decision 8: the ACL is the one mechanism; the visibility spec 3.7
-    agrees). Carry it on `Principal` for the rule table's future use (A),
-    or leave it off until a rule needs it (B). **Recommend A**: it costs a
-    field and documents where a scope rule would go.
-12. **Who may `Force` a task patch** (if question 1 is A): today any
-    identity with `write`. Keep (A) or require `admin` on the channel (B)?
-    **Recommend A**, as built; B is a rule change for Eric to make
-    explicitly, which the table makes a one-line edit.
+| Object kind | In scope when | Outside: what happens |
+| --- | --- | --- |
+| Channel (`channels.scope`) | `channel.scope == p.Scope`; an unscoped channel (`""`), `general` included, is outside every scope | every channel action is `forbidden` (Reason `out_of_scope`); `List`, `Channels(Read/Deliver)` and so Receive, Peek, Watch, Search and tag matching omit it; `Subscribe` is `forbidden`; `history` is `forbidden`, not `not_found` (no name secrecy, Eric's visibility decision 2) |
+| Task, memory | their channel's scope | as the channel; `task_get`/`get_memory` by id on an out-of-scope channel is `forbidden` |
+| Server (status, usage, reset, reset-credential, scopes, identities create, bridges) | never | `Administer` is `forbidden` for a scoped principal whatever its `Admin` flag (the server is outside every scope; section 4.1 (a) asks whether a scoped identity may hold the flag at all) |
+| Channel creation | always (the one exemption of the gate: the new channel takes `p.Scope`, ADR 0009 decision 8) | `CreateChannel` follows Decision 93; naming any scope in the request is `Administer` and so `forbidden`; `channel_creation: admins` denies a scoped principal (it cannot be an effective administrator) |
+| Session | the caller's own | unchanged: another identity's session is `not_found` (question 2); a scoped identity's sessions are its own |
+| Identity (`Identities` listing, the MCP `discover`) | `identity.scope == p.Scope` | omitted from the listing (`See`) |
+| Health | no object | the identity tier as today; a scoped administrator-flagged identity is tier `identity`, not `admin` (consistent with the Server row) |
+| Bridge | server operation | `forbidden` |
+| Human principals | always unscoped (`identities.scope` is set only by `CreateScopedIdentity`) | unaffected |
+| `slack-bridge` | never a principal | n/a |
+
+A done scope (ADR 0009 decision 7) is still its members' scope: `done`
+stops joining, not acting; a retired scope has no members left (decision
+19). ACL rows naming a scoped identity on an out-of-scope channel grant
+nothing (the gate runs first); whether `SetACL` should refuse writing
+such a row is section 4.1 (b).
+
+### 3.13 Retiring the implicit creator entry (Eric's decision, question 6)
+
+ADR 0008 decision 1 evaluated every ACL as if it contained `[{admins,
+[admin]}, {<creator>, [admin]}]`. The creator half is retired. The
+replacement: a server administrator implicitly may discover (`List`) any
+channel and holds `admin` on it (set the ACL, and so grant itself `read`
+and `write`); there is no implicit `read` or `write` for anyone.
+
+Migration effects (no schema change; `channels.creator` stays as data for
+`ChannelInfo.Creator` and `status`):
+
+- A channel created without an ACL stores the Decision 88 default,
+  `[{everyone,[read,write]}, {<creator>,[read,write,admin]},
+  {admins,[admin]}]`: the creator keeps `admin` through its stored row.
+  **Unaffected.** `general` has no creator and is managed through the
+  implicit `admins` right. **Unaffected.**
+- A channel created with an explicit ACL that omits its creator (`acl:
+  []`, or a private ACL naming only others): the creator held `admin`
+  only through the implicit entry and **loses it** at upgrade; only a
+  stored `admin` holder or a server administrator can now manage, rename
+  or delete it, and the creator no longer lists it unless a stored row
+  names it. No release has shipped, so no deployment is upgraded by this
+  change; the plan still has the records task write the rule into
+  `docs/ops/upgrade.md` with the one-line SQL an operator can run to find
+  such channels (`SELECT c.name FROM channels c WHERE c.creator <> '' AND
+  NOT EXISTS (SELECT 1 FROM channel_acl a WHERE a.channel_id = c.id AND
+  a.identity = c.creator AND a.can_admin)`), and have `channels create
+  -acl` document that an ACL omitting the creator leaves it without
+  `admin`.
+- Tests that assert the implicit creator entry change meaning:
+  `internal/conformance/bus/channels_test.go` `TestChannelCreateWithKindAndACL`
+  (:82 "[] stores no entries; the creator still administers", :197
+  "Removing the creator's rows leaves the creator able to edit"),
+  `bridgeguard_test.go:132` ("the creator still sets the ACL of its own
+  channel"), the store suite's `TestACLImplicitEntriesGrantAdmin` and
+  `TestACLRemovingAdminsAndCreatorRowsKeepsImplicitAdmin` (whose
+  `EffectivePermissions` halves go in any case, section 3.5), and
+  `internal/core/authz_test.go TestAuthorizeUsesImplicitEntries`. Each is
+  rewritten to assert the new rule (the creator is `forbidden`; a server
+  administrator is allowed; a stored `admin` row is allowed).
+
+### 3.14 Removing the task owner guard (Eric's decisions, questions 1 and 12)
+
+Write access to a task list permits modifying any task on it; v1's owner
+rule existed only for lack of an authorization model. Every trace, found
+by `rg -n -i '\bforce\b|forced|ownerGuard' internal api docs` (excluding
+`internal/gen`, the installer's "-harness ... to force one" and the Slack
+"no force" invite comments, which are unrelated):
+
+- Core: `internal/core/tasks/update.go:28-37` `ownerGuardBlocked`, `:52-59`
+  rules 2 and 3, `:299-313, 336-337` the `forced` revision (the extra
+  revision row naming the overrider and the `forced` revision type);
+  `doc.go` comments; `doc_test.go` (2 mentions).
+- Bus: `internal/bus/tasks.go:76` `TaskPatch.Force`.
+- Wire: `api/openapi.yaml:1773` the `force` member of the task update
+  body; `internal/bus/remote/tasks.go:57-58`; `internal/server/tasks.go:107`;
+  `make generate` after the edit. **Protocol change**: a request member is
+  removed. Under Eric's protocol-versioning decision a removal is
+  major-shaped, but `info.version` is `2.0.0-dev` and no release has
+  shipped, so it lands without a bump and is listed in the version's
+  changelog; a server receiving `force` from an older client ignores an
+  unknown member as the generated decoder does today.
+- MCP: `internal/mcpserver/inputs.go:197` `Force`; `server.go:724` the
+  `task_update` description ("While a task is in_progress only its owner
+  may change or delete it; force=true overrides that for anyone and is
+  recorded") and `:731`.
+- CLI: `internal/cli/tasks.go:37, 67, 174` the `-force` flag;
+  `cli/tasks_test.go`.
+- Skill: `internal/cli/skills/using-agentbus2/SKILL.md:143` ("pick another
+  task, do not force") and `:162` ("`force: true` overrides another
+  owner and is recorded"); the m6 word check does not cover these words,
+  so no count moves.
+- TUI: `internal/tui/tasks.go:55-58` `ownedToast`, `:66-68` `taskEditable`,
+  `:95`, `:193-197` (question 3 removes them with it).
+- Tests: `internal/conformance/bus/tasks_test.go` (4 mentions),
+  `internal/server/memories_tasks_test.go` (4), `internal/core/tasks/
+  doc_test.go` (2), `internal/cli/tasks_test.go` (1): the assertions that
+  a non-owner is `conflict` become assertions that it succeeds; the
+  `forced` revision assertions go.
+- Docs: `CLAUDE.md` (the `tasks update` line, if it names `-force`),
+  `docs/` (none found beyond the skill; the records task greps again).
+
+What stays: `owner` as data, `task_claim` (sets the owner to the caller),
+`task_release`, "an `in_progress` task needs an owner", `completed` sets
+the owner to the caller when empty, the abandoned-task reclaim
+(`reclaim.go`: a dead owner's task returns to `pending`), and
+`TestTaskOwnerRegistryCheck` (a new owner must be registered). If agents
+misbehave without the guard, Eric revisits.
+
+## 4. Eric's decisions on the open questions (2026-10-25)
+
+Each is **Eric's decision 2026-10-25**, answering the twelve questions the
+first draft of this document put to him (the option letters refer to that
+draft, commit 69e2c64; each item restates the question in its answer).
+
+1. **No task owner guard in v2.** Write access to a task list permits
+   modifying any task on it; v1's owner rule existed only for lack of an
+   authorization model. `ownerGuardBlocked`, `Force` and the `forced`
+   revision go, every trace of them (section 3.14), the wire member
+   `force` included (a protocol change, noted there). If agents misbehave,
+   Eric revisits. (Neither option; the rule is removed.)
+2. **A session that is not the caller's stays `not_found`.** (Option A.)
+3. **The TUI's two client-side access decisions are removed**
+   (`taskEditable`, `statusCmd`'s admin gate); the TUI reacts to the
+   server's codes. No `Can()` operation now. (Option A.)
+4. **The agent memory filter moves into the access check** (the `Deliver`
+   action: an agent principal is not delivered a memory channel through
+   receive, wait, watch or the Stop hook's count), not a separate
+   presentation filter; the gate covers it; `internal/agentview` goes.
+   (Option B.)
+5. **Registration, sign-in and admission rules stay in
+   `internal/core/identities`.** (Option A.)
+6. **The creator-implied-owner rule is retired** (ADR 0008's implicit
+   creator entry). Replacement: server administrators implicitly may
+   discover (list) any channel and change any channel's ACL; no implicit
+   `read` (they grant themselves `read`). ADR 0008 changes; the records
+   task records it there; section 3.13 calls out the migration effects.
+   (Neither option as drafted.)
+7. **Bridge not configured answers `unavailable`**, not `forbidden`.
+   (Option B.)
+8. **`Check` returns a `Decision` value `{Allowed, Code, Text, Reason}`;
+   `Require` converts a denial to a `bus.Error`.** (Option A.)
+9. **`EffectivePermissions` and `ReadableChannels` are deleted from the
+   Store contract**; `ACLRowsFor` facts only. (Option A.)
+10. **The gate anchor moves** to `internal/core/access/decide.go`
+    `if !p.Admin {` and `check-gates-selftest.sh` block 15 is updated.
+    (Approved.)
+11. **Scope is enforced by the access check now**: a scoped identity gets
+    no access to anything outside its scope; inside it, access is governed
+    by ACL entries; unscoped identities are unaffected. Section 3.12
+    defines "outside its scope" per object kind; section 4.1 lists what
+    is still ambiguous. (Neither option as drafted.)
+12. **Moot with 1**: there is no `Force` to grant.
+
+### 4.1 Remaining question for Eric: the edges of "outside its scope"
+
+Section 3.12 is the agent's precise reading of decision 11. These
+sub-items are not determined by it; each carries the reading the plan
+implements unless Eric says otherwise.
+
+- (a) **A scoped identity flagged administrator.** `MakeAdmin` (host) and
+  the `admins` reference list can flag a scoped identity today. Reading:
+  the server is outside every scope, so `Administer` is denied to a scoped
+  principal whatever its flag, and the health tier is `identity`; the
+  plan also makes `MakeAdmin` and `admins add` refuse a scoped identity
+  (`validation`, "a scoped identity cannot be an administrator") so the
+  flag is never set in vain. Alternative: let the flag override the scope
+  gate (an administrator for one scope's channels only is a different
+  feature, not this one).
+- (b) **An ACL row naming a scoped identity on a channel outside its
+  scope.** Reading: the row is allowed (Decision 96 asks only that the
+  name be registered) and grants nothing, since the scope gate runs
+  first. Alternative: `SetACL` and `CreateChannel` refuse such a row with
+  `validation` ("%s is scoped to %q and cannot be granted on %q"), which
+  tells the granter at once. The agent recommends the alternative; the
+  plan implements the reading unless Eric picks the alternative, because
+  the refusal changes `SetACL`'s error surface.
+- (c) **The `Identities` listing** (MCP `discover`): a scoped principal
+  sees identities of its scope only (the `See` action). Alternative: it
+  sees every identity, since names are not secret (the visibility
+  decision 2 reasoning). The plan implements the scoped listing.
+- (d) **Denial code outside the scope**: `forbidden` with Reason
+  `out_of_scope` everywhere, never `not_found` (channel names are not
+  secret). Alternative: `not_found`, hiding other scopes' channels.
+- (e) **`general`** is outside every scope. A scoped agent has no
+  `general` subscription today (ADR 0009 decision 19) and after this
+  change cannot read it either; the plan removes nothing else. If Eric
+  wants scoped agents to read `general`, that is a stored `everyone` row
+  the scope gate would have to exempt, which is a rule change to record.
+- (f) **The implicit administrator right of decision 6** on channels: the
+  plan reads "change any channel's ACL" as the `admin` permission of
+  Decision 80 (the ACL and the channel's metadata: rename and delete),
+  which is what today's implicit `admins` entry grants. Alternative: ACL
+  changes only, with rename and delete needing a stored `admin` row the
+  administrator first grants itself.
 
 ## 5. Documents that change
 
-- New ADR 0011 "One access check" (status: proposed until Eric ratifies
-  section 4): decisions 1 and 2 of section 1, the table of 3.2, the
-  denial codes, the gate; the protocol-versioning decision (Context) is
+- New ADR 0011 "One access check" (status: accepted, Eric 2026-10-25, for
+  sections 1 and 4; section 4.1's sub-items marked proposed until he
+  answers): the table of 3.2 with the scope gate, the denial codes, the
+  gate, the anchor move, the removal of the task owner guard and of the
+  `force` wire member; the protocol-versioning decision (Context) is
   recorded there too, marked as context for the visibility rebuild.
 - ADR 0004: addendum for the Store contract change (3.5).
-- ADR 0008: a note that the rule is evaluated in `internal/core/access`
-  and the SQL serves facts; nothing in its decisions changes.
+- ADR 0008: a new section "Decisions of 2026-10-25 (Eric)": the implicit
+  creator entry is retired; the implicit administrator right is
+  discover-and-`admin`; the rule is evaluated in `internal/core/access`
+  and the SQL serves facts; "superseded in part" markers on decision 1's
+  creator sentences and on the Decision 88 wording "the creator's `admin`
+  is always present through the implicit entry" (it is present through
+  the stored default row).
 - ADR 0009: a note on `Post` and `Holders` replacing the stored-row scans
-  (decision 11 unchanged).
+  (decision 11 unchanged), on the scope gate making decision 8's scope an
+  access boundary, and on `unavailable` for an unconfigured bridge.
+- `docs/ops/upgrade.md`: the implicit-creator change and the operator SQL
+  of 3.13. `docs/ops/slack-bridge.md:3` and `admin-bootstrap.md:80`:
+  `forbidden` becomes `unavailable`. `CLAUDE.md:24, 56`: the same two
+  words; the Design bullets (below).
+- `internal/cli/skills/using-agentbus2/SKILL.md:143, 162`: the `force`
+  sentences go; one sentence says any writer may change any task.
+- `api/openapi.yaml`: the `force` member goes (3.14); `make generate`.
 - `CLAUDE.md` Design bullets: "Authorize" and "`internal/core/authz.go`"
   become `internal/core/access`; the gate anchor's new home; the Store
   bullet drops `EffectivePermissions`/`ReadableChannels`.
@@ -701,3 +940,10 @@ C36; C37 to C39). Of those, 24 go through the four `authz.go` entry points
 and 9 decide on their own (S2, S3, S4, S9, C21, C27 counted as one row for
 its five copies, C36, C38, C39). Two client mirrors (C46, C47, kind r).
 The remaining rows are listed as the gate's boundary.
+
+After Eric's answers of section 4: C21 is deleted rather than moved
+(question 1); C45 (the agent memory filter) becomes a rule of the access
+check (question 4) and its row's kind is R, not N; C42's code becomes
+`unavailable` (question 7) and the row stays outside the gate; C46 and
+C47 are deleted (question 3); S3's creator clause is retired, not moved
+(question 6).
