@@ -458,6 +458,43 @@ func TestServeSlackBridge(t *testing.T) {
 		}
 	})
 
+	t.Run("a graceful stop releases the runner lock", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "s.db")
+		db, err := sql.Open("sqlite", path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = db.Close() })
+		read := func() (owner string, expiresAt int64, found bool) {
+			err := db.QueryRow("SELECT owner, expires_at FROM leases WHERE name = ?", slackbridge.LockName).Scan(&owner, &expiresAt)
+			if errors.Is(err, sql.ErrNoRows) {
+				return "", 0, false
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			return owner, expiresAt, true
+		}
+		f := slackfake.New(slackapi.Self{UserID: "UBOT"})
+		_, stop := startServe(t, Config{Store: openSQLite(t, path), Slack: f, SlackCfg: scfg})
+		deadline := time.Now().Add(10 * time.Second)
+		for {
+			if _, exp, ok := read(); ok && exp > 0 {
+				break // the runner holds the lock
+			}
+			if time.Now().After(deadline) {
+				t.Fatal("the Slack runner never took its lock")
+			}
+			time.Sleep(5 * time.Millisecond)
+		}
+		if err := stop(); err != nil {
+			t.Fatalf("Serve: %v", err)
+		}
+		if owner, exp, ok := read(); !ok || owner == "" || exp != 0 {
+			t.Fatalf("runner lock after a graceful stop = %q, %d, %v; want released (expires_at 0)", owner, exp, ok)
+		}
+	})
+
 	t.Run("unreachable Slack starts the server and Run recovers", func(t *testing.T) {
 		f := slackfake.New(slackapi.Self{UserID: "UBOT"})
 		f.FailNext("AuthTest", errors.New("network down"))
