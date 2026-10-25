@@ -1498,6 +1498,7 @@ func TestHumanOverlap(t *testing.T) {
 		}
 		return nil
 	})
+	wantOneBinding(t, s, "eric@corp.example")
 
 	errs := make(chan error, n)
 	for range n {
@@ -1517,4 +1518,99 @@ func TestHumanOverlap(t *testing.T) {
 	if got := generalSubscriptions(t, s, "kim"); got != 1 {
 		t.Fatalf("%d general subscriptions for kim, want 1", got)
 	}
+	// RegisterLocalHuman makes no binding (the OS login is not a corporate
+	// identity), however many callers overlapped.
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		if b, err := tx.HumanBinding(ctx, "kim"); !errors.Is(err, store.ErrNotFound) {
+			t.Fatalf("kim binding = %+v, %v; want ErrNotFound", b, err)
+		}
+		return nil
+	})
+}
+
+// wantOneBinding fails unless email names exactly one email binding, its own,
+// with no issuer or provider subject yet; the (claim, value) key is unique, so
+// a second binding for the claim cannot exist under another identity.
+func wantOneBinding(t *testing.T, s Service, email string) {
+	t.Helper()
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		b, err := tx.HumanBinding(ctx, email)
+		if err != nil || b.Identity != email || b.ClaimType != store.ClaimEmail || b.Value != email || b.Issuer != "" || b.ProviderSubject != "" {
+			t.Fatalf("binding of %s = %+v, %v", email, b, err)
+		}
+		byValue, err := tx.HumanBindingByValue(ctx, store.ClaimEmail, email)
+		if err != nil || byValue != b {
+			t.Fatalf("binding by value = %+v, %v; want %+v", byValue, err, b)
+		}
+		return nil
+	})
+}
+
+// TestCreateIdentityByEmailAsOverlap: overlapping administrator creates end
+// with one human and one binding, whether the callers use different
+// idempotency keys (exactly one reports created) or the same key (every
+// caller gets the first answer).
+func TestCreateIdentityByEmailAsOverlap(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	if err := s.RegisterLocal(ctx, "root"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.MakeAdmin(ctx, "root", true); err != nil {
+		t.Fatal(err)
+	}
+	const n = 8
+	type out struct {
+		id      string
+		created bool
+		err     error
+	}
+	run := func(key func(i int) string, email string) []out {
+		var wg sync.WaitGroup
+		res := make([]out, n)
+		for i := range n {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				id, c, err := s.CreateIdentityByEmailAs(ctx, "root", email, key(i))
+				res[i] = out{id, c, err}
+			}()
+		}
+		wg.Wait()
+		return res
+	}
+	created := func(res []out, email string) int {
+		c := 0
+		for _, r := range res {
+			if r.err != nil || r.id != email {
+				t.Fatalf("overlapping CreateIdentityByEmailAs = %+v", r)
+			}
+			if r.created {
+				c++
+			}
+		}
+		return c
+	}
+
+	diff := run(func(i int) string { return fmt.Sprintf("k%d", i) }, "eric@corp.example")
+	if c := created(diff, "eric@corp.example"); c != 1 {
+		t.Fatalf("%d creates reported created under different keys, want 1", c)
+	}
+	wantOneBinding(t, s, "eric@corp.example")
+	if got := generalSubscriptions(t, s, "eric@corp.example"); got != 1 {
+		t.Fatalf("%d general subscriptions, want 1", got)
+	}
+
+	same := run(func(int) string { return "shared" }, "kim@corp.example")
+	if c := created(same, "kim@corp.example"); c != n {
+		t.Fatalf("%d of %d callers with the same key saw created, want all (the first answer replays)", c, n)
+	}
+	wantOneBinding(t, s, "kim@corp.example")
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		ids, err := tx.ListIdentities(ctx)
+		if err != nil || len(ids) != 4 { // root, the two humans and the reserved slack-bridge
+			t.Fatalf("identities = %v, %v", ids, err)
+		}
+		return nil
+	})
 }
