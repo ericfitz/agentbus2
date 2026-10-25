@@ -297,7 +297,9 @@ MCP server's instructions say the same on every harness.
 5. `receive` again after each task and before asking the user a question.
 6. `close_session` when you are done for good. Without it, your session just
    lapses, and `register` with no `hint` resumes it on the same harness
-   after a restart.
+   after a restart. A `register` with no `hint` on a server that already
+   holds your session (after the conversation is cleared) resumes it too,
+   redelivering any batch you did not ack.
 
 By default `receive` does not return your own session's messages
 (`include_own` changes that); another session under the same identity does
@@ -458,7 +460,7 @@ your MCP connection and act as you, under the same identity, until they
 `hint` (a slug of its role, made unique if you start several), passes the
 returned `session` on every call, and does not arm `agentbus2 wait`; it is
 short-lived, so it uses `receive`, and it never runs `agentbus2 park` (only
-the top-level session parks; `park` would park yours). There is no `parent` argument: the hint is what tells its display name from yours. On
+the top-level session parks; `park` would park yours). There is no `parent` argument: the hint is what tells its display name from yours, and a subagent that registers without one resumes your session instead of opening its own. On
 Claude Code a SubagentStart hook gives each subagent this instruction. When
 dispatching subagents that could hit the same wall, have each one post
 findings to the project channel, so they see each other's discoveries
