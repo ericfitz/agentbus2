@@ -197,6 +197,34 @@ func TestMakeAdminUsesAdminsList(t *testing.T) {
 	}
 }
 
+// A flag set before the lists existed has no admins row; MakeAdmin(false)
+// still clears the flag.
+func TestMakeAdminFalseClearsLegacyFlag(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	if err := s.RegisterLocal(ctx, "pat"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error { return tx.SetAdmin(ctx, "pat", true) }); err != nil {
+		t.Fatal(err)
+	}
+	if len(listRefs(t, s, store.ListAdmins)) != 0 {
+		t.Fatal("setup: the legacy flag has an admins row")
+	}
+	if id, _ := identityRow(t, s, "pat"); !id.Admin {
+		t.Fatal("setup: flag not set")
+	}
+	if err := s.MakeAdmin(ctx, "pat", false); err != nil {
+		t.Fatalf("MakeAdmin(false) = %v", err)
+	}
+	if id, _ := identityRow(t, s, "pat"); id.Admin {
+		t.Fatal("legacy flag left set")
+	}
+	if len(listRefs(t, s, store.ListAdmins)) != 0 {
+		t.Fatal("an admins row appeared")
+	}
+}
+
 func TestRemoveStaleAdminReference(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newSvc(t, nil)
