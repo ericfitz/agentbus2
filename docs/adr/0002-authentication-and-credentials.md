@@ -575,8 +575,8 @@ later tasks extend it.
   `application/json` (with the section 5.1 cache headers): status 400, or
   401 for `invalid_client`; also 405 for a method other than `POST`, 413 for
   an oversized body and 404 for the trailing-slash path (audit items 5 and 6
-  below; agent change, 2026-10-25, issue #16 "Standards (optional)", pending
-  Eric's review). Every other endpoint keeps problem+json
+  below; agent proposal, 2026-10-25, issue #16 "Standards (optional)", ratified
+  by Eric 2026-10-25). Every other endpoint keeps problem+json
   (Decision 46). This supersedes Milestone 5 addendum item 3, which put
   problem+json on the token endpoint. A request the validator, mux or strict
   handler refuses before the handler runs (no `grant_type`, a JSON body)

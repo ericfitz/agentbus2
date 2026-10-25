@@ -2,8 +2,8 @@
 
 Status: Agent design of 2026-10-25, written overnight for autonomous
 implementation. Every choice below that the existing decisions do not
-settle is marked **Agent decision (pending Eric's review)** with the
-alternatives considered, so Eric can overturn it in the morning. No
+settle is marked **Agent decision (ratified by Eric 2026-10-25)** with the
+alternatives considered, so Eric could overturn it; he reviewed all of them on 2026-10-25 and ratified them. No
 decision made by Eric is changed; where the issue seemed to need one,
 the option that leaves the existing decision intact was taken and is
 flagged.
@@ -109,22 +109,22 @@ holder on Postgres, a schema change, a Docker `HEALTHCHECK`, metrics.
           $ref: "#/components/responses/Problem"
 ```
 
-**Agent decision 1 (pending Eric's review): one operation with optional
+**Agent decision 1 (ratified by Eric 2026-10-25): one operation with optional
 security and a tiered body.** `security: [{}, {bearerAuth: []}]` makes
 the bearer optional: kin-openapi v0.151.0
 (`openapi3filter/validate_request.go`, `ValidateSecurityRequirements` and
 `validateSecurityRequirement`) returns nil for the empty requirement, so
-the validator never answers 401 on this operation; the handler decides the
+the validator never answers 401 on this operation (health is counted as an open operation: Eric's decision 12 of ADR 0010, 2026-10-25, "Count as open"; 8 open, 44 protected); the handler decides the
 tier from `IdentityFrom(ctx)`. Alternatives: (A) two operations, an
 unauthenticated `/v1/healthz` and a bearer-only `/v1/health/detail`
 (more surface, two Bus methods or a flag); (B) a bearer-only operation
 (no load-balancer probe). Rejected: A doubles the wire surface for one
 document; B fails the issue's probe requirement.
 
-**Agent decision 2 (pending Eric's review): a presented but invalid
+**Agent decision 2 (ratified by Eric 2026-10-25): a presented but invalid
 bearer is 401, not the probe tier.** `authenticate` (`internal/server/server.go`)
 records a rejected credential under `authErrorKey` and leaves the identity
-empty; on every other open operation the bad bearer is ignored. The health
+empty; on every other open operation the bad bearer is ignored, so health is the one open operation that can answer 401 (ADR 0010 decision 12). The health
 handler checks `authErrorFrom(ctx)` first and answers
 `bus.CodeUnauthenticated` (401 problem+json, `WriteProblem`), so a client
 with a stale token sees the failure (and the transport's one-shot refresh
@@ -132,7 +132,7 @@ on 401, `internal/credential`, keeps working) instead of silently getting
 the probe tier. Alternative: treat it as anonymous, as discover does.
 Rejected: a monitoring client would misread "fewer fields" as "healthy".
 
-**Agent decision 3 (pending Eric's review): the document is 200-only;
+**Agent decision 3 (ratified by Eric 2026-10-25): the document is 200-only;
 an unreachable store is a 503 problem, never a document.** Decision 46 and
 the document header ("Every error is application/problem+json") make a
 5xx an error on the wire, and `remote.errorOf` already treats it so. When
@@ -145,7 +145,7 @@ show the document. Rejected: it would be the first non-problem error body
 
 ### 3.2 Liveness and readiness
 
-**Agent decision 4 (pending Eric's review): liveness is the existing
+**Agent decision 4 (ratified by Eric 2026-10-25): liveness is the existing
 `GET /v1/discover`; readiness is `GET /v1/health`.** Discover is
 unauthenticated, store-free and always 200 while the process serves, so a
 liveness probe on it never restarts a replica because the database is
@@ -158,7 +158,7 @@ liveness probe on it would restart pods for a Postgres outage.
 
 ### 3.3 Discover capability
 
-**Agent decision 5 (pending Eric's review): `health` is a new discover
+**Agent decision 5 (ratified by Eric 2026-10-25): `health` is a new discover
 capability.** Decision 43: "additions get a capability". `Capabilities`
 (`internal/server/discovery.go`) returns `health` always, sorted with the
 others, so a 2.0 client can tell a server that has the operation from one
@@ -200,7 +200,7 @@ Reachability is the response itself: 200 means the ping answered, 503
 means it did not (section 3.1, decision 3). There is no `reachable`
 member.
 
-**Agent decision 6 (pending Eric's review): the maintenance block is
+**Agent decision 6 (ratified by Eric 2026-10-25): the maintenance block is
 this process's view, from an in-memory record, with no schema change.**
 `store.Locks.TryLock` reports only whether this owner holds the lock; on
 Postgres the advisory lock has no owner string anyone can read
@@ -240,7 +240,7 @@ that process never ticks. The TUI sees its own ticks.
   the same value an administrator sees; the reasons are tiered.)
 - `ok`: otherwise.
 
-**Agent decision 7 (pending Eric's review): the probe tier sees the true
+**Agent decision 7 (ratified by Eric 2026-10-25): the probe tier sees the true
 `status`, `degraded` included.** It reveals that something is off, not
 what. Alternative: collapse `degraded` to `ok` for anonymous callers.
 Rejected: a load balancer dashboard that can show amber is the point of
@@ -265,7 +265,7 @@ semantic search is degraded; `search` already returns
 row (`RequireIdentity`, then `id.Admin`) and never calls `RequireAdmin`,
 whose anchor line `if !id.Admin {` the gate selftest pins.
 
-**Agent decision 8 (pending Eric's review): the identity tier includes
+**Agent decision 8 (ratified by Eric 2026-10-25): the identity tier includes
 `store.engine`, `store.schema_version`, `started_at` and the embedding
 state and counts.** Alternative: admin-only for all of them (the probe
 tier plus nothing). Rejected: an agent diagnosing "search returns text
@@ -389,7 +389,7 @@ type Monitoring interface {
 }
 ```
 
-**Agent decision 9 (pending Eric's review): a sixth consumer interface,
+**Agent decision 9 (ratified by Eric 2026-10-25): a sixth consumer interface,
 `Monitoring`, embedded in `Bus`, rather than a method on `Admin`.**
 Decision 7 splits `Bus` by consumer; `Admin` is "the administrator seam"
 (Decision 48) and health is for every caller. `internal/bus/doc.go` and
@@ -474,7 +474,7 @@ The import allowlist (`scripts/m8-exit-checks.sh`: `internal/bus`,
 
 ## 13. CLI (optional)
 
-**Agent decision 10 (pending Eric's review): `agentbus2 health [-profile P] [-identity I]`
+**Agent decision 10 (ratified by Eric 2026-10-25): `agentbus2 health [-profile P] [-identity I]`
 is an optional last task.** It prints the document as one JSON object on
 stdout (the client-command convention) and exits 0 for `ok` or
 `degraded`, 1 for a `bus.Error` (an unreachable store among them, as the
@@ -506,8 +506,8 @@ healthy; Kubernetes ignores `HEALTHCHECK`).
   operation and its tiers.
 - `README.md`: the command list, if Task 7 lands.
 - ADR 0004: "Health addendum (2026-10-25)" for `SchemaVersion` and the
-  tick record. New ADR 0010 "Server health", Status "Proposed (agent,
-  2026-10-25; pending Eric's review)", transcribing agent decisions 1 to
+  tick record. New ADR 0010 "Server health", Status "Accepted (agent proposal,
+  ratified by Eric 2026-10-25)", transcribing agent decisions 1 to
   10 with their alternatives; `docs/adr/README.md` row.
 - `scripts/docker-smoke.sh` step 5b: `curl -fsS .../v1/health` contains
   `"tier":"probe"` and `"status":"ok"` (the `docker-smoke` CI job, not

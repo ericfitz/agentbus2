@@ -415,7 +415,7 @@ rest are choices of the plan, not new design decisions.
   deliverables (budget eviction, capacity notices, the usage number) landed
   in Milestone 7 for SQLite only.
 
-## Health addendum (2026-10-25; agent decision, pending Eric's review)
+## Health addendum (2026-10-25; agent proposal, ratified by Eric 2026-10-25)
 
 - `Store.SchemaVersion(ctx) (int, error)` is lifted from `sqlstore.Store`
   onto the `store.Store` contract: it reads `schema_meta.schema_version`

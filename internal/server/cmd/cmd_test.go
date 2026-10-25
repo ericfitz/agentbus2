@@ -345,9 +345,10 @@ func TestRunRejectsUnopenableStore(t *testing.T) {
 
 // The counts fail when a task declares an operation without updating this
 // test. Every request carries a bad bearer: it must never turn an open
-// operation into a 401 (Global Constraints). The one exception is health, whose
-// security is optional (anonymous or bearer): a bad bearer on it is a 401, so
-// it counts among the protected operations here.
+// operation into a 401 (Global Constraints). The one named exception is health
+// (Eric's ruling, ADR 0010 decision 12): it counts as an open operation, with
+// an optional bearer, but a presented invalid bearer on it is a 401 and no
+// bearer is a 200.
 func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 	r := runServer(t, "-listen", "127.0.0.1:0", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"))
 	doc := server.Spec()
@@ -362,7 +363,8 @@ func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 			if op.Security != nil {
 				sec = *op.Security
 			}
-			isProtected := len(sec) > 0
+			isHealth := op.OperationID == "Health" || op.OperationID == "health"
+			isProtected := len(sec) > 0 && !isHealth
 			url := r.base() + subst.Replace(path)
 			if strings.Contains(url, "{") {
 				t.Fatalf("%s %s: unsubstituted template parameter", method, path)
@@ -400,6 +402,23 @@ func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 				continue
 			}
 			open++
+			if isHealth {
+				// The named exception to "an open operation never answers 401".
+				if resp.StatusCode != http.StatusUnauthorized {
+					t.Errorf("health with a bad bearer: status %d, want 401: %s", resp.StatusCode, raw)
+				} else if c := problemCode(t, raw); c != "unauthenticated" {
+					t.Errorf("health with a bad bearer: code %q: %s", c, raw)
+				}
+				noBearer, err := http.Get(url)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_ = noBearer.Body.Close()
+				if noBearer.StatusCode != http.StatusOK {
+					t.Errorf("health without a bearer: status %d, want 200", noBearer.StatusCode)
+				}
+				continue
+			}
 			want, ok := wantOpen[strings.ToLower(op.OperationID[:1])+op.OperationID[1:]]
 			if !ok {
 				t.Errorf("%s %s: open operation %q has no expectation", method, path, op.OperationID)
@@ -410,8 +429,8 @@ func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 			}
 		}
 	}
-	if protected != 45 || open != 7 || protected+open != 52 {
-		t.Fatalf("operations: %d protected, %d open; want 45 and 7", protected, open)
+	if protected != 44 || open != 8 || protected+open != 52 {
+		t.Fatalf("operations: %d protected, %d open; want 44 and 8", protected, open)
 	}
 }
 

@@ -21,7 +21,7 @@ NNNN" to keep the two series apart.
 | [0007](0007-openapi-code-generator.md) | OpenAPI code generator | Accepted (Eric, 2026-10-20) |
 | [0008](0008-channel-access-control-lists.md) | Channel access control lists | Accepted (Eric, 2026-10-20) |
 | [0009](0009-scopes-and-slack-bridge.md) | Scopes and the Slack bridge | Accepted (Eric, 2026-10-23) |
-| [0010](0010-server-health.md) | Server health | Proposed (agent, 2026-10-25; pending Eric's review) |
+| [0010](0010-server-health.md) | Server health | Accepted (agent proposal, ratified by Eric 2026-10-25) |
 
 Decisions 60 (TUI in a later milestone), 61 (release tooling in the
 final milestone) and 87 (Scoop and winget in that tooling) are scheduling

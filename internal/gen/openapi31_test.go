@@ -139,7 +139,7 @@ func TestOperationTable(t *testing.T) {
 	}
 	doc := loadDoc(t)
 	got := map[string]string{}
-	open, protected, optional := 0, 0, 0
+	open, protected := 0, 0
 	for path, item := range doc.Paths.Map() {
 		for method, op := range item.Operations() {
 			id := lowerFirst(op.OperationID)
@@ -151,8 +151,10 @@ func TestOperationTable(t *testing.T) {
 				open++
 			} else if op.Security == nil {
 				protected++
-			} else if id == "health" && len(*op.Security) == 2 && len((*op.Security)[0]) == 0 {
-				optional++ // the bearer is optional: the handler tiers the document
+			} else if id == "health" && healthSecurityIsOptionalBearer(*op.Security) {
+				// Eric's ruling (ADR 0010 decision 12): health counts as an open
+				// operation; its bearer is optional, and an invalid one is a 401.
+				open++
 			} else {
 				t.Fatalf("%s: unexpected own security %v", op.OperationID, *op.Security)
 			}
@@ -168,9 +170,20 @@ func TestOperationTable(t *testing.T) {
 			t.Errorf("unexpected operation %s", id)
 		}
 	}
-	if open != 7 || protected != 44 || optional != 1 {
-		t.Fatalf("security: %d open, %d protected, %d optional; want 7, 44 and 1", open, protected, optional)
+	if open != 8 || protected != 44 {
+		t.Fatalf("security: %d open, %d protected; want 8 and 44", open, protected)
 	}
+}
+
+// healthSecurityIsOptionalBearer reports whether sec is exactly
+// [{}, {bearerAuth: []}]: the one security shape, besides `[]` and none, an
+// operation may declare. It pins health's special case.
+func healthSecurityIsOptionalBearer(sec openapi3.SecurityRequirements) bool {
+	if len(sec) != 2 || len(sec[0]) != 0 || len(sec[1]) != 1 {
+		return false
+	}
+	scopes, ok := sec[1]["bearerAuth"]
+	return ok && len(scopes) == 0
 }
 
 // stub implements only the operations the re-test calls; the nil embedded

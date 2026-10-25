@@ -350,8 +350,8 @@ parts of the choices below. The choice numbers are the plan's
   (Decision 79), within the retention window. A hintless `register` from an MCP
   server that already holds its primary session (Claude Code's `/clear`: same
   harness, same server) resumes that session, so a harness has one primary
-  file (agent decision, 2026-10-25, for Eric's review). Consequence of that
-  rule (agent decision, 2026-10-25, pending Eric's review): a subagent that
+  file (agent proposal, 2026-10-25, ratified by Eric 2026-10-25). Consequence of that
+  rule (agent proposal, 2026-10-25, ratified by Eric 2026-10-25, including this trade-off): a subagent that
   calls `register` without a hint on its parent's MCP server is that
   server's hintless register, so it takes over the parent's primary session:
   it receives the parent's unacked batch, and its `close_session` closes the

@@ -72,8 +72,8 @@ Eric decided:
     exchange Decision 9 asked for. (Decisions 9, 43)
     Every JSON request body, and each object inside one, is closed
     (`additionalProperties: false`), so a new optional request member is
-    gated by a capability a client checks first. (agent decision
-    2026-10-25 under issue #16, pending Eric's review)
+    gated by a capability a client checks first. (agent proposal
+    2026-10-25 under issue #16, ratified by Eric 2026-10-25)
 11. **Errors are RFC 9457 `application/problem+json`**, with `code` and
     `retryable` as extension members. Every mutating call takes an
     idempotency key; `send` and `edit_memory` gain one. (Decision 46)
@@ -187,9 +187,10 @@ internal/` then prints nothing).
 - **Choice 1, the operation table.** `api/openapi.yaml` declared 33
   operations when this addendum was written. After the federated-identity
   work and the Slack bridge work (2026-10-23) it declares 52 (the 52nd is the `health` operation, 2026-10-25), counted from
-  `operationId` and `security: []`: 44 protected, 7 open and 1 with optional
-  security (`health`, issue #11; the cmd test counts it as protected because a
-  bad bearer on it is a 401) (the Slack bridge
+  `operationId` and `security: []`: 44 protected and 8 open. `health` (issue
+  #11) is counted as open (Eric, 2026-10-25, "Count as open"); it is the one
+  open operation that answers 401, to a presented invalid bearer (ADR 0010
+  decision 12) (the Slack bridge
   adds the scope, scoped-identity and bridge operations, all admin). There is one `operationId` per
   `Bus` method plus the authentication paths (delete and rename channel
   carry both the `channels` and `admin` tags and serve `Messaging` and
