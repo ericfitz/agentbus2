@@ -275,11 +275,17 @@ func TestRailSelectionTextColorOnFocus(t *testing.T) {
 	}
 }
 
-// The gear's erase and cursor-forward escapes must stay invisible to lipgloss,
-// or the rail border drifts.
+// The gear is three columns to lipgloss in both its forms, or the rail
+// border drifts: the plain emoji and a space, and the Terminal.app variant
+// whose U+200B pad lipgloss counts zero.
 func TestIconAgentWidth(t *testing.T) {
 	if w := lipgloss.Width(iconAgent); w != lipgloss.Width("⚙️ ") {
 		t.Fatal(w)
+	}
+	for name, g := range appleTerminalIcons {
+		if w := lipgloss.Width(g); w != 3 {
+			t.Fatalf("Terminal.app %s width = %d, want 3 (%q)", name, w, g)
+		}
 	}
 }
 
@@ -494,7 +500,7 @@ func TestHeaderNeverWrapsOnNarrowPane(t *testing.T) {
 }
 
 // When the cut lands before an icon, ansi.Truncate drops the glyph but
-// keeps its escapes; the gear's CSI 1C (cursor forward) past the ellipsis
+// keeps its escapes; a CSI 1C (cursor forward, v1's gear) past the ellipsis
 // would push the line a column wider than counted. lipgloss measures CSI
 // as zero width, so this inspects the bytes after the ellipsis: only SGR
 // may follow it.

@@ -15,7 +15,7 @@ import (
 var (
 	iconChat  = "\U0001F4AC️ " // speech balloon
 	iconMem   = "\U0001F4BE️ " // floppy disk
-	iconAgent = gearIcon       // gear; per OS, see icons_unix.go and icons_windows.go
+	iconAgent = gearIcon       // gear; Terminal.app gets appleTerminalIcons' variant
 	iconUser  = "\U0001F9D1️ " // adult
 	iconIdle  = "\U0001F4A4️ " // sleeping sign
 	iconTasks = "\U0001F4CB️ " // clipboard; Wide like chat and memory, so no CSI trick
@@ -24,14 +24,53 @@ var (
 )
 
 // Task status marks. The stopwatch U+23F1 is text-presentation by default
-// (like the gear) and carries U+FE0F for the color glyph; if a terminal
-// font draws its own half-width stopwatch, the gear's CSI 2X/1C treatment
-// would not help: Bubble Tea v2 drops those escapes (see icons_unix.go).
+// (like the gear) and carries U+FE0F for the color glyph; Terminal.app gets
+// appleTerminalIcons' variant for the same reason as the gear.
 var (
-	taskPending    = "❎ "  // negative squared cross mark
-	taskInProgress = "⏱️ " // stopwatch
-	taskCompleted  = "✅ "  // white heavy check mark
+	taskPending    = "❎ "          // negative squared cross mark
+	taskInProgress = stopwatchIcon // stopwatch
+	taskCompleted  = "✅ "          // white heavy check mark
 )
+
+// The gear and the stopwatch are Emoji_Presentation=No with U+FE0F: lipgloss
+// and Bubble Tea v2's renderer (grapheme width, mode 2027 forced in run.go)
+// count them two cells, as Windows Terminal, iTerm2 and Ghostty draw them.
+// Terminal.app draws the color glyph two cells wide but advances the cursor
+// one (CPR-measured 2026-10-25, with and without mode 2027), so every cell
+// after the glyph lands a column left: the rail border broke on gear rows.
+// v1 padded the advance with CSI 1C inside the string; the v2 renderer
+// keeps only SGR and OSC 8 from the view, so an escape cannot do it. The
+// Terminal.app variant pads with U+200B instead: lipgloss and the renderer
+// count the format character zero and fold it into the glyph's cell, and
+// Terminal.app advances one for it (measured), so all three agree on three
+// columns and the glyph's second cell stays blank, not clipped. The pad is
+// only sent to Terminal.app (TERM_PROGRAM=Apple_Terminal): on a terminal
+// that counts U+200B zero the plain string is right, and one that counts
+// both it and the glyph would overflow the row.
+const (
+	gearIcon      = "\u2699\uFE0F "
+	stopwatchIcon = "\u23F1\uFE0F "
+	narrowVS16Pad = "\u200B"
+)
+
+// appleTerminalIcons is the emoji set's Terminal.app variant: the two icons
+// Terminal.app advances one column for, padded to the three it counts.
+var appleTerminalIcons = map[string]string{
+	"agent":            "\u2699\uFE0F" + narrowVS16Pad + " ",
+	"task_in_progress": "\u23F1\uFE0F" + narrowVS16Pad + " ",
+}
+
+// isAppleTerminal reports whether env (KEY=VALUE pairs, os.Environ's form)
+// names Terminal.app. TERM_PROGRAM does not cross ssh, so a TUI on a remote
+// host gets the plain set; icon_map can set the padded strings there.
+func isAppleTerminal(env []string) bool {
+	for _, kv := range env {
+		if v, ok := strings.CutPrefix(kv, "TERM_PROGRAM="); ok {
+			return v == "Apple_Terminal"
+		}
+	}
+	return false
+}
 
 // markSel marks the selected list item and a message row with something
 // hidden (its body, its replies, or both); markOpen marks a row whose body
@@ -104,14 +143,26 @@ func setIcons(set map[string]string) {
 // backward-compatible alias for emoji), then applies s.IconMap on top of
 // whichever base set was chosen, overriding any subset of it. An unknown
 // set, an unknown icon_map name, or an empty value warns one line and skips
-// that entry (leaving the base set's icon in place), like LoadTheme.
+// that entry (leaving the base set's icon in place), like LoadTheme. It is
+// LoadIconsFor with no environment: the plain emoji set, whatever terminal
+// the process runs in.
 func LoadIcons(s Settings, warn io.Writer) string {
+	return LoadIconsFor(s, nil, warn)
+}
+
+// LoadIconsFor is LoadIcons for the terminal env describes: in Terminal.app
+// (TERM_PROGRAM=Apple_Terminal) the emoji set takes appleTerminalIcons'
+// variants before s.IconMap applies, so an icon_map entry still wins.
+func LoadIconsFor(s Settings, env []string, warn io.Writer) string {
 	name := strings.ToLower(strings.TrimSpace(s.Icons))
 	set := maps.Clone(emojiIcons)
 	switch name {
 	case "", "emoji", "custom":
 		if name == "" {
 			name = "emoji"
+		}
+		if isAppleTerminal(env) {
+			maps.Copy(set, appleTerminalIcons)
 		}
 	case "nerdfont":
 		set = map[string]string{}

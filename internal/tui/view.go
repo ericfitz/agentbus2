@@ -46,9 +46,9 @@ func (m Model) messageIcon(x bus.Message) string {
 }
 
 // senderIcon is the sender icon drawn in its color: the user color for the
-// TUI's own identity, the agent color for everyone else. The gear's CSI
-// erase/cursor escapes sit inside the styled run, which lipgloss and ansi
-// measure as zero width, so styling never shifts a column.
+// TUI's own identity, the agent color for everyone else. The gear's
+// Terminal.app pad (icons.go) sits inside the styled run, which lipgloss and
+// ansi measure as zero width, so styling never shifts a column.
 func (m Model) senderIcon(own bool) string {
 	if own {
 		return m.theme.Style(m.theme.User).Render(iconUser)

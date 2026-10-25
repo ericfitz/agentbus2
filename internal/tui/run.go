@@ -31,6 +31,10 @@ type Options struct {
 	// produces a window size, so both above 0 send one. 0 leaves the size to
 	// the terminal.
 	Width, Height int
+	// Environ is for tests only: the environment the icon set is chosen for
+	// (TERM_PROGRAM, see LoadIconsFor). nil is os.Environ(). Bubble Tea
+	// itself always reads the process environment.
+	Environ []string
 }
 
 // Run starts the TUI over o.Bus and returns when the user quits, the context
@@ -53,7 +57,11 @@ func run(ctx context.Context, o Options) (Model, error) {
 		stderr = os.Stderr
 	}
 	theme := LoadTheme(o.Settings, stderr)
-	LoadIcons(o.Settings, stderr)
+	environ := o.Environ
+	if environ == nil {
+		environ = os.Environ()
+	}
+	LoadIconsFor(o.Settings, environ, stderr)
 	c, err := newClient(ctx, o.Bus, o.Identity, o.Hint)
 	if err != nil {
 		if ctx.Err() != nil {

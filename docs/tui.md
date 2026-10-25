@@ -55,7 +55,7 @@ The TUI is built on Bubble Tea v2 (`charm.land/bubbletea/v2` v2.0.10, Bubbles v2
 
 Colors follow the terminal's color profile: on a terminal without color (`NO_COLOR`, `TERM=dumb`, or output that is not a terminal) tag chips fall back to dim `#tag` words. The TUI turns on Unicode core mode 2027 so Bubble Tea measures emoji the way the layout does; a terminal without that mode ignores it.
 
-Terminal.app draws the `emoji` set's agent gear two cells wide but advances one. Bubble Tea v1 wrote the gear with a cursor-forward escape to cover the gap; Bubble Tea v2's renderer drops that escape, so in Terminal.app a row with the gear is one column short after it. `nerdfont`, `custom` (`icon_map` with `agent` set to a glyph of fixed width) or another terminal avoid it.
+Terminal.app draws the `emoji` set's agent gear (`⚙️`) and the in-progress stopwatch (`⏱️`) two cells wide but advances the cursor one, while Lip Gloss and the renderer count two, so every cell after the glyph would land one column left (the rail border broke on gear rows). Bubble Tea v1 covered the gap with a cursor-forward escape inside the string; Bubble Tea v2's renderer drops every escape but SGR and OSC 8, so when `TERM_PROGRAM` is `Apple_Terminal` the TUI pads the two icons with U+200B (zero width space) instead: Terminal.app advances one column for it, Lip Gloss and the renderer count it zero. Other terminals get the plain emoji. `TERM_PROGRAM` does not cross ssh: for a TUI on a remote host viewed in Terminal.app set `icon_map` `agent` to `"\u2699\ufe0f\u200b"` and `task_in_progress` to `"\u23f1\ufe0f\u200b"` (`padIcon` adds the space), or use `nerdfont`.
 
 ### Identity
 

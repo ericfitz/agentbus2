@@ -607,7 +607,7 @@ func TestTaskInProgressOwnedBySelfUsesUserIcon(t *testing.T) {
 }
 
 // A long subject pushes an in-progress row's owner icon to the cut. The cut
-// must not keep the gear's CSI 1C (cursor forward) once its glyph is gone:
+// must not keep a CSI 1C (cursor forward, v1's gear) once its glyph is gone:
 // lipgloss counts the escape as zero width, so the row would draw a column
 // wider than the pane. Only the bytes show it: every 1C must follow a gear.
 func TestTaskRowCutDropsOrphanedCursorEscape(t *testing.T) {

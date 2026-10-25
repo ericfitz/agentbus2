@@ -83,9 +83,10 @@ func TestCutPlainAndStyled(t *testing.T) {
 	}
 }
 
-// When the cut lands before the gear, ansi.Truncate keeps the glyph's
-// escapes; the gear's CSI 1C past the ellipsis would push the line a column
-// wider than counted. Only SGR may follow the ellipsis.
+// When the cut lands before a glyph with cursor escapes (v1's gear, kept
+// here as the test case), ansi.Truncate keeps the escapes; a CSI 1C past
+// the ellipsis would push the line a column wider than counted. Only SGR
+// may follow the ellipsis.
 func TestCutDropsCursorEscapesPastEllipsis(t *testing.T) {
 	line := "abc" + "\x1b[2X⚙️\x1b[1C " + "tail"
 	for w := 2; w < ansi.StringWidth(line); w++ {

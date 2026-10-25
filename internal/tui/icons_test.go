@@ -154,3 +154,45 @@ func TestIconSetsCoverTheSameNames(t *testing.T) {
 		t.Errorf("sizes: nerd %d emoji %d vars %d", len(nerdIcons), len(emojiIcons), len(iconVars))
 	}
 }
+
+// LoadIconsFor pads the gear and the stopwatch only for Terminal.app, before
+// icon_map applies, and leaves every other icon and the nerdfont set alone.
+func TestLoadIconsForAppleTerminal(t *testing.T) {
+	t.Cleanup(func() { setIcons(emojiIcons) })
+	apple := []string{"TERM=xterm-256color", "TERM_PROGRAM=Apple_Terminal"}
+	var warn bytes.Buffer
+	if got := LoadIconsFor(Settings{}, apple, &warn); got != "emoji" || warn.Len() != 0 {
+		t.Fatalf("name = %q, warn = %q", got, warn.String())
+	}
+	if iconAgent != "⚙️\u200b " || taskInProgress != "⏱️\u200b " {
+		t.Fatalf("Terminal.app icons: agent %q, task_in_progress %q", iconAgent, taskInProgress)
+	}
+	for name, p := range iconVars {
+		if name == "agent" || name == "task_in_progress" {
+			continue
+		}
+		if *p != emojiIcons[name] {
+			t.Fatalf("%s = %q changed for Terminal.app, want %q", name, *p, emojiIcons[name])
+		}
+	}
+	for _, env := range [][]string{
+		nil,
+		{"TERM_PROGRAM=iTerm.app"},
+		{"TERM_PROGRAM=Apple_Terminal_2"},
+		{"TERM=Apple_Terminal"},
+		{"XTERM_PROGRAM=Apple_Terminal"},
+	} {
+		LoadIconsFor(Settings{}, env, &warn)
+		if iconAgent != gearIcon || taskInProgress != stopwatchIcon || warn.Len() != 0 {
+			t.Fatalf("env %v: agent %q, task_in_progress %q, warn %q", env, iconAgent, taskInProgress, warn.String())
+		}
+	}
+	LoadIconsFor(Settings{IconMap: map[string]string{"agent": "A"}}, apple, &warn)
+	if iconAgent != "A  " || taskInProgress != "⏱️\u200b " {
+		t.Fatalf("icon_map must win over the Terminal.app variant: agent %q, task_in_progress %q", iconAgent, taskInProgress)
+	}
+	LoadIconsFor(Settings{Icons: "nerdfont"}, apple, &warn)
+	if strings.Contains(iconAgent, "\u200b") || strings.Contains(taskInProgress, "\u200b") || warn.Len() != 0 {
+		t.Fatalf("nerdfont must not take the pad: agent %q, task_in_progress %q, warn %q", iconAgent, taskInProgress, warn.String())
+	}
+}

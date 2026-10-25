@@ -44,9 +44,9 @@ func stamp(ms int64) string {
 
 // cut is ansi.Truncate(s, w, tail) for one line, except that past the cut
 // only SGR escapes are kept. ansi.Truncate keeps the escapes of every glyph
-// it drops, and with the gear's glyph gone its CSI 1C would move the cursor
-// a column past w, which lipgloss counts as zero width. SGR stays so styles
-// still close.
+// it drops, and a cursor escape (v1's gear carried a CSI 1C) left past the
+// cut would move the cursor a column past w, which lipgloss counts as zero
+// width. SGR stays so styles still close.
 func cut(s string, w int, tail string) string {
 	if ansi.StringWidth(s) <= w {
 		return s
