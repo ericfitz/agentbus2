@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
@@ -43,7 +44,7 @@ func TestNoImplicitCreatorEntry(t *testing.T) {
 
 // TestScopeGateChannels: a scoped identity reaches only the channels of its
 // scope; everything else answers as for a name that was never created
-// (accesschecks spec 3.12, Eric's decision 4.1 (d)). An unscoped identity is
+// (accesscheck spec 3.12, Eric's decision 4.1 (d)). An unscoped identity is
 // unchanged.
 func TestScopeGateChannels(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
@@ -291,6 +292,210 @@ func TestScopeGateByID(t *testing.T) {
 		}
 		if _, err := pat.GetMemory(ctx, foreign); err != nil {
 			t.Errorf("unscoped GetMemory: %v", err)
+		}
+	})
+}
+
+// TestScopeGateBeforeKind: the scope gate runs before every kind check, so a
+// scoped caller cannot learn the kind (or, through a by-id memory operation,
+// the name) of a channel outside its scope. Each answer is byte-identical to
+// the never-existing case; in scope the post-gate kind refusal still holds.
+func TestScopeGateBeforeKind(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		h.rtScope("job1")
+		coder := h.scopedIdentity("job1-coder", "job1")
+		pat := h.localAs("pat")
+		mk := func(b ab2bus.Bus, name string, kind ab2bus.Kind) {
+			t.Helper()
+			if _, err := b.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: name, Kind: kind}); err != nil {
+				t.Fatal(err)
+			}
+		}
+		mk(pat, "oo-ord", ab2bus.KindOrdinary)
+		mk(pat, "oo-tasks", ab2bus.KindTasks)
+		mk(pat, "oo-mem", ab2bus.KindMemory)
+		mk(coder, "in-ord", ab2bus.KindOrdinary)
+		mk(coder, "in-tasks", ab2bus.KindTasks)
+		mk(coder, "in-mem", ab2bus.KindMemory)
+
+		idOf := func(ch string) int64 { // the memory id of one message on ch
+			t.Helper()
+			var c ab2store.Channel
+			h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+				var err error
+				c, err = tx.ChannelByName(ctx, ch)
+				return err
+			})
+			seq := h.append(c, "pat", "", "x")
+			var id int64
+			h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+				ms, err := tx.MessagesBySeqs(ctx, []int64{seq})
+				if err == nil && len(ms) == 1 && ms[0].MemoryID != nil {
+					id = *ms[0].MemoryID
+				}
+				return err
+			})
+			return id
+		}
+		ooTask, err := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "oo-tasks", Subject: "t"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		ooMem := idOf("oo-mem")
+		inMem := idOf("in-mem")
+		const unknown = 987654
+		// norm masks digits and the channel name, which differ by construction.
+		norm := func(err error, name string) string {
+			return digits.ReplaceAllString(strings.ReplaceAll(msgOf(err), `"`+name+`"`, `"C"`), "N")
+		}
+		str := func(s string) *string { return &s }
+		type call func(ch string, id int64) error
+		byName := map[string]call{
+			"Send": func(ch string, _ int64) error {
+				_, err := coder.Send(ctx, ab2bus.SendInput{Channel: ch, Content: "x"})
+				return err
+			},
+			"TaskCreate": func(ch string, _ int64) error {
+				_, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: ch, Subject: "x"})
+				return err
+			},
+			"TaskList": func(ch string, _ int64) error {
+				_, err := coder.List(ctx, ab2bus.TaskListInput{Channel: ch})
+				return err
+			},
+		}
+		for op, c := range byName {
+			never := c("never-existed", 0)
+			codeOf(t, never, ab2bus.CodeNotFound)
+			for _, ch := range []string{"oo-ord", "oo-tasks", "oo-mem"} {
+				got := c(ch, 0)
+				codeOf(t, got, ab2bus.CodeNotFound)
+				if norm(got, ch) != norm(never, "never-existed") {
+					t.Errorf("%s on %s: %q differs from never-existing %q", op, ch, msgOf(got), msgOf(never))
+				}
+			}
+		}
+		byID := map[string]call{
+			"Edit": func(_ string, id int64) error {
+				_, err := coder.Edit(ctx, ab2bus.EditMemoryInput{ID: id, Content: str("y")})
+				return err
+			},
+			"Delete":  func(_ string, id int64) error { return coder.Delete(ctx, ab2bus.DeleteMemoryInput{ID: id}) },
+			"GetTask": func(_ string, id int64) error { _, err := coder.GetTask(ctx, id); return err },
+			"Update": func(_ string, id int64) error {
+				_, err := coder.Update(ctx, ab2bus.TaskPatch{ID: id, Subject: str("y")})
+				return err
+			},
+			"Claim": func(_ string, id int64) error { _, err := coder.Claim(ctx, ab2bus.TaskClaimInput{ID: id}); return err },
+			"Release": func(_ string, id int64) error {
+				_, err := coder.Release(ctx, ab2bus.TaskReleaseInput{ID: id})
+				return err
+			},
+		}
+		for op, c := range byID {
+			never := c("", unknown)
+			codeOf(t, never, ab2bus.CodeNotFound)
+			for _, id := range []int64{ooTask.ID, ooMem} {
+				got := c("", id)
+				codeOf(t, got, ab2bus.CodeNotFound)
+				if norm(got, "") != norm(never, "") {
+					t.Errorf("%s by id %d: %q differs from unknown %q", op, id, msgOf(got), msgOf(never))
+				}
+				for _, leak := range []string{"oo-tasks", "oo-mem", "task list", "memory channel"} {
+					if strings.Contains(msgOf(got), leak) {
+						t.Errorf("%s by id %d leaks %q: %q", op, id, leak, msgOf(got))
+					}
+				}
+			}
+		}
+
+		// In scope the kind refusals stay (after the gate).
+		_, err = coder.Send(ctx, ab2bus.SendInput{Channel: "in-tasks", Content: "x"})
+		codeOf(t, err, ab2bus.CodeValidation)
+		_, err = coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "in-ord", Subject: "x"})
+		codeOf(t, err, ab2bus.CodeValidation)
+		_, err = coder.List(ctx, ab2bus.TaskListInput{Channel: "in-ord"})
+		codeOf(t, err, ab2bus.CodeValidation)
+		inTask, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "in-tasks", Subject: "t"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, err = coder.Edit(ctx, ab2bus.EditMemoryInput{ID: inTask.ID, Content: str("y")})
+		codeOf(t, err, ab2bus.CodeValidation)
+		codeOf(t, coder.Delete(ctx, ab2bus.DeleteMemoryInput{ID: inTask.ID}), ab2bus.CodeValidation)
+		_, err = coder.GetTask(ctx, inMem)
+		codeOf(t, err, ab2bus.CodeNotFound)
+		if !strings.Contains(msgOf(err), "is not a task") {
+			t.Errorf("in-scope GetTask of a memory: %q", msgOf(err))
+		}
+	})
+}
+
+// TestUnsubscribeNeedsNoRow: an identity with no ACL row on a channel in its
+// scope (or any channel, unscoped) can still leave it (Decision 95). This
+// must keep passing when List changes meaning.
+func TestUnsubscribeNeedsNoRow(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		h.rtScope("job1")
+		coder := h.scopedIdentity("job1-coder", "job1")
+		pat := h.localAs("pat")
+		root := h.localAdmin("root")
+		for _, c := range []struct {
+			who  ab2bus.Bus
+			ch   string
+			mine ab2bus.Bus
+		}{{coder, "scoped-ch", coder}, {pat, "plain-ch", pat}} {
+			if _, err := c.mine.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: c.ch}); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.who.Subscribe(ctx, ab2bus.SubscribeInput{Channel: c.ch}); err != nil {
+				t.Fatal(err)
+			}
+			// Revoke every row: nothing names the subscriber.
+			if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: c.ch}); err != nil {
+				t.Fatal(err)
+			}
+			if err := c.who.Unsubscribe(ctx, ab2bus.UnsubscribeInput{Channel: c.ch}); err != nil {
+				t.Errorf("Unsubscribe from %s with no ACL row: %v", c.ch, err)
+			}
+		}
+	})
+}
+
+// TestScopedGranterCannotNameHumans pins the current behavior: humans are
+// unscoped, so a scoped granter cannot see them (Decision 96 text) while an
+// administrator can name them.
+func TestScopedGranterCannotNameHumans(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		h.rtScope("job1")
+		coder := h.scopedIdentity("job1-coder", "job1")
+		h.human("eric@corp.example")
+		root := h.localAdmin("root")
+		if _, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "w"}); err != nil {
+			t.Fatal(err)
+		}
+		acl := []ab2bus.ACLEntry{{Identity: "eric@corp.example", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}
+		err := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: acl})
+		codeOf(t, err, ab2bus.CodeValidation)
+		if got, want := msgOf(err), `ACL identity "eric@corp.example" is not a registered identity`; got != want {
+			t.Errorf("scoped granter naming a human: %q, want %q", got, want)
+		}
+		// A malformed name keeps the Store's own format refusal, for scoped and unscoped alike.
+		bad := []ab2bus.ACLEntry{{Identity: "bad/name", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}
+		errScoped := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: bad})
+		errAdmin := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: bad})
+		codeOf(t, errScoped, ab2bus.CodeValidation)
+		if msgOf(errScoped) != msgOf(errAdmin) || strings.Contains(msgOf(errScoped), "is not a registered identity") {
+			t.Errorf("malformed name: scoped %q, admin %q; want the Store's format text for both", msgOf(errScoped), msgOf(errAdmin))
+		}
+		if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: acl}); err != nil {
+			t.Errorf("administrator naming a human: %v", err)
 		}
 	})
 }

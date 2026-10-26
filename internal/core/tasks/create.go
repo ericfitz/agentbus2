@@ -54,11 +54,8 @@ func (s Service) Create(ctx context.Context, identity string, in bus.TaskCreateI
 
 func (s Service) create(ctx context.Context, tx store.Tx, identity string, pr access.Principal, in bus.TaskCreateInput, fx *effects) (bus.Task, error) {
 	kind := pr.Kind
-	ch, err := s.taskChannel(ctx, tx, in.Channel)
+	ch, err := s.taskChannel(ctx, tx, pr, in.Channel, access.Write)
 	if err != nil {
-		return bus.Task{}, err
-	}
-	if err := s.Access.Require(ctx, tx, pr, access.Channel{ID: ch.ID}, access.Write); err != nil {
 		return bus.Task{}, err
 	}
 	ts, err := loadTasks(ctx, tx, ch)

@@ -29,10 +29,7 @@ func (s Service) Get(ctx context.Context, identity string, id int64) (bus.Task, 
 			if err != nil {
 				return err
 			}
-			if ch, err = s.taskChannelOf(ctx, tx, id); err != nil {
-				return err
-			}
-			if err := s.RequireChannelOr(ctx, tx, pr, ch.ID, access.Read, func() error { return noLiveRevision(id) }); err != nil {
+			if ch, err = s.taskChannelOf(ctx, tx, pr, id, access.Read); err != nil {
 				return err
 			}
 			ts, err := loadTasks(ctx, tx, ch)
@@ -84,10 +81,7 @@ func (s Service) List(ctx context.Context, identity string, in bus.TaskListInput
 			if err != nil {
 				return err
 			}
-			if ch, err = s.taskChannel(ctx, tx, in.Channel); err != nil {
-				return err
-			}
-			if err := s.Access.Require(ctx, tx, pr, access.Channel{ID: ch.ID}, access.Read); err != nil {
+			if ch, err = s.taskChannel(ctx, tx, pr, in.Channel, access.Read); err != nil {
 				return err
 			}
 			if ts, err = loadTasks(ctx, tx, ch); err != nil {

@@ -101,11 +101,11 @@ func (s Service) SendWith(ctx context.Context, identity string, in bus.SendInput
 			if err != nil {
 				return err
 			}
-			if ch.Kind == store.KindTasks {
-				return core.E(bus.CodeValidation, "%s is a task list; use task_create, task_update, task_claim, task_release", in.Channel)
-			}
 			if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.Write); err != nil {
 				return err
+			}
+			if ch.Kind == store.KindTasks {
+				return core.E(bus.CodeValidation, "%s is a task list; use task_create, task_update, task_claim, task_release", in.Channel)
 			}
 			ai := core.AppendInput{
 				ChannelID: ch.ID, Channel: ch.Name, Display: display, Kind: ch.Kind,

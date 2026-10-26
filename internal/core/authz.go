@@ -5,7 +5,6 @@ import (
 	"errors"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -67,23 +66,4 @@ func (c *Core) ReadableChannelIDs(ctx context.Context, tx store.Tx, identity str
 	}
 	ids, err := tx.ReadableChannels(ctx, identity)
 	return ids, FromStore(err)
-}
-
-// RequireChannelOr is Access.Require on a channel for the by-id operations
-// (memories, tasks): a denial for a channel outside the principal's scope is
-// missing(), the operation's own not-found answer, so a scoped caller cannot
-// tell the id from one that does not exist (accesscheck spec 4.1 (d)). Every
-// other denial is the access check's, unchanged.
-func (c *Core) RequireChannelOr(ctx context.Context, tx store.Tx, p access.Principal, channelID int64, a access.Action, missing func() error) error {
-	d, err := c.Access.Check(ctx, tx, p, access.Channel{ID: channelID}, a)
-	if err != nil {
-		return err
-	}
-	if d.Allowed {
-		return nil
-	}
-	if d.Reason == access.ReasonOutOfScope {
-		return missing()
-	}
-	return bus.Errorf(d.Code, false, "%s", d.Text)
 }

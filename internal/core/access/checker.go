@@ -3,6 +3,7 @@ package access
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
@@ -20,11 +21,18 @@ type Checker struct{ Cfg Config }
 // Option adjusts how Require words a denial.
 type Option func(*requireOptions)
 
-type requireOptions struct{ text string }
+type requireOptions struct{ text, notFound string }
 
 // WithText replaces the text of a forbidden denial (a site that words the
 // administrator refusal for its own operation). Other denials keep their text.
 func WithText(text string) Option { return func(o *requireOptions) { o.text = text } }
+
+// WithNotFound words the not_found denial of an object outside the principal's
+// scope (Reason out_of_scope) as the operation words a thing that does not
+// exist, for the by-id operations whose unknown-id text is not the channel's.
+func WithNotFound(format string, args ...any) Option {
+	return func(o *requireOptions) { o.notFound = fmt.Sprintf(format, args...) }
+}
 
 // Check loads the object's facts in tx and decides. It never panics: an
 // undefined (object, action) pair is an internal decision.
@@ -99,6 +107,9 @@ func (c Checker) Require(ctx context.Context, tx store.Tx, p Principal, o Object
 	text := d.Text
 	if ro.text != "" && d.Code == bus.CodeForbidden {
 		text = ro.text
+	}
+	if ro.notFound != "" && d.Reason == ReasonOutOfScope {
+		text = ro.notFound
 	}
 	return bus.Errorf(d.Code, false, "%s", text) // never retryable, internal included (spec 3.6)
 }

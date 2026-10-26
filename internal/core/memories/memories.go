@@ -29,7 +29,7 @@ func (s Service) Get(ctx context.Context, identity string, id int64) (bus.Messag
 		if err != nil {
 			return err
 		}
-		if err := s.RequireChannelOr(ctx, tx, p, ch.ID, access.Read, func() error { return noLiveRevision(id) }); err != nil {
+		if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.Read, access.WithNotFound(core.MemoryNotLiveFmt, id)); err != nil {
 			return err
 		}
 		if ch.Kind != store.KindTasks {
@@ -67,7 +67,7 @@ func (s Service) Revisions(ctx context.Context, identity string, id int64) ([]bu
 		if len(rows) == 0 {
 			return core.E(bus.CodeNotFound, "memory %d does not exist", id)
 		}
-		if err := s.RequireChannelOr(ctx, tx, p, rows[0].ChannelID, access.Read, func() error { return core.E(bus.CodeNotFound, "memory %d does not exist", id) }); err != nil {
+		if err := s.Access.Require(ctx, tx, p, access.Channel{ID: rows[0].ChannelID}, access.Read, access.WithNotFound("memory %d does not exist", id)); err != nil {
 			return err
 		}
 		out, err = s.ToBusMessages(ctx, tx, rows)
@@ -134,11 +134,11 @@ func (s Service) Edit(ctx context.Context, identity string, in bus.EditMemoryInp
 			if err != nil {
 				return err
 			}
+			if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.Write, access.WithNotFound(core.MemoryNotLiveFmt, in.ID)); err != nil {
+				return err
+			}
 			if ch.Kind == store.KindTasks {
 				return core.E(bus.CodeValidation, taskListMsg, ch.Name)
-			}
-			if err := s.RequireChannelOr(ctx, tx, p, ch.ID, access.Write, func() error { return noLiveRevision(in.ID) }); err != nil {
-				return err
 			}
 			live := int64(1)
 			if old.Revision != nil {
@@ -234,11 +234,11 @@ func (s Service) Delete(ctx context.Context, identity string, in bus.DeleteMemor
 			if err != nil {
 				return err
 			}
+			if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.Write, access.WithNotFound(core.MemoryNotLiveFmt, in.ID)); err != nil {
+				return err
+			}
 			if ch.Kind == store.KindTasks {
 				return core.E(bus.CodeValidation, taskListMsg, ch.Name)
-			}
-			if err := s.RequireChannelOr(ctx, tx, p, ch.ID, access.Write, func() error { return noLiveRevision(in.ID) }); err != nil {
-				return err
 			}
 			if !s.Limits.Check(identity, 0, s.Now()) {
 				return core.E(bus.CodeRateLimited, "send_messages_per_second rate limit exceeded for %s", identity)
@@ -261,10 +261,4 @@ func (s Service) Delete(ctx context.Context, identity string, in bus.DeleteMemor
 		s.Limits.Charge(identity, 0, s.Now())
 	}
 	return nil
-}
-
-// noLiveRevision is the answer for an id with no live revision: also the
-// answer for a memory on a channel outside the caller's scope.
-func noLiveRevision(id int64) error {
-	return core.E(bus.CodeNotFound, "memory %d has no live revision", id)
 }

@@ -263,11 +263,8 @@ func (s Service) Update(ctx context.Context, identity string, p bus.TaskPatch) (
 
 func (s Service) update(ctx context.Context, tx store.Tx, identity string, pr access.Principal, p bus.TaskPatch, fx *effects) (bus.TaskUpdateResult, error) {
 	kind := pr.Kind
-	ch, err := s.taskChannelOf(ctx, tx, p.ID)
+	ch, err := s.taskChannelOf(ctx, tx, pr, p.ID, access.Write)
 	if err != nil {
-		return bus.TaskUpdateResult{}, err
-	}
-	if err := s.RequireChannelOr(ctx, tx, pr, ch.ID, access.Write, func() error { return noLiveRevision(p.ID) }); err != nil {
 		return bus.TaskUpdateResult{}, err
 	}
 	if _, err := s.reclaimAbandoned(ctx, tx, ch, s.NowMs(), []int64{p.ID}, fx); err != nil {

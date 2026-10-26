@@ -8,12 +8,16 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
+// MemoryNotLiveFmt is the not_found text of an id with no live revision; also
+// the answer for a memory or task on a channel outside the caller's scope.
+const MemoryNotLiveFmt = "memory %d has no live revision"
+
 // LiveRevision returns the live revision of a memory and its channel (v1
 // liveRevision).
 func (c *Core) LiveRevision(ctx context.Context, tx store.Tx, memoryID int64) (store.Message, store.Channel, error) {
 	m, err := tx.LiveMemory(ctx, memoryID)
 	if errors.Is(err, store.ErrNotFound) {
-		return store.Message{}, store.Channel{}, E(bus.CodeNotFound, "memory %d has no live revision", memoryID)
+		return store.Message{}, store.Channel{}, E(bus.CodeNotFound, MemoryNotLiveFmt, memoryID)
 	}
 	if err != nil {
 		return store.Message{}, store.Channel{}, FromStore(err)

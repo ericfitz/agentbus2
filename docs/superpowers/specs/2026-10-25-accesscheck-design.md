@@ -586,6 +586,13 @@ stand; its discovery-capability item is replaced by a minor protocol
 version bump (the Context section). The rebuilt plan is written after this one
 lands, against the then-current tree.
 
+`Unsubscribe` (Decision 95: no permission needed, so a revoked reader can
+leave) uses the `List` action as a scope-only gate while `List` is the
+interim clause. The rebuild must keep Unsubscribe passing for an identity
+with no stored row on the channel (scoped in-scope, and unscoped), either
+by a dedicated scope-only action or by keeping `List` true for it in that
+case; `TestUnsubscribeNeedsNoRow` pins it.
+
 ### 3.11 Alternatives rejected
 
 - Keeping `core.Authorize` and friends as forwarders to `access`: fewer

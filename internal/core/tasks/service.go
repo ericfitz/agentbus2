@@ -46,10 +46,15 @@ func (s Service) rateCheck(identity string, n int, fx *effects) error {
 	return nil
 }
 
-// taskChannel looks a channel up by name and requires the tasks kind.
-func (s Service) taskChannel(ctx context.Context, tx store.Tx, name string) (store.Channel, error) {
+// taskChannel looks a channel up by name, requires action on it (the scope
+// gate runs before any kind check, so a scoped caller learns nothing about a
+// channel outside its scope) and then requires the tasks kind.
+func (s Service) taskChannel(ctx context.Context, tx store.Tx, pr access.Principal, name string, action access.Action) (store.Channel, error) {
 	ch, err := s.ChannelByName(ctx, tx, name)
 	if err != nil {
+		return store.Channel{}, err
+	}
+	if err := s.Access.Require(ctx, tx, pr, access.Channel{ID: ch.ID}, action); err != nil {
 		return store.Channel{}, err
 	}
 	if ch.Kind != store.KindTasks {
@@ -59,16 +64,14 @@ func (s Service) taskChannel(ctx context.Context, tx store.Tx, name string) (sto
 }
 
 // taskChannelOf returns the channel of the live revision of memory id, which
-// must be a task list.
-// noLiveRevision is the answer for an id with no live revision: also the
-// answer for a task on a channel outside the caller's scope.
-func noLiveRevision(id int64) error {
-	return core.E(bus.CodeNotFound, "memory %d has no live revision", id)
-}
-
-func (s Service) taskChannelOf(ctx context.Context, tx store.Tx, id int64) (store.Channel, error) {
+// must be a task list. The access check on action runs before the kind check,
+// and a channel outside the caller's scope reads as an unknown id.
+func (s Service) taskChannelOf(ctx context.Context, tx store.Tx, pr access.Principal, id int64, action access.Action) (store.Channel, error) {
 	_, ch, err := s.LiveRevision(ctx, tx, id)
 	if err != nil {
+		return store.Channel{}, err
+	}
+	if err := s.Access.Require(ctx, tx, pr, access.Channel{ID: ch.ID}, action, access.WithNotFound(core.MemoryNotLiveFmt, id)); err != nil {
 		return store.Channel{}, err
 	}
 	if ch.Kind != store.KindTasks {

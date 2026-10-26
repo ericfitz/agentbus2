@@ -91,6 +91,13 @@ Expected: `TestNoImplicitCreatorEntry` FAIL (the creator still administers), `Te
 Run: `make lint && make test && make test-conformance && go test -count=1 -p 1 -v -run 'TestACLMatrix' ./internal/conformance/bus/ > /tmp/m3.log 2>&1; bash scripts/m3-exit-counts.sh /tmp/m3.log`
 Expected: PASS; `matrix_sqlite=52 matrix_postgres=52 fail=0`.
 
+- [x] **Task 2 deviations (as implemented).**
+  - `TestACLMatrix` "set the ACL" success leg reads the ACL back as a server administrator (`h.admin("root")`) instead of `pat`: the leg replaces the ACL, the creator's stored row goes with it, and the implicit creator entry is retired. No row, count or `section46Rows` content changed (52 leaves per engine).
+  - `TestScopeRetirementScrub` keeps `ops` and `backlog` unscoped (making them `job1` channels would change what retirement does); the coder's footprint is seeded past the Bus: a raw subscription, the task assigned by `pat` (owner and `in_progress`), and a message through the Store. Assertions unchanged.
+  - Fixtures that subscribed an agent to a memory channel (TUI `sam`, two `mcpserver` tests, `TestSkillDeliveryClaims`) seed the row through `internal/storetest.SubscribeRaw`; the TUI test identities are humans except `sam`.
+  - The scope gate runs before every kind check (send, task create/list, task by id, memory edit/delete); in-scope precedence changed accordingly (a caller with no write on a task list gets `forbidden`, not `validation`).
+  - `access.WithNotFound` words an out-of-scope denial as the operation's unknown-id text; `Unsubscribe` uses `List` as a scope-only gate (see the visibility plan).
+
 - [ ] **Step 5: Commit**
 
 ```bash

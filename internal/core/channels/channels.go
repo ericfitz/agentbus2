@@ -123,12 +123,12 @@ func (s Service) adminChannel(ctx context.Context, tx store.Tx, p access.Princip
 // visibleACL refuses, with the Decision 96 text, an ACL entry naming an
 // identity the granter may not see (an unregistered one, or one outside a
 // scoped granter's scope: the granter learns nothing, accesscheck spec 4.1
-// (b) and (d)). The reserved names are not identities of the listing and are
-// the Store's to validate.
+// (b) and (d)). The reserved names and malformed names are the Store's to
+// validate.
 func (s Service) visibleACL(ctx context.Context, tx store.Tx, p access.Principal, entries []store.ACLEntry) error {
 	for _, e := range entries {
-		if store.ReservedIdentity(e.Identity) {
-			continue
+		if store.ReservedIdentity(e.Identity) || store.NameRule(e.Identity) != nil {
+			continue // the Store's own refusal (and its text) applies
 		}
 		d, err := s.Access.Check(ctx, tx, p, access.Identity{Name: e.Identity}, access.See)
 		if err != nil {

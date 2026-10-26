@@ -184,3 +184,13 @@ git commit -m "docs(adr,spec): record Eric's channel visibility decisions of 202
 ```
 
 - [ ] **Step 4: Report** to Eric: the `make verify` output, the three exit-script lines, and the one pending item (the discovery capability name `channel_capabilities`).
+
+## Constraint from the access-check plan (Task 2)
+
+`channels.Service.Unsubscribe` calls `Access.Require(p, Channel{ID}, List)` as
+a scope-only gate (Decision 95: unsubscribing needs no permission). When this
+rebuild gives `List` its stored-row meaning, Unsubscribe must keep passing for
+an identity with no stored row on the channel (scoped in-scope, and unscoped):
+add a scope-only action or keep `List` true in that case.
+`TestUnsubscribeNeedsNoRow` (`internal/conformance/bus/accesschannels_test.go`)
+pins it.
