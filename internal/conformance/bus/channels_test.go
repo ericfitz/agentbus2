@@ -505,9 +505,7 @@ func TestAgentCannotRemoveHumanOrAdminAccess(t *testing.T) {
 			t.Fatal(err)
 		}
 		codeOf(t, set(pat, everyone, admins, self), ab2bus.CodeForbidden)
-		if err := set(hal); err == nil {
-			t.Fatal("hal without admin on c set the ACL")
-		}
+		codeOf(t, set(hal), ab2bus.CodeForbidden)
 		if err := set(root, everyone, admins, self, ab2bus.ACLEntry{Identity: "hal@corp.example", Permissions: perms(R, A)}); err != nil {
 			t.Fatal(err)
 		}

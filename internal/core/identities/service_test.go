@@ -943,7 +943,7 @@ func TestMakeAdminAndResetCredentialRefuseUnregistered(t *testing.T) {
 	s, _ := newSvc(t, nil)
 	// "" and the ACL group names are not identities that can act (core's
 	// rule); a name with no row is not registered either.
-	for _, name := range []string{"", store.Everyone, store.Admins, "ghost"} {
+	for _, name := range []string{"", store.Everyone, store.Admins, store.Humans, store.SlackBridge, "ghost"} {
 		err := s.MakeAdmin(ctx, name, true)
 		wantCode(t, err, bus.CodeNotRegistered)
 		wantDetail(t, err, "register it first")

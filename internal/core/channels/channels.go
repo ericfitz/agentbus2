@@ -122,7 +122,7 @@ func (s Service) Create(ctx context.Context, identity string, in bus.CreateChann
 // (pre-release).
 func namePrefixRule(ctx context.Context, tx store.Tx, p access.Principal, name, scope string) error {
 	if p.Scope != "" && !strings.HasPrefix(name, p.Scope+"-") {
-		return core.E(bus.CodeValidation, "a channel of scope %q is named %q-<name>", p.Scope, p.Scope)
+		return core.E(bus.CodeValidation, "a channel of scope %q is named %s-<name>", p.Scope, p.Scope)
 	}
 	all, err := tx.ListScopes(ctx)
 	if err != nil {

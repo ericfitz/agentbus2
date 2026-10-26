@@ -15,13 +15,13 @@ import (
 
 // requireRegistered is not_registered with a hint for the host commands (the
 // plan's text: "identity %q is not registered; register it first"). It
-// applies access.Resolve's rule (not "", everyone or admins, and a row
+// applies access.Resolve's rule (not "", not a reserved name, and a row
 // exists) but does not call it: Resolve maps every store error
 // through core.FromStore, which would turn a retryable engine error inside
 // this transaction into a final bus error before the Store's retry loop saw
 // it, so any other store error is returned as it came.
 func requireRegistered(ctx context.Context, tx store.Tx, name string) error {
-	if name != "" && name != store.Everyone && name != store.Admins {
+	if name != "" && !store.ReservedIdentity(name) {
 		_, err := tx.Identity(ctx, name)
 		if err == nil {
 			return nil

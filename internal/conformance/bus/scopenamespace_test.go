@@ -29,7 +29,7 @@ func TestScopeNamespace(t *testing.T) {
 		// A scoped identity names its channels <scope>-<rest>.
 		err := create(coder, ab2bus.CreateChannelInput{Name: "x"})
 		codeOf(t, err, ab2bus.CodeValidation)
-		if want := `a channel of scope "job1" is named "job1"-<name>`; !strings.Contains(msgOf(err), want) {
+		if want := `a channel of scope "job1" is named job1-<name>`; !strings.Contains(msgOf(err), want) {
 			t.Errorf("message %q, want %q", msgOf(err), want)
 		}
 		if err := create(coder, ab2bus.CreateChannelInput{Name: "job1-x"}); err != nil {
@@ -103,5 +103,14 @@ func TestScopeNamespace(t *testing.T) {
 				t.Errorf("message %q, want %q", msgOf(err), want)
 			}
 		}
+		// A done (and so retiring) scope still counts for the overlap.
+		if _, err := sv.Create(ctx, "root", ab2bus.CreateScopeInput{Name: "ovd"}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := sv.Done(ctx, "root", ab2bus.DoneScopeInput{Name: "ovd", Retire: ab2bus.RetireNormal}); err != nil {
+			t.Fatal(err)
+		}
+		_, err = sv.Create(ctx, "root", ab2bus.CreateScopeInput{Name: "ovd-2"})
+		codeOf(t, err, ab2bus.CodeConflict)
 	})
 }

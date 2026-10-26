@@ -360,6 +360,9 @@ func TestCheckReplaceACL(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if _, err := checker.Channels(ctx, tx, pat, access.ReplaceACL); bus.CodeOf(err) != bus.CodeInternal {
+				t.Errorf("Channels with ReplaceACL = %v, want internal", err)
+			}
 			try := func(tx store.Tx, drop string) access.Decision {
 				var es []store.ACLEntry
 				for _, e := range []store.ACLEntry{{Identity: "pat", Permissions: rwa}, {Identity: halName, Permissions: rd},

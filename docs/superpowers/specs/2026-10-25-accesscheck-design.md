@@ -1138,7 +1138,7 @@ operation leaks: every other answer of 4.1 (d) is indistinguishable from
 
 - A scoped identity creates or renames to names of the form
   `<scope>-<rest>` only; any other name is `validation` (`a channel of
-  scope %q is named %q-<name>`).
+  scope %q is named %s-<name>`).
 - Nobody outside scope `S` may take an `S-*` name: a create or rename to a
   name starting with `<s>-`, for any scope `s` that exists in any state
   (open, done, or retired and not yet purged by `DeleteRetiredScopes`),

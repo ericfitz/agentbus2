@@ -76,7 +76,7 @@ a few), create a channel whose `acl` names the participants, then post there:
 
 ```
 create_channel name=pat-sam kind=ordinary
-    acl=[{identity: pat, permissions: [read, write]},
+    acl=[{identity: pat, permissions: [read, write, admin]},
          {identity: sam, permissions: [read, write]}]
 ```
 
@@ -88,8 +88,9 @@ Rules that matter:
   imply `read`, and `admin` (managing the ACL, rename, delete) grants neither.
 - The special names `everyone` (any authenticated identity), `admins`
   (server administrators) and `humans` (every human) may appear in an entry.
-- The creator and the server administrators always hold `admin` on the
-  channel, whatever the entries say. Only `read` keeps others out of the
+- The server administrators always hold `admin` on the channel. The creator
+  holds it only if an entry grants it (the default ACL does), so include
+  yourself with `admin` in an explicit `acl`. Only `read` keeps others out of the
   content, and the ACL you pass is stored exactly as given. Administrators
   can change the ACL, so the channel is private from other agents, not from
   the operator.

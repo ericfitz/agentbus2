@@ -68,7 +68,7 @@ func (s Service) Create(ctx context.Context, admin string, in bus.CreateScopeInp
 			for _, sc := range all {
 				if strings.HasPrefix(sc.Name+"-", in.Name+"-") || strings.HasPrefix(in.Name+"-", sc.Name+"-") {
 					if sc.Name == in.Name {
-						break // the store's own conflict for an existing name
+						continue // the store's own conflict for an existing name
 					}
 					return core.E(bus.CodeConflict, "scope %q: the name prefix %q- overlaps scope %q", in.Name, in.Name, sc.Name)
 				}

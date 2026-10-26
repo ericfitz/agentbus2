@@ -445,7 +445,7 @@ func (s *server) addTools(srv *mcp.Server) {
 			}
 			return result(map[string]any{"closed": in.Session}, err)
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "create_channel", Description: "Agentbus2: create a named channel of kind ordinary (default), memory or tasks. A memory channel holds editable memories; a tasks channel is a task list. acl sets the access list (omit it for the server default, [] for an empty list); an entry may name the groups everyone, admins and humans. A scoped agent names its channels <scope>-<name>. A private channel is created with acl: an agent cannot make a channel private afterwards. Use idempotency_key to make a retry safe. A channel that is empty and has no subscriber is removed by maintenance, so create a channel right before its first send."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "create_channel", Description: "Agentbus2: create a named channel of kind ordinary (default), memory or tasks. A memory channel holds editable memories; a tasks channel is a task list. acl sets the access list (omit it for the server default, [] for an empty list); an explicit acl replaces the default, so include yourself with admin or you cannot manage, rename or delete the channel; an entry may name the groups everyone, admins and humans. A scoped agent names its channels <scope>-<name>. A private channel is created with acl: an agent cannot make a channel private afterwards. Use idempotency_key to make a retry safe. A channel that is empty and has no subscriber is removed by maintenance, so create a channel right before its first send."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in createChannelIn) (*mcp.CallToolResult, any, error) {
 			kind, err := toKind(in.Kind)
 			if err != nil {
@@ -505,7 +505,7 @@ func (s *server) addTools(srv *mcp.Server) {
 				return map[string]any{"channel": in.Name, "entries": aclOut(es)}, nil
 			})
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "set_acl", Description: "Agentbus2: replace a channel's access list with entries (identity and permissions, any of read, write, admin). It replaces the whole list, so include yourself. An entry may name the groups everyone, admins and humans. An agent cannot remove a human's or an administrator's access. Needs admin permission on the channel."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "set_acl", Description: "Agentbus2: replace a channel's access list with entries (identity and permissions, any of read, write, admin). It replaces the whole list, so include yourself. An entry may name the groups everyone, admins and humans. An agent cannot remove or reduce the access of a human, an administrator or the groups everyone, admins and humans. Needs admin permission on the channel."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in setACLIn) (*mcp.CallToolResult, any, error) {
 			entries, err := toACL(in.Entries)
 			if err != nil {
