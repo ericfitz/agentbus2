@@ -458,11 +458,65 @@ func TestHumansGroup(t *testing.T) {
 
 		// The name is reserved as everyone is.
 		svc := identities.Service{Core: h.core}
-		if _, err := svc.Register(ctx, identities.ModeOpen, identities.RegisterInput{Identity: "humans", Key: idKey(t)}); err == nil {
-			t.Error("Register of the name humans succeeded")
+		_, err = svc.Register(ctx, identities.ModeOpen, identities.RegisterInput{Identity: "humans", Key: idKey(t)})
+		codeOf(t, err, ab2bus.CodeValidation)
+		_, err = svc.CreateIdentity(ctx, "humans")
+		codeOf(t, err, ab2bus.CodeValidation)
+	})
+}
+
+// TestAgentCannotRemoveHumanOrAdminAccess: an agent's set_acl never takes a
+// permission from everyone, admins, humans, a human or an administrator
+// (Eric 2026-10-25, spec 4.6).
+func TestAgentCannotRemoveHumanOrAdminAccess(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		pat := h.localAs("pat")
+		root := h.localAdmin("root")
+		h.localAs("kim")
+		hal := h.human("hal@corp.example")
+		perms := func(p ...ab2bus.Permission) []ab2bus.Permission { return p }
+		R, W, A := ab2bus.PermRead, ab2bus.PermWrite, ab2bus.PermAdmin
+		set := func(b ab2bus.Bus, es ...ab2bus.ACLEntry) error {
+			return b.SetACL(ctx, ab2bus.SetACLInput{Channel: "c", Entries: es})
 		}
-		if _, err := svc.CreateIdentity(ctx, "humans"); err == nil {
-			t.Error("CreateIdentity of the name humans succeeded")
+		everyone := ab2bus.ACLEntry{Identity: "everyone", Permissions: perms(R, W)}
+		admins := ab2bus.ACLEntry{Identity: "admins", Permissions: perms(A)}
+		self := ab2bus.ACLEntry{Identity: "pat", Permissions: perms(R, W, A)}
+
+		if _, err := pat.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "c"}); err != nil {
+			t.Fatal(err)
+		}
+		// The default ACL is everyone [read, write] and admins [admin] and the
+		// creator's own row; a replacement without the group rows is refused.
+		if err := set(root, everyone, admins, self); err != nil {
+			t.Fatalf("root sets the base ACL: %v", err)
+		}
+		err := set(pat, self)
+		codeOf(t, err, ab2bus.CodeForbidden)
+		if got, want := msgOf(err), `an agent cannot remove read, write from ACL entry "everyone": humans and administrators keep their access`; got != want {
+			t.Fatalf("message = %q, want %q", got, want)
+		}
+		if err := set(pat, everyone, admins, self, ab2bus.ACLEntry{Identity: "kim", Permissions: perms(R)}); err != nil {
+			t.Fatalf("keeping the protected rows and adding kim: %v", err)
+		}
+		if err := set(root, everyone, admins, self, ab2bus.ACLEntry{Identity: "hal@corp.example", Permissions: perms(R)}); err != nil {
+			t.Fatal(err)
+		}
+		codeOf(t, set(pat, everyone, admins, self), ab2bus.CodeForbidden)
+		if err := set(hal); err == nil {
+			t.Fatal("hal without admin on c set the ACL")
+		}
+		if err := set(root, everyone, admins, self, ab2bus.ACLEntry{Identity: "hal@corp.example", Permissions: perms(R, A)}); err != nil {
+			t.Fatal(err)
+		}
+		if err := set(hal); err != nil {
+			t.Fatalf("a human with admin clears the ACL: %v", err)
+		}
+		// No stored ACL to lose from at creation (spec 4.6).
+		if _, err := pat.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "d", ACL: []ab2bus.ACLEntry{self}}); err != nil {
+			t.Fatalf("CreateChannel with an explicit private ACL: %v", err)
 		}
 	})
 }

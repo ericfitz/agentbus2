@@ -22,7 +22,7 @@ type Principal struct {
 var Anonymous = Principal{}
 
 // Resolve builds the Principal for a registered identity. "", the reserved
-// names everyone, admins and slack-bridge, and an unknown name are
+// names everyone, admins, humans and slack-bridge, and an unknown name are
 // not_registered.
 func Resolve(ctx context.Context, tx store.Tx, name string) (Principal, error) {
 	if name == "" || store.ReservedIdentity(name) {

@@ -2,6 +2,7 @@ package access
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -12,15 +13,16 @@ import (
 // ReasonUndefined (an (object, action) pair the table does not define) are
 // additions of this implementation to the spec's list.
 const (
-	ReasonOutOfScope    = "out_of_scope"
-	ReasonNoPermission  = "no_permission"
-	ReasonNotAdmin      = "not_admin"
-	ReasonNotOwner      = "not_owner"
-	ReasonMemoryChannel = "memory_channel"
-	ReasonNotHuman      = "not_human"
-	ReasonNoWrite       = "no_write"
-	ReasonNotRegistered = "not_registered"
-	ReasonUndefined     = "undefined"
+	ReasonOutOfScope     = "out_of_scope"
+	ReasonNoPermission   = "no_permission"
+	ReasonNotAdmin       = "not_admin"
+	ReasonNotOwner       = "not_owner"
+	ReasonMemoryChannel  = "memory_channel"
+	ReasonNotHuman       = "not_human"
+	ReasonNoWrite        = "no_write"
+	ReasonNotRegistered  = "not_registered"
+	ReasonProtectedEntry = "protected_entry"
+	ReasonUndefined      = "undefined"
 )
 
 // Decision is the answer of the access check. Code and Text are set only when
@@ -33,6 +35,18 @@ type Decision struct {
 
 // facts is the union of what decide reads about an object.
 type facts interface{ factsObject() }
+
+// aclChangeFacts carries what the protected-entry rule reads: the stored rows,
+// the proposed ones and the identity row of each distinct stored name that is
+// not a group (a name whose row is gone is absent).
+type aclChangeFacts struct {
+	Channel  store.Channel
+	Rows     []store.ACLEntry
+	Proposed []store.ACLEntry
+	Named    map[string]store.Identity
+}
+
+func (aclChangeFacts) factsObject() {}
 
 type channelFacts struct {
 	Channel store.Channel
@@ -74,6 +88,8 @@ func inScope(p Principal, f facts) bool {
 	switch f := f.(type) {
 	case channelFacts:
 		return f.Channel.Scope == p.Scope
+	case aclChangeFacts:
+		return f.Channel.Scope == p.Scope
 	case identityFacts:
 		// Every human and every administrator is visible to every agent
 		// (Eric 2026-10-25, spec 4.5); any other identity only within the scope.
@@ -90,6 +106,8 @@ func objectKind(f facts) string {
 	switch f.(type) {
 	case channelFacts:
 		return "channel"
+	case aclChangeFacts:
+		return "acl change"
 	case serverFacts:
 		return "server"
 	case sessionFacts:
@@ -115,6 +133,8 @@ func decide(p Principal, f facts, a Action) Decision {
 	switch f := f.(type) {
 	case channelFacts:
 		return decideChannel(p, f, a)
+	case aclChangeFacts:
+		return decideACLChange(p, f, a)
 	case serverFacts:
 		return decideServer(p, f, a)
 	case sessionFacts:
@@ -161,8 +181,8 @@ func decideServer(p Principal, f serverFacts, a Action) Decision {
 }
 
 // permsOf is the union of the stored rows for p.Name, everyone, for an
-// administrator admins and for a human humans (Decision 80, Eric 2026-10-25). The implicit admins entry is applied by
-// the Admin action, not here.
+// administrator admins and for a human humans (Decision 80, Eric 2026-10-25).
+// The implicit admins entry is applied by the Admin action, not here.
 func permsOf(p Principal, rows []store.ACLEntry) store.Permissions {
 	var u store.Permissions
 	admin := actsAsAdmin(p)
@@ -232,6 +252,76 @@ func decideChannel(p Principal, f channelFacts, a Action) Decision {
 		if !perms.Write {
 			return Decision{Code: bus.CodeForbidden, Reason: ReasonNoWrite,
 				Text: needs(p, store.PermWrite, f.Channel).Text}
+		}
+	}
+	return allowed
+}
+
+// permsUnion is the union of the permissions of every entry named name.
+func permsUnion(rows []store.ACLEntry, name string) store.Permissions {
+	var u store.Permissions
+	for _, e := range rows {
+		if e.Identity != name {
+			continue
+		}
+		for _, perm := range e.Permissions {
+			switch perm {
+			case store.PermRead:
+				u.Read = true
+			case store.PermWrite:
+				u.Write = true
+			case store.PermAdmin:
+				u.Admin = true
+			}
+		}
+	}
+	return u
+}
+
+// decideACLChange is ReplaceACL: the scope gate, admin on the channel as
+// decideChannel computes it, then, for an agent that is not an administrator,
+// the protected-entry rule (Eric 2026-10-25, spec 4.6): no protected name
+// (everyone, admins, humans, a human or an administrator) loses a permission.
+func decideACLChange(p Principal, f aclChangeFacts, a Action) Decision {
+	if a != ReplaceACL {
+		return undefined(f, a)
+	}
+	if !inScope(p, f) {
+		return deny(bus.CodeNotFound, ReasonOutOfScope, "channel %q does not exist", f.Channel.Name)
+	}
+	if d := decideChannel(p, channelFacts{Channel: f.Channel, Rows: f.Rows}, Admin); !d.Allowed {
+		return d
+	}
+	if p.Kind == store.IdentityHuman || p.Admin {
+		return allowed
+	}
+	seen := make(map[string]bool)
+	for _, e := range f.Rows {
+		name := e.Identity
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		id, named := f.Named[name]
+		if name != store.Everyone && name != store.Admins && name != store.Humans &&
+			(!named || id.Kind != store.IdentityHuman && !id.Admin) {
+			continue
+		}
+		had, has := permsUnion(f.Rows, name), permsUnion(f.Proposed, name)
+		var lost []string
+		if had.Read && !has.Read {
+			lost = append(lost, string(store.PermRead))
+		}
+		if had.Write && !has.Write {
+			lost = append(lost, string(store.PermWrite))
+		}
+		if had.Admin && !has.Admin {
+			lost = append(lost, string(store.PermAdmin))
+		}
+		if len(lost) > 0 {
+			return deny(bus.CodeForbidden, ReasonProtectedEntry,
+				"an agent cannot remove %s from ACL entry %q: humans and administrators keep their access",
+				strings.Join(lost, ", "), name)
 		}
 	}
 	return allowed

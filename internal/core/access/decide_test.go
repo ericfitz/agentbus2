@@ -1,6 +1,7 @@
 package access
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -258,5 +259,107 @@ func TestUndefinedPairIsInternal(t *testing.T) {
 	}
 	if d := decide(root, chFacts("", store.KindOrdinary), Use); d.Allowed || d.Code != bus.CodeInternal {
 		t.Errorf("channel/use = %+v", d)
+	}
+}
+
+func TestReplaceACLProtectedEntries(t *testing.T) {
+	a := []store.Permission{store.PermAdmin}
+	stored := []store.ACLEntry{
+		entry(store.Everyone, rw), entry(store.Admins, a), entry(store.Humans, r),
+		entry("hal", rw), entry("root", r), entry("kim", r), entry("pat", rwa),
+	}
+	named := map[string]store.Identity{
+		"hal":  {Name: "hal", Kind: store.IdentityHuman},
+		"root": {Name: "root", Kind: store.IdentityAgent, Admin: true},
+		"kim":  {Name: "kim", Kind: store.IdentityAgent},
+		"pat":  {Name: "pat", Kind: store.IdentityAgent},
+	}
+	without := func(names ...string) []store.ACLEntry {
+		var out []store.ACLEntry
+		for _, e := range stored {
+			if !slices.Contains(names, e.Identity) {
+				out = append(out, e)
+			}
+		}
+		return out
+	}
+	with := func(name string, p []store.Permission) []store.ACLEntry {
+		var out []store.ACLEntry
+		for _, e := range stored {
+			if e.Identity == name {
+				e.Permissions = p
+			}
+			out = append(out, e)
+		}
+		return out
+	}
+	lost := func(perms, name string) string {
+		return "an agent cannot remove " + perms + " from ACL entry \"" + name + "\": humans and administrators keep their access"
+	}
+	type tc struct {
+		name     string
+		p        Principal
+		rows     []store.ACLEntry
+		proposed []store.ACLEntry
+		scope    string
+		want     string // "" allowed, else the denial text
+		code     bus.Code
+		reason   string
+	}
+	protected := func(name, text string, proposed []store.ACLEntry) tc {
+		return tc{name: name, p: pat, rows: stored, proposed: proposed, want: text, code: bus.CodeForbidden, reason: ReasonProtectedEntry}
+	}
+	cases := []tc{
+		protected("drop everyone", lost("read, write", store.Everyone), without(store.Everyone)),
+		protected("everyone to read", lost("write", store.Everyone), with(store.Everyone, r)),
+		protected("drop admins", lost("admin", store.Admins), without(store.Admins)),
+		protected("drop humans", lost("read", store.Humans), without(store.Humans)),
+		protected("drop a human", lost("read, write", "hal"), without("hal")),
+		protected("drop an administrator", lost("read", "root"), without("root")),
+		protected("human to write only", lost("read", "hal"), with("hal", w)),
+		{name: "drop an agent", p: pat, rows: stored, proposed: without("kim")},
+		{name: "drop own row", p: pat, rows: stored, proposed: without("pat")},
+		{name: "add an entry", p: pat, rows: stored, proposed: append(slices.Clone(stored), entry("kim", w))},
+		{name: "only adds", p: pat, rows: stored, proposed: append(slices.Clone(stored), entry("zed", rwa))},
+		{
+			name: "duplicate rows covered", p: pat,
+			rows:     []store.ACLEntry{entry("hal", r), entry("hal", w), entry("pat", rwa)},
+			proposed: []store.ACLEntry{entry("hal", rw), entry("pat", rwa)},
+		},
+		{
+			name: "duplicate rows not covered", p: pat,
+			rows:     []store.ACLEntry{entry("hal", r), entry("hal", w), entry("pat", rwa)},
+			proposed: []store.ACLEntry{entry("hal", r), entry("pat", rwa)},
+			want:     lost("write", "hal"), code: bus.CodeForbidden, reason: ReasonProtectedEntry,
+		},
+		{name: "human with admin clears", p: hal, rows: append(slices.Clone(stored), entry("hal", rwa)), proposed: []store.ACLEntry{}},
+		{name: "administrator clears", p: root, rows: stored, proposed: []store.ACLEntry{}},
+		{
+			name: "no channel admin precedes the protected set", p: Principal{Name: "kim", Kind: store.IdentityAgent}, rows: stored, proposed: without(store.Everyone),
+			want: "kim needs admin on channel \"work\"", code: bus.CodeForbidden, reason: ReasonNoPermission,
+		},
+		{
+			name: "out of scope", p: coder, rows: stored, proposed: []store.ACLEntry{}, scope: "job2",
+			want: `channel "work" does not exist`, code: bus.CodeNotFound, reason: ReasonOutOfScope,
+		},
+	}
+	for _, c := range cases {
+		f := aclChangeFacts{
+			Channel: store.Channel{ID: 1, Name: "work", Scope: c.scope},
+			Rows:    c.rows, Proposed: c.proposed, Named: named,
+		}
+		d := decide(c.p, f, ReplaceACL)
+		if c.want == "" {
+			if !d.Allowed {
+				t.Errorf("%s: denied %+v", c.name, d)
+			}
+			continue
+		}
+		if d.Allowed || d.Text != c.want || d.Code != c.code || d.Reason != c.reason {
+			t.Errorf("%s: got %+v, want %q %s %s", c.name, d, c.want, c.code, c.reason)
+		}
+	}
+	if d := decide(pat, aclChangeFacts{}, Read); d.Allowed || d.Code != bus.CodeInternal {
+		t.Errorf("Read on an ACL change = %+v, want internal", d)
 	}
 }

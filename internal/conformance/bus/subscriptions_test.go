@@ -110,13 +110,17 @@ func TestSubscriptionUnsubscribeNeedsNothing(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
 		ctx := context.Background()
-		ch := h.channel("c", ab2store.KindOrdinary, "kim", nil)
 		pat := h.as("pat")
+		ch := h.channel("c", ab2store.KindOrdinary, "kim", []ab2store.ACLEntry{
+			{Identity: "kim", Permissions: []ab2store.Permission{ab2store.PermRead, ab2store.PermWrite, ab2store.PermAdmin}},
+			{Identity: "pat", Permissions: []ab2store.Permission{ab2store.PermRead}},
+		})
 		if err := pat.Subscribe(ctx, ab2bus.SubscribeInput{Channel: "c"}); err != nil {
 			t.Fatal(err)
 		}
 		// Decision 95: revoke read, unsubscribe still works.
-		if err := h.as("kim").SetACL(ctx, ab2bus.SetACLInput{Channel: "c", Entries: []ab2bus.ACLEntry{}}); err != nil {
+		if err := h.as("kim").SetACL(ctx, ab2bus.SetACLInput{Channel: "c", Entries: []ab2bus.ACLEntry{
+			{Identity: "kim", Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite, ab2bus.PermAdmin}}}}); err != nil {
 			t.Fatal(err)
 		}
 		codeOf(t, pat.Subscribe(ctx, ab2bus.SubscribeInput{Channel: "c"}), ab2bus.CodeForbidden)

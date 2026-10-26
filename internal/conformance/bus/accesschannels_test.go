@@ -4,6 +4,7 @@ import (
 	"context"
 	"reflect"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 
@@ -134,7 +135,11 @@ func TestScopeGateChannels(t *testing.T) {
 		}
 
 		// An ACL identity the granter cannot see is the Decision 96 text.
-		err = coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "work", Entries: []ab2bus.ACLEntry{{Identity: "pat", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}})
+		// (the default entries stay: an agent cannot remove them, spec 4.6)
+		err = coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "work", Entries: []ab2bus.ACLEntry{
+			{Identity: ab2store.Everyone, Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite}},
+			{Identity: ab2store.Admins, Permissions: []ab2bus.Permission{ab2bus.PermAdmin}},
+			{Identity: "pat", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}})
 		codeOf(t, err, ab2bus.CodeValidation)
 		if got, want := msgOf(err), `ACL identity "pat" is not a registered identity`; got != want {
 			t.Errorf("scoped SetACL naming pat: %q, want %q", got, want)
@@ -511,25 +516,29 @@ func TestScopedGranterNamesHumansAndAdmins(t *testing.T) {
 			t.Fatal(err)
 		}
 		rd := []ab2bus.Permission{ab2bus.PermRead}
-		acl := []ab2bus.ACLEntry{
+		// The default everyone and admins entries stay: an agent cannot remove them (spec 4.6).
+		keep := []ab2bus.ACLEntry{
+			{Identity: ab2store.Everyone, Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite}},
+			{Identity: ab2store.Admins, Permissions: []ab2bus.Permission{ab2bus.PermAdmin}},
 			{Identity: "eric@corp.example", Permissions: rd},
-			{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite, ab2bus.PermAdmin}}, // keep the granter's admin
 			{Identity: "root", Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite}},
 		}
+		granter := ab2bus.ACLEntry{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite, ab2bus.PermAdmin}} // keep the granter's admin
+		acl := append(slices.Clone(keep), granter)
 		if err := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: acl}); err != nil {
 			t.Fatalf("scoped granter naming a human and an administrator: %v", err)
 		}
 		if got, err := root.ACL(ctx, "w"); err != nil || !reflect.DeepEqual(got, acl) {
 			t.Errorf("ACL = %+v, %v; want %+v", got, err, acl)
 		}
-		bad := []ab2bus.ACLEntry{{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermAdmin}}, {Identity: "pat", Permissions: rd}}
+		bad := append(slices.Clone(keep), ab2bus.ACLEntry{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermAdmin}}, ab2bus.ACLEntry{Identity: "pat", Permissions: rd})
 		err := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: bad})
 		codeOf(t, err, ab2bus.CodeValidation)
 		if got, want := msgOf(err), `ACL identity "pat" is not a registered identity`; got != want {
 			t.Errorf("scoped granter naming an unscoped agent: %q, want %q", got, want)
 		}
 		// A malformed name keeps the Store's own format refusal, for scoped and unscoped alike.
-		fmtBad := []ab2bus.ACLEntry{{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermAdmin}}, {Identity: "bad/name", Permissions: rd}}
+		fmtBad := append(slices.Clone(keep), ab2bus.ACLEntry{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermAdmin}}, ab2bus.ACLEntry{Identity: "bad/name", Permissions: rd})
 		errScoped := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: fmtBad})
 		errAdmin := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: fmtBad})
 		codeOf(t, errScoped, ab2bus.CodeValidation)

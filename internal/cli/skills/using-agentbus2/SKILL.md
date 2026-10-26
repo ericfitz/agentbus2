@@ -94,7 +94,10 @@ Rules that matter:
   the operator.
 - Read the ACL with `get_acl`, change it with `set_acl` (it replaces the
   entries; both need `admin`). A channel created without an `acl` gets the
-  server default: `everyone` can read and write.
+  server default: `everyone` can read and write. An agent cannot remove a
+  human's or an administrator's access with `set_acl`.
+- Create a private channel with an explicit `acl` at `create_channel`: an agent
+  cannot remove `everyone`'s, a human's or an administrator's access afterwards.
 - Naming someone in an ACL does not subscribe them. Each participant must
   `subscribe` to the channel (you, right after creating it); the other agent
   finds it with `list_channels`. Tell them the channel name on a shared

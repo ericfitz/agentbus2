@@ -119,7 +119,7 @@ func TestBridgedChannelGuards(t *testing.T) {
 			}
 			return tx.SetBridgeArchived(ctx, cur.ID, h.core.NowMs())
 		})
-		if err := coder.SetACL(ctx, bus(perm("job1-coder", R, W, A), perm(ab2store.Everyone, R))); err != nil {
+		if err := coder.SetACL(ctx, bus(perm("job1-coder", R, W, A), perm("eric@corp.example", R, W), perm("kim@corp.example", W), perm(ab2store.Admins, A))); err != nil {
 			t.Fatalf("SetACL after archive: %v", err)
 		}
 		if err := adm.RenameChannel(ctx, ab2bus.RenameChannelInput{Name: "job1-chat", NewName: "job1-talk"}); err != nil {
@@ -131,13 +131,13 @@ func TestBridgedChannelGuards(t *testing.T) {
 
 		// No bridge: the creator still sets the ACL of its own channel.
 		h.channel("plain", ab2store.KindOrdinary, "plain-owner", nil)
-		if err := h.as("plain-owner").SetACL(ctx, ab2bus.SetACLInput{Channel: "plain", Entries: []ab2bus.ACLEntry{perm("plain-owner", R, W, A), perm(ab2store.Everyone, R)}}); err != nil {
+		if err := h.as("plain-owner").SetACL(ctx, ab2bus.SetACLInput{Channel: "plain", Entries: []ab2bus.ACLEntry{perm("plain-owner", R, W, A), perm(ab2store.Everyone, R, W), perm(ab2store.Admins, A)}}); err != nil {
 			t.Fatalf("unbridged SetACL: %v", err)
 		}
 		// The creator administers through its stored row only (the implicit
 		// creator entry is retired): once the row is gone it is forbidden.
 		plain := h.as("plain-owner")
-		if err := plain.SetACL(ctx, ab2bus.SetACLInput{Channel: "plain", Entries: []ab2bus.ACLEntry{perm(ab2store.Everyone, R)}}); err != nil {
+		if err := plain.SetACL(ctx, ab2bus.SetACLInput{Channel: "plain", Entries: []ab2bus.ACLEntry{perm(ab2store.Everyone, R, W), perm(ab2store.Admins, A)}}); err != nil {
 			t.Fatalf("SetACL dropping the creator's row: %v", err)
 		}
 		codeOf(t, plain.SetACL(ctx, ab2bus.SetACLInput{Channel: "plain", Entries: []ab2bus.ACLEntry{perm("plain-owner", R, W, A)}}), ab2bus.CodeForbidden)

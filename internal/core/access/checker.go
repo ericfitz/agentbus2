@@ -64,6 +64,33 @@ func (c Checker) load(ctx context.Context, tx store.Tx, o Object) (facts, *Decis
 			return nil, nil, fromStore(err)
 		}
 		return channelFacts{Channel: ch, Rows: rows}, nil, nil
+	case ACLChange:
+		ch, err := tx.Channel(ctx, o.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil, nil, bus.Errorf(bus.CodeNotFound, false, "channel %d does not exist", o.ID)
+		}
+		if err != nil {
+			return nil, nil, fromStore(err)
+		}
+		rows, err := tx.ACL(ctx, o.ID)
+		if err != nil {
+			return nil, nil, fromStore(err)
+		}
+		named := make(map[string]store.Identity)
+		for _, e := range rows {
+			if _, done := named[e.Identity]; done || store.ReservedIdentity(e.Identity) {
+				continue
+			}
+			id, err := tx.Identity(ctx, e.Identity)
+			if errors.Is(err, store.ErrNotFound) {
+				continue // a name whose row is gone is not protected
+			}
+			if err != nil {
+				return nil, nil, fromStore(err)
+			}
+			named[e.Identity] = id
+		}
+		return aclChangeFacts{Channel: ch, Rows: rows, Proposed: o.Entries, Named: named}, nil, nil
 	case Server:
 		return serverFacts{ChannelCreation: c.Cfg.ChannelCreation}, nil, nil
 	case Session:

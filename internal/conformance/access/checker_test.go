@@ -335,3 +335,68 @@ func TestHolders(t *testing.T) {
 		})
 	})
 }
+
+// ghostACL makes the ACL read return an extra row whose identity does not
+// exist, as when the identity row is gone.
+type ghostACL struct{ store.Tx }
+
+func (g ghostACL) ACL(ctx context.Context, id int64) ([]store.ACLEntry, error) {
+	rows, err := g.Tx.ACL(ctx, id)
+	return append(rows, store.ACLEntry{Identity: "ghost", Permissions: []store.Permission{store.PermRead}}), err
+}
+
+func TestCheckReplaceACL(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s := openStore(t, e)
+		seed(t, s)
+		rwa := []store.Permission{store.PermRead, store.PermWrite, store.PermAdmin}
+		rd := []store.Permission{store.PermRead}
+		ch := mkChannel(t, s, "work", store.KindOrdinary, "", "", []store.ACLEntry{
+			{Identity: "pat", Permissions: rwa}, {Identity: halName, Permissions: rd},
+			{Identity: "root", Permissions: rd}, {Identity: "kim", Permissions: rd},
+		})
+		mustRead(t, s, func(ctx context.Context, tx store.Tx) error {
+			pat, err := access.Resolve(ctx, tx, "pat")
+			if err != nil {
+				t.Fatal(err)
+			}
+			try := func(tx store.Tx, drop string) access.Decision {
+				var es []store.ACLEntry
+				for _, e := range []store.ACLEntry{{Identity: "pat", Permissions: rwa}, {Identity: halName, Permissions: rd},
+					{Identity: "root", Permissions: rd}, {Identity: "kim", Permissions: rd}} {
+					if e.Identity != drop {
+						es = append(es, e)
+					}
+				}
+				d, err := checker.Check(ctx, tx, pat, access.ACLChange{ID: ch.ID, Entries: es}, access.ReplaceACL)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return d
+			}
+			for _, drop := range []string{halName, "root"} {
+				if d := try(tx, drop); d.Allowed || d.Reason != access.ReasonProtectedEntry {
+					t.Errorf("dropping %s = %+v, want protected_entry", drop, d)
+				}
+			}
+			if d := try(tx, "kim"); !d.Allowed {
+				t.Errorf("dropping kim = %+v, want allowed", d)
+			}
+			// A stored name whose identity row is gone is not protected.
+			if d := try(ghostACL{tx}, "ghost"); !d.Allowed {
+				t.Errorf("ghost = %+v", d)
+			}
+			if d := try(ghostACL{tx}, halName); d.Allowed {
+				t.Errorf("ghost row must not unprotect hal: %+v", d)
+			}
+			if d, err := checker.Check(ctx, ghostACL{tx}, pat, access.ACLChange{ID: ch.ID, Entries: []store.ACLEntry{{Identity: "pat", Permissions: rwa}, {Identity: halName, Permissions: rd}, {Identity: "root", Permissions: rd}}}, access.ReplaceACL); err != nil || !d.Allowed {
+				t.Errorf("proposal dropping only kim and the ghost = %+v, %v, want allowed", d, err)
+			}
+			// Any other action on the object is an internal misuse.
+			if d, err := checker.Check(ctx, tx, pat, access.ACLChange{ID: ch.ID}, access.Read); err != nil || d.Allowed || d.Code != bus.CodeInternal {
+				t.Errorf("Read on ACLChange = %+v, %v, want internal", d, err)
+			}
+			return nil
+		})
+	})
+}

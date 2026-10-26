@@ -1,5 +1,7 @@
 package access
 
+import "github.com/ericfitz/agentbus2/internal/store"
+
 // Action is what a principal asks to do to an object.
 type Action string
 
@@ -14,6 +16,7 @@ const (
 	CreateChannel Action = "create_channel" // server (Decision 93)
 	Use           Action = "use"            // session
 	See           Action = "see"            // identity
+	ReplaceACL    Action = "replace_acl"    // ACLChange (Eric 2026-10-25, spec 4.6)
 )
 
 // Object is what is asked about. The facts of each kind are loaded inside the
@@ -32,7 +35,14 @@ type Session struct{ ID string }
 // Identity is an identity by name (the Identities listing).
 type Identity struct{ Name string }
 
-func (Channel) accessObject()  {}
-func (Server) accessObject()   {}
-func (Session) accessObject()  {}
-func (Identity) accessObject() {}
+// ACLChange is the replacement of a channel's whole ACL by Entries.
+type ACLChange struct {
+	ID      int64
+	Entries []store.ACLEntry
+}
+
+func (ACLChange) accessObject() {}
+func (Channel) accessObject()   {}
+func (Server) accessObject()    {}
+func (Session) accessObject()   {}
+func (Identity) accessObject()  {}

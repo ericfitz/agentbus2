@@ -277,3 +277,15 @@ to no agent, and it is refused as an identity name as the other two are. A
 (`channel_acl.identity` has no CHECK). Humans and administrators are also
 visible to every scoped agent, so a scoped granter can name them in an ACL
 and as a task owner.
+
+## An agent never removes a human's or an administrator's access (Eric, 2026-10-25)
+
+Eric decided that a `set_acl` by an agent that is not an administrator is
+refused (`forbidden`) when the replacement would take a permission away from a
+protected entry: `everyone`, `admins`, `humans`, or any stored entry naming a
+human or an administrator. Per protected name the union of the stored
+permissions must be a subset of the union of the proposed ones. A human or an
+administrator may replace the ACL freely, and a channel created with an
+explicit `acl` has no stored ACL to lose from. Consequence: a private channel
+is created with its `acl`; an agent cannot make a channel private afterwards.
+The rule is the `ReplaceACL` action of `internal/core/access`.

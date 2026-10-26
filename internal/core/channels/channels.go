@@ -240,7 +240,8 @@ func (s Service) ACL(ctx context.Context, identity, channel string) ([]bus.ACLEn
 }
 
 // SetACL replaces the channel's entries (the Store validates them, Decisions
-// 80, 96); nil Entries clears the ACL. It needs admin on the channel and
+// 80, 96); nil Entries clears the ACL. It needs admin on the channel, and an
+// agent cannot remove a human's or an administrator's access (spec 4.6). It
 // publishes a zero-seq hint after commit so an armed watch re-checks
 // readability.
 func (s Service) SetACL(ctx context.Context, identity string, in bus.SetACLInput) error {
@@ -260,8 +261,11 @@ func (s Service) SetACL(ctx context.Context, identity string, in bus.SetACLInput
 	var channelID int64
 	err = s.mutate(ctx, identity, in.IdempotencyKey, payload, &res, func(ctx context.Context, tx store.Tx, p access.Principal) error {
 		channelID = 0
-		ch, err := s.adminChannel(ctx, tx, p, in.Channel)
+		ch, err := s.ChannelByName(ctx, tx, in.Channel)
 		if err != nil {
+			return err
+		}
+		if err := s.Access.Require(ctx, tx, p, access.ACLChange{ID: ch.ID, Entries: entries}, access.ReplaceACL); err != nil {
 			return err
 		}
 		pinned, err := liveBridge(ctx, tx, ch.ID)

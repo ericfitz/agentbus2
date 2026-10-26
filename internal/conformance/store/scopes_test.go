@@ -363,7 +363,7 @@ func TestSlackBridgeReserved(t *testing.T) {
 			}
 			return nil
 		})
-		if !ab2store.ReservedIdentity("slack-bridge") || !ab2store.ReservedIdentity("everyone") || !ab2store.ReservedIdentity("admins") || ab2store.ReservedIdentity("pat") {
+		if !ab2store.ReservedIdentity("slack-bridge") || !ab2store.ReservedIdentity("everyone") || !ab2store.ReservedIdentity("admins") || !ab2store.ReservedIdentity("humans") || ab2store.ReservedIdentity("pat") {
 			t.Error("ReservedIdentity wrong")
 		}
 		for name, fn := range map[string]txFunc{

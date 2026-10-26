@@ -59,7 +59,7 @@ func TestChannelsLifecycle(t *testing.T) {
 	if err := json.Unmarshal([]byte(ok("acl", "dev")), &def); err != nil || len(def) == 0 {
 		t.Fatalf("default acl: %v %v", def, err)
 	}
-	set := `[{"identity":"pat","permissions":["read","write","admin"]}]`
+	set := `[{"identity":"pat","permissions":["read","write","admin"]},{"identity":"everyone","permissions":["read","write"]},{"identity":"admins","permissions":["admin"]}]`
 	ok("acl", "-set", set, "dev")
 	var got []struct {
 		Identity    string   `json:"identity"`
@@ -68,7 +68,12 @@ func TestChannelsLifecycle(t *testing.T) {
 	if err := json.Unmarshal([]byte(ok("acl", "dev")), &got); err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 1 || got[0].Identity != "pat" || !reflect.DeepEqual(got[0].Permissions, []string{"read", "write", "admin"}) {
+	byName := map[string][]string{}
+	for _, e := range got {
+		byName[e.Identity] = e.Permissions
+	}
+	if len(got) != 3 || !reflect.DeepEqual(byName["pat"], []string{"read", "write", "admin"}) ||
+		!reflect.DeepEqual(byName["everyone"], []string{"read", "write"}) || !reflect.DeepEqual(byName["admins"], []string{"admin"}) {
 		t.Fatalf("acl after set: %+v", got)
 	}
 	if code, _, _ := run("", "create", "-acl", "nope", "bad"); code != 2 {
