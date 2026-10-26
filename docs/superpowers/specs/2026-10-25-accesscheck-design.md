@@ -5,9 +5,14 @@ Section 1 records his two framing decisions; section 4 records his
 answers to the twelve questions the first draft raised and section 4.1
 his rulings on the scope edges, each labeled **Eric's decision
 2026-10-25**; section 4.2 is his decision on the one item that followed
-(scope-prefixed channel names). Nothing else in this document is a
-decision and nothing is open. The implementation plan is
-`docs/superpowers/plans/2026-10-25-accesscheck.md`.
+(scope-prefixed channel names); sections 4.4 to 4.7 are his decisions of
+the same day, made after Task 2 of the plan landed, on the scope model
+(scopes restrict agents only), humans (never scoped, always visible), the
+protected ACL entries and the `humans` group. Nothing else in this
+document is a decision. Open: the three questions of section 4.8 (channel
+deletion by an agent, `humans` on a bridged channel, the consequence that
+an agent cannot restrict a default ACL afterwards). The implementation
+plan is `docs/superpowers/plans/2026-10-25-accesscheck.md`.
 
 Related: `docs/superpowers/specs/2026-10-19-agentbus2-design.md` sections
 4.6 and 4.6.1 (Decisions 8, 24, 59, 73, 80, 88, 89, 93, 94, 95, 96; the
@@ -210,19 +215,31 @@ Listed so the gate of section 3.7 is scoped on purpose, not by omission:
   identities, bridges, reset, reset-credential, creation when
   `channel_creation` is `admins`, naming a scope on creation, changing the
   ACL of a bridged channel), `Session{ID}` (facts: the owning identity),
-  `Identity{Name}` (facts: its scope; for the `Identities` listing). Tasks
-  and memories are messages on a channel and are checked as that channel
-  (Eric's decision, question 1: no task object).
+  `Identity{Name}` (facts: its scope, kind and admin flag; for the
+  `Identities` listing, an ACL identity named by a granter and a task
+  owner), `ACLChange{ID, Entries}` (a channel and the ACL proposed for it;
+  facts: the channel row, its stored rows, the proposed entries and the
+  kind and admin flag of every identity the stored rows name; section
+  4.6). Tasks and memories are messages on a channel and are checked as
+  that channel (Eric's decision, question 1: no task object).
+- **Groups**: the ACL names that are not identities. `everyone` (every
+  principal), `admins` (every administrator) and, new (Eric's decision
+  2026-10-25, section 4.7), `humans` (every identity of kind `human`).
+  Membership is derived from the identity row, never stored; the three
+  names are reserved (`store.ReservedIdentity`, with `slack-bridge`) and
+  exempt from the Decision 96 registry check.
 - **Action**: `Read`, `Write`, `Admin` on a channel (Decision 80's three
   discrete sets); `List` on a channel (the channel-visibility rule, section
   3.10); `Deliver` on a channel (`Read`, minus memory channels for an agent
   principal: decision 20, moved in by Eric's answer to question 4; used by
   Subscribe, Receive, Peek, Watch and so the Stop hook and `wait`);
   `Post` on a channel for the Slack bridge (`Write` held by a human,
-  Decision 11); `Administer` and `CreateChannel` on the server; `Use` on a
-  session; `See` on an identity. An action that is not defined for the
-  object's kind is an `internal` error, never a panic (Definition of Done
-  B; fixes I10).
+  Decision 11); `ReplaceACL` on an `ACLChange` (`Admin` on the channel
+  and, for an agent, the protected-entry rule of section 4.6);
+  `Administer` and `CreateChannel` on the server; `Use` on a session;
+  `See` on an identity. An action that is not defined for the object's
+  kind is an `internal` error, never a panic (Definition of Done B; fixes
+  I10).
 - **Decision**: a value `{Allowed, Code, Text, Reason}` (Eric's answer to
   question 8). The code is declared once, in the access package's table
   (section 3.3), so I4 becomes a list in one file rather than a scatter:
@@ -242,17 +259,33 @@ decide(p Principal, o facts, a Action) (ok bool)
 ```
 
 with the channel facts being the channel row (kind, scope) and the stored
-ACL rows of the channel for the names `p.Name`, `everyone` and, when
-`p.Admin`, `admins`. The table it implements, transcribed from ADR 0008
-and ADR 0009 and the section 4.6 table **as amended by Eric's answers in
-section 4** (questions 1, 4, 6, 11):
+ACL rows of the channel for the names `p.Name`, `everyone`, `humans` when
+`p.Kind == human` (section 4.7) and `admins` when `p.Admin`. The table it
+implements, transcribed from ADR 0008 and ADR 0009 and the section 4.6
+table **as amended by Eric's answers in section 4** (questions 1, 4, 6,
+11) and his decisions of sections 4.4 to 4.7:
+
+**The governing principle (Eric's decision 2026-10-25, section 4.4).**
+Scopes limit agent identities only; they backstop ACLs. Humans and
+administrators are never restricted by a scope. An ACL does not embed a
+scope, but an object with an ACL may have one. For a scoped agent the
+effective access is the intersection of its scope and the ACL: an object
+outside the agent's scope is denied; inside it, the agent gets exactly
+what the ACL grants. An administrator and a human get what the ACL grants
+(the administrator also the implicit grants that keep every object
+manageable: `List` and `Admin` on every channel, `Administer`). The scope
+gate below and the rows after it are that principle written out; they
+implement nothing more.
 
 **Scope gate (Eric's decision, question 11), applied first to every row
 below.** `inScope(p, o)` is true when `p.Scope == ""` (an unscoped
 principal is never restricted), and otherwise only when the object is in
 `p.Scope`: a channel when `channel.scope == p.Scope` (an unscoped channel,
 `general` included, is outside every scope); an identity when its scope is
-`p.Scope`; the server never for `Administer` (the server is outside every
+`p.Scope` **or when it is a human or an administrator** (section 4.5:
+humans and administrators are visible to every agent, so a scoped agent
+can name them in an ACL and as a task owner; other agents outside the
+scope stay invisible); the server never for `Administer` (the server is outside every
 scope) but always for `CreateChannel` (the new channel takes `p.Scope`,
 ADR 0009 decision 8, so creation is inside the scope by construction; the
 one exemption of the gate); a session always (a session is the caller's
@@ -269,17 +302,18 @@ scope-prefixed names of section 4.2.
 
 | Object | Action | Allowed when (after the scope gate) |
 | --- | --- | --- |
-| Channel | Read, Write | the union of the stored rows for `p.Name`, `everyone`, and `admins` if `p.Admin`, holds that permission (Decision 80) |
+| Channel | Read, Write | the union of the stored rows for `p.Name`, `everyone`, `humans` if `p.Kind == human` (section 4.7), and `admins` if `p.Admin`, holds that permission (Decision 80) |
 | Channel | Admin | that union holds `admin`, or `p.Admin` (the implicit `admins` entry; ADR 0008 decision 1 as amended by Eric's answer to question 6: there is no implicit creator entry any more) |
 | Channel | List | **interim, until the channel-visibility rebuild**: every channel for an unscoped principal (Decision 94 stands until that plan lands), so only the scope gate filters a scoped principal's list now; the rebuild replaces this clause with `p.Admin`, or any stored row for `p.Name`/`everyone`/`admins`-if-admin (Eric's visibility decision 1 as amended by question 6: creator-ship lists nothing) |
 | Channel | Deliver | Channel/Read, and not (`p.Kind == agent` and `channel.kind == memory`) (decision 20 moved in by Eric's answer to question 4; Reason `memory_channel`, code `validation`, today's text) |
 | Channel | Post (bridge) | `p.Kind == human` and Channel/Write (ADR 0009 decision 11; Reasons `not_human`, `no_write`) |
+| ACLChange | ReplaceACL | Channel/Admin on the channel, and, when `p.Kind == agent` and not `p.Admin`, no protected entry of the stored ACL loses a permission in the proposed ACL (section 4.6: a protected entry names a human, an administrator, `admins`, `humans` or `everyone`; a loss is a missing entry or a smaller permission set, compared per name over the union of duplicate entries); the denial is `forbidden`, Reason `protected_entry`, text `an agent cannot remove %s from ACL entry %q: humans and administrators keep their access` (`%s` the permissions lost, comma-separated; `%q` the entry's name). A human, or an administrator, with `Admin` on the channel replaces anything. |
 | Server | Administer | `p.Admin` (Decision 73; ADR 0009 decision 9); never for a scoped principal (scope gate) |
 | Server | CreateChannel | `ChannelCreation == open`, or `p.Admin` (Decision 93; the one configuration value the rule reads); a scoped principal creates in its own scope only (naming any scope is Administer) |
 | Session | Use | the session's identity is `p.Name` (ADR 0003; the five sites of 2.1; `not_found`) |
-| Identity | See | the scope gate alone (the `Identities` listing; an unscoped principal sees every identity) |
+| Identity | See | the scope gate, which admits a human or an administrator for every principal (section 4.5; the `Identities` listing, the ACL identities a granter may name, a task `owner`: `tasks.ownerKnown` and `channels.visibleACL` both call `See`, so the three agree by construction; an unscoped principal sees every identity; a scoped agent sees its scope's identities plus every human and administrator) |
 
-An administrator is never scoped (Eric's decision 2026-10-25, replaces 4.1 (a); section 4.3): `decide` reads `p.Admin` alone, and the identity read path guarantees that a principal with `Admin` has `Scope == ""`. A scoped principal is therefore never an administrator.
+An administrator is never scoped (Eric's decision 2026-10-25, replaces 4.1 (a); section 4.3): `decide` reads `p.Admin` alone, and the identity read path guarantees that a principal with `Admin` has `Scope == ""`. A scoped principal is therefore never an administrator. A human is never scoped either (Eric's decision 2026-10-25, section 4.5, the same mechanism): the identity read path guarantees that a principal with `Kind == human` has `Scope == ""`.
 
 The implicit `admins` entry grants `admin` only, never `read` or `write`
 (ADR 0008; an administrator grants itself `read` through `SetACL`, which
@@ -302,6 +336,7 @@ const (
     Read Action = "read"; Write Action = "write"; Admin Action = "admin"; List Action = "list"
     Deliver Action = "deliver"      // channel: Read, minus memory channels for an agent (decision 20)
     Post Action = "post"            // channel: Write held by a human (bridge)
+    ReplaceACL Action = "replace_acl" // ACLChange: Admin, plus the protected-entry rule for an agent (4.6)
     Administer Action = "administer"       // server
     CreateChannel Action = "create_channel" // server (Decision 93)
     Use Action = "use"              // session
@@ -313,11 +348,12 @@ type Channel struct{ ID int64 }
 type Server struct{}
 type Session struct{ ID string }
 type Identity struct{ Name string }
+type ACLChange struct{ ID int64; Entries []store.ACLEntry } // the channel and the ACL proposed for it (4.6)
 
 // Decision is the answer (Eric's decision, question 8): Reason names the
 // denial (out_of_scope, not_human, no_write, memory_channel, no_permission,
-// not_admin, not_owner) so a caller can map it to a fixed text without
-// parsing Text.
+// not_admin, not_owner, protected_entry) so a caller can map it to a fixed
+// text without parsing Text.
 type Decision struct{ Allowed bool; Code bus.Code; Text, Reason string }
 
 // Checker holds the one configuration the rule reads (ChannelCreation,
@@ -493,7 +529,14 @@ code.
      string literals of the parsed files);
    - `access` itself is the only package that names `store.PermRead`,
      `PermWrite`, `PermAdmin` in a condition (the converters and
-     `CheckBridgeACL`, which judges an ACL's shape, are allowlisted).
+     `CheckBridgeACL`, which judges an ACL's shape, are allowlisted);
+   - the protected-entry rule of section 4.6 reads an identity's kind and
+     admin flag and compares stored rows to proposed ones, so it lives in
+     `decide` (the `ReplaceACL` action) and nowhere else; `channels.SetACL`
+     only calls `Require`. Name comparisons against the group constants
+     (`store.Everyone`, `Admins`, `Humans`) are not flag reads and stay
+     allowed where they are (`tasks.ownerKnown`, `channels.visibleACL`,
+     `CheckBridgeACL`, `validateACL`).
    The gate's allowlist is a literal in the test, so adding a site is a
    visible edit with a review question attached.
 5. **Unit tests of `decide`**: a table over the rule of 3.2, including the
@@ -509,6 +552,7 @@ code.
 | `Authorize(read\|write\|admin)` in channels, subscriptions, messaging, memories, tasks, search, sessions (24 sites) | `Access.Require(p, Channel{ID}, Read\|Write\|Admin)` |
 | `Create`: creation `admins` (Decision 93), naming a scope (ADR 0009 d9) | `Access.Require(p, Server{}, CreateChannel)` unconditionally (the configuration is read inside the rule), then `Require(p, Server{}, Administer)` with the scope-naming text when a scope is named |
 | `SetACL` on a bridged channel | `Access.Require(p, Server{}, Administer)` with its text; `CheckBridgeACL` unchanged |
+| `SetACL` (every channel) | after the input shape checks (`ACLFromBus`, `store.ValidateEntry`): `Access.Require(p, ACLChange{ch.ID, entries}, ReplaceACL)` in place of `adminChannel`'s `Admin` check (it includes it), then the bridged-channel `Administer` and `CheckBridgeACL`, then `visibleACL` (`validation`), then the Store's Decision 96 registry check. Order matters for the tests: a permission denial (`forbidden`) precedes a validation answer, as the Task 2 deviation already established. The bridge's own `tx.SetACL` calls (`slackbridge/create.go` step 4 pins the `slack-bridge` read row, `archive.go Remove` drops it) are not a principal's `SetACL` and are outside the rule by construction (section 4.6) |
 | `Status`, `Usage`, scopes (4), identities `As` operations (4), `slackbridge.requireAdmin` | `Access.Require(p, Server{}, Administer)` |
 | `health.go:68, :111` | `Access.Check(p, Server{}, Administer).Allowed` picks the tier; `Anonymous` is the probe tier |
 | `ReadableChannelIDs` in `delivery.load` (Receive, Peek, Watch) | `Access.Channels(p, Deliver)` (readable, minus memory channels for an agent); the principal is `Resolve(identity)`, the caller's identity, resolved once per call before any session lookup (I5: a deleted identity is `not_registered`) |
@@ -564,6 +608,26 @@ changes, each decided by Eric in section 4 or intended by section 3:
 - `Authorize` on an undefined action was a panic; it is `internal` (I10).
 - The malformed-name-as-`everyone` binding in the Store disappears; such a
   name never reaches the rule (`Resolve` refuses it).
+- **Humans and administrators are visible to every agent** (section 4.5):
+  a scoped agent's `Identities` listing (the MCP `discover`) carries its
+  scope's identities plus every human and administrator; it may name them
+  in an ACL and as a task owner. Before this ruling a scoped granter naming
+  a human got the Decision 96 `validation` text
+  (`TestScopedGranterCannotNameHumans` pinned it; the plan flips it).
+- **Protected ACL entries** (section 4.6): an agent's `SetACL` that would
+  drop or reduce an entry naming a human, an administrator, `admins`,
+  `humans` or `everyone` is `forbidden`. Consequence: a channel created by
+  an agent with the Decision 88 default ACL (`everyone [read, write]`,
+  `admins [admin]`) can never be made private by an agent afterwards; an
+  agent that wants a private channel passes `acl` at creation. Humans and
+  administrators are unaffected.
+- **The `humans` group** (section 4.7): a new ACL name whose members are
+  every identity of kind `human`; it grants like `everyone` and `admins`
+  and is reserved like them. No identity may be named `humans`.
+- **A human is never scoped** (section 4.5): `CreateScopedIdentity` on a
+  human name is `validation`; a stored human row with a scope reads back
+  unscoped, is repaired by maintenance and logged, exactly as for an
+  administrator (section 4.3).
 
 ### 3.10 Rebuilding the channel-visibility plan on this
 
@@ -620,10 +684,10 @@ unaffected." Made precise, per object kind, as the scope gate of section
 | Bridge by channel (`bridges get/remove`) | its channel's scope | administrator-only, so `forbidden` as above; were a scoped principal ever an administrator it would be `not_found` `channel %q has no bridge` |
 | Channel creation | always (the one exemption of the gate: the new channel takes `p.Scope`, ADR 0009 decision 8) | `CreateChannel` follows Decision 93; naming any scope in the request is `Administer` and so `forbidden`; `channel_creation: admins` denies a scoped principal (it cannot be an effective administrator) |
 | Session | the caller's own | unchanged: another identity's session is `not_found` (question 2); a scoped identity's sessions are its own |
-| Identity (`Identities` listing, the MCP `discover`; a task `owner`; an ACL identity named by a scoped granter) | `identity.scope == p.Scope` | omitted from the listing (`See`); as a task owner `not_found` `identity %q is not registered`; as an ACL identity the Decision 96 `validation` text (4.1 (b) and (d)) |
+| Identity (`Identities` listing, the MCP `discover`; a task `owner`; an ACL identity named by a scoped granter) | `identity.scope == p.Scope`, **or the identity is a human or an administrator** (Eric's decision 2026-10-25, section 4.5: both are visible to every agent; this amends 4.1 (c) and the identity bullet of 4.1 (d)) | an out-of-scope *agent* is omitted from the listing (`See`); as a task owner `not_found` `identity %q is not registered`; as an ACL identity the Decision 96 `validation` text (4.1 (b) and (d)). A human or an administrator is never "outside": the three uses go through the one `See` action, so they agree |
 | Health | no object | the identity tier as today; a scoped identity is tier `identity` (it cannot be an administrator, section 4.3) |
 | Bridge | server operation | `forbidden` |
-| Human principals | always unscoped (`identities.scope` is set only by `CreateScopedIdentity`) | unaffected |
+| Human principals | always unscoped (Eric's decision 2026-10-25, section 4.5: `CreateScopedIdentity` on a human name is `validation`; a stored human row with a scope is normalized on read, repaired by maintenance and logged, section 4.3's mechanism) | unaffected: a human gets exactly what the ACL grants, on every channel of every scope |
 | `slack-bridge` | never a principal | n/a |
 
 A done scope (ADR 0009 decision 7) is still its members' scope: `done`
@@ -782,9 +846,13 @@ made (section 3.9 and 3.10):
   identity it cannot `See`, `SetACL` and `CreateChannel` answer the
   Decision 96 text `ACL identity %q is not a registered identity`
   (`validation`), exactly as for an unregistered name, so the granter
-  learns nothing.
+  learns nothing. **Amended by section 4.5:** a human or an administrator
+  is always visible, so a scoped granter names them freely; the refinement
+  now applies to out-of-scope agents only.
 - (c) **A scoped identity lists only the identities of its own scope**
-  (`Identities`, the MCP `discover`). (Accepted.)
+  (`Identities`, the MCP `discover`). (Accepted.) **Amended by section
+  4.5 (Eric's decision 2026-10-25):** plus every human and every
+  administrator.
 - (d) **An out-of-scope denial answers `not_found`, not `forbidden`**: a
   scoped identity cannot learn what exists outside its scope. (The
   draft's `forbidden` reading is rejected.) Applied consistently, with
@@ -799,10 +867,11 @@ made (section 3.9 and 3.10):
     `edit_memory`, `delete_memory`, `memory revisions`): `not_found`
     `memory %d does not exist` / the task operations' not-found text
     (`taskChannelOf`);
-  - identity: omitted from `Identities`; as a task `owner` it is
-    `not_found` `identity %q is not registered` (the rule 6 text);
-    as an ACL identity named by a scoped granter it is the Decision 96
-    `validation` text (item (b));
+  - identity (an out-of-scope *agent*; humans and administrators are
+    visible to every agent since section 4.5): omitted from `Identities`;
+    as a task `owner` it is `not_found` `identity %q is not registered`
+    (the rule 6 text); as an ACL identity named by a scoped granter it is
+    the Decision 96 `validation` text (item (b));
   - session: already `not_found` (question 2);
   - set forms (`List`, Receive, Peek, Watch, Search without a channel,
     tag matching, `Identities`): the object is absent;
@@ -826,7 +895,7 @@ made (section 3.9 and 3.10):
   until the channel-visibility rebuild; a scoped principal's list is its
   scope's channels now. (Accepted.)
 
-### 4.3 Eric's decision 2026-10-25, replaces 4.1 (a): an administrator is never scoped
+### 4.3 Eric's decision 2026-10-25, replaces 4.1 (a): an administrator is never scoped (extended to humans by 4.5)
 
 **Eric's decision 2026-10-25:** "An admin is an admin. Admin is
 incompatible with scopes. If an entry is flagged as admin, any scope
@@ -834,6 +903,17 @@ assigned must be removed. Any attempt to assign a scope to an admin must
 fail. When reading identity information from the store, if an identity has
 both admin and a scope, the scope must be removed and an error logged." And:
 the stored row is repaired, not only the value in memory.
+
+**Extended by Eric's decision 2026-10-25 (section 4.5):** the same holds
+for a human identity. Every mechanism below covers both conditions,
+`is_admin` and `kind = 'human'`: the assignment refusal (`validation`, text
+`an administrator cannot be scoped` or `a human identity cannot be
+scoped`, by which condition holds), the read normalization and the stored
+repair. The repair method is therefore named for what it does, not for
+administrators alone: `Identities.ClearInvalidScopes(ctx) ([]string,
+error)` (was `ClearScopeOfAdmins` in the first draft), statement `UPDATE
+identities SET scope = NULL WHERE scope IS NOT NULL AND (is_admin OR kind =
+'human')` returning the names.
 
 Consequences (implemented in Task 5 of the plan; Task 1's `decide` already
 reads `p.Admin` alone):
@@ -857,16 +937,177 @@ reads `p.Admin` alone):
   reader see the repaired value. A read transaction cannot write, so the
   normalization alone is in memory.
 - **Repair of the stored row.** A new Store method
-  `Identities.ClearScopeOfAdmins(ctx) ([]string, error)` runs one statement
-  (`UPDATE identities SET scope = NULL WHERE is_admin AND scope IS NOT NULL`
-  returning the names) and the maintenance loop calls it each pass under the
+  `Identities.ClearInvalidScopes(ctx) ([]string, error)` runs one statement
+  (`UPDATE identities SET scope = NULL WHERE scope IS NOT NULL AND (is_admin
+  OR kind = 'human')` returning the names) and the maintenance loop calls it
+  each pass under the
   existing maintenance lock (`Store.Locks`), logging an error per name. A
   second run finds no rows and does nothing (idempotent); two overlapping
   runs (replicas) are excluded by the lock, and if the lock were lost the
   statement is still safe because it only ever clears a scope on an
-  administrator and a lost race changes no row twice; a run that starts from a
+  administrator or a human and a lost race changes no row twice; a run that
+  starts from a
   failed run's leftovers simply repairs what remains. Until the next pass
   the read path's in-memory normalization keeps the behavior correct.
+
+### 4.4 Eric's decision 2026-10-25: the scope model (scopes restrict agents only)
+
+**Eric's decision 2026-10-25** (his words, condensed): scopes limit only
+agent identities; they backstop ACLs. Humans and administrators are never
+restricted by scopes. ACLs do not embed scopes, but an object with an ACL
+may have a scope. For a scoped identity the effective access is the
+intersection of scope and ACL: an object not in the identity's scope is
+denied; otherwise the identity gets exactly what the ACL grants.
+Administrators and humans get what the ACL grants (administrators also the
+implicit grants that keep every object manageable).
+
+This is the governing principle of section 3.2 and 3.12. The `decide`
+table as landed in Tasks 1 and 2 already implements it for channels,
+sessions and the server; sections 4.5 to 4.7 are the three places where
+the first draft fell short of it (humans were treated as "unscoped, so
+invisible to a scoped agent"; a human could in principle hold a scope; an
+agent could strip a human's or an administrator's access).
+
+### 4.5 Eric's decision 2026-10-25: humans are never scoped and, with administrators, visible to every agent
+
+**Eric's decision 2026-10-25 (humans cannot be scoped).** An attempt to
+assign a scope to a human fails exactly as for an administrator
+(`validation`, `a human identity cannot be scoped`); a stored human row
+with a scope is normalized on read, repaired in the Store and logged, by
+the mechanism of section 4.3 (extended there; one method,
+`ClearInvalidScopes`). Where enforced: `Store.CreateScopedIdentity` (the
+only scope assignment that exists) refuses a name whose row is a human;
+`SignInHuman` never writes a scope; the `sqlstore` identity scan
+normalizes `kind = 'human'` with a scope as it does `is_admin` with one.
+
+**Eric's decision 2026-10-25 (visibility).** Humans and administrators are
+visible to every agent, scoped or not, so an agent can name them in an ACL
+and as a task owner. A scoped agent still cannot see or list agents
+outside its scope. In the rule: `Identity/See` admits a human or an
+administrator before the scope comparison (section 3.2's row). Task owner
+naming (`tasks.ownerKnown`) and ACL granting (`channels.visibleACL`) both
+call `See`, so both follow; the `Identities` listing (`Access.Identities`)
+is the same `See` in set form. **This replaces** the first draft's
+consequence "humans are unscoped, so a scoped principal cannot `See` them"
+(4.1 (b) refinement and 4.1 (c), amended in place) and flips
+`TestScopedGranterCannotNameHumans`.
+
+### 4.6 Eric's decision 2026-10-25: an agent never removes a human's or an administrator's access
+
+**Eric's decision 2026-10-25.** An agent (any agent identity, scoped or
+not) must never remove any permission held by an administrator or a human
+in any ACL, regardless of scope. The protected entries of a stored ACL
+are: every entry naming a human identity, every entry naming an
+administrator identity, the `admins` entry, the `humans` entry (section
+4.7) and the `everyone` entry (humans and administrators are members of
+`everyone`). Any loss counts: deleting the entry or reducing its
+permission set (`[read, write]` to `[read]` included). Humans and
+administrators holding `admin` on the channel may still change these
+entries.
+
+Design, as the rule of section 3.2 states it:
+
+- The check is an action of the one access check, `ReplaceACL` on the
+  object `ACLChange{ID, Entries}` (the channel and the proposed ACL), so
+  the only code that reads a named identity's kind or flag stays in
+  `decide`. `Check` loads the channel row, its stored rows, and the
+  identity rows of the names the stored rows carry (`tx.Identity` per
+  distinct name; groups are recognized by name). `decide` first requires
+  Channel/Admin as today; then, for an agent that is not an administrator,
+  it computes per protected name the union of the stored permissions and
+  the union of the proposed permissions (duplicate entries are additive,
+  `TestACLDuplicateEntriesAreAdditive`) and denies when any stored
+  permission is missing from the proposed set. A human, or an
+  administrator, with Channel/Admin is never checked against the
+  protected set.
+- Denial: `forbidden`, Reason `protected_entry`, text `an agent cannot
+  remove %s from ACL entry %q: humans and administrators keep their
+  access`, `%s` the lost permissions comma-separated in `read, write,
+  admin` order, `%q` the entry's name; the first protected name in
+  `(stored order)` that loses something is reported. Never retryable.
+- Order in `channels.SetACL` (section 3.8): input shape (`ACLFromBus`,
+  `ValidateEntry`: `validation`), `ReplaceACL` (`forbidden`: Admin, then
+  the protected set), the bridged-channel `Administer` and
+  `CheckBridgeACL`, `visibleACL` (`validation`), the Store's Decision 96
+  check. A permission denial precedes a validation answer, as the Task 2
+  deviation already established for the kind checks.
+- Which other paths the rule covers, each considered:
+  - `CreateChannel` with an explicit `acl`: **not covered.** There is no
+    stored ACL to lose from; the Decision 88 default is a convenience for
+    an omitted `acl`, not a baseline. An agent therefore creates a private
+    channel at creation and only then (section 3.9 lists the consequence).
+  - `RenameChannel`: **no ACL change**, not covered.
+  - Scope retirement (`RetireIdentity` deletes the retired identity's ACL
+    rows, ADR 0009 decision 19): **cannot touch a protected entry**, since
+    a retired identity is a scoped agent and humans and administrators are
+    never scoped (4.3, 4.5); administrator-only besides.
+  - The bridge's `tx.SetACL` calls (`create.go` step 4 adds the
+    `slack-bridge` read row; `archive.go Remove` drops it): **not a
+    principal's `SetACL`**, administrator-only, and the row they touch is
+    the reserved bridge identity's, never a protected one.
+  - `DeleteChannel` by an agent holding `admin` on the channel removes
+    every entry's access at once: **open question for Eric** (section 4.8,
+    question 1); until he rules, delete is governed by Channel/Admin alone
+    as today.
+- Tests: an access-package table over the protected set (each of the five
+  protected names; a partial reduction; a deletion; an addition is
+  allowed; an agent entry's removal is allowed; a human granter and an
+  administrator granter are allowed to remove anything; duplicate stored
+  entries unioned) and a Bus-level test through `SetACL` with the texts
+  (the plan's Task 3.2).
+
+### 4.7 Eric's decision 2026-10-25: the `humans` group
+
+**Eric's decision 2026-10-25.** A derived ACL group principal `humans`,
+beside `everyone` and `admins`: its membership is every identity of kind
+`human`; no list is stored. The name is reserved (no identity may be named
+`humans`). Pre-release, no migration or compatibility handling (CLAUDE.md
+rule). The `users` sign-in reference list is unrelated and unchanged.
+
+Design:
+
+- `store.Humans = "humans"`; `store.ReservedIdentity` includes it (so
+  registration, `CreateScopedIdentity`, `create-identity` and
+  `access.Resolve` refuse the name, as they do `everyone`); `validateACL`
+  exempts it from the Decision 96 registry check as it does `everyone`
+  and `admins`. The schema has no CHECK on `channel_acl.identity` or
+  `identities.name` and enumerates no reserved names (`0001_initial.sql`:
+  both are plain `TEXT`), so **no schema change**; the reservation lives
+  in `store.ReservedIdentity` alone.
+- `decide`'s union adds the `humans` row when `p.Kind == human`;
+  `Checker.Channels` adds `humans` to the names it fetches with
+  `ACLRowsFor` for a human principal; `Holders(ch, Post)` therefore lists
+  every human when a `humans [write]` row exists; the agreement tests draw
+  `humans` among their random names.
+- A `humans` entry is a protected entry (section 4.6).
+- On a bridged channel Decision 12 forbids `everyone`/`admins` `read` or
+  `write`; whether `humans` is treated the same is section 4.8, question 2
+  (recommended: yes, in `CheckBridgeACL`).
+- Wire: the ACL `identity` is a free string on the wire, so no OpenAPI
+  change; the MCP `set_acl`/`create_channel` descriptions, the skill and
+  ADR 0008 name the three groups.
+
+### 4.8 Open questions for Eric (2026-10-25)
+
+1. **Channel deletion by an agent.** An agent with `admin` on a channel
+   may delete it, which removes every entry's access, protected entries
+   included. Does the section 4.6 rule cover `DeleteChannel`? If yes, an
+   agent may delete only a channel whose ACL holds no protected entry
+   (so never a default-ACL channel, which holds `everyone` and `admins`).
+   Recommendation: not covered; deletion removes the object, not a grant,
+   the bridge pin and the `general` rule already protect what must
+   survive, and agents routinely create and delete scratch channels with
+   the default ACL.
+2. **`humans` on a bridged channel.** Decision 12 forbids `everyone` and
+   `admins` `read`/`write` on a bridged channel so that the Slack invite
+   list is explicit. Recommendation: treat `humans` the same in
+   `CheckBridgeACL` (a `humans [write]` row would otherwise invite every
+   human to the Slack channel through `Holders(Post)`).
+3. **Confirm the consequence of protecting `everyone`:** an agent can never
+   restrict a channel it created with the default ACL (the `everyone
+   [read, write]` row is protected), so a private channel must be created
+   with an explicit `acl`. Recommendation: accept and say so in the skill
+   (`create_channel` with `acl` for a private channel).
 
 ### 4.2 Eric's decision 2026-10-25: scope-prefixed channel names (closed)
 
@@ -910,7 +1151,9 @@ deleted and recreated by hand.
 ## 5. Documents that change
 
 - New ADR 0011 "One access check" (status: accepted, Eric 2026-10-25, for
-  sections 1, 4, 4.1 and 4.2): the table of 3.2 with the scope gate, the
+  sections 1, 4, 4.1 to 4.7): the table of 3.2 with the scope gate, the
+  governing principle of 4.4, the humans rulings of 4.5, the protected
+  entries of 4.6, the `humans` group of 4.7, the
   scope-prefixed name rule, the denial codes, the
   gate, the anchor move, the removal of the task owner guard and of the
   `force` wire member; the protocol-versioning decision (Context) is
@@ -931,7 +1174,12 @@ deleted and recreated by hand.
   `forbidden` becomes `unavailable`. `CLAUDE.md:24, 56`: the same two
   words; the Design bullets (below).
 - `internal/cli/skills/using-agentbus2/SKILL.md:143, 162`: the `force`
-  sentences go; one sentence says any writer may change any task.
+  sentences go; one sentence says any writer may change any task. The ACL
+  passage names the three groups (`everyone`, `admins`, `humans`), says an
+  agent cannot remove a human's or an administrator's access (4.6) and
+  that a private channel is created with `acl` (4.8 question 3). The MCP
+  `set_acl` and `create_channel` descriptions say the same in one sentence
+  each. ADR 0008 gains the `humans` group and the protected-entry rule.
 - `api/openapi.yaml`: the `force` member goes (3.14); `make generate`.
 - `CLAUDE.md` Design bullets: "Authorize" and "`internal/core/authz.go`"
   become `internal/core/access`; the gate anchor's new home; the Store
