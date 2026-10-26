@@ -192,6 +192,15 @@ func (s *HumanSource) refresh(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	// The provider may have rotated the refresh token (Dex retires the one
+	// presented): cache it before the exchange, so a failed exchange does not
+	// leave a retired token behind.
+	if tokens.RefreshToken != e.ProviderRefreshToken {
+		e.ProviderRefreshToken, e.AccessToken = tokens.RefreshToken, ""
+		if err := s.Cache.Save(e); err != nil {
+			return "", err
+		}
+	}
 	return s.exchange(ctx, tokens, e.Discovery)
 }
 

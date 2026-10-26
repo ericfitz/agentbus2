@@ -31,6 +31,7 @@ type humanEnv struct {
 	discoveries atomic.Int32
 	browsers    atomic.Int32
 	echo401s    atomic.Int32 // /v1/echo answers 401 this many times first
+	exchange503 atomic.Int32 // /v1/auth/token answers 503 this many times first
 
 	mu       sync.Mutex
 	sub      string // sub of the bearers the exchange mints
@@ -53,8 +54,15 @@ func unsignedJWT(sub string, n int32) string {
 
 func newHumanEnv(t *testing.T, refreshTokens bool) *humanEnv {
 	t.Helper()
+	return newHumanEnvOpts(t, oidctest.Options{RefreshTokens: refreshTokens})
+}
+
+// newHumanEnvOpts is newHumanEnv with the provider's refresh options from o.
+func newHumanEnvOpts(t *testing.T, o oidctest.Options) *humanEnv {
+	t.Helper()
 	h := &humanEnv{sub: "eric@corp.example", now: t0}
-	h.prov = oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid", RefreshTokens: refreshTokens,
+	h.prov = oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid", RefreshTokens: o.RefreshTokens,
+		RotateRefreshTokens: o.RotateRefreshTokens, RefreshRejectError: o.RefreshRejectError,
 		Claims: map[string]any{"sub": "u1", "email": "eric@corp.example"}})
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/oauth-authorization-server", func(w http.ResponseWriter, _ *http.Request) {
@@ -66,6 +74,11 @@ func newHumanEnv(t *testing.T, refreshTokens bool) *humanEnv {
 			http.Error(w, "bad grant", http.StatusBadRequest)
 			return
 		}
+		if h.exchange503.Add(-1) >= 0 {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		h.exchange503.Store(0)
 		n := h.exchanges.Add(1)
 		h.mu.Lock()
 		h.subjects = append(h.subjects, r.PostForm.Get("subject_token"))
@@ -245,6 +258,59 @@ func TestHumanSourceRefreshRejectedFallsBackToBrowser(t *testing.T) {
 	}
 	if e2, _, _ := s.Cache.Load(); e2.ProviderRefreshToken == "" || e2.ProviderRefreshToken == "refresh-revoked" {
 		t.Errorf("refresh token after fallback = %q, want the new one", e2.ProviderRefreshToken)
+	}
+}
+
+// TestHumanSourceRefreshKeepsRotatedTokenOnExchangeFailure: the provider
+// rotates refresh tokens (Dex), the exchange fails once (server down); the
+// rotated token is cached, so the next Token refreshes with it instead of
+// presenting the retired one (Dex: 400 invalid_request "claimed twice").
+func TestHumanSourceRefreshKeepsRotatedTokenOnExchangeFailure(t *testing.T) {
+	h := newHumanEnvOpts(t, oidctest.Options{RefreshTokens: true, RotateRefreshTokens: true, RefreshRejectError: "invalid_request"})
+	s := h.source(t, t.TempDir())
+	if _, err := s.SignIn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	first, _, _ := s.Cache.Load()
+	h.advance(20 * time.Minute)
+	h.exchange503.Store(1)
+	if _, err := s.Token(t.Context()); err == nil {
+		t.Fatal("Token with the exchange down: nil error")
+	}
+	e, ok, err := s.Cache.Load()
+	if err != nil || !ok || e.ProviderRefreshToken == "" || e.ProviderRefreshToken == first.ProviderRefreshToken || e.AccessToken != "" {
+		t.Fatalf("cache after the failed exchange = %+v, %v, %v; want the rotated refresh token and no bearer", e, ok, err)
+	}
+	if _, err := s.Token(t.Context()); err != nil {
+		t.Fatalf("Token after the server is back: %v", err)
+	}
+	if h.browsers.Load() != 1 {
+		t.Errorf("%d browser calls, want 1 (the refresh token path)", h.browsers.Load())
+	}
+	if n := providerGrants(h, "refresh_token"); n != 2 {
+		t.Errorf("%d refresh grants, want 2", n)
+	}
+}
+
+// TestHumanSourceInvalidRequestFallsBackToBrowser: a retired refresh token
+// that Dex answers with invalid_request sends the human to the browser.
+func TestHumanSourceInvalidRequestFallsBackToBrowser(t *testing.T) {
+	h := newHumanEnvOpts(t, oidctest.Options{RefreshTokens: true, RotateRefreshTokens: true, RefreshRejectError: "invalid_request"})
+	s := h.source(t, t.TempDir())
+	if _, err := s.SignIn(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	e, _, _ := s.Cache.Load()
+	e.ProviderRefreshToken = "refresh-claimed-twice"
+	if err := s.Cache.Save(e); err != nil {
+		t.Fatal(err)
+	}
+	h.advance(20 * time.Minute)
+	if _, err := s.Token(t.Context()); err != nil {
+		t.Fatalf("Token: %v", err)
+	}
+	if h.browsers.Load() != 2 {
+		t.Errorf("%d browser calls, want 2", h.browsers.Load())
 	}
 }
 

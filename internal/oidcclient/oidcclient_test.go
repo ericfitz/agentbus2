@@ -442,6 +442,11 @@ func TestRefreshRejected(t *testing.T) {
 	if !errors.Is(err, ErrRefreshRejected) {
 		t.Fatalf("err = %v, want ErrRefreshRejected", err)
 	}
+	// Dex answers a retired refresh token with invalid_request.
+	dex := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid", RefreshTokens: true, RefreshRejectError: "invalid_request"})
+	if _, err := Refresh(context.Background(), Config{Issuer: dex.URL(), ClientID: "cid"}, "claimed-twice"); !errors.Is(err, ErrRefreshRejected) {
+		t.Fatalf("invalid_request: err = %v, want ErrRefreshRejected", err)
+	}
 	// An outage is not a rejection.
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "openid-configuration") {

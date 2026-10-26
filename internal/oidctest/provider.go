@@ -37,6 +37,12 @@ type Options struct {
 	// RefreshTokens makes the token endpoint issue a refresh_token and serve
 	// the refresh_token grant.
 	RefreshTokens bool
+	// RotateRefreshTokens makes each refresh_token grant issue a new refresh
+	// token and retire the one presented (as Dex does).
+	RotateRefreshTokens bool
+	// RefreshRejectError is the error code for an unknown or retired refresh
+	// token: invalid_grant (RFC 6749) by default; Dex answers invalid_request.
+	RefreshRejectError string
 	// AuthorizeError, when set, makes /authorize redirect with that error code
 	// (and the request's state) instead of issuing a code.
 	AuthorizeError string
@@ -282,10 +288,22 @@ func (p *Provider) token(w http.ResponseWriter, r *http.Request) {
 		cid, ok := p.refresh[f.Get("refresh_token")]
 		p.mu.Unlock()
 		if !p.opts.RefreshTokens || !ok || cid != f.Get("client_id") {
-			tokenError(w, "invalid_grant")
+			code := p.opts.RefreshRejectError
+			if code == "" {
+				code = "invalid_grant"
+			}
+			tokenError(w, code)
 			return
 		}
 		refresh = f.Get("refresh_token")
+		if p.opts.RotateRefreshTokens {
+			next := p.newSecret("refresh-")
+			p.mu.Lock()
+			delete(p.refresh, refresh)
+			p.refresh[next] = cid
+			p.mu.Unlock()
+			refresh = next
+		}
 	default:
 		tokenError(w, "unsupported_grant_type")
 		return

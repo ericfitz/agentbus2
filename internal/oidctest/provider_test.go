@@ -361,6 +361,28 @@ func TestProviderRefreshGrant(t *testing.T) {
 	}
 }
 
+// TestProviderRefreshRotation: with RotateRefreshTokens a refresh retires the
+// token presented, and RefreshRejectError names the code for a retired one.
+func TestProviderRefreshRotation(t *testing.T) {
+	p := New(t, Options{Audience: "pai", ClientID: "cid", RefreshTokens: true, RotateRefreshTokens: true, RefreshRejectError: "invalid_request"})
+	_, out := postToken(t, p, codeForm(issueCode(t, p), "verifier-1"))
+	rt, _ := out["refresh_token"].(string)
+	refresh := func(tok string) (int, map[string]any) {
+		return postToken(t, p, url.Values{"grant_type": {"refresh_token"}, "refresh_token": {tok}, "client_id": {"cid"}})
+	}
+	status, out := refresh(rt)
+	next, _ := out["refresh_token"].(string)
+	if status != http.StatusOK || next == "" || next == rt {
+		t.Fatalf("refresh = %d %v, want a new refresh token", status, out)
+	}
+	if status, out := refresh(rt); status != http.StatusBadRequest || out["error"] != "invalid_request" {
+		t.Errorf("retired token = %d %v, want 400 invalid_request", status, out)
+	}
+	if status, _ := refresh(next); status != http.StatusOK {
+		t.Errorf("rotated token = %d, want 200", status)
+	}
+}
+
 func TestProviderAuthorizeError(t *testing.T) {
 	p := New(t, Options{Audience: "pai", ClientID: "cid", AuthorizeError: "access_denied"})
 	status, q := authorize(t, authorizeURL(p, nil))

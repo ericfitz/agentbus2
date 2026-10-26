@@ -28,8 +28,9 @@ const DefaultTimeout = 5 * time.Minute
 
 const maxBody = 1 << 20
 
-// ErrRefreshRejected means the provider refused the refresh token
-// (400 invalid_grant): the caller signs in again.
+// ErrRefreshRejected means the provider refused the refresh token (400
+// invalid_grant, or invalid_request, which Dex answers for a retired one):
+// the caller signs in again.
 var ErrRefreshRejected = errors.New("oidcclient: refresh token rejected")
 
 // Config names the provider and how to reach the user.
@@ -263,8 +264,8 @@ func withQuery(endpoint string, q url.Values) (string, error) {
 	return u.String(), nil
 }
 
-// Refresh exchanges a refresh token for new tokens. A 400 invalid_grant is
-// ErrRefreshRejected; any other failure is a different error.
+// Refresh exchanges a refresh token for new tokens. A 400 invalid_grant or
+// invalid_request is ErrRefreshRejected; any other failure is a different error.
 func Refresh(ctx context.Context, c Config, refreshToken string) (Tokens, error) {
 	ep, err := discover(ctx, c)
 	if err != nil {
@@ -300,7 +301,7 @@ func tokenRequest(ctx context.Context, c Config, endpoint string, form url.Value
 			Error string `json:"error"`
 		}
 		_ = json.Unmarshal(body, &e)
-		if resp.StatusCode == http.StatusBadRequest && e.Error == "invalid_grant" && form.Get("grant_type") == "refresh_token" {
+		if resp.StatusCode == http.StatusBadRequest && (e.Error == "invalid_grant" || e.Error == "invalid_request") && form.Get("grant_type") == "refresh_token" {
 			return Tokens{}, ErrRefreshRejected
 		}
 		// Only the status and the OAuth error code: never the body.
