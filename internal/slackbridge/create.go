@@ -75,8 +75,8 @@ func withBridgeRead(acl []store.ACLEntry) []store.ACLEntry {
 // Slack channel and stores its ID. Step 3 invites every human who may post
 // (write through any ACL row) and is a full member of this workspace. Step 4
 // makes the bridge live, adds {slack-bridge, [read]} to the ACL and subscribes
-// slack-bridge at the channel's current end. Step 5 reports the humans who could not be invited
-// in a notice in both channels.
+// slack-bridge at the channel's current end. Step 5 reports the humans who
+// could not be invited in a notice in both channels.
 //
 // Any failure, a Slack rate limit (*slackapi.RateLimitedError) included,
 // returns an error and leaves the row creating; the next Create resumes it.

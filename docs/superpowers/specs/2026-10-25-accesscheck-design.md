@@ -515,7 +515,14 @@ code.
      task list (`messaging/send.go`, `memories.go`, `tasks/*`: they judge
      the operation's shape, not a principal), and a `Kind` test in
      registration and sign-in (`register.go`, `human.go`, `agent.go`,
-     question 5), all by function name. For the memory filter (Eric's
+     question 5), all by function name, and each entry naming the clauses it
+     exempts (Admin, Creator, Owner, Scope, identity Kind, Perm, memory Kind;
+     an entry that no longer fires fails the gate). Added when the gate was
+     written: the server's wire copies of a scope field and `createByEmailTx`
+     (Appendix A, C49 and C50, kind N); the task fields judged as state or a
+     query filter (`tasks` `summaries`, `abandonedSet`, `applyPatch`), the
+     converter `KindFromBus`, `messaging.SendWith`'s embed-after-commit test and
+     `slackbridge` `withBridgeRead` (ACL shape). For the memory filter (Eric's
      answer to question 4) the `KindMemory` clause also walks
      `internal/mcpserver` and `internal/cli`: after Task 4 of the plan no
      client decides what an agent is delivered (`internal/agentview` is
@@ -1308,6 +1315,8 @@ for the gate's scope). Dup: the inconsistency of 2.2 it belongs to.
 | C46 | `internal/tui/model.go:1363-1394` `statusCmd` | call `Status` only when the listing says `Admin` | r | I2, I9 |
 | C47 | `tui/tasks.go:66-68` `taskEditable`, `:193-197` | unowned or own task is editable; no `Force` | r | I9 |
 | C48 | `tui/client.go:146-147`, `tui/model.go:1409-1411`, `cli/status.go:45-55` | react to `forbidden` (`(no access)`, silent status) | N (reaction) | |
+| C49 | `server/admin_auth.go` `AdminReset`, `server/channels.go` `CreateChannel` and `channelInfoToGen`, `server/scopes.go` `CreateAgentIdentity` | `req.Body.Scope != nil`, `c.Scope != ""`: copy a scope field between the wire and the bus types | N (wire copy) | |
+| C50 | `core/identities/human.go` `createByEmailTx` | `id.Kind == IdentityHuman` only picks the conflict text for an existing row | N (identity rule, question 5) | |
 
 Totals: 33 rows of kind R compute an access decision on the server side
 (S1 to S4, S9; C1 to C7, C9, C12 to C17; C20, C21, C23 to C28; C30, C31,

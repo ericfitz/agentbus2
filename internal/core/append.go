@@ -60,9 +60,7 @@ func (c *Core) EnvelopeSize(in AppendInput, sender string) (int, error) {
 // when the channel's bridge is live and the parent is itself a reply, the
 // stored reply_to is the thread root (Decision 14), and in is not changed.
 func (c *Core) Append(ctx context.Context, tx store.Tx, in AppendInput) (int64, *int64, error) {
-	switch in.Kind {
-	case store.KindOrdinary, store.KindMemory, store.KindTasks:
-	default:
+	if !store.ValidKind(in.Kind) {
 		// A programming error; checked before the write so nothing is left behind.
 		return 0, nil, E(bus.CodeInternal, "append on unknown channel kind %q", in.Kind)
 	}

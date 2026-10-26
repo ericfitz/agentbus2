@@ -194,8 +194,8 @@ var errBridgeGone = core.E(bus.CodeNotFound, "the bridge is no longer live")
 // again inside the send transaction: the bridge is still live, the identity
 // is a human, may post (write through any ACL row, a group row included), and
 // is not bound to another Slack account (nor the Slack account to another
-// identity). bind reports that neither side is bound yet. Lookups come first: on Postgres a failed
-// statement aborts the transaction.
+// identity). bind reports that neither side is bound yet. Lookups come first:
+// on Postgres a failed statement aborts the transaction.
 func (s *Service) trust(ctx context.Context, tx store.Tx, b store.Bridge, identity string, su store.SlackUser) (bind bool, err error) {
 	cur, err := tx.Bridge(ctx, b.ID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && cur.State != store.BridgeLive) {

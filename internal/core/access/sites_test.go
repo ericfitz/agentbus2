@@ -31,46 +31,40 @@ var ruleScope = []string{
 // Task 4 no client decides what an agent is delivered.
 var memoryScope = []string{"internal/mcpserver", "internal/cli"}
 
-// ruleAllowed lists the sites that may mention Admin, Creator, Owner, Scope,
-// an identity Kind (store.IdentityHuman, IdentityAgent), a memory Kind or a
-// store.Perm* constant in a condition. An entry is "file func", "file" (every
-// function in the file) or "dir/" (every file under the directory). The
-// internal/core/access package is exempt as a whole.
-var ruleAllowed = map[string]string{
-	// Sites that copy the flag or the scope.
-	"internal/core/sessions/identities.go Identities": "copies the principal's scope into a listing filter (spec 3.7)",
-	"internal/core/convert.go":                        "converters between the Store and bus shapes (copies)",
-	"internal/core/channels/channels.go Create":       "scope := p.Scope, a copy",
-	// Sites that set the flag or the scope, and the identity-rule Store facts.
-	"internal/core/identities/human.go signInHumanTx":   "sign-in sets a human's kind and never a scope (4.5)",
-	"internal/core/identities/register.go registerTx":   "registration: a Kind test (question 5)",
-	"internal/core/identities/agent.go ensureAgent":     "the scoped refusals of an agent row (4.1 (a), question 5)",
-	"internal/core/identities/admin.go resetCredential": "reset: a Kind test (question 5)",
-	"internal/core/identities/admin.go MakeAdmin":       "the scoped refusal and the scope clear (4.1 (a), 4.3)",
-	// Sites added after the spec was written (Task 10 report): validation and
-	// identity-rule Store facts, and the wire layer's copies of a scope field.
-	"internal/core/append.go Append":                    "validation: an append on an unknown channel kind is internal",
-	"internal/core/identities/human.go createByEmailTx": "identity rule: a Kind test in sign-in (question 5), not an access decision",
-	"internal/server/admin_auth.go AdminReset":          "wire copy of the request's reset scope",
-	"internal/server/channels.go CreateChannel":         "wire copy of the request's scope field",
-	"internal/server/channels.go channelInfoToGen":      "wire copy of the channel's scope field",
-	"internal/server/scopes.go CreateAgentIdentity":     "wire copy of the request's and result's scope field",
-	// State rules that read a scope's own row or the shape of an ACL.
-	"internal/core/scopes/service.go RequireOpen": "a scope's own state",
-	"internal/core/scopes/retire.go":              "retirement reads a scope's own state",
-	"internal/core/scopes/acl.go CheckBridgeACL":  "judges an ACL's shape (the bridged-channel rule)",
-	"internal/slackbridge/create.go":              "a bridge requires a scoped channel: validation",
-	// Operation-shape validations: they judge the operation, not a principal.
-	"internal/core/messaging/send.go":      "send on a task list is refused: the shape of the operation",
-	"internal/core/memories/memories.go":   "edit_memory on a task list is refused: the shape of the operation",
-	"internal/core/tasks/":                 "the task-list kind validations",
-	"internal/core/tasks/reclaim.go":       "t.Owner == \"\" is the task's state",
-	"internal/core/tasks/read.go taskList": "in.Owner is a query filter",
-}
-
-// memoryAllowed lists the sites outside access that may name a memory kind.
-var memoryAllowed = map[string]string{
-	"internal/mcpserver/server.go toKind": "input validation of the kind argument",
+// ruleAllowed maps a site ("file func") to the clauses it may mention in a
+// condition: Admin, Creator, Owner, Scope, IdentityKind (store.IdentityHuman or
+// IdentityAgent), Perm (store.Perm*) and MemoryKind (KindMemory). A clause not
+// listed for its site fails, and a listed clause that no longer fires fails
+// too, so the list cannot keep a dead exemption. internal/core/access is
+// exempt as a whole. Limits of the gate: it reads conditions only (an if
+// condition, a switch tag or case, an operand of && || == !=), so
+// `return p.Admin` is not seen; tx.ACL( is matched only on a receiver named
+// tx; package-level initializers are not walked; the SQL fragments are exact
+// substrings of string literals.
+var ruleAllowed = map[string][]string{
+	// Sites that copy the flag or the scope (spec 3.7 item 4).
+	"internal/core/channels/channels.go Create":     {"Scope"}, // scope := p.Scope, a copy
+	"internal/server/admin_auth.go AdminReset":      {"Scope"}, // wire copy of the request's reset scope (spec Appendix A, kind N)
+	"internal/server/channels.go CreateChannel":     {"Scope"}, // wire copy of the request's scope field (kind N)
+	"internal/server/channels.go channelInfoToGen":  {"Scope"}, // wire copy of the channel's scope field (kind N)
+	"internal/server/scopes.go CreateAgentIdentity": {"Scope"}, // wire copy of the request's and result's scope (kind N)
+	// Identity rules in registration and sign-in (spec 3.7 item 4, question 5).
+	"internal/core/identities/human.go signInHumanTx":   {"Admin"},        // sign-in sets a human's kind and never a scope (4.5)
+	"internal/core/identities/human.go createByEmailTx": {"IdentityKind"}, // picks the conflict text for a human row (kind N)
+	"internal/core/identities/register.go registerTx":   {"Admin", "IdentityKind", "Scope"},
+	"internal/core/identities/agent.go ensureAgent":     {"Admin", "IdentityKind", "Scope"}, // the scoped refusals (4.1 (a), 4.5)
+	"internal/core/identities/admin.go resetCredential": {"IdentityKind"},
+	// Converters, state and ACL shape.
+	"internal/core/convert.go KindFromBus":          {"MemoryKind"}, // converter
+	"internal/core/messaging/send.go SendWith":      {"MemoryKind"}, // embed-after-commit for a memory: state
+	"internal/core/scopes/acl.go CheckBridgeACL":    {"Perm"},       // judges an ACL's shape
+	"internal/slackbridge/create.go withBridgeRead": {"Perm"},       // ACL shape: adds the bridge's read row
+	"internal/slackbridge/create.go reserveTx":      {"Scope"},      // "a bridge requires a scoped channel": validation
+	"internal/mcpserver/server.go toKind":           {"MemoryKind"}, // input validation of the kind argument
+	// Task fields judged as state or query filters, never a principal.
+	"internal/core/tasks/read.go summaries":       {"Owner"}, // in.Owner is a query filter
+	"internal/core/tasks/reclaim.go abandonedSet": {"Owner"}, // t.Owner == "" is state
+	"internal/core/tasks/update.go applyPatch":    {"Owner"}, // the patch's own fields: an in_progress task needs an owner, a new owner must be registered
 }
 
 // aclCallers are the only sites that call tx.ACL( (the get-ACL display and the
@@ -89,7 +83,6 @@ var sqlFragments = []string{
 }
 
 var ruleSelectors = map[string]bool{"Admin": true, "Creator": true, "Owner": true, "Scope": true}
-var kindConsts = map[string]bool{"IdentityHuman": true, "IdentityAgent": true, "KindMemory": true}
 var permConsts = map[string]bool{"PermRead": true, "PermWrite": true, "PermAdmin": true}
 
 const moduleRoot = "../../.."
@@ -129,21 +122,6 @@ func funcSites(t *testing.T, dirs []string, visit func(rel string, f *ast.File, 
 	}
 }
 
-func allowed(list map[string]string, rel, fn string) bool {
-	if _, ok := list[rel+" "+fn]; ok {
-		return true
-	}
-	if _, ok := list[rel]; ok {
-		return true
-	}
-	for k := range list {
-		if strings.HasSuffix(k, "/") && strings.HasPrefix(rel, k) {
-			return true
-		}
-	}
-	return false
-}
-
 // conditions returns every expression of fn that is a decision: an if
 // condition, a switch tag, a case expression, or an operand of && || == !=.
 func conditions(fn *ast.FuncDecl) []ast.Expr {
@@ -181,11 +159,11 @@ func selectorNames(e ast.Expr) []string {
 	return out
 }
 
-// hasKindCompare reports whether e names a Kind constant.
+// hasKindCompare reports whether e names the memory Kind constant.
 func hasKindCompare(e ast.Expr) bool {
 	found := false
 	ast.Inspect(e, func(n ast.Node) bool {
-		if s, ok := n.(*ast.SelectorExpr); ok && kindConsts[s.Sel.Name] {
+		if s, ok := n.(*ast.SelectorExpr); ok && s.Sel.Name == "KindMemory" {
 			found = true
 		}
 		return true
@@ -195,17 +173,28 @@ func hasKindCompare(e ast.Expr) bool {
 
 func TestAccessRuleSites(t *testing.T) {
 	var bad []string
+	fired := map[string]map[string]bool{} // site -> clauses that fire
 
-	// Clause 1: no condition outside access reads Admin, Creator, Owner, Scope,
-	// compares an identity Kind, or names a store.Perm* constant.
-	funcSites(t, ruleScope, func(rel string, _ *ast.File, fn *ast.FuncDecl) {
-		if allowed(ruleAllowed, rel, fn.Name.Name) {
-			return
+	note := func(rel, fn, clause string) {
+		site := rel + " " + fn
+		if fired[site] == nil {
+			fired[site] = map[string]bool{}
 		}
+		fired[site][clause] = true
+	}
+
+	// Clause 1: conditions that read Admin, Creator, Owner or Scope, compare an
+	// identity Kind, or name a store.Perm* constant.
+	funcSites(t, ruleScope, func(rel string, _ *ast.File, fn *ast.FuncDecl) {
 		for _, c := range conditions(fn) {
 			for _, name := range selectorNames(c) {
-				if ruleSelectors[name] || permConsts[name] || name == "IdentityHuman" || name == "IdentityAgent" {
-					bad = append(bad, rel+" "+fn.Name.Name+": condition mentions "+name)
+				switch {
+				case ruleSelectors[name]:
+					note(rel, fn.Name.Name, name)
+				case permConsts[name]:
+					note(rel, fn.Name.Name, "Perm")
+				case name == "IdentityHuman" || name == "IdentityAgent":
+					note(rel, fn.Name.Name, "IdentityKind")
 				}
 			}
 		}
@@ -213,17 +202,32 @@ func TestAccessRuleSites(t *testing.T) {
 
 	// Clause 2: the memory Kind, also over the clients.
 	funcSites(t, append(append([]string{}, ruleScope...), memoryScope...), func(rel string, _ *ast.File, fn *ast.FuncDecl) {
-		if allowed(ruleAllowed, rel, fn.Name.Name) || allowed(memoryAllowed, rel, fn.Name.Name) {
-			return
-		}
 		for _, c := range conditions(fn) {
 			if hasKindCompare(c) {
-				bad = append(bad, rel+" "+fn.Name.Name+": condition names a Kind constant")
+				note(rel, fn.Name.Name, "MemoryKind")
 			}
 		}
 	})
 
-	// Clause 3: tx.ACL( has the listed callers only.
+	for site, clauses := range fired {
+		for clause := range clauses {
+			if !slices.Contains(ruleAllowed[site], clause) {
+				bad = append(bad, site+": condition mentions "+clause)
+			}
+		}
+	}
+	// An allowlist entry that fires nowhere is a hole: drop it.
+	for site, clauses := range ruleAllowed {
+		for _, clause := range clauses {
+			if !fired[site][clause] {
+				bad = append(bad, site+": allowlist entry for "+clause+" matches no site (remove it)")
+			}
+		}
+	}
+
+	// Clause 3: tx.ACL( has the listed callers only, and each listed caller
+	// still calls it.
+	aclSeen := map[string]bool{}
 	funcSites(t, []string{"internal"}, func(rel string, _ *ast.File, fn *ast.FuncDecl) {
 		if strings.HasPrefix(rel, "internal/store/") || strings.HasPrefix(rel, "internal/storetest/") {
 			return
@@ -237,12 +241,21 @@ func TestAccessRuleSites(t *testing.T) {
 			if !ok || sel.Sel.Name != "ACL" {
 				return true
 			}
-			if x, ok := sel.X.(*ast.Ident); ok && x.Name == "tx" && !aclCallers[rel+" "+fn.Name.Name] {
-				bad = append(bad, rel+" "+fn.Name.Name+": calls tx.ACL(")
+			if x, ok := sel.X.(*ast.Ident); ok && x.Name == "tx" {
+				site := rel + " " + fn.Name.Name
+				aclSeen[site] = true
+				if !aclCallers[site] {
+					bad = append(bad, site+": calls tx.ACL(")
+				}
 			}
 			return true
 		})
 	})
+	for site := range aclCallers {
+		if !aclSeen[site] {
+			bad = append(bad, site+": tx.ACL( allowlist entry matches no call (remove it)")
+		}
+	}
 
 	// Clause 4: no rule in the Store's SQL.
 	fset := token.NewFileSet()

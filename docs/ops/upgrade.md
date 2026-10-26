@@ -35,7 +35,7 @@ These are Eric's decisions of 2026-10-25 (ADR 0011). No release has shipped, so 
                     WHERE a.channel_id = c.id AND a.identity = c.creator AND a.can_admin);
   ```
 
-  An administrator restores a creator's access with `set_acl` (send the full list, since it replaces every entry).
+  The query over-reports a creator that still holds `admin` through an `everyone`, `admins` or `humans` row; check those rows before acting. An administrator restores a creator's access with `set_acl` (send the full list, since it replaces every entry).
 - **A scoped agent sees only its own scope.** It gets `not_found` for a channel outside its scope, `general` included, and creates channels in its scope only. Administrators and humans are never scoped; a stored scope on either is cleared by maintenance and logged.
 - **The task update body has no `force` member.** A client that still sends it is refused `validation` (HTTP 400).
 

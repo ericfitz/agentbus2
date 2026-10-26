@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"net/http"
+	"strings"
 	"testing"
 
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
@@ -305,5 +307,22 @@ func TestClaimLeasedUntilWire(t *testing.T) {
 	c, err := f.c.ClaimTaskWithResponse(ctx, cr.JSON201.Id, &gen.ClaimTaskParams{}, gen.ClaimTaskRequest{LeasedUntil: &lease})
 	if err != nil || c.JSON200 == nil || c.JSON200.Task.LeasedUntil == nil || *c.JSON200.Task.LeasedUntil != lease {
 		t.Fatalf("claim with lease: %+v, %v", c, err)
+	}
+}
+
+// A task update body that still carries the removed `force` member is a 400
+// validation error: TaskPatch sets additionalProperties: false (ADR 0001
+// addendum, ADR 0011 decision 15).
+func TestTaskUpdateForceMemberRefused(t *testing.T) {
+	f := newMTFixture(t)
+	req, err := http.NewRequest(http.MethodPatch, "http://inproc/v1/tasks/1", strings.NewReader(`{"subject":"x","force":true}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp := f.e.raw("pat", req)
+	b, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 400 || !strings.Contains(string(b), `"validation"`) {
+		t.Fatalf("force member: %d %s", resp.StatusCode, b)
 	}
 }
