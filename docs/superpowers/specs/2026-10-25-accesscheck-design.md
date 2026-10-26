@@ -9,10 +9,12 @@ his rulings on the scope edges, each labeled **Eric's decision
 the same day, made after Task 2 of the plan landed, on the scope model
 (scopes restrict agents only), humans (never scoped, always visible), the
 protected ACL entries and the `humans` group. Nothing else in this
-document is a decision. Open: the three questions of section 4.8 (channel
-deletion by an agent, `humans` on a bridged channel, the consequence that
-an agent cannot restrict a default ACL afterwards). The implementation
-plan is `docs/superpowers/plans/2026-10-25-accesscheck.md`.
+document is a decision, and nothing is open: section 4.8's three
+questions (channel deletion by an agent, `humans` on a bridged channel,
+the consequence that an agent cannot restrict a default ACL afterwards)
+were ruled on the same day, each recorded there as **Eric's decision
+2026-10-25**. The implementation plan is
+`docs/superpowers/plans/2026-10-25-accesscheck.md`.
 
 Related: `docs/superpowers/specs/2026-10-19-agentbus2-design.md` sections
 4.6 and 4.6.1 (Decisions 8, 24, 59, 73, 80, 88, 89, 93, 94, 95, 96; the
@@ -1046,9 +1048,9 @@ Design, as the rule of section 3.2 states it:
     principal's `SetACL`**, administrator-only, and the row they touch is
     the reserved bridge identity's, never a protected one.
   - `DeleteChannel` by an agent holding `admin` on the channel removes
-    every entry's access at once: **open question for Eric** (section 4.8,
-    question 1); until he rules, delete is governed by Channel/Admin alone
-    as today.
+    every entry's access at once: **not covered** (Eric's decision
+    2026-10-25, section 4.8 item 1); delete is governed by Channel/Admin
+    alone, as today.
 - Tests: an access-package table over the protected set (each of the five
   protected names; a partial reduction; a deletion; an addition is
   allowed; an agent entry's removal is allowed; a human granter and an
@@ -1081,33 +1083,35 @@ Design:
   `humans` among their random names.
 - A `humans` entry is a protected entry (section 4.6).
 - On a bridged channel Decision 12 forbids `everyone`/`admins` `read` or
-  `write`; whether `humans` is treated the same is section 4.8, question 2
-  (recommended: yes, in `CheckBridgeACL`).
+  `write`; `humans` is treated the same in `CheckBridgeACL` (Eric's
+  decision 2026-10-25, section 4.8 item 2).
 - Wire: the ACL `identity` is a free string on the wire, so no OpenAPI
   change; the MCP `set_acl`/`create_channel` descriptions, the skill and
   ADR 0008 name the three groups.
 
-### 4.8 Open questions for Eric (2026-10-25)
+### 4.8 Eric's decisions 2026-10-25 on the three questions of 4.6 and 4.7 (closed)
 
-1. **Channel deletion by an agent.** An agent with `admin` on a channel
-   may delete it, which removes every entry's access, protected entries
-   included. Does the section 4.6 rule cover `DeleteChannel`? If yes, an
-   agent may delete only a channel whose ACL holds no protected entry
-   (so never a default-ACL channel, which holds `everyone` and `admins`).
-   Recommendation: not covered; deletion removes the object, not a grant,
-   the bridge pin and the `general` rule already protect what must
-   survive, and agents routinely create and delete scratch channels with
-   the default ACL.
-2. **`humans` on a bridged channel.** Decision 12 forbids `everyone` and
-   `admins` `read`/`write` on a bridged channel so that the Slack invite
-   list is explicit. Recommendation: treat `humans` the same in
-   `CheckBridgeACL` (a `humans [write]` row would otherwise invite every
-   human to the Slack channel through `Holders(Post)`).
-3. **Confirm the consequence of protecting `everyone`:** an agent can never
-   restrict a channel it created with the default ACL (the `everyone
-   [read, write]` row is protected), so a private channel must be created
-   with an explicit `acl`. Recommendation: accept and say so in the skill
-   (`create_channel` with `acl` for a private channel).
+Each was put to Eric with a recommendation and ruled on the same day; each
+ruling is **Eric's decision 2026-10-25** and accepts the recommendation.
+
+1. **Channel deletion by an agent is not covered by the protected-entry
+   rule.** An agent with `admin` on a channel may delete it, although that
+   removes every entry's access, protected entries included: deletion
+   removes the object, not a grant; the bridge pin and the `general` rule
+   already protect what must survive; agents routinely create and delete
+   scratch channels with the default ACL. `DeleteChannel` stays governed by
+   Channel/Admin alone (section 4.6's list).
+2. **`humans` with `read` or `write` is forbidden on a bridged channel**,
+   in `CheckBridgeACL`, exactly like `everyone` and `admins` (Decision 12):
+   the Slack invite list stays explicit, since a `humans [write]` row would
+   otherwise invite every human through `Holders(Post)`. Implemented in
+   Task 7 of the plan; the Decision 12 text is unchanged.
+3. **Accepted: an agent can never make a default-ACL channel private
+   afterwards** (the `everyone [read, write]` row is protected, section
+   4.6). An agent that wants a private channel creates it with an explicit
+   `acl`. The skill (`internal/cli/skills/using-agentbus2/SKILL.md`) says
+   so in one sentence, and so does the MCP `create_channel` description
+   (Task 3.2 writes both; Task 10 checks them).
 
 ### 4.2 Eric's decision 2026-10-25: scope-prefixed channel names (closed)
 
@@ -1177,7 +1181,7 @@ deleted and recreated by hand.
   sentences go; one sentence says any writer may change any task. The ACL
   passage names the three groups (`everyone`, `admins`, `humans`), says an
   agent cannot remove a human's or an administrator's access (4.6) and
-  that a private channel is created with `acl` (4.8 question 3). The MCP
+  that a private channel is created with `acl` (4.8 item 3). The MCP
   `set_acl` and `create_channel` descriptions say the same in one sentence
   each. ADR 0008 gains the `humans` group and the protected-entry rule.
 - `api/openapi.yaml`: the `force` member goes (3.14); `make generate`.
