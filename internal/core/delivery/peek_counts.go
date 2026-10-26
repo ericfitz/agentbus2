@@ -7,6 +7,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -21,21 +22,23 @@ func (s Service) Peek(ctx context.Context, identity string, in bus.PeekInput) (b
 	var out bus.PeekResult
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		out = bus.PeekResult{Channels: []bus.PeekChannel{}}
-		sess, err := tx.Session(ctx, in.Session)
+		p, err := access.Resolve(ctx, tx, identity)
 		if err != nil {
-			return core.FromStore(err)
+			return err
+		}
+		// not_found for another identity's session, as for Receive and Watch,
+		// so it is not revealed to exist.
+		sess, err := s.Sessions.Owned(ctx, tx, p, in.Session)
+		if err != nil {
+			return err
 		}
 		switch {
-		case sess.Identity != identity:
-			// not_found, as sessions.Require answers Receive and Watch, so
-			// another identity's session is not revealed to exist.
-			return core.E(bus.CodeNotFound, "session %q does not exist", in.Session)
 		case sess.ClosedAt != 0:
 			return core.E(bus.CodeSessionClosed, "session %q is closed", in.Session)
 		case !s.IsLive(sess, s.NowMs()):
 			return core.E(bus.CodeSessionLapsed, "session %q lapsed; open with its resume token to resume it", in.Session)
 		}
-		byChannel, err := s.peekCounts(ctx, tx, identity, sess, in.IncludeOwn)
+		byChannel, err := s.peekCounts(ctx, tx, p, sess, in.IncludeOwn)
 		if err != nil {
 			return err
 		}
@@ -61,8 +64,8 @@ func (s Service) Peek(ctx context.Context, identity string, in bus.PeekInput) (b
 
 // peekCounts counts like peek (the same view, floors and own filter) but per
 // channel id, once per message even when two sources reach it.
-func (s Service) peekCounts(ctx context.Context, tx store.Tx, identity string, sess store.Session, includeOwn bool) (map[int64]int, error) {
-	v, err := s.load(ctx, tx, identity, sess, false)
+func (s Service) peekCounts(ctx context.Context, tx store.Tx, p access.Principal, sess store.Session, includeOwn bool) (map[int64]int, error) {
+	v, err := s.load(ctx, tx, p, sess, false)
 	if err != nil {
 		return nil, err
 	}
@@ -86,7 +89,7 @@ func (s Service) peekCounts(ctx context.Context, tx store.Tx, identity string, s
 		add(ms)
 	}
 	if v.tagsUsable() {
-		ms, err := tx.TagMatchesAfter(ctx, identity, max(v.tagCursor, v.tagPending), 0, v.tagChannels, f, s.Cfg.ReceiveMaxCount)
+		ms, err := tx.TagMatchesAfter(ctx, p.Name, max(v.tagCursor, v.tagPending), 0, v.tagChannels, f, s.Cfg.ReceiveMaxCount)
 		if err != nil {
 			return nil, core.FromStore(err)
 		}

@@ -3,7 +3,6 @@ package cli
 import (
 	"bytes"
 	"context"
-	"slices"
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/agentview"
@@ -58,9 +57,10 @@ func TestSkillDeliveryClaims(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(r.Messages) != 2 || r.Messages[0].Content != "subscribed" || r.Messages[1].Content != "tagged" ||
-		!slices.Equal(r.Messages[1].MatchedTags, []string{"area:go"}) || r.Messages[0].MemoryID == nil {
-		t.Fatalf("bus receive %+v, want the subscribed memory and the tag-matched one (the TUI path)", r.Messages)
+	// The server drops memory channels for an agent (decision 20, access
+	// Deliver): neither the subscribed memory nor the tag-matched one arrives.
+	if len(r.Messages) != 0 {
+		t.Fatalf("bus receive %+v, want none for an agent", r.Messages)
 	}
 	// The agent path drops both and acknowledges the batch.
 	got, err := agentview.NewKindIndex().ReceiveAgent(ctx, pat.Bus, bus.ReceiveInput{Session: s.ID, Ack: r.Batch})

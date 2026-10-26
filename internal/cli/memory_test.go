@@ -132,11 +132,13 @@ func TestReceiveWithSessionDropsMemoryAndAcks(t *testing.T) {
 	if r := run(); len(r.Messages) != 0 {
 		t.Fatalf("memory came back: %+v", r)
 	}
-	// The Bus itself, which the TUI uses, still delivers memories.
+	// The server drops memory channels for an agent too (decision 20, access
+	// Deliver), so the Bus gives the agent none either; a human's delivery is
+	// TestAgentNotDeliveredMemory's.
 	sendMemory(t, sam)
 	pat := e.conn(t, "pat")
 	res, err := pat.Bus.Receive(ctx, bus.ReceiveInput{Session: sess.ID})
-	if err != nil || len(res.Messages) != 1 || res.Messages[0].Channel != "mem" {
+	if err != nil || len(res.Messages) != 0 {
 		t.Fatalf("bus receive: %+v %v", res, err)
 	}
 }
@@ -174,7 +176,7 @@ func TestWatchLoopIgnoresMemoryWakes(t *testing.T) {
 
 // A wake that had memory channels filtered out says nothing true about how
 // many messages are left, so wait omits count and watch prints none.
-func TestFilteredWakeHasNoCount(t *testing.T) {
+func TestServerFilteredWakeIsComplete(t *testing.T) {
 	e, sess, sam := memoryEnv(t)
 	ctx := context.Background()
 	sendMemory(t, sam)
@@ -189,8 +191,11 @@ func TestFilteredWakeHasNoCount(t *testing.T) {
 	if err := json.Unmarshal([]byte(so.String()), &raw); err != nil {
 		t.Fatal(err)
 	}
-	if _, has := raw["count"]; has || len(raw["channels"].([]any)) != 1 {
-		t.Fatalf("wait line %q, want channels [general] and no count", so.String())
+	// The server no longer counts the memory for an agent, so the wake is
+	// complete and its count is true (it was omitted while a client filter
+	// removed channels from the wake).
+	if raw["count"] != float64(1) || len(raw["channels"].([]any)) != 1 {
+		t.Fatalf("wait line %q, want channels [general] and count 1", so.String())
 	}
 
 	prev := watchMinGap
@@ -208,7 +213,7 @@ func TestFilteredWakeHasNoCount(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	cancel()
 	<-done
-	if out := wo.String(); !strings.Contains(out, "agentbus2: new message(s) for pat on general;") {
+	if out := wo.String(); !strings.Contains(out, "agentbus2: 1 new message(s) for pat on general;") {
 		t.Fatalf("watch line %q", out)
 	}
 }

@@ -9,24 +9,6 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
-// ReadableChannelIDs takes the same precondition as access.Resolve.
-func TestReadableChannelIDsRefusesReservedNames(t *testing.T) {
-	c, _ := newTestCore(t, nil)
-	mustIdentity(t, c, "pat", false)
-	mustChannel(t, c, store.ChannelCreate{Name: "work", Kind: store.KindOrdinary, Creator: "pat"})
-	for _, name := range []string{"", store.Everyone, store.Admins} {
-		var ids []int64
-		var err error
-		mustTx(t, c, func(ctx context.Context, tx store.Tx) error {
-			ids, err = c.ReadableChannelIDs(ctx, tx, name)
-			return nil
-		})
-		if bus.CodeOf(err) != bus.CodeNotRegistered || len(ids) != 0 {
-			t.Errorf("ReadableChannelIDs(%q) = %v, %v; want not_registered", name, ids, err)
-		}
-	}
-}
-
 func TestRequireIdentityRejectsReservedAndUnknown(t *testing.T) {
 	c, _ := newTestCore(t, nil)
 	mustIdentity(t, c, "pat", false)
@@ -68,10 +50,9 @@ func TestRequireAdmin(t *testing.T) {
 	})
 }
 
-func TestChannelByNameAndReadable(t *testing.T) {
+func TestChannelByName(t *testing.T) {
 	c, _ := newTestCore(t, nil)
 	mustIdentity(t, c, "pat", false)
-	mustIdentity(t, c, "kim", false)
 	open := mustChannel(t, c, store.ChannelCreate{Name: "open", Kind: store.KindOrdinary, Creator: "pat"})
 	mustChannel(t, c, store.ChannelCreate{Name: "private", Kind: store.KindOrdinary, Creator: "pat",
 		ACL: []store.ACLEntry{{Identity: "pat", Permissions: []store.Permission{store.PermRead}}}})
@@ -82,10 +63,6 @@ func TestChannelByNameAndReadable(t *testing.T) {
 		}
 		if _, err := c.ChannelByName(ctx, tx, "nope"); bus.CodeOf(err) != bus.CodeNotFound || !strings.Contains(err.Error(), `channel \"nope\" does not exist`) {
 			t.Errorf("ChannelByName(nope) = %v", err)
-		}
-		ids, err := c.ReadableChannelIDs(ctx, tx, "kim")
-		if err != nil || len(ids) != 1 || ids[0] != open.ID {
-			t.Errorf("ReadableChannelIDs(kim) = %v, %v; want only the open channel", ids, err)
 		}
 		return nil
 	})

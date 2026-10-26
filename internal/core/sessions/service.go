@@ -10,11 +10,11 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
-	"errors"
 	"strconv"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -67,15 +67,32 @@ func validToken(token string) bool {
 // session_lapsed past the lease plus the skew (Decision (Eric, 2026-10-21): Milestone 3 item
 // 2; Open with the resume token revives it), and otherwise renews the lease.
 func (s Service) Require(ctx context.Context, tx store.Tx, identity, sessionID string) (store.Session, error) {
-	row, err := tx.Session(ctx, sessionID)
-	if errors.Is(err, store.ErrNotFound) {
-		return store.Session{}, core.E(bus.CodeNotFound, "session %q does not exist", sessionID)
+	p, err := access.Resolve(ctx, tx, identity)
+	if err != nil {
+		return store.Session{}, err
 	}
+	return s.RequireAs(ctx, tx, p, sessionID)
+}
+
+// Owned returns the session row when p may use it (accesscheck spec 3.5: the
+// session is p's own), not_found otherwise, the same answer for a session that
+// does not exist. It checks nothing about the row's state.
+func (s Service) Owned(ctx context.Context, tx store.Tx, p access.Principal, sessionID string) (store.Session, error) {
+	if err := s.Access.Require(ctx, tx, p, access.Session{ID: sessionID}, access.Use); err != nil {
+		return store.Session{}, err
+	}
+	row, err := tx.Session(ctx, sessionID)
 	if err != nil {
 		return store.Session{}, core.FromStore(err)
 	}
-	if row.Identity != identity {
-		return store.Session{}, core.E(bus.CodeNotFound, "session %q does not exist", sessionID)
+	return row, nil
+}
+
+// RequireAs is Require for a caller that already resolved its Principal.
+func (s Service) RequireAs(ctx context.Context, tx store.Tx, p access.Principal, sessionID string) (store.Session, error) {
+	row, err := s.Owned(ctx, tx, p, sessionID)
+	if err != nil {
+		return store.Session{}, err
 	}
 	if row.ClosedAt != 0 {
 		return store.Session{}, core.E(bus.CodeSessionClosed, "session %q is closed", sessionID)

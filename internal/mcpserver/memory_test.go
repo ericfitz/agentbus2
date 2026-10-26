@@ -113,8 +113,9 @@ func TestReceiveWithOnlyMemoryPendingStillAcks(t *testing.T) {
 	}
 }
 
-// The TUI path is the bus itself: a tag subscription still sees memories.
-func TestBusStillDeliversMemoryToObservers(t *testing.T) {
+// The server drops memory channels for an agent whatever the path (decision
+// 20, access Deliver); a human's delivery is TestAgentNotDeliveredMemory's.
+func TestBusDropsMemoryForAgentObservers(t *testing.T) {
 	e := newTestEnv(t)
 	ctx := context.Background()
 	pat := e.conn(t, "pat")
@@ -131,7 +132,7 @@ func TestBusStillDeliversMemoryToObservers(t *testing.T) {
 		t.Fatal(err)
 	}
 	res, err := pat.Bus.Receive(ctx, bus.ReceiveInput{Session: s.ID})
-	if err != nil || len(res.Messages) != 1 {
+	if err != nil || len(res.Messages) != 0 {
 		t.Fatalf("observer receive: %v %v", res, err)
 	}
 }

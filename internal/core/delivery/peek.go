@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -29,8 +30,8 @@ func (w *wake) add(ms []store.Message) {
 // peek is the read-only wake check (v1 internal/bus/wait.go peek): for every
 // readable source, the live messages above max(cursor, pending end, after).
 // A pending batch never wakes (v1 ADR 0012). It changes nothing.
-func (s Service) peek(ctx context.Context, tx store.Tx, identity string, sess store.Session, after int64, includeOwn bool) (wake, error) {
-	v, err := s.load(ctx, tx, identity, sess, false)
+func (s Service) peek(ctx context.Context, tx store.Tx, p access.Principal, sess store.Session, after int64, includeOwn bool) (wake, error) {
+	v, err := s.load(ctx, tx, p, sess, false)
 	if err != nil {
 		return wake{}, err
 	}
@@ -47,7 +48,7 @@ func (s Service) peek(ctx context.Context, tx store.Tx, identity string, sess st
 	}
 	if v.tagsUsable() {
 		tagFloor := max(v.tagCursor, v.tagPending, after)
-		ms, err := tx.TagMatchesAfter(ctx, identity, tagFloor, 0, v.tagChannels, f, s.Cfg.ReceiveMaxCount)
+		ms, err := tx.TagMatchesAfter(ctx, p.Name, tagFloor, 0, v.tagChannels, f, s.Cfg.ReceiveMaxCount)
 		if err != nil {
 			return wake{}, core.FromStore(err)
 		}

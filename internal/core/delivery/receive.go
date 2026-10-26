@@ -8,6 +8,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/rules"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -42,7 +43,8 @@ func (v *view) tagsUsable() bool { return len(v.tagSets) > 0 && len(v.tagChannel
 // subscription without a cursor gets one at its acked mark (readable ones
 // only) and a cursor without a subscription is deleted. A source whose
 // channel the identity cannot read is left untouched.
-func (s Service) load(ctx context.Context, tx store.Tx, identity string, sess store.Session, sync bool) (*view, error) {
+func (s Service) load(ctx context.Context, tx store.Tx, p access.Principal, sess store.Session, sync bool) (*view, error) {
+	identity := p.Name
 	subs, err := tx.Subscriptions(ctx, identity)
 	if err != nil {
 		return nil, core.FromStore(err)
@@ -51,7 +53,7 @@ func (s Service) load(ctx context.Context, tx store.Tx, identity string, sess st
 	if err != nil {
 		return nil, core.FromStore(err)
 	}
-	readableIDs, err := s.ReadableChannelIDs(ctx, tx, identity)
+	readableIDs, err := s.Access.Channels(ctx, tx, p, access.Deliver)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +141,11 @@ func (s Service) Receive(ctx context.Context, identity string, in bus.ReceiveInp
 }
 
 func (s Service) receive(ctx context.Context, tx store.Tx, identity string, in bus.ReceiveInput, count int, newToken string, res *bus.ReceiveResult) error {
-	sess, err := s.Sessions.Require(ctx, tx, identity, in.Session)
+	p, err := access.Resolve(ctx, tx, identity)
+	if err != nil {
+		return err
+	}
+	sess, err := s.Sessions.RequireAs(ctx, tx, p, in.Session)
 	if err != nil {
 		return err
 	}
@@ -149,11 +155,16 @@ func (s Service) receive(ctx context.Context, tx store.Tx, identity string, in b
 		if err != nil {
 			return err
 		}
+		// A filter names a channel the caller may not even see as it names
+		// one that never existed: List is the scope-only gate here.
+		if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.List); err != nil {
+			return err
+		}
 		inFilter[ch.ID] = true
 	}
 	filtered := len(in.Channels) > 0
 
-	v, err := s.load(ctx, tx, identity, sess, true)
+	v, err := s.load(ctx, tx, p, sess, true)
 	if err != nil {
 		return err
 	}

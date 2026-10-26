@@ -57,13 +57,3 @@ func (c *Core) ChannelByName(ctx context.Context, tx store.Tx, name string) (sto
 	}
 	return ch, nil
 }
-
-// ReadableChannelIDs lists the ids of the channels identity may read. Like
-// Resolve, it refuses "" and the reserved names with not_registered.
-func (c *Core) ReadableChannelIDs(ctx context.Context, tx store.Tx, identity string) ([]int64, error) {
-	if reservedIdentity(identity) {
-		return nil, notRegistered(identity)
-	}
-	ids, err := tx.ReadableChannels(ctx, identity)
-	return ids, FromStore(err)
-}

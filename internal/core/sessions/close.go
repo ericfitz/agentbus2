@@ -5,6 +5,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -18,17 +19,15 @@ func (s Service) Close(ctx context.Context, identity string, in bus.CloseSession
 	}
 	payload := struct{ Session string }{in.Session}
 	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		p, err := access.Resolve(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
 		var res struct{}
-		_, err := s.WithReceipt(ctx, tx, identity, in.IdempotencyKey, payload, &res, func() error {
-			row, err := tx.Session(ctx, in.Session)
+		_, err = s.WithReceipt(ctx, tx, identity, in.IdempotencyKey, payload, &res, func() error {
+			row, err := s.Owned(ctx, tx, p, in.Session)
 			if err != nil {
-				return core.FromStore(err)
-			}
-			if row.Identity != identity {
-				return core.E(bus.CodeNotFound, "session %q does not exist", in.Session)
+				return err
 			}
 			if row.ClosedAt != 0 {
 				return nil

@@ -2,7 +2,6 @@ package messaging
 
 import (
 	"context"
-	"errors"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
@@ -77,10 +76,10 @@ func (s Service) SendWith(ctx context.Context, identity string, in bus.SendInput
 		}
 		display := ""
 		if in.Session != "" {
-			sess, err := tx.Session(ctx, in.Session)
-			if errors.Is(err, store.ErrNotFound) || (err == nil && sess.Identity != identity) {
-				return core.E(bus.CodeNotFound, "session %q does not exist", in.Session)
+			if err := s.Access.Require(ctx, tx, p, access.Session{ID: in.Session}, access.Use); err != nil {
+				return err
 			}
+			sess, err := tx.Session(ctx, in.Session)
 			if err != nil {
 				return core.FromStore(err)
 			}

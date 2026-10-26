@@ -53,7 +53,7 @@ func (s Service) Open(ctx context.Context, identity string, in bus.OpenSessionIn
 	var out bus.Session
 	err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		out = bus.Session{}
-		ident, err := s.RequireIdentity(ctx, tx, identity)
+		p, ident, err := s.principal(ctx, tx, identity)
 		if err != nil {
 			return err
 		}
@@ -62,14 +62,14 @@ func (s Service) Open(ctx context.Context, identity string, in bus.OpenSessionIn
 			row, err := tx.SessionByResumeTokenHash(ctx, hashToken(in.ResumeToken))
 			switch {
 			case err == nil:
-				return s.resume(ctx, tx, identity, row, in.ResumeToken, now, &out)
+				return s.resume(ctx, tx, p, row, in.ResumeToken, now, &out)
 			case errors.Is(err, store.ErrNotFound):
 				// Swept by the retention job: a fresh session (Decision 18).
 			default:
 				return core.FromStore(err)
 			}
 		}
-		return s.create(ctx, tx, ident, in, newID, newToken, now, &out)
+		return s.create(ctx, tx, p, ident, in, newID, newToken, now, &out)
 	})
 	if err != nil {
 		return bus.Session{}, core.FromStore(err)
@@ -79,9 +79,12 @@ func (s Service) Open(ctx context.Context, identity string, in bus.OpenSessionIn
 
 // resume revives a retained row: the lease is renewed; cursors, the pending
 // batch and the token are untouched.
-func (s Service) resume(ctx context.Context, tx store.Tx, identity string, row store.Session, token string, now int64, out *bus.Session) error {
-	if row.Identity != identity {
-		return core.E(bus.CodeNotFound, "resume token does not name a session of %q", identity)
+func (s Service) resume(ctx context.Context, tx store.Tx, p access.Principal, row store.Session, token string, now int64, out *bus.Session) error {
+	// The denial keeps Open's own text; it is the same for every foreign token.
+	if d, err := s.Access.Check(ctx, tx, p, access.Session{ID: row.ID}, access.Use); err != nil {
+		return err
+	} else if !d.Allowed {
+		return core.E(bus.CodeNotFound, "resume token does not name a session of %q", p.Name)
 	}
 	if row.ClosedAt != 0 {
 		return core.E(bus.CodeSessionClosed, "session %q is closed", row.ID)
@@ -97,12 +100,12 @@ func (s Service) resume(ctx context.Context, tx store.Tx, identity string, row s
 	for _, c := range cursors {
 		pos[c.ChannelID] = c.CursorSeq
 	}
-	pending, err := s.pending(ctx, tx, identity, pos)
+	pending, err := s.pending(ctx, tx, p, pos)
 	if err != nil {
 		return err
 	}
 	*out = bus.Session{
-		ID: row.ID, Identity: identity, DisplayName: row.DisplayName, ResumeToken: token,
+		ID: row.ID, Identity: p.Name, DisplayName: row.DisplayName, ResumeToken: token,
 		Resumed: true, Pending: pending,
 	}
 	return nil
@@ -110,7 +113,7 @@ func (s Service) resume(ctx context.Context, tx store.Tx, identity string, row s
 
 // create writes a fresh session with a cursor per subscription (Decision 75)
 // and the honored offered cursors (Decision 44).
-func (s Service) create(ctx context.Context, tx store.Tx, ident store.Identity, in bus.OpenSessionInput, id, token string, now int64, out *bus.Session) error {
+func (s Service) create(ctx context.Context, tx store.Tx, p access.Principal, ident store.Identity, in bus.OpenSessionInput, id, token string, now int64, out *bus.Session) error {
 	rows, err := tx.ListSessions(ctx, ident.Name)
 	if err != nil {
 		return core.FromStore(err)
@@ -138,7 +141,7 @@ func (s Service) create(ctx context.Context, tx store.Tx, ident store.Identity, 
 	for _, sub := range subs {
 		pos[sub.ChannelID] = sub.AckedSeq
 	}
-	rejected, err := s.offered(ctx, tx, ident.Name, in.Cursors, pos)
+	rejected, err := s.offered(ctx, tx, p, in.Cursors, pos)
 	if err != nil {
 		return err
 	}
@@ -147,7 +150,7 @@ func (s Service) create(ctx context.Context, tx store.Tx, ident store.Identity, 
 			return core.FromStore(err)
 		}
 	}
-	pending, err := s.pending(ctx, tx, ident.Name, pos)
+	pending, err := s.pending(ctx, tx, p, pos)
 	if err != nil {
 		return err
 	}
@@ -160,13 +163,9 @@ func (s Service) create(ctx context.Context, tx store.Tx, ident store.Identity, 
 
 // offered applies the client's offered cursors to pos, the cursor by channel
 // id, and returns the rejected ones with their reason (Decision 44).
-func (s Service) offered(ctx context.Context, tx store.Tx, identity string, offers []bus.OfferedCursor, pos map[int64]int64) ([]bus.RejectedCursor, error) {
+func (s Service) offered(ctx context.Context, tx store.Tx, p access.Principal, offers []bus.OfferedCursor, pos map[int64]int64) ([]bus.RejectedCursor, error) {
 	if len(offers) == 0 {
 		return nil, nil
-	}
-	p, err := access.Resolve(ctx, tx, identity)
-	if err != nil {
-		return nil, err
 	}
 	maxSeq, err := tx.MaxSeq(ctx)
 	if err != nil {
@@ -211,12 +210,8 @@ func (s Service) offered(ctx context.Context, tx store.Tx, identity string, offe
 // cursor, capped at ReceiveMaxCount. It loads up to that many rows per
 // subscription to count them, where v1 used count(*); a CountAfter Store
 // method is a later amendment if it shows in profiling.
-func (s Service) pending(ctx context.Context, tx store.Tx, identity string, pos map[int64]int64) ([]bus.PendingChannel, error) {
-	p, err := access.Resolve(ctx, tx, identity)
-	if err != nil {
-		return nil, err
-	}
-	subs, err := tx.Subscriptions(ctx, identity)
+func (s Service) pending(ctx context.Context, tx store.Tx, p access.Principal, pos map[int64]int64) ([]bus.PendingChannel, error) {
+	subs, err := tx.Subscriptions(ctx, p.Name)
 	if err != nil {
 		return nil, core.FromStore(err)
 	}
@@ -271,7 +266,7 @@ func (s Service) EnsureHinted(ctx context.Context, identity, hint string) (strin
 	var id string
 	err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		id = ""
-		ident, err := s.RequireIdentity(ctx, tx, identity)
+		p, ident, err := s.principal(ctx, tx, identity)
 		if err != nil {
 			return err
 		}
@@ -290,7 +285,7 @@ func (s Service) EnsureHinted(ctx context.Context, identity, hint string) (strin
 			}
 		}
 		var out bus.Session
-		if err := s.create(ctx, tx, ident, bus.OpenSessionInput{Hint: hint}, newID, newToken, now, &out); err != nil {
+		if err := s.create(ctx, tx, p, ident, bus.OpenSessionInput{Hint: hint}, newID, newToken, now, &out); err != nil {
 			return err
 		}
 		id = out.ID
@@ -300,4 +295,19 @@ func (s Service) EnsureHinted(ctx context.Context, identity, hint string) (strin
 		return "", core.FromStore(err)
 	}
 	return id, nil
+}
+
+// principal resolves the caller once for a call that also needs its identity
+// row (the tags acked mark): the Principal first, so "", a reserved name and a
+// deleted identity are not_registered.
+func (s Service) principal(ctx context.Context, tx store.Tx, identity string) (access.Principal, store.Identity, error) {
+	p, err := access.Resolve(ctx, tx, identity)
+	if err != nil {
+		return access.Principal{}, store.Identity{}, err
+	}
+	ident, err := tx.Identity(ctx, p.Name)
+	if err != nil {
+		return access.Principal{}, store.Identity{}, core.FromStore(err)
+	}
+	return p, ident, nil
 }

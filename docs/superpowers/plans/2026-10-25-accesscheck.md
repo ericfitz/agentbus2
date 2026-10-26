@@ -131,6 +131,12 @@ Expected: the first, third and fourth FAIL (today: the receive proceeds; the mem
 Run: `make lint && make test && make test-conformance && grep -c 'if !readable\[sub.ChannelID\] {' internal/core/delivery/receive.go`
 Expected: PASS; the grep prints `1`. (`internal/mcpserver` and `internal/cli` tests that assert the client-side memory filter still pass: the server now filters too.)
 
+- [x] **Task 3 deviations (as implemented).**
+  - `sessions.Service` gains `Owned(ctx, tx, p, id)` (the `Session/Use` check plus the row) and `RequireAs(p, id)`; `Require(identity, id)` resolves the Principal and calls it. Receive, Peek, Watch's check, Close and `messaging.Send` (a fifth ownership copy the plan did not list) use them. `Open`, `EnsureHinted`, `resume`, `offered` and `pending` take the already-resolved Principal.
+  - Open with another identity's resume token keeps its own text (`resume token does not name a session of %q`), by `Check` then that text; the plan's "`session %q does not exist`" for it was not today's behavior. Peek and Close of a never-existing session used to answer the store text `session by id`; they now answer `session %q does not exist`, byte-equal to a foreign session.
+  - A `Receive` channel filter naming a channel outside the scope is `not_found` as for an unknown name (`List` as the scope-only gate); before, it was accepted silently.
+  - Client tests that read memories through the Bus as an agent (`internal/cli/memory_test.go`, `skill_test.go`, `internal/mcpserver/memory_test.go`) now expect none, the server filtering; `TestFilteredWakeHasNoCount` became `TestServerFilteredWakeIsComplete` (the wake count is true). Task 4 removes the client filter and its tests.
+
 - [ ] **Step 5: Commit**
 
 ```bash

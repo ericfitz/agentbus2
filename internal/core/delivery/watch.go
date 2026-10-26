@@ -6,6 +6,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -92,19 +93,21 @@ func (s Service) check(ctx context.Context, identity string, in bus.WatchInput, 
 	var woke bool
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		out, woke = bus.WatchResult{}, false
-		sess, err := tx.Session(ctx, in.Session)
+		p, err := access.Resolve(ctx, tx, identity)
 		if err != nil {
-			return core.FromStore(err)
+			return err
+		}
+		sess, err := s.Sessions.Owned(ctx, tx, p, in.Session)
+		if err != nil {
+			return err
 		}
 		switch {
-		case sess.Identity != identity:
-			return core.E(bus.CodeNotFound, "session %q does not exist", in.Session)
 		case sess.ClosedAt != 0:
 			return core.E(bus.CodeSessionClosed, "session %q is closed", in.Session)
 		case sess.WatchID != watchID:
 			return core.E(bus.CodeReplaced, "a newer watch replaced this one")
 		}
-		w, err := s.peek(ctx, tx, identity, sess, in.After, in.IncludeOwn)
+		w, err := s.peek(ctx, tx, p, sess, in.After, in.IncludeOwn)
 		if err != nil || w.count == 0 {
 			return err
 		}
