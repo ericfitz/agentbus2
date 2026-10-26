@@ -5,7 +5,6 @@ import (
 	"context"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/agentview"
 	"github.com/ericfitz/agentbus2/internal/bus"
 )
 
@@ -62,12 +61,19 @@ func TestSkillDeliveryClaims(t *testing.T) {
 	if len(r.Messages) != 0 {
 		t.Fatalf("bus receive %+v, want none for an agent", r.Messages)
 	}
-	// TODO(Task 4): the Bus delivered nothing above, so this ReceiveAgent/ack
-	// step is vacuous; restore a real batch to ack or move the test.
-	// The agent path drops both and acknowledges the batch.
-	got, err := agentview.NewKindIndex().ReceiveAgent(ctx, pat.Bus, bus.ReceiveInput{Session: s.ID, Ack: r.Batch})
-	if err != nil || len(got.Messages) != 0 {
-		t.Fatalf("agent receive %+v, %v", got, err)
+	// An ordinary message is delivered beside them, so the ack is real: the
+	// server dropped both memories and the batch it acknowledges holds only
+	// the ordinary one.
+	if _, err := sam.Bus.Send(ctx, bus.SendInput{Channel: "general", Content: "ordinary"}); err != nil {
+		t.Fatal(err)
+	}
+	b, err := pat.Bus.Receive(ctx, bus.ReceiveInput{Session: s.ID})
+	if err != nil || len(b.Messages) != 1 || b.Messages[0].Channel != "general" || b.Batch == "" {
+		t.Fatalf("agent receive %+v, %v, want the ordinary message only", b, err)
+	}
+	again, err := pat.Bus.Receive(ctx, bus.ReceiveInput{Session: s.ID, Ack: b.Batch})
+	if err != nil || again.AckIgnored || len(again.Messages) != 0 {
+		t.Fatalf("ack %+v, %v", again, err)
 	}
 }
 

@@ -46,10 +46,9 @@ func watchLine(display string, r bus.WatchResult) string {
 // one wins). A timeout with nothing held re-arms silently. It returns only
 // with a non-nil error (the Watch's, a failed write, or ctx's), together with
 // the floor reached, so a resumed re-arm continues from it.
-func watchLoop(ctx context.Context, s bus.Sessions, mf *memoryFilter, session, display string, floor int64, includeOwn bool, stdout io.Writer) (int64, error) {
+func watchLoop(ctx context.Context, s bus.Sessions, mf *wakeFilter, session, display string, floor int64, includeOwn bool, stdout io.Writer) (int64, error) {
 	var held bus.WatchResult
 	var last time.Time
-	unknown := false // a held wake had memory channels filtered out: its count is unknown
 	for {
 		if err := ctx.Err(); err != nil {
 			return floor, err
@@ -58,13 +57,10 @@ func watchLoop(ctx context.Context, s bus.Sessions, mf *memoryFilter, session, d
 		if held.Woke {
 			rest := watchMinGap - time.Since(last)
 			if rest <= 0 {
-				if unknown {
-					held.Count = 0
-				}
 				if _, err := fmt.Fprintln(stdout, watchLine(display, held)); err != nil {
 					return floor, err
 				}
-				last, held, unknown = time.Now(), bus.WatchResult{}, false
+				last, held = time.Now(), bus.WatchResult{}
 				continue
 			}
 			in.Timeout = rest
@@ -77,13 +73,9 @@ func watchLoop(ctx context.Context, s bus.Sessions, mf *memoryFilter, session, d
 			continue
 		}
 		floor = r.Seq
-		var filtered bool
-		if r, filtered, err = mf.agentWake(ctx, r); err != nil {
-			return floor, err
-		} else if !r.Woke {
-			continue // only memories (decision 20): no wake, floor advanced
+		if mf.drops() {
+			continue // parked (decision 18): no wake, floor advanced
 		}
-		unknown = unknown || filtered
 		held = bus.WatchResult{Woke: true, Seq: r.Seq, Count: held.Count + r.Count, Channels: append(held.Channels, r.Channels...)}
 	}
 }
@@ -191,14 +183,14 @@ func RunWatch(ctx context.Context, args []string, environ []string, stdin io.Rea
 		return code
 	}
 	defer w.stop()
-	return exitFail(stderr, cancelCause(w.ctx, watchResuming(w.ctx, w.conn.Bus, newWakeFilter(w.conn.Bus, environ, w.l.Session), w.l, w.display, includeOwn, stdout)))
+	return exitFail(stderr, cancelCause(w.ctx, watchResuming(w.ctx, w.conn.Bus, newWakeFilter(environ, w.l.Session), w.l, w.display, includeOwn, stdout)))
 }
 
 // watchResuming runs watchLoop from floor 0 and answers a session_lapsed
 // error with one resume: once per lapse, never twice in a row without a
 // successful Watch in between. It returns watchLoop's final error, read
 // through cancelCause.
-func watchResuming(ctx context.Context, s bus.Sessions, mf *memoryFilter, l located, display string, includeOwn bool, stdout io.Writer) error {
+func watchResuming(ctx context.Context, s bus.Sessions, mf *wakeFilter, l located, display string, includeOwn bool, stdout io.Writer) error {
 	var ok atomic.Bool
 	p := probe{Sessions: s, ok: &ok}
 	var floor int64

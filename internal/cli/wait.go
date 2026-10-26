@@ -12,7 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/agentview"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/profile"
@@ -30,9 +29,10 @@ type waitWake struct {
 // waitOnce arms Watch until a wake (nil), the deadline (errTimeout) or an
 // error. timeout 0 waits forever.
 //
-// mf drops memory channels from a wake (decision 20); a wake that held only
-// memories is not one: Watch is armed again with the floor at its Seq.
-func waitOnce(ctx context.Context, s bus.Sessions, mf *memoryFilter, session string, includeOwn bool, timeout time.Duration, stdout io.Writer) error {
+// mf drops every wake while the session is parked (decision 18); a nil mf
+// drops none. The server already leaves memory channels out of an agent's
+// Watch (decision 20), so a wake is what Watch returned.
+func waitOnce(ctx context.Context, s bus.Sessions, mf *wakeFilter, session string, includeOwn bool, timeout time.Duration, stdout io.Writer) error {
 	var floor int64
 	var deadline time.Time
 	if timeout > 0 {
@@ -53,9 +53,7 @@ func waitOnce(ctx context.Context, s bus.Sessions, mf *memoryFilter, session str
 			continue
 		}
 		floor = max(floor, r.Seq)
-		if r, _, err = mf.agentWake(ctx, r); err != nil {
-			return err
-		} else if !r.Woke {
+		if mf.drops() {
 			continue
 		}
 		if err := ctx.Err(); err != nil {
@@ -105,7 +103,7 @@ func RunWait(ctx context.Context, args []string, environ []string, stdin io.Read
 		return code
 	}
 	defer w.stop()
-	if err := waitResuming(w.ctx, w.conn.Bus, newWakeFilter(w.conn.Bus, environ, w.l.Session), w.l, includeOwn, timeout, stdout); err != nil {
+	if err := waitResuming(w.ctx, w.conn.Bus, newWakeFilter(environ, w.l.Session), w.l, includeOwn, timeout, stdout); err != nil {
 		return exitFail(stderr, cancelCause(w.ctx, err))
 	}
 	return 0
@@ -114,7 +112,7 @@ func RunWait(ctx context.Context, args []string, environ []string, stdin io.Read
 // waitResuming runs waitOnce under one deadline for the whole command (it runs
 // across a resume) and answers a session_lapsed error with one resume: once
 // per lapse, never twice in a row without a successful Watch in between.
-func waitResuming(ctx context.Context, s bus.Sessions, mf *memoryFilter, l located, includeOwn bool, timeout time.Duration, stdout io.Writer) error {
+func waitResuming(ctx context.Context, s bus.Sessions, mf *wakeFilter, l located, includeOwn bool, timeout time.Duration, stdout io.Writer) error {
 	var deadline time.Time
 	if timeout > 0 {
 		deadline = time.Now().Add(timeout)
@@ -147,26 +145,19 @@ func waitResuming(ctx context.Context, s bus.Sessions, mf *memoryFilter, l locat
 	}
 }
 
-// memoryFilter drops memory channels from the wakes of wait and watch
-// (decision 20). A nil filter passes every wake through.
-type memoryFilter struct {
-	m bus.Messaging
-	k *agentview.KindIndex
-	// parked, when set, is asked on every wake: true drops it (decision 18),
-	// so the caller advances its floor and re-arms silently.
+// wakeFilter drops the wakes of wait and watch while the session is parked
+// (decision 18). A nil filter passes every wake through.
+type wakeFilter struct {
+	// parked, when set, is asked on every wake: true drops it, so the caller
+	// advances its floor and re-arms silently.
 	parked func() bool
 }
 
-func newMemoryFilter(m bus.Messaging) *memoryFilter {
-	return &memoryFilter{m: m, k: agentview.NewKindIndex()}
-}
-
-// newWakeFilter is the filter of a running wait or watch: memory channels
-// are dropped and, while the session's state file says parked, every wake.
-// The file is read on each wake, so a park or unpark takes effect on the next
+// newWakeFilter is the filter of a running wait or watch. The session's state
+// file is read on each wake, so a park or unpark takes effect on the next
 // one; an unreadable file counts as not parked.
-func newWakeFilter(m bus.Messaging, environ []string, session string) *memoryFilter {
-	f := newMemoryFilter(m)
+func newWakeFilter(environ []string, session string) *wakeFilter {
+	f := &wakeFilter{}
 	if dataDir, err := profile.DataDir(environ); err == nil {
 		f.parked = func() bool {
 			sf, err := sessionstate.Read(dataDir, session)
@@ -176,13 +167,7 @@ func newWakeFilter(m bus.Messaging, environ []string, session string) *memoryFil
 	return f
 }
 
-// agentWake is agentview.KindIndex.AgentWake.
-func (f *memoryFilter) agentWake(ctx context.Context, r bus.WatchResult) (bus.WatchResult, bool, error) {
-	if f == nil {
-		return r, false, nil
-	}
-	if f.parked != nil && f.parked() {
-		return bus.WatchResult{}, true, nil
-	}
-	return f.k.AgentWake(ctx, f.m, r)
+// drops reports whether the wake just read is to be ignored.
+func (f *wakeFilter) drops() bool {
+	return f != nil && f.parked != nil && f.parked()
 }

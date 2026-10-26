@@ -126,17 +126,27 @@ func TestReceiveWithSessionDropsMemoryAndAcks(t *testing.T) {
 		}
 		return r
 	}
+	// The server, not this command, drops the memory (decision 20, access
+	// Deliver): the only message in the batch is the ordinary one.
 	if r := run(); len(r.Messages) != 0 || r.Batch != "" {
 		t.Fatalf("memory delivered or left unacked: %+v", r)
 	}
-	if r := run(); len(r.Messages) != 0 {
-		t.Fatalf("memory came back: %+v", r)
+	if _, err := sam.Send(ctx, bus.SendInput{Channel: "general", Content: "hi"}); err != nil {
+		t.Fatal(err)
 	}
-	// TODO(Task 4): the ack step above is vacuous now that the server drops
-	// the memory; restore it with a deliverable batch or move it.
-	// The server drops memory channels for an agent too (decision 20, access
-	// Deliver), so the Bus gives the agent none either; a human's delivery is
-	// TestAgentNotDeliveredMemory's.
+	sendMemory(t, sam)
+	r := run()
+	if len(r.Messages) != 1 || r.Messages[0].Channel != "general" || r.Batch == "" {
+		t.Fatalf("batch %+v, want the one ordinary message and a batch token", r)
+	}
+	// The ack step is real: the acknowledged batch is not redelivered.
+	if r2 := run("-ack", r.Batch); len(r2.Messages) != 0 {
+		t.Fatalf("acknowledged batch came back: %+v", r2)
+	}
+	if r3 := run(); len(r3.Messages) != 0 {
+		t.Fatalf("redelivery after the ack: %+v", r3)
+	}
+	// The same holds one layer down: the Bus gives the agent no memory.
 	sendMemory(t, sam)
 	pat := e.conn(t, "pat")
 	res, err := pat.Bus.Receive(ctx, bus.ReceiveInput{Session: sess.ID})
@@ -156,7 +166,7 @@ func TestWatchLoopIgnoresMemoryWakes(t *testing.T) {
 	var so syncBuf
 	done := make(chan int64, 1)
 	go func() {
-		f, _ := watchLoop(ctx, pat.Bus, newMemoryFilter(pat.Bus), sess.ID, "pat", 0, false, &so)
+		f, _ := watchLoop(ctx, pat.Bus, nil, sess.ID, "pat", 0, false, &so)
 		done <- f
 	}()
 	time.Sleep(200 * time.Millisecond)
@@ -178,7 +188,6 @@ func TestWatchLoopIgnoresMemoryWakes(t *testing.T) {
 
 // The server drops memory channels from an agent's wake, so the wake is
 // complete: wait carries the true count and watch prints it.
-// TODO(Task 4): the client filter is gone then; keep or move what this pins.
 func TestServerFilteredWakeIsComplete(t *testing.T) {
 	e, sess, sam := memoryEnv(t)
 	ctx := context.Background()
@@ -194,9 +203,8 @@ func TestServerFilteredWakeIsComplete(t *testing.T) {
 	if err := json.Unmarshal([]byte(so.String()), &raw); err != nil {
 		t.Fatal(err)
 	}
-	// The server no longer counts the memory for an agent, so the wake is
-	// complete and its count is true (it was omitted while a client filter
-	// removed channels from the wake).
+	// The server does not count the memory for an agent, and the client no
+	// longer filters, so the wake is complete and its count is true.
 	if raw["count"] != float64(1) || len(raw["channels"].([]any)) != 1 {
 		t.Fatalf("wait line %q, want channels [general] and count 1", so.String())
 	}
@@ -210,7 +218,7 @@ func TestServerFilteredWakeIsComplete(t *testing.T) {
 	var wo syncBuf
 	done := make(chan struct{})
 	go func() {
-		_, _ = watchLoop(wctx, pat.Bus, newMemoryFilter(pat.Bus), sess.ID, "pat", 0, false, &wo)
+		_, _ = watchLoop(wctx, pat.Bus, nil, sess.ID, "pat", 0, false, &wo)
 		close(done)
 	}()
 	time.Sleep(300 * time.Millisecond)

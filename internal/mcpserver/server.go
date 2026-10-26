@@ -12,7 +12,6 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ericfitz/agentbus2/internal/agentview"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/procs"
@@ -45,8 +44,6 @@ type server struct {
 	smu         sync.Mutex // guards files and havePrimary; held across register
 	files       map[string]sessionstate.File
 	havePrimary bool
-
-	kinds *agentview.KindIndex // decision 20: agents never receive memory channels
 }
 
 // NewServer builds the MCP server with every tool registered. The Conn is
@@ -55,7 +52,7 @@ type server struct {
 // `validation` (choice 11). The returned func closes the Conn and leaves
 // every state file in place; only close_session removes one (choice 10).
 func NewServer(ctx context.Context, o Options) (*mcp.Server, func() error, error) {
-	s := &server{o: o, ctx: ctx, log: o.Log, self: o.Self, tbl: o.Table, files: map[string]sessionstate.File{}, kinds: agentview.NewKindIndex()}
+	s := &server{o: o, ctx: ctx, log: o.Log, self: o.Self, tbl: o.Table, files: map[string]sessionstate.File{}}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
 	}
@@ -542,11 +539,6 @@ func (s *server) addTools(srv *mcp.Server) {
 					}
 					return map[string]any{"subscribed_tags": in.Tags}, nil
 				}
-				if mem, err := s.kinds.IsMemory(ctx, b, in.Channel); err != nil {
-					return nil, err
-				} else if mem {
-					return nil, validation("%s is a memory channel: agents do not subscribe to memories (decision 20); use search to find a memory and get_memory to read it", in.Channel)
-				}
 				if err := b.Subscribe(ctx, bus.SubscribeInput{Channel: in.Channel, From: in.From, IdempotencyKey: in.IdempotencyKey}); err != nil {
 					return nil, err
 				}
@@ -596,7 +588,7 @@ func (s *server) addTools(srv *mcp.Server) {
 			}
 			return result(withSession(ctx, s, in.Session, func(b bus.Bus, id string) (receiveOut, error) {
 				ri := bus.ReceiveInput{Session: id, Ack: in.Ack, Count: in.Count, Channels: in.Channels, IncludeOwn: in.IncludeOwn}
-				res, err := s.kinds.ReceiveAgent(ctx, b, ri)
+				res, err := b.Receive(ctx, ri)
 				if err != nil {
 					return receiveOut{}, err
 				}
@@ -612,13 +604,8 @@ func (s *server) addTools(srv *mcp.Server) {
 							break
 						}
 						floor = max(floor, w.Seq)
-						if w, _, err = s.kinds.AgentWake(ctx, b, w); err != nil {
-							return receiveOut{}, err
-						} else if !w.Woke {
-							continue // only memories: not a wake for an agent
-						}
 						ri.Ack = "" // the acknowledgment was taken by the first receive
-						again, err := s.kinds.ReceiveAgent(ctx, b, ri)
+						again, err := b.Receive(ctx, ri)
 						if err != nil {
 							return receiveOut{}, err
 						}
@@ -865,16 +852,6 @@ func (s *server) register(ctx context.Context, req *mcp.CallToolRequest, in regi
 		RejectedCursors: make([]rejectedOut, 0, len(sess.RejectedCursors)),
 	}
 	for _, p := range sess.Pending {
-		// Decision 20: the identity's subscriptions are shared, so a memory
-		// subscription made outside the agent paths is dropped here.
-		if mem, merr := s.kinds.IsMemory(ctx, conn.Bus, p.Channel); merr != nil {
-			s.log.Warn("classifying a pending channel failed", "channel", p.Channel, "err", merr)
-		} else if mem {
-			if uerr := conn.Bus.Unsubscribe(ctx, bus.UnsubscribeInput{Channel: p.Channel}); uerr != nil {
-				s.log.Warn("dropping a memory subscription failed", "channel", p.Channel, "err", uerr)
-			}
-			continue
-		}
 		out.Pending = append(out.Pending, pendingOut{Channel: p.Channel, Pending: p.Pending})
 	}
 	for _, r := range sess.RejectedCursors {
