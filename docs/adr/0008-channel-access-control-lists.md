@@ -112,7 +112,7 @@ Negative:
   refinement says so), and the implicit entries guarantee it can.
 - The Store must record each channel's creator durably, since the
   implicit creator entry is evaluated from it and not from the ACL rows.
-- An entry must name a registered identity, `everyone` or `admins`
+- An entry must name a registered identity, `everyone`, `admins` or `humans`
   (Decision 96), so an ACL cannot be prepared for a member that has not
   registered yet.
 - Channel creation can be closed to administrators by a server switch
@@ -266,3 +266,14 @@ inspects a channel name's prefix. The one synthetic prefix is the rail's own
 the `general/`, `memory/` and `tasks/` prefixes from a row, is not ported: rows
 show the full name. A channel whose ACL denies `read` is listed (Decision 94)
 and marked `(no access)`; the TUI does not subscribe to it or read its history.
+
+## The `humans` group (Eric, 2026-10-25)
+
+Eric decided that an ACL entry may also name `humans`, a third reserved group
+beside `everyone` and `admins`: it applies to every identity of kind human and
+to no agent, and it is refused as an identity name as the other two are. A
+`humans` row is evaluated in the union with the principal's own rows,
+`everyone` and, for an administrator, `admins`. It needs no schema change
+(`channel_acl.identity` has no CHECK). Humans and administrators are also
+visible to every scoped agent, so a scoped granter can name them in an ACL
+and as a task owner.

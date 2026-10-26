@@ -43,11 +43,14 @@ type PublicKey struct {
 	CreatedAt int64
 }
 
-// Special identities that ACL entries may name (Decision 80). They are
-// reserved as identity names (Gate 0 item 1, option A).
+// Special identities that ACL entries may name (Decision 80): the three
+// groups. everyone is any authenticated identity, admins the server
+// administrators and humans every human (Eric 2026-10-25). They are reserved
+// as identity names (Gate 0 item 1, option A).
 const (
 	Everyone = "everyone"
 	Admins   = "admins"
+	Humans   = "humans"
 )
 
 // SlackBridge is the reserved identity the Slack bridge acts as. Its row
@@ -57,7 +60,7 @@ const SlackBridge = "slack-bridge"
 
 // ReservedIdentity reports whether name is one of the reserved identity names.
 func ReservedIdentity(name string) bool {
-	return name == Everyone || name == Admins || name == SlackBridge
+	return name == Everyone || name == Admins || name == Humans || name == SlackBridge
 }
 
 type Identities interface {

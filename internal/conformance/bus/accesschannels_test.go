@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/channels"
 	"github.com/ericfitz/agentbus2/internal/dbtest"
 	ab2store "github.com/ericfitz/agentbus2/internal/store"
@@ -54,6 +55,7 @@ func TestScopeGateChannels(t *testing.T) {
 		coder := h.scopedIdentity("job1-coder", "job1")
 		pat := h.localAs("pat")
 		root := h.localAdmin("root")
+		h.human("eric@corp.example")
 		if err := (channels.Service{Core: h.core}).EnsureGeneral(ctx); err != nil {
 			t.Fatal(err)
 		}
@@ -161,6 +163,33 @@ func TestScopeGateChannels(t *testing.T) {
 		codeOf(t, err, ab2bus.CodeNotFound)
 		if got, want := msgOf(err), `identity "pat" is not registered`; got != want {
 			t.Errorf("owner outside the scope: %q, want %q", got, want)
+		}
+		// A human and an administrator are visible to every agent (Eric 2026-10-25).
+		for _, who := range []string{"eric@corp.example", "root"} {
+			tk, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "jobs", Subject: "owned by " + who})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := coder.Update(ctx, ab2bus.TaskPatch{ID: tk.ID, Owner: &who}); err != nil {
+				t.Errorf("owner %s for a scoped caller: %v", who, err)
+			}
+		}
+
+		// The Identities leg of the set form: the scope, every human, every administrator, never pat.
+		var seen []string
+		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+			p, err := access.Resolve(ctx, tx, "job1-coder")
+			if err != nil {
+				return err
+			}
+			ids, err := access.Checker{}.Identities(ctx, tx, p)
+			for _, id := range ids {
+				seen = append(seen, id.Name)
+			}
+			return err
+		})
+		if want := []string{"eric@corp.example", "job1-coder", "root"}; !reflect.DeepEqual(seen, want) {
+			t.Errorf("scoped Identities = %v, want %v", seen, want)
 		}
 
 		// Creation: an existing out-of-scope name is conflict until Task 11
@@ -466,10 +495,10 @@ func TestUnsubscribeNeedsNoRow(t *testing.T) {
 	})
 }
 
-// TestScopedGranterCannotNameHumans pins the current behavior: humans are
-// unscoped, so a scoped granter cannot see them (Decision 96 text) while an
-// administrator can name them.
-func TestScopedGranterCannotNameHumans(t *testing.T) {
+// TestScopedGranterNamesHumansAndAdmins: humans and administrators are visible
+// to a scoped granter (Eric 2026-10-25), so it may name them; an unscoped agent
+// stays invisible and keeps the Decision 96 text.
+func TestScopedGranterNamesHumansAndAdmins(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
 		ctx := context.Background()
@@ -477,25 +506,35 @@ func TestScopedGranterCannotNameHumans(t *testing.T) {
 		coder := h.scopedIdentity("job1-coder", "job1")
 		h.human("eric@corp.example")
 		root := h.localAdmin("root")
+		h.localAs("pat")
 		if _, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "w"}); err != nil {
 			t.Fatal(err)
 		}
-		acl := []ab2bus.ACLEntry{{Identity: "eric@corp.example", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}
-		err := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: acl})
+		rd := []ab2bus.Permission{ab2bus.PermRead}
+		acl := []ab2bus.ACLEntry{
+			{Identity: "eric@corp.example", Permissions: rd},
+			{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite, ab2bus.PermAdmin}}, // keep the granter's admin
+			{Identity: "root", Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite}},
+		}
+		if err := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: acl}); err != nil {
+			t.Fatalf("scoped granter naming a human and an administrator: %v", err)
+		}
+		if got, err := root.ACL(ctx, "w"); err != nil || !reflect.DeepEqual(got, acl) {
+			t.Errorf("ACL = %+v, %v; want %+v", got, err, acl)
+		}
+		bad := []ab2bus.ACLEntry{{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermAdmin}}, {Identity: "pat", Permissions: rd}}
+		err := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: bad})
 		codeOf(t, err, ab2bus.CodeValidation)
-		if got, want := msgOf(err), `ACL identity "eric@corp.example" is not a registered identity`; got != want {
-			t.Errorf("scoped granter naming a human: %q, want %q", got, want)
+		if got, want := msgOf(err), `ACL identity "pat" is not a registered identity`; got != want {
+			t.Errorf("scoped granter naming an unscoped agent: %q, want %q", got, want)
 		}
 		// A malformed name keeps the Store's own format refusal, for scoped and unscoped alike.
-		bad := []ab2bus.ACLEntry{{Identity: "bad/name", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}
-		errScoped := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: bad})
-		errAdmin := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: bad})
+		fmtBad := []ab2bus.ACLEntry{{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermAdmin}}, {Identity: "bad/name", Permissions: rd}}
+		errScoped := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: fmtBad})
+		errAdmin := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: fmtBad})
 		codeOf(t, errScoped, ab2bus.CodeValidation)
 		if msgOf(errScoped) != msgOf(errAdmin) || strings.Contains(msgOf(errScoped), "is not a registered identity") {
 			t.Errorf("malformed name: scoped %q, admin %q; want the Store's format text for both", msgOf(errScoped), msgOf(errAdmin))
-		}
-		if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: acl}); err != nil {
-			t.Errorf("administrator naming a human: %v", err)
 		}
 	})
 }

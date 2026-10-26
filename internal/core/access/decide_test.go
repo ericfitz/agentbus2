@@ -145,6 +145,45 @@ func TestDecideSessionAndIdentity(t *testing.T) {
 	}
 }
 
+func TestHumansAndAdminsVisibleAndHumansGroup(t *testing.T) {
+	ord := store.KindOrdinary
+	// Identity/See: an unscoped principal sees everyone; a scoped agent sees its
+	// scope, every human and every administrator, and not an out-of-scope agent.
+	humanID := store.Identity{Name: "eric@corp.example", Kind: store.IdentityHuman}
+	adminID := store.Identity{Name: "root", Kind: store.IdentityAgent, Admin: true}
+	agentID := store.Identity{Name: "pat", Kind: store.IdentityAgent}
+	for _, id := range []store.Identity{humanID, adminID, agentID} {
+		if !decide(pat, identityFacts{id}, See).Allowed {
+			t.Errorf("unscoped principal cannot see %s", id.Name)
+		}
+	}
+	for id, want := range map[string]bool{humanID.Name: true, adminID.Name: true, agentID.Name: false} {
+		var f store.Identity
+		for _, c := range []store.Identity{humanID, adminID, agentID} {
+			if c.Name == id {
+				f = c
+			}
+		}
+		if got := decide(coder, identityFacts{f}, See).Allowed; got != want {
+			t.Errorf("scoped See %s = %v, want %v", id, got, want)
+		}
+	}
+	// a humans row grants Read to a human and not to an agent
+	if !decide(hal, chFacts("", ord, entry(store.Humans, r)), Read).Allowed {
+		t.Error("humans [read] did not grant Read to a human")
+	}
+	if decide(pat, chFacts("", ord, entry(store.Humans, r)), Read).Allowed {
+		t.Error("humans [read] granted Read to an agent")
+	}
+	if decide(root, chFacts("", ord, entry(store.Humans, r)), Read).Allowed {
+		t.Error("humans [read] granted Read to an administrator agent")
+	}
+	// humans [write] makes Post allowed for a human with no row of its own
+	if !decide(hal, chFacts("", ord, entry(store.Humans, w)), Post).Allowed {
+		t.Error("humans [write] did not allow Post for a human")
+	}
+}
+
 func TestScopeGate(t *testing.T) {
 	ord := store.KindOrdinary
 	rows := entry(store.Everyone, rw)

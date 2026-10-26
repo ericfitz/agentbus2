@@ -51,7 +51,7 @@ func TestResolve(t *testing.T) {
 		s := openStore(t, e)
 		seed(t, s)
 		mustRead(t, s, func(ctx context.Context, tx store.Tx) error {
-			for _, bad := range []string{"", store.Everyone, store.Admins, store.SlackBridge, "ghost"} {
+			for _, bad := range []string{"", store.Everyone, store.Admins, store.Humans, store.SlackBridge, "ghost"} {
 				_, err := access.Resolve(ctx, tx, bad)
 				var be *bus.Error
 				if !errors.As(err, &be) || be.Code != bus.CodeNotRegistered || be.Retryable || be.Message != `"`+bad+`" is not a registered identity` {
@@ -160,7 +160,7 @@ func TestChannelsAgreesWithCheck(t *testing.T) {
 		seedVal := rand.Uint64()
 		t.Logf("seed %d", seedVal)
 		rng := rand.New(rand.NewPCG(seedVal, 1))
-		names := []string{"pat", "kim", halName, "job1-coder", store.Everyone, store.Admins}
+		names := []string{"pat", "kim", halName, "job1-coder", store.Everyone, store.Admins, store.Humans}
 		creators := []string{"", "pat", "kim"}
 		scopes := []string{"", "job1"}
 		kinds := []store.Kind{store.KindOrdinary, store.KindMemory, store.KindTasks}
@@ -271,7 +271,8 @@ func TestIdentitiesAgreesWithCheck(t *testing.T) {
 				if !reflect.DeepEqual(names, want) {
 					t.Errorf("%s: Identities = %v, Check says %v", who, names, want)
 				}
-				if who == "job1-coder" && !reflect.DeepEqual(names, []string{"job1-coder", "job1-tester"}) {
+				// a scoped agent sees its scope, every human and every administrator, not pat or kim
+				if who == "job1-coder" && !reflect.DeepEqual(names, []string{hal2Name, halName, "job1-coder", "job1-tester", "root"}) {
 					t.Errorf("scoped listing = %v", names)
 				}
 				if who == "pat" && len(names) != len(all) {
@@ -294,8 +295,9 @@ func TestHolders(t *testing.T) {
 			{Identity: store.Everyone, Permissions: rd},
 		})
 		open := mkChannel(t, s, "open", store.KindOrdinary, "", "", []store.ACLEntry{{Identity: store.Everyone, Permissions: w}})
+		group := mkChannel(t, s, "group", store.KindOrdinary, "", "", []store.ACLEntry{{Identity: store.Humans, Permissions: w}})
 		mustRead(t, s, func(ctx context.Context, tx store.Tx) error {
-			for _, c := range []store.Channel{ch, open} {
+			for _, c := range []store.Channel{ch, open, group} {
 				ids, _ := tx.ListIdentities(ctx)
 				var want []string
 				for _, id := range ids {
@@ -323,6 +325,10 @@ func TestHolders(t *testing.T) {
 				}
 				if c.ID == ch.ID && !reflect.DeepEqual(names, []string{halName}) {
 					t.Errorf("bridged holders = %v, want only %s", names, halName)
+				}
+				// a humans [write] row makes every human a Post holder, and no agent
+				if c.ID == group.ID && !reflect.DeepEqual(names, []string{hal2Name, halName}) {
+					t.Errorf("humans-group holders = %v, want both humans", names)
 				}
 			}
 			return nil

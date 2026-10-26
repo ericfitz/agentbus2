@@ -85,8 +85,8 @@ Rules that matter:
   `others`; an unregistered name is refused) plus a non-empty list of
   `read`, `write` and `admin`. Each permission is separate: `write` does not
   imply `read`, and `admin` (managing the ACL, rename, delete) grants neither.
-- The special names `everyone` (any authenticated identity) and `admins`
-  (server administrators) may appear in an entry.
+- The special names `everyone` (any authenticated identity), `admins`
+  (server administrators) and `humans` (every human) may appear in an entry.
 - The creator and the server administrators always hold `admin` on the
   channel, whatever the entries say. Only `read` keeps others out of the
   content, and the ACL you pass is stored exactly as given. Administrators

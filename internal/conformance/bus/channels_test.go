@@ -10,6 +10,7 @@ import (
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/channels"
+	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/dbtest"
 	ab2store "github.com/ericfitz/agentbus2/internal/store"
 )
@@ -414,5 +415,54 @@ func TestChannelEnsureGeneralConcurrent(t *testing.T) {
 			}
 			return nil
 		})
+	})
+}
+
+// TestHumansGroup: a humans row applies to every human and to no agent, is
+// accepted by the Store's registry check, and cannot be registered as a name
+// (Eric 2026-10-25).
+func TestHumansGroup(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		root := h.localAdmin("root")
+		pat := h.localAs("pat")
+		kim := h.localAs("kim")
+		hal := h.human("hal@corp.example")
+		if _, err := root.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "c"}); err != nil {
+			t.Fatal(err)
+		}
+		acl := []ab2bus.ACLEntry{
+			{Identity: "humans", Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite}},
+			{Identity: "admins", Permissions: []ab2bus.Permission{ab2bus.PermAdmin}},
+		}
+		if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "c", Entries: acl}); err != nil {
+			t.Fatalf("SetACL naming humans: %v", err)
+		}
+		if _, err := hal.Send(ctx, ab2bus.SendInput{Channel: "c", Content: "hi"}); err != nil {
+			t.Fatalf("human send through the humans row: %v", err)
+		}
+		if r, err := hal.History(ctx, ab2bus.HistoryInput{Channel: "c"}); err != nil || len(r) != 1 {
+			t.Fatalf("human history = %+v, %v", r, err)
+		}
+		_, err := kim.History(ctx, ab2bus.HistoryInput{Channel: "c"})
+		codeOf(t, err, ab2bus.CodeForbidden)
+		_, err = kim.Send(ctx, ab2bus.SendInput{Channel: "c", Content: "x"})
+		codeOf(t, err, ab2bus.CodeForbidden)
+
+		// CreateChannel accepts the group in its ACL.
+		if _, err := pat.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "d", ACL: []ab2bus.ACLEntry{
+			{Identity: "humans", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}}); err != nil {
+			t.Fatalf("CreateChannel with a humans row: %v", err)
+		}
+
+		// The name is reserved as everyone is.
+		svc := identities.Service{Core: h.core}
+		if _, err := svc.Register(ctx, identities.ModeOpen, identities.RegisterInput{Identity: "humans", Key: idKey(t)}); err == nil {
+			t.Error("Register of the name humans succeeded")
+		}
+		if _, err := svc.CreateIdentity(ctx, "humans"); err == nil {
+			t.Error("CreateIdentity of the name humans succeeded")
+		}
 	})
 }

@@ -7,7 +7,8 @@
 // SchemaVersion reads the schema version outside a transaction and is the
 // reachability ping the health document uses.
 // The Store serves facts and holds no access rule: the rule over the ACL rows
-// (ACLRowsFor) is internal/core/access.
+// (ACLRowsFor) is internal/core/access. The reserved ACL group names are
+// everyone, admins and humans (Eric 2026-10-25).
 // The one implementation is internal/store/sqlstore, driven by the engines in
 // internal/store/sqlite and internal/store/postgres.
 package store

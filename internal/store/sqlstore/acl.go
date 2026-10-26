@@ -21,7 +21,7 @@ type aclRow struct {
 }
 
 // validateACL checks every entry with store.ValidateEntry, then the Decision
-// 96 registry rule (everyone and admins are exempt), before anything is
+// 96 registry rule (everyone, admins and humans are exempt), before anything is
 // written.
 func (t *tx) validateACL(ctx context.Context, entries []store.ACLEntry) error {
 	for _, e := range entries {
@@ -30,7 +30,7 @@ func (t *tx) validateACL(ctx context.Context, entries []store.ACLEntry) error {
 		}
 	}
 	for _, e := range entries {
-		if e.Identity == store.Everyone || e.Identity == store.Admins {
+		if e.Identity == store.Everyone || e.Identity == store.Admins || e.Identity == store.Humans {
 			continue
 		}
 		ok, err := t.identityRegistered(ctx, e.Identity)

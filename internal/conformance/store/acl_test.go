@@ -347,6 +347,7 @@ func TestACLRowsFor(t *testing.T) {
 		})
 		c3 := mustChannel(t, s, "c3", ab2store.KindOrdinary, "", []ab2store.ACLEntry{
 			{Identity: "admins", Permissions: []ab2store.Permission{"admin"}},
+			{Identity: "humans", Permissions: []ab2store.Permission{"write"}},
 		})
 		rows := func(names ...string) []ab2store.ACLRow {
 			var got []ab2store.ACLRow
@@ -371,6 +372,9 @@ func TestACLRowsFor(t *testing.T) {
 		// back for whoever asks for it by name.
 		if got := rows("admins"); !reflect.DeepEqual(got, []ab2store.ACLRow{{ChannelID: c3.ID, Identity: "admins", Admin: true}}) {
 			t.Errorf("rows(admins) = %+v", got)
+		}
+		if got := rows("humans"); !reflect.DeepEqual(got, []ab2store.ACLRow{{ChannelID: c3.ID, Identity: "humans", Write: true}}) {
+			t.Errorf("rows(humans) = %+v", got)
 		}
 		for _, bad := range []string{"", "bad\x00name", "ghost"} {
 			if got := rows(bad); len(got) != 0 {

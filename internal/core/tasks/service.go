@@ -81,10 +81,10 @@ func (s Service) taskChannelOf(ctx context.Context, tx store.Tx, pr access.Princ
 }
 
 // ownerKnown is rule 6 (Decision 81): an owner must be a registered
-// identity. The reserved names everyone and admins are not.
+// identity. The reserved names everyone, admins and humans are not.
 func (s Service) ownerKnown(ctx context.Context, tx store.Tx, pr access.Principal) func(string) (bool, error) {
 	return func(owner string) (bool, error) {
-		if owner == "" || owner == store.Everyone || owner == store.Admins {
+		if owner == "" || owner == store.Everyone || owner == store.Admins || owner == store.Humans {
 			return false, nil
 		}
 		d, err := s.Access.Check(ctx, tx, pr, access.Identity{Name: owner}, access.See)

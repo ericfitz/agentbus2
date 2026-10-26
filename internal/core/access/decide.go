@@ -75,7 +75,9 @@ func inScope(p Principal, f facts) bool {
 	case channelFacts:
 		return f.Channel.Scope == p.Scope
 	case identityFacts:
-		return f.Scope == p.Scope
+		// Every human and every administrator is visible to every agent
+		// (Eric 2026-10-25, spec 4.5); any other identity only within the scope.
+		return f.Kind == store.IdentityHuman || f.Admin || f.Scope == p.Scope
 	case sessionFacts:
 		return true
 	case serverFacts:
@@ -158,14 +160,16 @@ func decideServer(p Principal, f serverFacts, a Action) Decision {
 	return undefined(f, a)
 }
 
-// permsOf is the union of the stored rows for p.Name, everyone and, for an
-// administrator, admins (Decision 80). The implicit admins entry is applied by
+// permsOf is the union of the stored rows for p.Name, everyone, for an
+// administrator admins and for a human humans (Decision 80, Eric 2026-10-25). The implicit admins entry is applied by
 // the Admin action, not here.
 func permsOf(p Principal, rows []store.ACLEntry) store.Permissions {
 	var u store.Permissions
 	admin := actsAsAdmin(p)
+	human := p.Kind == store.IdentityHuman
 	for _, e := range rows {
-		if e.Identity != p.Name && e.Identity != store.Everyone && (!admin || e.Identity != store.Admins) {
+		if e.Identity != p.Name && e.Identity != store.Everyone &&
+			(!admin || e.Identity != store.Admins) && (!human || e.Identity != store.Humans) {
 			continue
 		}
 		var ep store.Permissions

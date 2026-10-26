@@ -141,6 +141,9 @@ func (c Checker) Channels(ctx context.Context, tx store.Tx, p Principal, a Actio
 	if actsAsAdmin(p) {
 		names = append(names, store.Admins)
 	}
+	if p.Kind == store.IdentityHuman {
+		names = append(names, store.Humans)
+	}
 	rows, err := tx.ACLRowsFor(ctx, names...)
 	if err != nil {
 		return nil, fromStore(err)
