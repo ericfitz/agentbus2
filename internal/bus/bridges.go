@@ -1,8 +1,8 @@
 package bus
 
-// BridgeNotConfigured is the fixed text of the forbidden error every bridge
-// operation answers when no Slack bridge is wired: local mode, or a server
-// started without one.
+// BridgeNotConfigured is the fixed text of the unavailable error (not
+// retryable) every bridge operation answers when no Slack bridge is wired:
+// local mode, or a server started without one.
 const BridgeNotConfigured = "the Slack bridge is not configured"
 
 // BridgeState is the lifecycle state of a bridge (Slack bridge spec 6.1a).

@@ -37,7 +37,7 @@ Each of these is Eric's decision.
 ## Claude's calls (ratified by Eric, 2026-10-23)
 
 - Slack credentials are token files named by `slack_app_token_file` and `slack_bot_token_file`, so the values never sit in the process environment. `slack_max_message_chars` defaults to 3000 (longer bodies are cut with a note).
-- With no Slack settings the bridge is off and bridge calls are `forbidden` "the Slack bridge is not configured"; `unavailable` stays the retryable store failure.
+- With no Slack settings the bridge is off and bridge calls are `unavailable`, not retryable, "the Slack bridge is not configured" (Eric 2026-10-25; it was `forbidden`); `unavailable` stays the retryable store failure.
 - One replica runs the bridge under the `slack-bridge` Store lock and acks each Socket Mode envelope before processing; processing is idempotent through the message map.
 - The bridge reads each bridged channel as the reserved identity `slack-bridge` with its own acked mark; the name is reserved like `everyone` and `admins`, and the bridge adds `{slack-bridge, [read]}` to the channel's ACL.
 - A bridge row in state `creating` is written before the Slack channel exists, so a retry resumes it; `already_in_channel` on invite is success. The Slack name is lowercased, restricted to `a-z0-9-_` and cut to 80 characters; `name_taken` is `conflict` with no automatic suffix.

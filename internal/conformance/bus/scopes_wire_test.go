@@ -2,6 +2,7 @@ package bus
 
 import (
 	"context"
+	"errors"
 	"reflect"
 	"slices"
 	"strings"
@@ -163,16 +164,18 @@ func TestChannelScopeBus(t *testing.T) {
 }
 
 // With no Slack bridge wired (local mode, or a server without Options.Bridges)
-// every bridge call is forbidden with the fixed text.
-func TestBridgesUnconfiguredForbidden(t *testing.T) {
+// every bridge call is unavailable and not retryable, with the fixed text
+// (Eric 2026-10-25).
+func TestBridgesNotConfigured(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		ctx := context.Background()
 		h := newHarness(t, e, harnessOptions{})
 		root := h.admin("root").(ab2bus.Admin)
 		check := func(name string, err error) {
 			t.Helper()
-			if ab2bus.CodeOf(err) != ab2bus.CodeForbidden || msgOf(err) != ab2bus.BridgeNotConfigured {
-				t.Errorf("%s: err = %v, want forbidden %q", name, err, ab2bus.BridgeNotConfigured)
+			var be *ab2bus.Error
+			if !errors.As(err, &be) || be.Code != ab2bus.CodeUnavailable || be.Message != ab2bus.BridgeNotConfigured || be.Retryable {
+				t.Errorf("%s: err = %v, want unavailable, retryable false, %q", name, err, ab2bus.BridgeNotConfigured)
 			}
 		}
 		_, err := root.CreateBridge(ctx, ab2bus.CreateBridgeInput{Channel: "c"})
@@ -182,5 +185,19 @@ func TestBridgesUnconfiguredForbidden(t *testing.T) {
 		_, err = root.GetBridge(ctx, "c")
 		check("GetBridge", err)
 		check("RemoveBridge", root.RemoveBridge(ctx, ab2bus.RemoveBridgeInput{Channel: "c"}))
+	})
+}
+
+// TestBridgesNotConfiguredNotRetryable: under AGENTBUS2_BUS_TRANSPORT=inproc
+// the retryable flag survives the problem+json round trip as false, so no
+// client retries on the unavailable code alone.
+func TestBridgesNotConfiguredNotRetryable(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		_, err := h.admin("root").(ab2bus.Admin).ListBridges(context.Background())
+		var be *ab2bus.Error
+		if !errors.As(err, &be) || be.Retryable || be.Code != ab2bus.CodeUnavailable {
+			t.Fatalf("err = %#v, want unavailable with Retryable false", err)
+		}
 	})
 }

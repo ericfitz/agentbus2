@@ -531,7 +531,11 @@ func TestSlackBridgeInbound(t *testing.T) {
 			f.want(f.fake.Say(f.sl, "U4", "read only", ""), "dropped")
 		})
 
-		t.Run("everyone-write-is-not-explicit", func(t *testing.T) {
+		// A stored everyone write row cannot exist on a bridged channel through
+		// the API (CheckBridgeACL refuses it at create and on every ACL change);
+		// written straight to the Store, Access.Post counts it like any other
+		// write holder, since the trust check no longer scans stored rows.
+		t.Run("everyone-write-reaches-post-through-access", func(t *testing.T) {
 			f := newInFix(t, e)
 			f.h.tx(func(ctx context.Context, tx ab2store.Tx) error {
 				acl, err := tx.ACL(ctx, f.ch.ID)
@@ -540,7 +544,7 @@ func TestSlackBridgeInbound(t *testing.T) {
 				}
 				return tx.SetACL(ctx, f.ch.ID, append(acl, slEntry(ab2store.Everyone, ab2store.PermRead, ab2store.PermWrite)))
 			})
-			f.want(f.fake.Say(f.sl, "U4", "via everyone", ""), "dropped")
+			f.want(f.fake.Say(f.sl, "U4", "via everyone", ""), "sent")
 		})
 
 		t.Run("email-moved-to-other-account", func(t *testing.T) {
@@ -1042,6 +1046,46 @@ func TestSlackBridgeCatchUp(t *testing.T) {
 			}
 			if !strings.Contains(f.logs.String(), "skipped thread roots") {
 				t.Error("the skipped roots were not logged")
+			}
+		})
+	})
+}
+
+// TestTrustThroughAccess: the inbound trust check asks access.Checker for
+// Post (spec 4.7): additive rows union, and an administrator's implicit right
+// is admin, not write (Eric 2026-10-25).
+func TestTrustThroughAccess(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		t.Run("two-additive-rows-post", func(t *testing.T) {
+			f := newInFix(t, e)
+			f.h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+				acl, err := tx.ACL(ctx, f.ch.ID)
+				if err != nil {
+					return err
+				}
+				return tx.SetACL(ctx, f.ch.ID, append(acl, slEntry(siBob, ab2store.PermRead), slEntry(siBob, ab2store.PermWrite)))
+			})
+			f.want(f.fake.Say(f.sl, "U4", "hello", ""), "sent")
+			if got := f.human(); len(got) != 1 || got[0].Sender != siBob {
+				t.Fatalf("messages = %+v", got)
+			}
+		})
+		t.Run("administrator-without-write-row-dropped", func(t *testing.T) {
+			f := newInFix(t, e)
+			f.h.tx(func(ctx context.Context, tx ab2store.Tx) error { return tx.SetAdmin(ctx, siBob, true) })
+			f.want(f.fake.Say(f.sl, "U4", "hello", ""), "dropped")
+			if !strings.Contains(f.logs.String(), `reason="no explicit write permission"`) {
+				t.Errorf("log lacks the no-write reason:\n%s", f.logs.String())
+			}
+			if len(f.human()) != 0 {
+				t.Error("a dropped message reached the bus")
+			}
+		})
+		t.Run("no-row-reason", func(t *testing.T) {
+			f := newInFix(t, e)
+			f.want(f.fake.Say(f.sl, "U4", "hello", ""), "dropped")
+			if !strings.Contains(f.logs.String(), `reason="no explicit write permission"`) {
+				t.Errorf("log lacks the no-write reason:\n%s", f.logs.String())
 			}
 		})
 	})

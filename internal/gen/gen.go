@@ -1424,13 +1424,13 @@ type ClientInterface interface {
 	// CreateBridgeWithBody performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+	// Bridges a channel to a new private Slack channel. Unavailable (not retryable) with the text "the Slack bridge is not configured" when the server has no Slack bridge.
 	CreateBridgeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// CreateBridge performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request.
 	// Takes a body of the `application/json` content type.
 	//
-	// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+	// Bridges a channel to a new private Slack channel. Unavailable (not retryable) with the text "the Slack bridge is not configured" when the server has no Slack bridge.
 	CreateBridge(ctx context.Context, body CreateBridgeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// RemoveBridge performs a DELETE /v1/admin/bridges/{channel} (the `RemoveBridge` operationId) request.
@@ -1736,7 +1736,7 @@ func (c *Client) ListBridges(ctx context.Context, reqEditors ...RequestEditorFn)
 // CreateBridgeWithBody performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request,
 // with any type of body and a specified content type.
 //
-// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+// Bridges a channel to a new private Slack channel. Unavailable (not retryable) with the text "the Slack bridge is not configured" when the server has no Slack bridge.
 func (c *Client) CreateBridgeWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateBridgeRequestWithBody(c.Server, contentType, body)
 	if err != nil {
@@ -1752,7 +1752,7 @@ func (c *Client) CreateBridgeWithBody(ctx context.Context, contentType string, b
 // CreateBridge performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request.
 // Takes a body of the `application/json` content type.
 //
-// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+// Bridges a channel to a new private Slack channel. Unavailable (not retryable) with the text "the Slack bridge is not configured" when the server has no Slack bridge.
 func (c *Client) CreateBridge(ctx context.Context, body CreateBridgeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewCreateBridgeRequest(c.Server, body)
 	if err != nil {
@@ -5265,7 +5265,7 @@ type ClientWithResponsesInterface interface {
 	// CreateBridgeWithBodyWithResponse performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request,
 	// with any type of body and a specified content type.
 	//
-	// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+	// Bridges a channel to a new private Slack channel. Unavailable (not retryable) with the text "the Slack bridge is not configured" when the server has no Slack bridge.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	CreateBridgeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateBridgeResponse, error)
@@ -5273,7 +5273,7 @@ type ClientWithResponsesInterface interface {
 	// CreateBridgeWithResponse performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
-	// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+	// Bridges a channel to a new private Slack channel. Unavailable (not retryable) with the text "the Slack bridge is not configured" when the server has no Slack bridge.
 	CreateBridgeWithResponse(ctx context.Context, body CreateBridgeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateBridgeResponse, error)
 
 	// RemoveBridgeWithResponse performs a DELETE /v1/admin/bridges/{channel} (the `RemoveBridge` operationId) request.
@@ -8112,7 +8112,7 @@ func (c *ClientWithResponses) ListBridgesWithResponse(ctx context.Context, reqEd
 // CreateBridgeWithBodyWithResponse performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request,
 // with any type of body and a specified content type.
 //
-// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+// Bridges a channel to a new private Slack channel. Unavailable (not retryable) with the text "the Slack bridge is not configured" when the server has no Slack bridge.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) CreateBridgeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*CreateBridgeResponse, error) {
@@ -8126,7 +8126,7 @@ func (c *ClientWithResponses) CreateBridgeWithBodyWithResponse(ctx context.Conte
 // CreateBridgeWithResponse performs a POST /v1/admin/bridges (the `CreateBridge` operationId) request.
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
-// Bridges a channel to a new private Slack channel. Forbidden with the text "the Slack bridge is not configured" when the server has no Slack bridge.
+// Bridges a channel to a new private Slack channel. Unavailable (not retryable) with the text "the Slack bridge is not configured" when the server has no Slack bridge.
 func (c *ClientWithResponses) CreateBridgeWithResponse(ctx context.Context, body CreateBridgeJSONRequestBody, reqEditors ...RequestEditorFn) (*CreateBridgeResponse, error) {
 	rsp, err := c.CreateBridge(ctx, body, reqEditors...)
 	if err != nil {

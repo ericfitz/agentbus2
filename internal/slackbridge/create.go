@@ -10,6 +10,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/core/scopes"
 	"github.com/ericfitz/agentbus2/internal/slackapi"
@@ -228,7 +229,7 @@ func (s *Service) reserveTx(ctx context.Context, tx store.Tx, in bus.CreateBridg
 	if err := scopes.CheckBridgeACL(withBridgeRead(acl)); err != nil {
 		return err
 	}
-	if r.humans, err = writeHumans(ctx, tx, acl); err != nil {
+	if r.humans, err = s.writeHumans(ctx, tx, ch.ID); err != nil {
 		return err
 	}
 	if r.resumed {
@@ -247,26 +248,18 @@ func (s *Service) reserveTx(ctx context.Context, tx store.Tx, in bus.CreateBridg
 	return err
 }
 
-// writeHumans lists the humans holding an explicit write entry, in ACL order,
-// each with its email binding ("" when it has none).
-func writeHumans(ctx context.Context, tx store.Tx, acl []store.ACLEntry) ([]human, error) {
+// writeHumans lists the humans who may post to the channel (Access.Holders
+// for Post), in identity order, each with its email binding ("" when it has
+// none).
+func (s *Service) writeHumans(ctx context.Context, tx store.Tx, channelID int64) ([]human, error) {
+	holders, err := s.core.Access.Holders(ctx, tx, access.Channel{ID: channelID}, access.Post)
+	if err != nil {
+		return nil, err
+	}
 	var out []human
-	for _, e := range acl {
-		if !slices.Contains(e.Permissions, store.PermWrite) || store.ReservedIdentity(e.Identity) {
-			continue
-		}
-		id, err := tx.Identity(ctx, e.Identity)
-		if errors.Is(err, store.ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		if id.Kind != store.IdentityHuman {
-			continue
-		}
-		h := human{identity: e.Identity}
-		switch hb, err := tx.HumanBinding(ctx, e.Identity); {
+	for _, p := range holders {
+		h := human{identity: p.Name}
+		switch hb, err := tx.HumanBinding(ctx, p.Name); {
 		case err == nil:
 			if hb.ClaimType == store.ClaimEmail {
 				h.email = hb.Value

@@ -18,6 +18,9 @@ func TestCheckBridgeACL(t *testing.T) {
 	}{
 		{"everyone read", []store.ACLEntry{{Identity: store.Everyone, Permissions: rd}, {Identity: store.SlackBridge, Permissions: rd}}, "named identities"},
 		{"admins write", []store.ACLEntry{{Identity: store.Admins, Permissions: []store.Permission{store.PermWrite}}, {Identity: store.SlackBridge, Permissions: rd}}, "named identities"},
+		{"humans read", []store.ACLEntry{{Identity: store.Humans, Permissions: rd}, {Identity: store.SlackBridge, Permissions: rd}}, "named identities"},
+		{"humans write", []store.ACLEntry{{Identity: store.Humans, Permissions: []store.Permission{store.PermWrite}}, {Identity: store.SlackBridge, Permissions: rd}}, "named identities"},
+		{"humans admin only", []store.ACLEntry{{Identity: store.Humans, Permissions: []store.Permission{store.PermAdmin}}, {Identity: store.SlackBridge, Permissions: rd}}, ""},
 		{"admins admin only", []store.ACLEntry{{Identity: store.Admins, Permissions: []store.Permission{store.PermAdmin}}, {Identity: store.SlackBridge, Permissions: rd}}, ""},
 		{"named plus bridge", []store.ACLEntry{{Identity: "pat", Permissions: rw}, {Identity: store.SlackBridge, Permissions: rw}}, ""},
 		{"no slack-bridge entry", []store.ACLEntry{{Identity: "pat", Permissions: rw}}, "pinned"},

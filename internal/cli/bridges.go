@@ -34,7 +34,7 @@ func opBridge(b bus.Bridge) opBridgeOut {
 
 // RunBridges implements `agentbus2 bridges create|list|get|remove`
 // (administrator only). Where no Slack bridge is wired (local mode, or a
-// server started without one) every action is forbidden.
+// server started without one) every action is unavailable (not retryable).
 func RunBridges(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return opDispatch(ctx, "bridges", map[string]opRunFunc{
 		"create": runBridgesCreate,

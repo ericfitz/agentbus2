@@ -44,7 +44,7 @@ type Options struct {
 	// Issuer URLs are what discover lists.
 	External []*token.External
 	// Bridges serves the bridge operations (Slack bridge spec 6.1a). nil:
-	// every one answers forbidden with bus.BridgeNotConfigured.
+	// every one answers unavailable (not retryable) with bus.BridgeNotConfigured.
 	Bridges Bridges
 }
 

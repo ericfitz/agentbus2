@@ -1000,9 +1000,9 @@ paths:
       operationId: createBridge
       tags: [admin]
       description: >-
-        Bridges a channel to a new private Slack channel. Forbidden with the
-        text "the Slack bridge is not configured" when the server has no Slack
-        bridge.
+        Bridges a channel to a new private Slack channel. Unavailable (not
+        retryable) with the text "the Slack bridge is not configured" when the
+        server has no Slack bridge.
       requestBody:
         required: true
         content:

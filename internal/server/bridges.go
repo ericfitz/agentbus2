@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/gen"
 )
 
@@ -26,10 +25,12 @@ func (a *api) bridges() Bridges {
 	return a.opts.Bridges
 }
 
-// noBridges answers every call forbidden with bus.BridgeNotConfigured.
+// noBridges answers every call unavailable (not retryable) with bus.BridgeNotConfigured.
 type noBridges struct{}
 
-func notConfigured() error { return core.E(bus.CodeForbidden, "%s", bus.BridgeNotConfigured) }
+func notConfigured() error {
+	return bus.Errorf(bus.CodeUnavailable, false, "%s", bus.BridgeNotConfigured)
+}
 
 func (noBridges) Create(context.Context, string, bus.CreateBridgeInput) (bus.BridgeCreated, error) {
 	return bus.BridgeCreated{}, notConfigured()

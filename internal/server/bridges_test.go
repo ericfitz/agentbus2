@@ -128,7 +128,7 @@ func TestBridgesUnconfiguredWire(t *testing.T) {
 		} else {
 			st, body, ct = e.send("root", c.method, c.path)
 		}
-		if st != 403 || !strings.HasPrefix(ct, "application/problem+json") || !strings.Contains(body, bus.BridgeNotConfigured) {
+		if st != 503 || !strings.HasPrefix(ct, "application/problem+json") || !strings.Contains(body, bus.BridgeNotConfigured) {
 			t.Errorf("%s %s: %d %s %s", c.method, c.path, st, ct, body)
 		}
 	}

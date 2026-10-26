@@ -64,8 +64,12 @@ func TestScopeGateServer(t *testing.T) {
 		}
 		for op, call := range calls {
 			scoped, plain := call(coder), call(pat)
-			codeOf(t, scoped, ab2bus.CodeForbidden)
-			codeOf(t, plain, ab2bus.CodeForbidden)
+			want := ab2bus.CodeForbidden
+			if op == "ListBridges" || op == "GetBridge" {
+				want = ab2bus.CodeUnavailable // no bridge is wired: unavailable whoever asks (Eric 2026-10-25)
+			}
+			codeOf(t, scoped, want)
+			codeOf(t, plain, want)
 			if msgOf(scoped) != msgOf(plain) {
 				t.Errorf("%s: scoped %q, unscoped %q; want byte-equal", op, msgOf(scoped), msgOf(plain))
 			}

@@ -3,7 +3,6 @@ package slackbridge
 import (
 	"context"
 	"errors"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/messaging"
 	"github.com/ericfitz/agentbus2/internal/core/sessions"
@@ -196,7 +196,7 @@ var errBridgeGone = core.E(bus.CodeNotFound, "the bridge is no longer live")
 // Slack account (nor the Slack account to another identity). bind reports
 // that neither side is bound yet. Lookups come first: on Postgres a failed
 // statement aborts the transaction.
-func trust(ctx context.Context, tx store.Tx, b store.Bridge, identity string, su store.SlackUser) (bind bool, err error) {
+func (s *Service) trust(ctx context.Context, tx store.Tx, b store.Bridge, identity string, su store.SlackUser) (bind bool, err error) {
 	cur, err := tx.Bridge(ctx, b.ID)
 	if errors.Is(err, store.ErrNotFound) || (err == nil && cur.State != store.BridgeLive) {
 		return false, errBridgeGone
@@ -204,21 +204,23 @@ func trust(ctx context.Context, tx store.Tx, b store.Bridge, identity string, su
 	if err != nil {
 		return false, err
 	}
-	ident, err := tx.Identity(ctx, identity)
+	p, err := access.Resolve(ctx, tx, identity)
 	if err != nil {
 		return false, err
 	}
-	if ident.Kind != store.IdentityHuman {
-		return false, core.E(bus.CodeForbidden, reasonNotHuman)
-	}
-	acl, err := tx.ACL(ctx, b.ChannelID)
+	d, err := s.core.Access.Check(ctx, tx, p, access.Channel{ID: b.ChannelID}, access.Post)
 	if err != nil {
 		return false, err
 	}
-	if !slices.ContainsFunc(acl, func(e store.ACLEntry) bool {
-		return e.Identity == identity && slices.Contains(e.Permissions, store.PermWrite)
-	}) {
-		return false, core.E(bus.CodeForbidden, reasonNoWrite)
+	if !d.Allowed {
+		switch d.Reason {
+		case access.ReasonNotHuman:
+			return false, core.E(bus.CodeForbidden, reasonNotHuman)
+		case access.ReasonNoWrite:
+			return false, core.E(bus.CodeForbidden, reasonNoWrite)
+		default: // out_of_scope cannot occur (humans are unscoped); anything else is refused
+			return false, core.E(bus.CodeForbidden, "refused")
+		}
 	}
 	bound, errUser := tx.SlackUserOf(ctx, identity)
 	if errUser != nil && !errors.Is(errUser, store.ErrNotFound) {
@@ -329,7 +331,7 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 	su := store.SlackUser{Identity: identity, TeamID: u.TeamID, UserID: u.ID}
 	// Decisions 11 and 18 before any session or Slack call is made.
 	err = s.core.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
-		_, err := trust(ctx, tx, b, identity, su)
+		_, err := s.trust(ctx, tx, b, identity, su)
 		return err
 	})
 	switch {
@@ -392,7 +394,7 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 		var gone bool
 		_, err := (messaging.Service{Core: s.core}).SendWith(ctx, identity, in, func(ctx context.Context, tx store.Tx, seq int64) error {
 			gone = false
-			bind, err := trust(ctx, tx, b, identity, su)
+			bind, err := s.trust(ctx, tx, b, identity, su)
 			if errors.Is(err, errBridgeGone) {
 				gone = true
 				return err

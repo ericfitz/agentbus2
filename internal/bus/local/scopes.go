@@ -37,7 +37,7 @@ func (b *Bus) CreateAgentIdentity(ctx context.Context, in ab2bus.CreateAgentIden
 
 // The bridge operations: local mode has no Slack.
 func errBridgeNotConfigured() error {
-	return ab2bus.Errorf(ab2bus.CodeForbidden, false, "%s", ab2bus.BridgeNotConfigured)
+	return ab2bus.Errorf(ab2bus.CodeUnavailable, false, "%s", ab2bus.BridgeNotConfigured)
 }
 
 func (b *Bus) CreateBridge(context.Context, ab2bus.CreateBridgeInput) (ab2bus.BridgeCreated, error) {

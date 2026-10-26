@@ -1,6 +1,6 @@
 # The Slack bridge
 
-The Slack bridge mirrors one bus channel into one private Slack channel, so people can follow and join a job's conversation from Slack. It is off until both Slack token files are configured; without them every `bridges` action answers `forbidden` ("the Slack bridge is not configured"). The design is the Slack bridge spec (`docs/superpowers/specs/2026-10-23-slack-bridge-design.md`) and ADR 0009.
+The Slack bridge mirrors one bus channel into one private Slack channel, so people can follow and join a job's conversation from Slack. It is off until both Slack token files are configured; without them every `bridges` action answers `unavailable`, not retryable ("the Slack bridge is not configured"). The design is the Slack bridge spec (`docs/superpowers/specs/2026-10-23-slack-bridge-design.md`) and ADR 0009.
 
 ## Create the Slack app
 
@@ -21,7 +21,7 @@ Two more settings tune it: `slack_archive_after_done_hours` (default 168) and `s
 Everything starts with a scope (the walk-through is in [admin-bootstrap.md](admin-bootstrap.md#walk-through-a-job-with-agents-people-and-a-slack-channel)):
 
 1. An administrator creates the scope, its agents and its people (humans are identities named by their email address).
-2. A channel in the scope gets a **named-only ACL**: read or write may be granted only to named identities, never to `everyone` or `admins` (administrators act through the implicit admin entry). The bridge refuses any other ACL, and while a bridge is creating or live only a server administrator may change the ACL.
+2. A channel in the scope gets a **named-only ACL**: read or write may be granted only to named identities, never to `everyone`, `admins` or `humans` (administrators act through the implicit admin entry). The bridge refuses any other ACL, and while a bridge is creating or live only a server administrator may change the ACL.
 3. `agentbus2 bridges create [-slack-name N] CHANNEL` bridges it (below).
 4. `agentbus2 scopes done -retire with_bridge SCOPE` ends the job; the Slack channel is archived and the scope retired afterwards.
 
