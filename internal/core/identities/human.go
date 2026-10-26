@@ -104,7 +104,7 @@ func (s Service) CreateIdentityByEmailAs(ctx context.Context, admin, email, key 
 	for attempt := 1; ; attempt++ {
 		err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 			res = createByEmailResult{}
-			if _, err := s.RequireAdmin(ctx, tx, admin); err != nil {
+			if err := s.RequireServerAdmin(ctx, tx, admin); err != nil {
 				return err
 			}
 			_, err := s.WithReceipt(ctx, tx, admin, key, createByEmailPayload{e}, &res, func() error {

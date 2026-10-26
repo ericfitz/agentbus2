@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"log/slog"
 	"slices"
 	"strings"
 
@@ -20,6 +21,7 @@ type tx struct {
 	d        Dialect
 	append   bool // created by Store.Append
 	readOnly bool // created by Store.Read
+	log      *slog.Logger
 }
 
 var _ store.Tx = (*tx)(nil)

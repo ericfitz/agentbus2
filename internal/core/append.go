@@ -67,7 +67,7 @@ func (c *Core) Append(ctx context.Context, tx store.Tx, in AppendInput) (int64, 
 		return 0, nil, E(bus.CodeInternal, "append on unknown channel kind %q", in.Kind)
 	}
 	if !store.ValidIdentityKind(in.SenderKind) {
-		// A programming error: every writer holds the RequireIdentity result.
+		// A programming error: every writer holds the access.Resolve result.
 		return 0, nil, E(bus.CodeInternal, "append with sender kind %q", in.SenderKind)
 	}
 	replyTo := in.ReplyTo

@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -33,8 +35,20 @@ func (t *tx) guardIdentityName(name string) error {
 	return nil
 }
 
-func (r identityRow) identity() store.Identity {
-	return store.Identity{Name: r.Name, Kind: store.IdentityKind(r.Kind), Scope: r.Scope, Admin: r.Admin, TagsAckedSeq: r.TagsAckedSeq, CreatedAt: r.CreatedAt}
+// identityOf is the one place an Identity is built from a row. An
+// administrator or a human never holds a scope (spec 4.3, 4.5): a row that
+// does reads back with no scope and an error is logged naming it. A read
+// transaction cannot write, so this is in memory; ClearInvalidScopes repairs
+// the stored row.
+func (t *tx) identityOf(r identityRow) store.Identity {
+	id := store.Identity{Name: r.Name, Kind: store.IdentityKind(r.Kind), Scope: r.Scope, Admin: r.Admin, TagsAckedSeq: r.TagsAckedSeq, CreatedAt: r.CreatedAt}
+	if id.Scope != "" && (id.Admin || id.Kind == store.IdentityHuman) {
+		if t.log != nil {
+			t.log.Error("identity holds a scope it cannot hold; read as unscoped", "identity", id.Name, "scope", id.Scope, "admin", id.Admin, "kind", string(id.Kind))
+		}
+		id.Scope = ""
+	}
+	return id
 }
 
 const identityCols = "name, kind, COALESCE(scope, '') AS scope, is_admin, tags_acked_seq, created_at"
@@ -111,7 +125,7 @@ func (t *tx) Identity(ctx context.Context, name string) (store.Identity, error) 
 	if err != nil {
 		return store.Identity{}, err
 	}
-	return r.identity(), nil
+	return t.identityOf(r), nil
 }
 
 func (t *tx) ListIdentities(ctx context.Context) ([]store.Identity, error) {
@@ -122,7 +136,7 @@ func (t *tx) ListIdentities(ctx context.Context) ([]store.Identity, error) {
 	sortByBytes(rows, func(r identityRow) string { return r.Name })
 	out := make([]store.Identity, len(rows))
 	for i, r := range rows {
-		out[i] = r.identity()
+		out[i] = t.identityOf(r)
 	}
 	return out, nil
 }
@@ -133,8 +147,29 @@ func (t *tx) SetAdmin(ctx context.Context, name string, admin bool) error {
 	if err := t.guardIdentityName(name); err != nil {
 		return err
 	}
-	res, err := t.execW(ctx, "UPDATE identities SET is_admin = ? WHERE name = ?", admin, name)
+	// Granting the flag clears the scope in the same statement: an
+	// administrator is never scoped (spec 4.3).
+	q := "UPDATE identities SET is_admin = ? WHERE name = ?"
+	if admin {
+		q = "UPDATE identities SET is_admin = ?, scope = NULL WHERE name = ?"
+	}
+	res, err := t.execW(ctx, q, admin, name)
 	return identityUpdated(res, err, name)
+}
+
+// ClearInvalidScopes is one statement: it clears the scope of every
+// administrator and every human, and returns the names it changed in byte
+// order. A second run changes nothing; two overlapping runs each change a
+// disjoint set of rows (a serialization failure is retried by the Store and
+// then finds none).
+func (t *tx) ClearInvalidScopes(ctx context.Context) ([]string, error) {
+	var names []string
+	err := t.selW(ctx, &names, "UPDATE identities SET scope = NULL WHERE scope IS NOT NULL AND (is_admin OR kind = 'human') RETURNING name")
+	if err != nil {
+		return nil, err
+	}
+	slices.SortFunc(names, strings.Compare)
+	return names, nil
 }
 
 // AdvanceTagAckedMark sets the mark to max(current, seq) with a CASE (no

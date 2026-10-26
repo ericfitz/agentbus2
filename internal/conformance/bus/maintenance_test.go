@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strconv"
 	"strings"
 	"testing"
@@ -651,6 +652,54 @@ func TestMaintenanceLockExclusiveAcrossCores(t *testing.T) {
 		}
 		if ran, _ := maint(sib).Tick(ctx); ran {
 			t.Fatal("sibling kept running after its session died")
+		}
+	})
+}
+
+// TestMaintenanceInvalidScopes: the job repairs the stored row of an
+// administrator and of a human that hold a scope and logs each name; a second
+// run changes nothing; a scoped agent is left alone (spec 4.3, 4.5).
+func TestMaintenanceInvalidScopes(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		buf := &syncBuffer{}
+		h := newHarness(t, e, harnessOptions{logger: slog.New(slog.NewTextHandler(buf, nil))})
+		h.rtScope("job1")
+		h.scopedIdentity("job1-coder", "job1")
+		h.admin("root")
+		h.human("eric@corp.example")
+		h.forceScope("root", "job1")
+		h.forceScope("eric@corp.example", "job1")
+		if n := h.runJob("invalid scopes"); n != 2 {
+			t.Fatalf("first run changed %d, want 2", n)
+		}
+		log := buf.String()
+		for _, name := range []string{"root", "eric@corp.example"} {
+			if !strings.Contains(log, "level=ERROR") || !strings.Contains(log, "identity="+name) {
+				t.Errorf("log lacks an error naming %s:\n%s", name, log)
+			}
+		}
+		if n := h.runJob("invalid scopes"); n != 0 {
+			t.Fatalf("second run changed %d, want 0", n)
+		}
+		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+			for name, want := range map[string]string{"root": "", "eric@corp.example": "", "job1-coder": "job1"} {
+				id, err := tx.Identity(ctx, name)
+				if err != nil || id.Scope != want {
+					t.Errorf("Identity(%s) = %+v, %v; want scope %q", name, id, err, want)
+				}
+			}
+			return nil
+		})
+		// The Tick runs it under the maintenance lock.
+		h.forceScope("root", "job1")
+		ran, rep := maint(h).Tick(context.Background())
+		if !ran {
+			t.Fatal("Tick did not run")
+		}
+		for _, r := range rep {
+			if r.Name == "invalid scopes" && (r.N != 1 || r.Err != nil) {
+				t.Errorf("Tick job = %+v, want 1 change", r)
+			}
 		}
 	})
 }

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -88,7 +89,11 @@ func open(ctx context.Context, db *sqlx.DB, d Dialect, opts Options) (*Store, er
 			return nil, fmt.Errorf("migrate schema version %d to %d: %w", v, v+1, err)
 		}
 	}
-	return &Store{db: db, d: d, attempts: attempts, held: map[string]string{}, conns: map[string]*sql.Conn{}}, nil
+	logger := opts.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &Store{db: db, d: d, attempts: attempts, log: logger, held: map[string]string{}, conns: map[string]*sql.Conn{}}, nil
 }
 
 // bootstrap creates schema_meta at version 0 under the migration lock. It

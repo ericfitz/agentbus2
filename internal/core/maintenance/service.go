@@ -77,6 +77,9 @@ func (s Service) Jobs() []Job {
 	}
 	return []Job{
 		{"lapsed sessions", s.lapsedSessions},
+		// Brings the stored row of an administrator or a human that holds a
+		// scope in line with what every read already reports (spec 4.3, 4.5).
+		{"invalid scopes", s.invalidScopes},
 		// After "lapsed sessions" and before "abandoned tasks": a retired
 		// scope's identities are gone with their sessions, so their claims
 		// are abandoned and reclaimed in the same tick (Decision 19).

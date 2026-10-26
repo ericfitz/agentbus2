@@ -146,6 +146,29 @@ func (t *tx) CreateScopedIdentity(ctx context.Context, name, scope string, now i
 	if badText(scope) {
 		return notFoundScope(scope)
 	}
+	// An administrator or a human is never scoped (spec 4.3, 4.5): the name
+	// of an existing row of either kind, or one on the admins list, is
+	// ErrInvalid; any other existing row falls through to the insert's
+	// conflict.
+	var held struct {
+		Admin bool   `db:"is_admin"`
+		Kind  string `db:"kind"`
+	}
+	switch err := t.get(ctx, &held, "SELECT is_admin, kind FROM identities WHERE name = ?", name); {
+	case err == nil && store.IdentityKind(held.Kind) == store.IdentityHuman:
+		return fmt.Errorf("%w: a human identity cannot be scoped", store.ErrInvalid)
+	case err == nil && held.Admin:
+		return fmt.Errorf("%w: an administrator cannot be scoped", store.ErrInvalid)
+	case err != nil && !errors.Is(err, sql.ErrNoRows):
+		return err
+	}
+	var listed int
+	if err := t.get(ctx, &listed, "SELECT count(*) FROM access_refs WHERE ref_list = 'admins' AND ref_kind = 'identity' AND value = ?", name); err != nil {
+		return err
+	}
+	if listed > 0 {
+		return fmt.Errorf("%w: an administrator cannot be scoped", store.ErrInvalid)
+	}
 	_, err := t.execW(ctx, "INSERT INTO identities (name, scope, is_admin, tags_acked_seq, created_at) VALUES (?, ?, FALSE, 0, ?)", name, scope, now)
 	if isConflict(err) {
 		return fmt.Errorf("%w: identity %q", store.ErrConflict, name)
@@ -172,7 +195,7 @@ func (t *tx) ScopeMembers(ctx context.Context, scope string) ([]store.Channel, [
 	sortByBytes(irows, func(r identityRow) string { return r.Name })
 	ids := make([]store.Identity, len(irows))
 	for i, r := range irows {
-		ids[i] = r.identity()
+		ids[i] = t.identityOf(r)
 	}
 	return channelsOf(crows), ids, nil
 }

@@ -3,6 +3,7 @@ package sqlstore
 import (
 	"context"
 	"database/sql"
+	"log/slog"
 	"time"
 
 	"github.com/jmoiron/sqlx"
@@ -65,4 +66,8 @@ type Options struct {
 	Migrations []Migration  // nil: the engine's set; tests may pass the engine's set plus extra steps
 	TxAttempts int          // 0: 1 here; the Postgres engine substitutes its own default (5) before calling Open
 	Now        func() int64 // nil: time.Now().UnixMilli(); schema_meta.created_at only
+	// Logger receives the error logged when a read finds an identity row
+	// that is an administrator or a human holding a scope (spec 4.3, 4.5).
+	// nil: slog.Default().
+	Logger *slog.Logger
 }

@@ -69,7 +69,7 @@ func (s Service) createAgentIdentity(ctx context.Context, admin string, in bus.C
 		err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 			res = bus.AgentIdentity{}
 			if admin != "" {
-				if _, err := s.RequireAdmin(ctx, tx, admin); err != nil {
+				if err := s.RequireServerAdmin(ctx, tx, admin); err != nil {
 					return err
 				}
 			}

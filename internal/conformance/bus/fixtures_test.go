@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"sync"
 	"testing"
@@ -142,6 +143,7 @@ type harness struct {
 	cfg      core.Config
 
 	reopen func() (ab2store.Store, error)
+	dsn    string // the database the Store opened (SQLite path, or the schema-scoped Postgres DSN)
 }
 
 // harnessOptions selects a harness's variants.
@@ -150,14 +152,15 @@ type harnessOptions struct {
 	polling  time.Duration // >0: notify.NewPolling(polling)
 	embedder bool          // a fakeEmbedder, with cfg.EmbeddingModel "fake"
 	fault    *pgconn.PgError
+	logger   *slog.Logger // nil: the core discards its log
 }
 
 // newHarness opens a fresh database and builds a Core over it, with the
 // clock at fixedNowMs.
 func newHarness(t *testing.T, e dbtest.Engine, o harnessOptions) *harness {
 	t.Helper()
-	s, reopen := openStore(t, e)
-	h := &harness{t: t, e: e, reopen: reopen}
+	s, reopen, dsn := openStoreDSN(t, e)
+	h := &harness{t: t, e: e, reopen: reopen, dsn: dsn}
 	h.build(s, o)
 	return h
 }
@@ -180,7 +183,7 @@ func (h *harness) build(s ab2store.Store, o harnessOptions) {
 	} else {
 		h.notifier = notify.NewMemory()
 	}
-	opts := core.Options{Now: h.clock.Now, Notifier: h.notifier}
+	opts := core.Options{Now: h.clock.Now, Notifier: h.notifier, Logger: o.logger}
 	if o.embedder {
 		h.embedder = &fakeEmbedder{}
 		h.cfg.EmbeddingModel = h.embedder.Model()
@@ -206,7 +209,7 @@ func (h *harness) sibling(o harnessOptions) *harness {
 	if err != nil {
 		h.t.Fatalf("sibling Open: %v", err)
 	}
-	sib := &harness{t: h.t, e: h.e, reopen: h.reopen}
+	sib := &harness{t: h.t, e: h.e, reopen: h.reopen, dsn: h.dsn}
 	sib.build(s, o)
 	return sib
 }

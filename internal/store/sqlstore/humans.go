@@ -99,7 +99,7 @@ func (t *tx) MarkHuman(ctx context.Context, name string) error {
 	if keys > 0 {
 		return fmt.Errorf("%w: identity %q has keys and cannot become a human", store.ErrConflict, name)
 	}
-	_, err = t.execW(ctx, "UPDATE identities SET kind = ? WHERE name = ?", string(store.IdentityHuman), name)
+	_, err = t.execW(ctx, "UPDATE identities SET kind = ?, scope = NULL WHERE name = ?", string(store.IdentityHuman), name)
 	return err
 }
 

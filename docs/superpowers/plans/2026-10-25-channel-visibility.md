@@ -12,6 +12,7 @@
 
 ## Global Constraints
 
+- The `RequireAdmin` anchor moved to `internal/core/access/decide.go` (accesscheck plan Task 5).
 - Done gate: `make verify` (needs Docker; a run that skips the Postgres suites is not a pass). Work is done only when `ci.yml` and `windows.yml` are green on the pushed commit; a red `windows.yml` is fixed first. Tasks 1, 2 and 5 run `make verify`; every task runs `make lint` and `make test`; Tasks 1 and 2 also run `make test-conformance` (both engines, both transports) and `bash scripts/m3-exit-counts.sh` on a `-v` log of `./internal/conformance/bus/`.
 - Task 2 edits `api/openapi.yaml`, runs `make generate` and commits `internal/gen` (never edited by hand); `make generate-check` must then be clean.
 - Import rules (CLAUDE.md), re-checked by `bash scripts/m4-exit-checks.sh --deps-only && bash scripts/m5-exit-checks.sh --deps-only && bash scripts/m6-exit-checks.sh --deps-only && bash scripts/m7-exit-checks.sh --deps-only && bash scripts/m8-exit-checks.sh --deps-only` in every task that adds an import. No task here needs a new import edge: `internal/store/...` never imports `internal/core/...`; `internal/tui` stays on `internal/bus` and `internal/version`.

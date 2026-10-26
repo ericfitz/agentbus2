@@ -1614,3 +1614,57 @@ func TestCreateIdentityByEmailAsOverlap(t *testing.T) {
 		return nil
 	})
 }
+
+// TestMakeAdminClearsScope: an administrator is never scoped (spec 4.3, 4.5).
+// MakeAdmin and AddReference to the admins list clear the scope instead of
+// refusing; a scoped identity cannot be created for an administrator or a
+// human.
+func TestMakeAdminClearsScope(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		if err := tx.CreateScope(ctx, "job1", startMs); err != nil {
+			return err
+		}
+		if err := tx.CreateScopedIdentity(ctx, "coder", "job1", startMs); err != nil {
+			return err
+		}
+		return tx.CreateScopedIdentity(ctx, "peer", "job1", startMs)
+	})
+	if id, _ := identityRow(t, s, "coder"); id.Scope != "job1" {
+		t.Fatalf("setup: coder scope = %q", id.Scope)
+	}
+	if err := s.MakeAdmin(ctx, "coder", true); err != nil {
+		t.Fatalf("MakeAdmin on a scoped identity: %v", err)
+	}
+	if id, _ := identityRow(t, s, "coder"); !id.Admin || id.Scope != "" {
+		t.Fatalf("after MakeAdmin: %+v, want admin with no scope", id)
+	}
+	if added, err := s.AddReference(ctx, store.Reference{List: store.ListAdmins, Kind: store.RefIdentity, Value: "peer"}, nil); err != nil || !added {
+		t.Fatalf("AddReference admins peer = %v, %v", added, err)
+	}
+	if id, _ := identityRow(t, s, "peer"); !id.Admin || id.Scope != "" {
+		t.Fatalf("after AddReference: %+v, want admin with no scope", id)
+	}
+	// A second run changes nothing.
+	if err := s.MakeAdmin(ctx, "coder", true); err != nil {
+		t.Fatal(err)
+	}
+	if id, _ := identityRow(t, s, "coder"); !id.Admin || id.Scope != "" {
+		t.Fatalf("after a second MakeAdmin: %+v", id)
+	}
+
+	// Creating a scoped identity for a name on the admins list is validation.
+	// (An existing admin or human row keeps the conflict of CreateAgentIdentity,
+	// and the Store refuses both at CreateScopedIdentity: see the Store suite.)
+	tx(t, s, func(ctx context.Context, tx store.Tx) error {
+		_, err := tx.AddReference(ctx, store.Reference{List: store.ListAdmins, Kind: store.RefIdentity, Value: "future", CreatedAt: startMs})
+		return err
+	})
+	_, err := s.CreateAgentIdentityAs(ctx, "coder", bus.CreateAgentIdentityInput{Name: "future", Scope: "job1"})
+	wantCode(t, err, bus.CodeValidation)
+	wantDetail(t, err, "an administrator cannot be scoped")
+	if _, found := identityRow(t, s, "future"); found {
+		t.Fatal("a refused creation left a row")
+	}
+}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -17,6 +18,7 @@ type Store struct {
 	db       *sqlx.DB
 	d        Dialect
 	attempts int
+	log      *slog.Logger
 
 	mu    sync.Mutex
 	held  map[string]string    // lock name -> owner this Store holds
@@ -102,7 +104,7 @@ func (s *Store) once(ctx context.Context, k kind, fn func(context.Context, store
 			return err
 		}
 	}
-	t := &tx{tx: sx, d: s.d, append: k == kindAppend, readOnly: k == kindRead}
+	t := &tx{tx: sx, d: s.d, log: s.log, append: k == kindAppend, readOnly: k == kindRead}
 	if err := fn(ctx, t); err != nil {
 		if k == kindRead && s.d.IsReadOnlyViolation(err) {
 			return fmt.Errorf("%w: %v", store.ErrReadOnly, err)

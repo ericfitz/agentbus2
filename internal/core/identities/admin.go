@@ -15,8 +15,8 @@ import (
 
 // requireRegistered is not_registered with a hint for the host commands (the
 // plan's text: "identity %q is not registered; register it first"). It
-// applies core.RequireIdentity's rule (not "", everyone or admins, and a row
-// exists) but does not call it: RequireIdentity maps every store error
+// applies access.Resolve's rule (not "", everyone or admins, and a row
+// exists) but does not call it: Resolve maps every store error
 // through core.FromStore, which would turn a retryable engine error inside
 // this transaction into a final bus error before the Store's retry loop saw
 // it, so any other store error is returned as it came.
@@ -111,7 +111,7 @@ func (s Service) ResetCredentialAs(ctx context.Context, admin, name string, key 
 	var res resetCredentialResult
 	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		res = resetCredentialResult{}
-		if _, err := s.RequireAdmin(ctx, tx, admin); err != nil {
+		if err := s.RequireServerAdmin(ctx, tx, admin); err != nil {
 			return err
 		}
 		_, err := s.WithReceipt(ctx, tx, admin, key, resetCredentialPayload{name}, &res, func() error {
@@ -178,7 +178,7 @@ func (s Service) Reset(ctx context.Context, admin string, key string, scope bus.
 	}
 	var done struct{}
 	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-		if _, err := s.RequireAdmin(ctx, tx, admin); err != nil {
+		if err := s.RequireServerAdmin(ctx, tx, admin); err != nil {
 			return err
 		}
 		_, err := s.WithReceipt(ctx, tx, admin, key, resetPayload{scope}, &done, func() error {

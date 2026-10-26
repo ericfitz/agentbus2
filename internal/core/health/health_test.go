@@ -371,3 +371,20 @@ func TestHealthCanceledContextNotLoggedAsError(t *testing.T) {
 		t.Fatalf("a real store failure must log at Error: %q", buf.String())
 	}
 }
+
+// TestHealthTierFromAccess pins the tier to the access rule: an administrator
+// is tier admin, the same identity demoted is tier identity, and "" is the
+// probe.
+func TestHealthTierFromAccess(t *testing.T) {
+	e := newEnv(t, nil)
+	if got := e.health(t, "root").Tier; got != bus.TierAdmin {
+		t.Fatalf("admin tier = %q", got)
+	}
+	e.tx(t, func(ctx context.Context, tx store.Tx) error { return tx.SetAdmin(ctx, "root", false) })
+	if got := e.health(t, "root").Tier; got != bus.TierIdentity {
+		t.Fatalf("demoted tier = %q, want identity", got)
+	}
+	if got := e.health(t, "").Tier; got != bus.TierProbe {
+		t.Fatalf("anonymous tier = %q, want probe", got)
+	}
+}

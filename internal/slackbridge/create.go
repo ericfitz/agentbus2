@@ -472,7 +472,7 @@ func (s *Service) notice(ctx context.Context, b store.Bridge, ni []bus.BridgeNot
 	if _, err := s.sc.Post(ctx, slackapi.PostInput{Channel: b.SlackChannelID, Fallback: esc, Section: esc}); err != nil {
 		s.log.Warn("slack bridge: posting the not-invited notice failed", "channel", b.ChannelName, "err", err)
 	}
-	// slack-bridge is not an actor RequireIdentity accepts, so the message
+	// slack-bridge is not an actor access.Resolve accepts, so the message
 	// goes through core.Append directly.
 	var seq int64
 	err := s.core.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {

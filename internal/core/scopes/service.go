@@ -54,7 +54,7 @@ func (s Service) Create(ctx context.Context, admin string, in bus.CreateScopeInp
 	var res bus.Scope
 	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		res = bus.Scope{}
-		if _, err := s.RequireAdmin(ctx, tx, admin); err != nil {
+		if err := s.RequireServerAdmin(ctx, tx, admin); err != nil {
 			return err
 		}
 		_, err := s.WithReceipt(ctx, tx, admin, in.IdempotencyKey, payload, &res, func() error {
@@ -78,7 +78,7 @@ func (s Service) List(ctx context.Context, admin string) ([]bus.Scope, error) {
 	out := []bus.Scope{}
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		out = out[:0]
-		if _, err := s.RequireAdmin(ctx, tx, admin); err != nil {
+		if err := s.RequireServerAdmin(ctx, tx, admin); err != nil {
 			return err
 		}
 		all, err := tx.ListScopes(ctx)
@@ -101,7 +101,7 @@ func (s Service) Get(ctx context.Context, admin, name string) (bus.Scope, error)
 	var res bus.Scope
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		res = bus.Scope{}
-		if _, err := s.RequireAdmin(ctx, tx, admin); err != nil {
+		if err := s.RequireServerAdmin(ctx, tx, admin); err != nil {
 			return err
 		}
 		sc, err := load(ctx, tx, name)
@@ -145,7 +145,7 @@ func (s Service) Done(ctx context.Context, admin string, in bus.DoneScopeInput) 
 	var res bus.Scope
 	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		res = bus.Scope{}
-		if _, err := s.RequireAdmin(ctx, tx, admin); err != nil {
+		if err := s.RequireServerAdmin(ctx, tx, admin); err != nil {
 			return err
 		}
 		_, err := s.WithReceipt(ctx, tx, admin, in.IdempotencyKey, payload, &res, func() error {

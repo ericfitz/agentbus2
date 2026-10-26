@@ -15,7 +15,7 @@ func (s Service) Usage(ctx context.Context, identity string) (bus.Usage, error) 
 	var out bus.Usage
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		out = bus.Usage{}
-		if _, err := s.RequireAdmin(ctx, tx, identity); err != nil {
+		if err := s.RequireServerAdmin(ctx, tx, identity); err != nil {
 			return err
 		}
 		n, ok, err := tx.Notice(ctx, noticeCapacity)

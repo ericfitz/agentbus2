@@ -9,6 +9,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/store"
@@ -234,11 +235,11 @@ func TestResetCredentialKeepsMintedToken(t *testing.T) {
 		t.Fatalf("PublicKey after reset = %v, want not_found", err)
 	}
 	err := e.store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
-		_, err := e.core.RequireIdentity(ctx, tx, "pat")
+		_, err := access.Resolve(ctx, tx, "pat")
 		return err
 	})
 	if err != nil {
-		t.Fatalf("RequireIdentity after reset: %v", err)
+		t.Fatalf("Resolve after reset: %v", err)
 	}
 }
 

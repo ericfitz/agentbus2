@@ -50,7 +50,9 @@ type Scopes interface {
 	// many it removed.
 	DeleteRetiredScopes(ctx context.Context, retiredBefore int64) (int, error)
 	// CreateScopedIdentity is CreateIdentity plus the scope; ErrNotFound for
-	// an unknown scope.
+	// an unknown scope; ErrInvalid ("an administrator cannot be scoped", "a
+	// human identity cannot be scoped") for a name whose row is an
+	// administrator or a human, or that is on the admins list (spec 4.3, 4.5).
 	CreateScopedIdentity(ctx context.Context, name, scope string, now int64) error
 	// ScopeMembers lists the scope's channels and identities, each by name in
 	// byte order.

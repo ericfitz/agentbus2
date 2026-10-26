@@ -71,7 +71,13 @@ type Identities interface {
 	CreateIdentity(ctx context.Context, name string, now int64) error
 	Identity(ctx context.Context, name string) (Identity, error) // ErrNotFound
 	ListIdentities(ctx context.Context) ([]Identity, error)      // by name, in byte order
-	SetAdmin(ctx context.Context, name string, admin bool) error // ErrNotFound
+	// SetAdmin sets the flag; granting it clears the identity's scope in the
+	// same statement (an administrator is never scoped, spec 4.3). ErrNotFound.
+	SetAdmin(ctx context.Context, name string, admin bool) error
+	// ClearInvalidScopes clears the scope of every administrator and every
+	// human (the repair of a row that reads back normalized, spec 4.3 and
+	// 4.5) and returns the names it changed, in byte order. Idempotent.
+	ClearInvalidScopes(ctx context.Context) ([]string, error)
 	// AdvanceTagAckedMark sets the mark to max(current, seq).
 	AdvanceTagAckedMark(ctx context.Context, name string, seq int64) error
 	// CreateHuman creates the identity row (kind human) and its binding.

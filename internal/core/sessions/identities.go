@@ -5,6 +5,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -14,12 +15,14 @@ func (s Service) Identities(ctx context.Context, identity string) ([]bus.Identit
 	var out []bus.IdentityInfo
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		out = nil
-		if _, err := s.RequireIdentity(ctx, tx, identity); err != nil {
+		p, err := access.Resolve(ctx, tx, identity)
+		if err != nil {
 			return err
 		}
-		all, err := tx.ListIdentities(ctx)
+		// Only the identities the caller may see (spec 4.1 (c), 4.5).
+		all, err := s.Access.Identities(ctx, tx, p)
 		if err != nil {
-			return core.FromStore(err)
+			return err
 		}
 		for _, id := range all {
 			live, err := s.LiveSessions(ctx, tx, id.Name)

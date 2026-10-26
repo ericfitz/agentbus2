@@ -456,10 +456,13 @@ block_bearer_signature_ignored() {
 		TestAuthEndToEnd/sqlite/forged-bearer-refused
 }
 
-# 15. An administrator check that lets everyone through.
+# 15. An administrator check that lets everyone through. The one rule table
+# lives in internal/core/access/decide.go (accesscheck plan Task 5 moved the
+# anchor from the deleted internal/core/authz.go): the Administer clause of
+# decideServer is the only place the administrator flag is read for the server.
 block_admin_flag_ignored() {
-	mutate_auth_block admin-flag-ignored internal/core/authz.go \
-		'if !id.Admin {' 'if false {' \
+	mutate_auth_block admin-flag-ignored internal/core/access/decide.go \
+		'if !p.Admin {' 'if false {' \
 		TestAuthEndToEnd/sqlite/admin-refused-as-non-admin
 }
 

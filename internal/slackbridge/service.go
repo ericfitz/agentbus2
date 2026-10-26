@@ -159,7 +159,7 @@ func (s *Service) requireReady() (slackapi.Self, error) {
 // requireAdmin refuses a caller that is not a server administrator.
 func (s *Service) requireAdmin(ctx context.Context, admin string) error {
 	err := s.core.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
-		_, err := s.core.RequireAdmin(ctx, tx, admin)
+		err := s.core.RequireServerAdmin(ctx, tx, admin)
 		return err
 	})
 	return core.FromStore(err)

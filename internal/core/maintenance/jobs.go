@@ -28,6 +28,26 @@ func (s Service) lapsedSessions(ctx context.Context, now int64) (int, error) {
 	})
 }
 
+// invalidScopes repairs the stored rows of administrators and humans that
+// hold a scope (spec 4.3, 4.5): one statement clears them, and an error is
+// logged naming each identity. The read path already normalizes such a row, so
+// this only brings the stored row in line. A second run finds nothing.
+func (s Service) invalidScopes(ctx context.Context, _ int64) (int, error) {
+	var names []string
+	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		names, err = tx.ClearInvalidScopes(ctx)
+		return err
+	})
+	if err != nil {
+		return 0, err
+	}
+	for _, name := range names {
+		s.Log.Error("cleared the scope of an administrator or human identity", "identity", name)
+	}
+	return len(names), nil
+}
+
 // scopeRetirement retires the scopes that are due (done, or idle for
 // ScopeIdleHours; spec 4.3) and purges the retired rows older than the
 // session retention. It returns the scopes retired plus the rows purged.

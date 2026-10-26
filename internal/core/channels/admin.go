@@ -24,7 +24,7 @@ func (s Service) Status(ctx context.Context, identity string) (bus.Status, error
 	var st bus.Status
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		st = bus.Status{Sessions: []bus.SessionInfo{}, Channels: []bus.ChannelInfo{}, Notices: []bus.Notice{}}
-		if _, err := s.RequireAdmin(ctx, tx, identity); err != nil {
+		if err := s.RequireServerAdmin(ctx, tx, identity); err != nil {
 			return err
 		}
 		sessions, err := tx.ListSessions(ctx, "")

@@ -6,6 +6,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/channels"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -59,13 +60,20 @@ func (s Service) Health(ctx context.Context, identity, version string) (bus.Heal
 	err = s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		notices, emb = nil, bus.HealthEmbeddings{}
 		tier = bus.TierProbe
+		p := access.Anonymous
 		if identity != "" {
-			id, err := s.RequireIdentity(ctx, tx, identity)
+			var err error
+			if p, err = access.Resolve(ctx, tx, identity); err != nil {
+				return err
+			}
+		}
+		if p != access.Anonymous {
+			tier = bus.TierIdentity
+			d, err := s.Access.Check(ctx, tx, p, access.Server{}, access.Administer)
 			if err != nil {
 				return err
 			}
-			tier = bus.TierIdentity
-			if id.Admin {
+			if d.Allowed {
 				tier = bus.TierAdmin
 			}
 		}
