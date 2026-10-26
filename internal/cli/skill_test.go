@@ -62,6 +62,8 @@ func TestSkillDeliveryClaims(t *testing.T) {
 	if len(r.Messages) != 0 {
 		t.Fatalf("bus receive %+v, want none for an agent", r.Messages)
 	}
+	// TODO(Task 4): the Bus delivered nothing above, so this ReceiveAgent/ack
+	// step is vacuous; restore a real batch to ack or move the test.
 	// The agent path drops both and acknowledges the batch.
 	got, err := agentview.NewKindIndex().ReceiveAgent(ctx, pat.Bus, bus.ReceiveInput{Session: s.ID, Ack: r.Batch})
 	if err != nil || len(got.Messages) != 0 {

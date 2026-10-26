@@ -132,6 +132,8 @@ func TestReceiveWithSessionDropsMemoryAndAcks(t *testing.T) {
 	if r := run(); len(r.Messages) != 0 {
 		t.Fatalf("memory came back: %+v", r)
 	}
+	// TODO(Task 4): the ack step above is vacuous now that the server drops
+	// the memory; restore it with a deliverable batch or move it.
 	// The server drops memory channels for an agent too (decision 20, access
 	// Deliver), so the Bus gives the agent none either; a human's delivery is
 	// TestAgentNotDeliveredMemory's.
@@ -174,8 +176,9 @@ func TestWatchLoopIgnoresMemoryWakes(t *testing.T) {
 	}
 }
 
-// A wake that had memory channels filtered out says nothing true about how
-// many messages are left, so wait omits count and watch prints none.
+// The server drops memory channels from an agent's wake, so the wake is
+// complete: wait carries the true count and watch prints it.
+// TODO(Task 4): the client filter is gone then; keep or move what this pins.
 func TestServerFilteredWakeIsComplete(t *testing.T) {
 	e, sess, sam := memoryEnv(t)
 	ctx := context.Background()

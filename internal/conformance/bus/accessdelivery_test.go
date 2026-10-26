@@ -88,6 +88,10 @@ func TestSessionNotOwnedIsNotFound(t *testing.T) {
 				_, err := kim.Watch(ctx, ab2bus.WatchInput{Session: id, Timeout: time.Second})
 				return err
 			},
+			"Send": func(id string) error {
+				_, err := kim.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "x", Session: id})
+				return err
+			},
 			"CloseSession": func(id string) error { return kim.Close(ctx, ab2bus.CloseSessionInput{Session: id}) },
 		}
 		for name, call := range calls {
@@ -235,6 +239,34 @@ func TestScopeGateDelivery(t *testing.T) {
 		o = awaitWatch(t, startWatch(ctx, pat, ab2bus.WatchInput{Session: ps.ID, Timeout: 2 * time.Second}), 3*time.Second)
 		if o.err != nil || !o.res.Woke || !slices.Contains(o.res.Channels, "other") {
 			t.Fatalf("unscoped watch = %+v, %v", o.res, o.err)
+		}
+	})
+}
+
+// TestAgentMemoryDoesNotWake: a memory appended to a channel an agent is
+// subscribed to, or reaches through a tag subscription, neither wakes its Watch
+// nor counts in its Peek (decision 20, server side).
+func TestAgentMemoryDoesNotWake(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, watchOpts(nil))
+		ctx := context.Background()
+		mem := h.deliveryChannel("mem", ab2store.KindMemory, "")
+		mem2 := h.deliveryChannel("mem2", ab2store.KindMemory, "")
+		kim := h.as("kim")
+		h.rawSubscribe("kim", mem)
+		if err := kim.SubscribeTags(ctx, ab2bus.TagSubscribeInput{Patterns: []string{"x"}}); err != nil {
+			t.Fatal(err)
+		}
+		s, err := kim.Open(ctx, ab2bus.OpenSessionInput{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		h.append(mem, "pat", "", "direct memory")
+		h.append(mem2, "pat", "", "tagged memory", "x")
+		wantPeek(t, peekOf(t, kim, ab2bus.PeekInput{Session: s.ID}), 0)
+		o := awaitWatch(t, startWatch(ctx, kim, ab2bus.WatchInput{Session: s.ID, Timeout: 300 * time.Millisecond}), 3*time.Second)
+		if o.err != nil || o.res.Woke {
+			t.Fatalf("a memory woke the agent: %+v, %v", o.res, o.err)
 		}
 	})
 }
