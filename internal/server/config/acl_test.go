@@ -15,6 +15,9 @@ func TestValidateDefaultACL(t *testing.T) {
 	if err := ValidateDefaultACL(nil); err != nil {
 		t.Errorf("empty list rejected: %v", err)
 	}
+	if err := ValidateDefaultACL([]ACLEntry{{store.Humans, []string{"read", "write"}}}); err != nil {
+		t.Errorf("humans group rejected: %v", err)
+	}
 	cases := []struct {
 		name    string
 		entries []ACLEntry

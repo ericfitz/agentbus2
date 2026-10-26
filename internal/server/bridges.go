@@ -25,7 +25,8 @@ func (a *api) bridges() Bridges {
 	return a.opts.Bridges
 }
 
-// noBridges answers every call unavailable (not retryable) with bus.BridgeNotConfigured.
+// noBridges answers every call unavailable (not retryable) with
+// bus.BridgeNotConfigured.
 type noBridges struct{}
 
 func notConfigured() error {

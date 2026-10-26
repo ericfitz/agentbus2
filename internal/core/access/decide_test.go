@@ -363,3 +363,16 @@ func TestReplaceACLProtectedEntries(t *testing.T) {
 		t.Errorf("Read on an ACL change = %+v, want internal", d)
 	}
 }
+
+// An empty identity name never matches an empty creator: a channel with no
+// creator grants nothing to a principal whose name is empty (the Store-level
+// assertion this replaces was removed with the Store's rule methods).
+func TestEmptyNameOnChannelWithoutCreator(t *testing.T) {
+	empty := Principal{Name: "", Kind: store.IdentityAgent}
+	f := channelFacts{Channel: store.Channel{ID: 1, Name: "work", Creator: ""}}
+	for _, a := range []Action{Read, Write, Admin, Deliver, Post} {
+		if d := decide(empty, f, a); d.Allowed {
+			t.Errorf("empty name allowed %s on a channel with no creator: %+v", a, d)
+		}
+	}
+}

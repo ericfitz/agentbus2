@@ -40,8 +40,8 @@ type Admin interface {
 	GetScope(ctx context.Context, name string) (Scope, error)
 	DoneScope(ctx context.Context, in DoneScopeInput) (Scope, error)
 	CreateAgentIdentity(ctx context.Context, in CreateAgentIdentityInput) (AgentIdentity, error)
-	// The bridge operations answer unavailable (not retryable) with BridgeNotConfigured when no
-	// Slack bridge is wired (local mode has none).
+	// The bridge operations answer unavailable (not retryable) with
+	// BridgeNotConfigured when no Slack bridge is wired (local mode has none).
 	CreateBridge(ctx context.Context, in CreateBridgeInput) (BridgeCreated, error)
 	ListBridges(ctx context.Context) ([]Bridge, error)
 	GetBridge(ctx context.Context, channel string) (Bridge, error)

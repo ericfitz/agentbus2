@@ -30,8 +30,8 @@ const reserveAttempts = 3
 // are far shorter.
 const createLease = 2 * time.Minute
 
-// human is an identity with explicit write on the channel and its email
-// binding.
+// human is a human identity that may post to the channel (write through any
+// ACL row, a group row included) and its email binding.
 type human struct{ identity, email string }
 
 // reservation is what step 1 hands the rest of Create.
@@ -72,10 +72,10 @@ func withBridgeRead(acl []store.ACLEntry) []store.ACLEntry {
 // Step 1 stores a bridge row in state creating with the intended Slack name,
 // one transaction that also checks the channel (ordinary, scoped, scope open),
 // its ACL (Decision 12) and that it has no bridge. Step 2 creates the private
-// Slack channel and stores its ID. Step 3 invites every human with explicit
-// write who is a full member of this workspace. Step 4 makes the bridge live,
-// adds {slack-bridge, [read]} to the ACL and subscribes slack-bridge at the
-// channel's current end. Step 5 reports the humans who could not be invited
+// Slack channel and stores its ID. Step 3 invites every human who may post
+// (write through any ACL row) and is a full member of this workspace. Step 4
+// makes the bridge live, adds {slack-bridge, [read]} to the ACL and subscribes
+// slack-bridge at the channel's current end. Step 5 reports the humans who could not be invited
 // in a notice in both channels.
 //
 // Any failure, a Slack rate limit (*slackapi.RateLimitedError) included,

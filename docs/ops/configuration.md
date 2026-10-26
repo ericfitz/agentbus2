@@ -117,7 +117,7 @@ Example for a provider whose access token carries the person's identity in `user
 
 The first successful exchange binds the person's identity to the token's subject claim and to the `issuer` URL of the entry. Changing an entry's `issuer` URL therefore makes every bound human's next sign-in fail with "identity bound to a different subject" until an operator runs `reset-credential NAME` for each of them (it clears the recorded subject, so the next sign-in binds afresh). Renaming the entry (`name`) does not matter to the bindings, but `users` and `admins` entries refer to the name.
 
-`default_acl` defaults to three entries, in this order: `everyone` with `read` and `write`; `<creator>` with `read`, `write` and `admin`; `admins` with `admin`. Only `everyone`, `admins` and the placeholder `<creator>` are accepted as identities, each with a non-empty list of distinct `read`, `write` or `admin`. `<creator>` stands for the identity that creates the channel and is dropped when there is none (the `general` channel at start, and after a reset). Setting a list equal to the default changes nothing.
+`default_acl` defaults to three entries, in this order: `everyone` with `read` and `write`; `<creator>` with `read`, `write` and `admin`; `admins` with `admin`. Only the groups `everyone`, `admins` and `humans` and the placeholder `<creator>` are accepted as identities, each with a non-empty list of distinct `read`, `write` or `admin`. `<creator>` stands for the identity that creates the channel and is dropped when there is none (the `general` channel at start, and after a reset). Setting a list equal to the default changes nothing.
 
 ## What replicas must share
 

@@ -28,11 +28,7 @@ func watchLine(display string, r bus.WatchResult) string {
 	chans := slices.Clone(r.Channels)
 	slices.Sort(chans)
 	chans = slices.Compact(chans)
-	n := "new message(s)" // a Count of 0: memory channels were filtered out, the rest is uncounted
-	if r.Count > 0 {
-		n = fmt.Sprintf("%d new message(s)", r.Count)
-	}
-	return fmt.Sprintf("agentbus2: %s for %s on %s; call receive", n, display, strings.Join(chans, ", "))
+	return fmt.Sprintf("agentbus2: %d new message(s) for %s on %s; call receive", r.Count, display, strings.Join(chans, ", "))
 }
 
 // watchLoop arms Watch{After: floor} in a loop and stays armed: a wake raises

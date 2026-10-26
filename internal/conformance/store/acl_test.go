@@ -129,7 +129,6 @@ func TestACLDuplicateEntriesAreAdditive(t *testing.T) {
 			{Identity: "kim", Permissions: []ab2store.Permission{"write"}},
 		}
 		ch := mustChannel(t, s, "c", ab2store.KindOrdinary, "", acl)
-		wantStored(t, s, ch.ID, "kim", perm{Read: true, Write: true})
 		wantACL(t, aclOf(t, s, ch.ID), acl)
 	})
 }

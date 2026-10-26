@@ -416,8 +416,10 @@ func TestScopeGateBeforeKind(t *testing.T) {
 				_, err := coder.Edit(ctx, ab2bus.EditMemoryInput{ID: id, Content: str("y")})
 				return err
 			},
-			"Delete":  func(_ string, id int64) error { return coder.Delete(ctx, ab2bus.DeleteMemoryInput{ID: id}) },
-			"GetTask": func(_ string, id int64) error { _, err := coder.GetTask(ctx, id); return err },
+			"Delete":    func(_ string, id int64) error { return coder.Delete(ctx, ab2bus.DeleteMemoryInput{ID: id}) },
+			"GetTask":   func(_ string, id int64) error { _, err := coder.GetTask(ctx, id); return err },
+			"GetMemory": func(_ string, id int64) error { _, err := coder.GetMemory(ctx, id); return err },
+			"Revisions": func(_ string, id int64) error { _, err := coder.Revisions(ctx, id); return err },
 			"Update": func(_ string, id int64) error {
 				_, err := coder.Update(ctx, ab2bus.TaskPatch{ID: id, Subject: str("y")})
 				return err

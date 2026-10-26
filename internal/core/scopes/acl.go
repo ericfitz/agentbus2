@@ -11,9 +11,9 @@ import (
 // CheckBridgeACL is the ACL rule of a bridged channel (Decision 12, spec
 // 6.1b), pure so the bridge creation and the ACL change share it: read or
 // write may be granted only to named identities, never to everyone,
-// admins or humans (Eric 2026-10-25), and the slack-bridge read entry stays while the bridge is live.
-// (Administrators act through the implicit admins entry; an admins entry
-// holding only the admin permission is fine.)
+// admins or humans (Eric 2026-10-25), and the slack-bridge read entry stays
+// while the bridge is live. (Administrators act through the implicit admins
+// entry; an admins entry holding only the admin permission is fine.)
 func CheckBridgeACL(entries []store.ACLEntry) error {
 	bridgeRead := false
 	for _, e := range entries {

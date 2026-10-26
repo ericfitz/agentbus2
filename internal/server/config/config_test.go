@@ -85,6 +85,8 @@ func TestValidateRejects(t *testing.T) {
 		{"no name", func(c *Config) { i := goodIssuer(); i.Name = ""; c.Issuers = []Issuer{i} }, "name is required"},
 		{"name slash", func(c *Config) { i := goodIssuer(); i.Name = "a/b"; c.Issuers = []Issuer{i} }, "name"},
 		{"name everyone", func(c *Config) { i := goodIssuer(); i.Name = "everyone"; c.Issuers = []Issuer{i} }, "reserved"},
+		{"name humans", func(c *Config) { i := goodIssuer(); i.Name = "humans"; c.Issuers = []Issuer{i} }, "reserved"},
+		{"name slack-bridge", func(c *Config) { i := goodIssuer(); i.Name = "slack-bridge"; c.Issuers = []Issuer{i} }, "reserved"},
 		{"duplicate name", func(c *Config) {
 			i, j := goodIssuer(), goodIssuer()
 			j.Issuer = "https://other.example"

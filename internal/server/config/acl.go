@@ -33,16 +33,17 @@ func IsShippedDefault(entries []ACLEntry) bool {
 	})
 }
 
-// ValidateDefaultACL checks a default_acl list. Only everyone, admins and the
+// ValidateDefaultACL checks a default_acl list. Only everyone, admins, humans
+// (the Store exempts the three groups from the registry check) and the
 // creator placeholder are allowed as identities: the Store enforces
 // Decision 96 on every ACL write and general is created before any identity
 // row exists, so a concrete name could never start a server.
 func ValidateDefaultACL(entries []ACLEntry) error {
 	for i, e := range entries {
 		switch e.Identity {
-		case store.Everyone, store.Admins, CreatorPlaceholder:
+		case store.Everyone, store.Admins, store.Humans, CreatorPlaceholder:
 		default:
-			return fmt.Errorf("default_acl: entry %d: identity %q is not everyone, admins or %s", i, e.Identity, CreatorPlaceholder)
+			return fmt.Errorf("default_acl: entry %d: identity %q is not everyone, admins, humans or %s", i, e.Identity, CreatorPlaceholder)
 		}
 		if len(e.Permissions) == 0 {
 			return fmt.Errorf("default_acl: entry %d (%s): permissions must not be empty", i, e.Identity)

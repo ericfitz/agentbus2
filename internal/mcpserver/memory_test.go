@@ -35,7 +35,7 @@ func hasPending(pending []bus.PendingChannel, ch string) bool {
 	return false
 }
 
-func TestRegisterDropsMemorySubscriptions(t *testing.T) {
+func TestRegisterHidesMemorySubscriptions(t *testing.T) {
 	e := newTestEnv(t)
 	ctx := context.Background()
 	pat := e.conn(t, "pat")

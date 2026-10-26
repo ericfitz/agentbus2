@@ -22,7 +22,7 @@ import (
 // message (Decision 10), receive reads them.
 type waitWake struct {
 	Seq      int64    `json:"seq"`
-	Count    int      `json:"count,omitempty"` // absent: memory channels were filtered out and the count of the rest is unknown
+	Count    int      `json:"count,omitempty"` // the count of new messages; the server never wakes an agent for memory (decision 20)
 	Channels []string `json:"channels"`
 }
 

@@ -297,7 +297,7 @@ func validateIssuer(is Issuer) error {
 	if err := store.NameRule(is.Name); err != nil {
 		return fmt.Errorf("name %q %s", is.Name, err)
 	}
-	if is.Name == store.Everyone || is.Name == store.Admins {
+	if store.ReservedIdentity(is.Name) {
 		return fmt.Errorf("name %q is reserved", is.Name)
 	}
 	if !absoluteURL(is.Issuer) {
