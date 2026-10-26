@@ -59,6 +59,20 @@ func (s Service) Create(ctx context.Context, admin string, in bus.CreateScopeInp
 			return err
 		}
 		_, err := s.WithReceipt(ctx, tx, admin, in.IdempotencyKey, payload, &res, func() error {
+			// Spec 4.2 (controller ruling 2026-10-26): two scopes whose
+			// prefixes nest (job, job-2) would make the longer one unusable.
+			all, err := tx.ListScopes(ctx)
+			if err != nil {
+				return err
+			}
+			for _, sc := range all {
+				if strings.HasPrefix(sc.Name+"-", in.Name+"-") || strings.HasPrefix(in.Name+"-", sc.Name+"-") {
+					if sc.Name == in.Name {
+						break // the store's own conflict for an existing name
+					}
+					return core.E(bus.CodeConflict, "scope %q: the name prefix %q- overlaps scope %q", in.Name, in.Name, sc.Name)
+				}
+			}
 			// Spec 4.2: the prefix <name>- must not already name a channel
 			// of another scope or of none (one scan; channels are few).
 			chs, err := tx.ListChannels(ctx)

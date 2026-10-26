@@ -88,5 +88,20 @@ func TestScopeNamespace(t *testing.T) {
 		if want := `scope "job2": the name prefix "job2"- is in use by channel "job2-old"`; !strings.Contains(msgOf(err), want) {
 			t.Errorf("message %q, want %q", msgOf(err), want)
 		}
+
+		// Scopes whose prefixes nest are refused in either creation order
+		// (any state of the existing one), so the longer stays usable.
+		sv := scopes.Service{Core: h.core}
+		for _, c := range []struct{ first, second string }{{"ova", "ova-2"}, {"ovb-2", "ovb"}} {
+			if _, err := sv.Create(ctx, "root", ab2bus.CreateScopeInput{Name: c.first}); err != nil {
+				t.Fatal(err)
+			}
+			_, err := sv.Create(ctx, "root", ab2bus.CreateScopeInput{Name: c.second})
+			codeOf(t, err, ab2bus.CodeConflict)
+			want := `scope "` + c.second + `": the name prefix "` + c.second + `"- overlaps scope "` + c.first + `"`
+			if msgOf(err) != want {
+				t.Errorf("message %q, want %q", msgOf(err), want)
+			}
+		}
 	})
 }
