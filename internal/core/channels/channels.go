@@ -3,6 +3,7 @@ package channels
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
@@ -92,6 +93,9 @@ func (s Service) Create(ctx context.Context, identity string, in bus.CreateChann
 				return err
 			}
 		}
+		if err := namePrefixRule(ctx, tx, p, in.Name, scope); err != nil {
+			return err
+		}
 		seq, err := tx.MaxSeq(ctx)
 		if err != nil {
 			return err
@@ -106,6 +110,30 @@ func (s Service) Create(ctx context.Context, identity string, in bus.CreateChann
 		return nil
 	})
 	return res, err
+}
+
+// namePrefixRule is the scope-prefixed naming rule (accesscheck spec 4.2,
+// Eric's decision 2026-10-25): a scoped principal's channel is named
+// <scope>-<rest>, and a name starting with <s>- for an existing scope s (any
+// state) belongs to s. So a create or rename collision can only name a
+// channel of the caller's own scope. It validates the name's shape, as
+// CheckBridgeACL validates an ACL's; scope is the scope the channel will
+// carry. Names that violate it already stored are not converted
+// (pre-release).
+func namePrefixRule(ctx context.Context, tx store.Tx, p access.Principal, name, scope string) error {
+	if p.Scope != "" && !strings.HasPrefix(name, p.Scope+"-") {
+		return core.E(bus.CodeValidation, "a channel of scope %q is named %q-<name>", p.Scope, p.Scope)
+	}
+	all, err := tx.ListScopes(ctx)
+	if err != nil {
+		return err
+	}
+	for _, sc := range all {
+		if strings.HasPrefix(name, sc.Name+"-") && scope != sc.Name {
+			return core.E(bus.CodeValidation, "names starting with %q- belong to scope %q", sc.Name, sc.Name)
+		}
+	}
+	return nil
 }
 
 // adminChannel resolves a channel and requires admin on it.
@@ -211,6 +239,9 @@ func (s Service) Rename(ctx context.Context, identity string, in bus.RenameChann
 			return err
 		}
 		if err := refuseBridged(ctx, tx, ch); err != nil {
+			return err
+		}
+		if err := namePrefixRule(ctx, tx, p, in.NewName, ch.Scope); err != nil {
 			return err
 		}
 		return tx.RenameChannel(ctx, ch.ID, in.NewName)

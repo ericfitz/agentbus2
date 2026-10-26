@@ -445,7 +445,7 @@ func (s *server) addTools(srv *mcp.Server) {
 			}
 			return result(map[string]any{"closed": in.Session}, err)
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "create_channel", Description: "Agentbus2: create a named channel of kind ordinary (default), memory or tasks. A memory channel holds editable memories; a tasks channel is a task list. acl sets the access list (omit it for the server default, [] for an empty list); an entry may name the groups everyone, admins and humans. A private channel is created with acl: an agent cannot make a channel private afterwards. Use idempotency_key to make a retry safe. A channel that is empty and has no subscriber is removed by maintenance, so create a channel right before its first send."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "create_channel", Description: "Agentbus2: create a named channel of kind ordinary (default), memory or tasks. A memory channel holds editable memories; a tasks channel is a task list. acl sets the access list (omit it for the server default, [] for an empty list); an entry may name the groups everyone, admins and humans. A scoped agent names its channels <scope>-<name>. A private channel is created with acl: an agent cannot make a channel private afterwards. Use idempotency_key to make a retry safe. A channel that is empty and has no subscriber is removed by maintenance, so create a channel right before its first send."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in createChannelIn) (*mcp.CallToolResult, any, error) {
 			kind, err := toKind(in.Kind)
 			if err != nil {

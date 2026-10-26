@@ -23,7 +23,8 @@ Core principle: post what would save another agent time. Skip what would not.
 
 ## Channel scope
 
-Channel names are plain names with no prefixes and no `/`. A channel has a
+Channel names are plain names with no `/`; a scoped agent names its channels
+`<scope>-<name>` (any other name is `validation`). A channel has a
 kind, given at creation:
 
 | Kind | Holds |

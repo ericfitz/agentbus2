@@ -7,6 +7,7 @@ package scopes
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
@@ -58,6 +59,17 @@ func (s Service) Create(ctx context.Context, admin string, in bus.CreateScopeInp
 			return err
 		}
 		_, err := s.WithReceipt(ctx, tx, admin, in.IdempotencyKey, payload, &res, func() error {
+			// Spec 4.2: the prefix <name>- must not already name a channel
+			// of another scope or of none (one scan; channels are few).
+			chs, err := tx.ListChannels(ctx)
+			if err != nil {
+				return err
+			}
+			for _, c := range chs {
+				if strings.HasPrefix(c.Name, in.Name+"-") && c.Scope != in.Name {
+					return core.E(bus.CodeConflict, "scope %q: the name prefix %q- is in use by channel %q", in.Name, in.Name, c.Name)
+				}
+			}
 			if err := tx.CreateScope(ctx, in.Name, s.NowMs()); err != nil {
 				return err
 			}

@@ -60,17 +60,17 @@ func TestScopeGateChannels(t *testing.T) {
 		if err := (channels.Service{Core: h.core}).EnsureGeneral(ctx); err != nil {
 			t.Fatal(err)
 		}
-		work, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "work"})
+		work, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "job1-work"})
 		if err != nil || work.Scope != "job1" {
 			t.Fatalf("scoped create = %+v, %v", work, err)
 		}
 		if _, err := pat.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "other"}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := coder.Send(ctx, ab2bus.SendInput{Channel: "work", Content: "hi"}); err != nil {
+		if _, err := coder.Send(ctx, ab2bus.SendInput{Channel: "job1-work", Content: "hi"}); err != nil {
 			t.Fatalf("send inside the scope: %v", err)
 		}
-		if _, err := coder.ACL(ctx, "work"); err != nil {
+		if _, err := coder.ACL(ctx, "job1-work"); err != nil {
 			t.Fatalf("ACL inside the scope: %v", err)
 		}
 
@@ -121,14 +121,14 @@ func TestScopeGateChannels(t *testing.T) {
 			}
 			return names
 		}
-		if got := list(coder); !reflect.DeepEqual(got, []string{"work"}) {
-			t.Fatalf("scoped list = %v, want [work]", got)
+		if got := list(coder); !reflect.DeepEqual(got, []string{"job1-work"}) {
+			t.Fatalf("scoped list = %v, want [job1-work]", got)
 		}
-		if _, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "next"}); err != nil {
+		if _, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "job1-next"}); err != nil {
 			t.Fatal(err)
 		}
-		if got := list(coder); !reflect.DeepEqual(got, []string{"next", "work"}) {
-			t.Fatalf("scoped list = %v, want [next work]", got)
+		if got := list(coder); !reflect.DeepEqual(got, []string{"job1-next", "job1-work"}) {
+			t.Fatalf("scoped list = %v, want [job1-next job1-work]", got)
 		}
 		if got := list(pat); len(got) != 4 { // Decision 94, interim: every channel
 			t.Fatalf("unscoped list = %v, want all four channels", got)
@@ -136,7 +136,7 @@ func TestScopeGateChannels(t *testing.T) {
 
 		// An ACL identity the granter cannot see is the Decision 96 text.
 		// (the default entries stay: an agent cannot remove them, spec 4.6)
-		err = coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "work", Entries: []ab2bus.ACLEntry{
+		err = coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "job1-work", Entries: []ab2bus.ACLEntry{
 			{Identity: ab2store.Everyone, Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite}},
 			{Identity: ab2store.Admins, Permissions: []ab2bus.Permission{ab2bus.PermAdmin}},
 			{Identity: "pat", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}})
@@ -144,22 +144,22 @@ func TestScopeGateChannels(t *testing.T) {
 		if got, want := msgOf(err), `ACL identity "pat" is not a registered identity`; got != want {
 			t.Errorf("scoped SetACL naming pat: %q, want %q", got, want)
 		}
-		_, err = coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "acl2", ACL: []ab2bus.ACLEntry{{Identity: "pat", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}})
+		_, err = coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "job1-acl2", ACL: []ab2bus.ACLEntry{{Identity: "pat", Permissions: []ab2bus.Permission{ab2bus.PermRead}}}})
 		codeOf(t, err, ab2bus.CodeValidation)
 		// The administrator may name it; the row is inert for pat (the gate runs first).
-		if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "work", Entries: []ab2bus.ACLEntry{{Identity: "pat", Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite}}}}); err != nil {
+		if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "job1-work", Entries: []ab2bus.ACLEntry{{Identity: "pat", Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite}}}}); err != nil {
 			t.Fatalf("administrator SetACL naming pat: %v", err)
 		}
-		_, err = pat.History(ctx, ab2bus.HistoryInput{Channel: "work"})
+		_, err = pat.History(ctx, ab2bus.HistoryInput{Channel: "job1-work"})
 		if err != nil {
 			t.Fatalf("unscoped pat with a row: %v", err) // the gate never restricts an unscoped principal
 		}
 
 		// A task owner outside the scope is unregistered for the scoped caller.
-		if _, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "jobs", Kind: ab2bus.KindTasks}); err != nil {
+		if _, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "job1-jobs", Kind: ab2bus.KindTasks}); err != nil {
 			t.Fatal(err)
 		}
-		task, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "jobs", Subject: "t"})
+		task, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "job1-jobs", Subject: "t"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -171,7 +171,7 @@ func TestScopeGateChannels(t *testing.T) {
 		}
 		// A human and an administrator are visible to every agent (Eric 2026-10-25).
 		for _, who := range []string{"eric@corp.example", "root"} {
-			tk, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "jobs", Subject: "owned by " + who})
+			tk, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "job1-jobs", Subject: "owned by " + who})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -197,10 +197,10 @@ func TestScopeGateChannels(t *testing.T) {
 			t.Errorf("scoped Identities = %v, want %v", seen, want)
 		}
 
-		// Creation: an existing out-of-scope name is conflict until Task 11
-		// (scope-prefixed names) makes it validation.
+		// Creation: a scoped identity's name carries its scope prefix, so an
+		// out-of-scope name is validation, never a collision (spec 4.2).
 		_, err = coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "other"})
-		codeOf(t, err, ab2bus.CodeConflict)
+		codeOf(t, err, ab2bus.CodeValidation)
 		_, err = coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "named", Scope: "job1"})
 		codeOf(t, err, ab2bus.CodeForbidden)
 		if got, want := msgOf(err), "only an administrator may name a scope"; got != want {
@@ -242,7 +242,7 @@ func TestScopeGateByID(t *testing.T) {
 		if _, err := pat.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "elsewhere", Kind: ab2bus.KindMemory}); err != nil {
 			t.Fatal(err)
 		}
-		if _, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "mine", Kind: ab2bus.KindMemory}); err != nil {
+		if _, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "job1-mine", Kind: ab2bus.KindMemory}); err != nil {
 			t.Fatal(err)
 		}
 		if _, err := pat.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "elsewhere-tasks", Kind: ab2bus.KindTasks}); err != nil {
@@ -273,7 +273,7 @@ func TestScopeGateByID(t *testing.T) {
 			}
 			return id
 		}
-		foreign, own := memOf("elsewhere"), memOf("mine")
+		foreign, own := memOf("elsewhere"), memOf("job1-mine")
 		const unknown = 987654
 		task, err := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "elsewhere-tasks", Subject: "t"})
 		if err != nil {
@@ -350,9 +350,9 @@ func TestScopeGateBeforeKind(t *testing.T) {
 		mk(pat, "oo-ord", ab2bus.KindOrdinary)
 		mk(pat, "oo-tasks", ab2bus.KindTasks)
 		mk(pat, "oo-mem", ab2bus.KindMemory)
-		mk(coder, "in-ord", ab2bus.KindOrdinary)
-		mk(coder, "in-tasks", ab2bus.KindTasks)
-		mk(coder, "in-mem", ab2bus.KindMemory)
+		mk(coder, "job1-in-ord", ab2bus.KindOrdinary)
+		mk(coder, "job1-in-tasks", ab2bus.KindTasks)
+		mk(coder, "job1-in-mem", ab2bus.KindMemory)
 
 		idOf := func(ch string) int64 { // the memory id of one message on ch
 			t.Helper()
@@ -378,7 +378,7 @@ func TestScopeGateBeforeKind(t *testing.T) {
 			t.Fatal(err)
 		}
 		ooMem := idOf("oo-mem")
-		inMem := idOf("in-mem")
+		inMem := idOf("job1-in-mem")
 		const unknown = 987654
 		// norm masks digits and the channel name, which differ by construction.
 		norm := func(err error, name string) string {
@@ -448,13 +448,13 @@ func TestScopeGateBeforeKind(t *testing.T) {
 		}
 
 		// In scope the kind refusals stay (after the gate).
-		_, err = coder.Send(ctx, ab2bus.SendInput{Channel: "in-tasks", Content: "x"})
+		_, err = coder.Send(ctx, ab2bus.SendInput{Channel: "job1-in-tasks", Content: "x"})
 		codeOf(t, err, ab2bus.CodeValidation)
-		_, err = coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "in-ord", Subject: "x"})
+		_, err = coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "job1-in-ord", Subject: "x"})
 		codeOf(t, err, ab2bus.CodeValidation)
-		_, err = coder.List(ctx, ab2bus.TaskListInput{Channel: "in-ord"})
+		_, err = coder.List(ctx, ab2bus.TaskListInput{Channel: "job1-in-ord"})
 		codeOf(t, err, ab2bus.CodeValidation)
-		inTask, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "in-tasks", Subject: "t"})
+		inTask, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "job1-in-tasks", Subject: "t"})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -484,7 +484,7 @@ func TestUnsubscribeNeedsNoRow(t *testing.T) {
 			who  ab2bus.Bus
 			ch   string
 			mine ab2bus.Bus
-		}{{coder, "scoped-ch", coder}, {pat, "plain-ch", pat}} {
+		}{{coder, "job1-scoped-ch", coder}, {pat, "plain-ch", pat}} {
 			if _, err := c.mine.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: c.ch}); err != nil {
 				t.Fatal(err)
 			}
@@ -514,7 +514,7 @@ func TestScopedGranterNamesHumansAndAdmins(t *testing.T) {
 		h.human("eric@corp.example")
 		root := h.localAdmin("root")
 		h.localAs("pat")
-		if _, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "w"}); err != nil {
+		if _, err := coder.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "job1-w"}); err != nil {
 			t.Fatal(err)
 		}
 		rd := []ab2bus.Permission{ab2bus.PermRead}
@@ -527,22 +527,22 @@ func TestScopedGranterNamesHumansAndAdmins(t *testing.T) {
 		}
 		granter := ab2bus.ACLEntry{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermRead, ab2bus.PermWrite, ab2bus.PermAdmin}} // keep the granter's admin
 		acl := append(slices.Clone(keep), granter)
-		if err := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: acl}); err != nil {
+		if err := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "job1-w", Entries: acl}); err != nil {
 			t.Fatalf("scoped granter naming a human and an administrator: %v", err)
 		}
-		if got, err := root.ACL(ctx, "w"); err != nil || !reflect.DeepEqual(got, acl) {
+		if got, err := root.ACL(ctx, "job1-w"); err != nil || !reflect.DeepEqual(got, acl) {
 			t.Errorf("ACL = %+v, %v; want %+v", got, err, acl)
 		}
 		bad := append(slices.Clone(keep), ab2bus.ACLEntry{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermAdmin}}, ab2bus.ACLEntry{Identity: "pat", Permissions: rd})
-		err := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: bad})
+		err := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "job1-w", Entries: bad})
 		codeOf(t, err, ab2bus.CodeValidation)
 		if got, want := msgOf(err), `ACL identity "pat" is not a registered identity`; got != want {
 			t.Errorf("scoped granter naming an unscoped agent: %q, want %q", got, want)
 		}
 		// A malformed name keeps the Store's own format refusal, for scoped and unscoped alike.
 		fmtBad := append(slices.Clone(keep), ab2bus.ACLEntry{Identity: "job1-coder", Permissions: []ab2bus.Permission{ab2bus.PermAdmin}}, ab2bus.ACLEntry{Identity: "bad/name", Permissions: rd})
-		errScoped := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: fmtBad})
-		errAdmin := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "w", Entries: fmtBad})
+		errScoped := coder.SetACL(ctx, ab2bus.SetACLInput{Channel: "job1-w", Entries: fmtBad})
+		errAdmin := root.SetACL(ctx, ab2bus.SetACLInput{Channel: "job1-w", Entries: fmtBad})
 		codeOf(t, errScoped, ab2bus.CodeValidation)
 		if msgOf(errScoped) != msgOf(errAdmin) || strings.Contains(msgOf(errScoped), "is not a registered identity") {
 			t.Errorf("malformed name: scoped %q, admin %q; want the Store's format text for both", msgOf(errScoped), msgOf(errAdmin))
