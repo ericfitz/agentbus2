@@ -2,8 +2,6 @@ package sqlstore
 
 import (
 	"context"
-	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -154,72 +152,4 @@ func (t *tx) ACLRowsFor(ctx context.Context, names ...string) ([]store.ACLRow, e
 		out[i] = store.ACLRow{ChannelID: r.ChannelID, Identity: r.Identity, Read: r.Read, Write: r.Write, Admin: r.Admin}
 	}
 	return out, nil
-}
-
-func (t *tx) isAdmin(ctx context.Context, name string) (bool, error) {
-	if badText(name) {
-		return false, nil
-	}
-	var n int
-	if err := t.get(ctx, &n, "SELECT count(*) FROM identities WHERE name = ? AND is_admin = TRUE", name); err != nil {
-		return false, err
-	}
-	return n > 0, nil
-}
-
-// EffectivePermissions is the union of the stored rows for the identity,
-// everyone, and admins (when the identity is admin), plus the implicit
-// entries: the creator and every admin hold admin (Decisions 73, 96). An
-// unregistered identity is not admin. An identity failing TextRule is such an
-// identity: everyone is bound in its place (a repeat matches nothing new).
-func (t *tx) EffectivePermissions(ctx context.Context, id int64, identity string) (store.Permissions, error) {
-	var creator string
-	if err := t.get(ctx, &creator, "SELECT creator FROM channels WHERE id = ?", id); err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return store.Permissions{}, fmt.Errorf("%w: channel %d", store.ErrNotFound, id)
-		}
-		return store.Permissions{}, err
-	}
-	admin, err := t.isAdmin(ctx, identity)
-	if err != nil {
-		return store.Permissions{}, err
-	}
-	adminsName := store.Everyone // a repeat of everyone matches nothing new
-	if admin {
-		adminsName = store.Admins
-	}
-	who := identity
-	if badText(who) {
-		who = store.Everyone
-	}
-	var rows []aclRow
-	if err := t.sel(ctx, &rows, "SELECT identity, can_read, can_write, can_admin FROM channel_acl WHERE channel_id = ? AND identity IN (?, ?, ?)",
-		id, who, store.Everyone, adminsName); err != nil {
-		return store.Permissions{}, err
-	}
-	var p store.Permissions
-	for _, r := range rows {
-		p = p.Union(store.Permissions{Read: r.Read, Write: r.Write, Admin: r.Admin})
-	}
-	if admin || (creator != "" && creator == identity) {
-		p.Admin = true
-	}
-	return p, nil
-}
-
-// ReadableChannels lists the ids where EffectivePermissions.Read holds, in
-// one query. Implicit entries grant admin, not read. An identity failing
-// TextRule is unregistered: everyone is bound in its place (no identity is
-// named everyone, a reserved name).
-func (t *tx) ReadableChannels(ctx context.Context, identity string) ([]int64, error) {
-	if badText(identity) {
-		identity = store.Everyone
-	}
-	var ids []int64
-	err := t.sel(ctx, &ids, `SELECT c.id FROM channels c WHERE EXISTS (
-  SELECT 1 FROM channel_acl a WHERE a.channel_id = c.id AND a.can_read = TRUE AND (
-    a.identity = ? OR a.identity = ? OR
-    (a.identity = ? AND EXISTS (SELECT 1 FROM identities i WHERE i.name = ? AND i.is_admin = TRUE))
-  )) ORDER BY c.id`, identity, store.Everyone, store.Admins, identity)
-	return ids, err
 }

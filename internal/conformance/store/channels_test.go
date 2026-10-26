@@ -180,9 +180,9 @@ func TestChannelDeleteRemovesACL(t *testing.T) {
 			if _, err := tx.Channel(ctx, ch.ID); !errors.Is(err, ab2store.ErrNotFound) {
 				t.Errorf("Channel err = %v, want ErrNotFound", err)
 			}
-			ids, err := tx.ReadableChannels(ctx, "pat")
-			if err != nil || len(ids) != 1 || ids[0] != keep.ID {
-				t.Errorf("ReadableChannels = %v, %v; want [%d]", ids, err, keep.ID)
+			rows, err := tx.ACLRowsFor(ctx, "pat")
+			if err != nil || len(rows) != 1 || rows[0].ChannelID != keep.ID {
+				t.Errorf("ACLRowsFor(pat) = %v, %v; want one row on channel %d", rows, err, keep.ID)
 			}
 			return nil
 		})

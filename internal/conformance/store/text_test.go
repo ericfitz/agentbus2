@@ -289,16 +289,7 @@ func TestChannelsRejectsNUL(t *testing.T) {
 		ctx := context.Background()
 		s, _, _ := openStore(t, e, sqlstore.Options{})
 		mustIdentity(t, s, "pat")
-		ch := mustChannel(t, s, "a", ab2store.KindOrdinary, "pat", nil)
-		var strangerPerms ab2store.Permissions
-		var strangerReadable []int64
-		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) (err error) {
-			if strangerPerms, err = tx.EffectivePermissions(ctx, ch.ID, "stranger"); err != nil {
-				return err
-			}
-			strangerReadable, err = tx.ReadableChannels(ctx, "stranger")
-			return err
-		})
+		mustChannel(t, s, "a", ab2store.KindOrdinary, "pat", nil)
 		for _, bad := range badTexts {
 			wantIs(t, "ChannelByName "+bad, s.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
 				_, err := tx.ChannelByName(ctx, bad)
@@ -308,19 +299,11 @@ func TestChannelsRejectsNUL(t *testing.T) {
 				_, err := tx.CreateChannel(ctx, ab2store.ChannelCreate{Name: "b", Kind: ab2store.KindOrdinary, Creator: bad, CreatedAt: fixedNow})
 				return err
 			}), ab2store.ErrInvalid)
-			// Such an identity cannot exist, so it gets what any unregistered
-			// identity gets: the everyone rows.
-			wantIs(t, "EffectivePermissions/ReadableChannels "+bad, s.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
-				p, err := tx.EffectivePermissions(ctx, ch.ID, bad)
-				if err != nil {
-					return err
-				}
-				if p != strangerPerms {
-					t.Errorf("EffectivePermissions(%q) = %+v, want an unregistered identity's %+v", bad, p, strangerPerms)
-				}
-				ids, err := tx.ReadableChannels(ctx, bad)
-				if !reflect.DeepEqual(ids, strangerReadable) {
-					t.Errorf("ReadableChannels(%q) = %v, want an unregistered identity's %v", bad, ids, strangerReadable)
+			// Such an identity cannot exist, so its name matches no stored row.
+			wantIs(t, "ACLRowsFor "+bad, s.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+				rows, err := tx.ACLRowsFor(ctx, bad)
+				if len(rows) != 0 {
+					t.Errorf("ACLRowsFor(%q) = %v, want no rows", bad, rows)
 				}
 				return err
 			}), nil)

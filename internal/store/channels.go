@@ -79,11 +79,4 @@ type Channels interface {
 	// or malformed name (such a name matches nothing). The rule over these
 	// rows is internal/core/access.
 	ACLRowsFor(ctx context.Context, names ...string) ([]ACLRow, error)
-	// EffectivePermissions is the union of stored rows for identity,
-	// everyone, and admins (when identity is admin), plus the implicit
-	// entries. An unregistered identity is not admin and gets the everyone
-	// rows only (no error). ErrNotFound only for an unknown channel.
-	EffectivePermissions(ctx context.Context, id int64, identity string) (Permissions, error)
-	// ReadableChannels lists ids where EffectivePermissions.Read, ascending.
-	ReadableChannels(ctx context.Context, identity string) ([]int64, error)
 }

@@ -39,15 +39,33 @@ func wantACL(t *testing.T, got, want []ab2store.ACLEntry) {
 	}
 }
 
-func wantPerms(t *testing.T, s ab2store.Store, id int64, who string, want perm) {
+// wantStored asserts the union of the stored rows naming exactly who on
+// channel id. It is a fact about the rows: the rule over them (implicit
+// entries, group membership) is internal/core/access, asserted in decide_test.go.
+func wantStored(t *testing.T, s ab2store.Store, id int64, who string, want perm) {
 	t.Helper()
 	var got perm
-	mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) (err error) {
-		got, err = tx.EffectivePermissions(ctx, id, who)
+	mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
+		entries, err := tx.ACL(ctx, id)
+		for _, e := range entries {
+			if e.Identity != who {
+				continue
+			}
+			for _, p := range e.Permissions {
+				switch p {
+				case ab2store.PermRead:
+					got.Read = true
+				case ab2store.PermWrite:
+					got.Write = true
+				case ab2store.PermAdmin:
+					got.Admin = true
+				}
+			}
+		}
 		return err
 	})
 	if got != want {
-		t.Errorf("EffectivePermissions(%s) = %+v, want %+v", who, got, want)
+		t.Errorf("stored rows for %s = %+v, want %+v", who, got, want)
 	}
 }
 
@@ -85,8 +103,8 @@ func TestACLEmptyListStoresNoRows(t *testing.T) {
 		mustIdentity(t, s, "kim")
 		ch := mustChannel(t, s, "c", ab2store.KindOrdinary, "pat", []ab2store.ACLEntry{})
 		wantACL(t, aclOf(t, s, ch.ID), nil)
-		wantPerms(t, s, ch.ID, "kim", perm{})
-		wantPerms(t, s, ch.ID, "pat", perm{Admin: true})
+		wantStored(t, s, ch.ID, "kim", perm{})
+		wantStored(t, s, ch.ID, "pat", perm{})
 	})
 }
 
@@ -98,30 +116,7 @@ func TestACLDefaultRowsAbsentWhenCreatedWithOwn(t *testing.T) {
 		own := []ab2store.ACLEntry{{Identity: "kim", Permissions: []ab2store.Permission{"read"}}}
 		ch := mustChannel(t, s, "c", ab2store.KindOrdinary, "pat", own)
 		wantACL(t, aclOf(t, s, ch.ID), own)
-		wantPerms(t, s, ch.ID, "everyone", perm{})
-	})
-}
-
-func TestACLImplicitEntriesGrantAdmin(t *testing.T) {
-	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		s, _, _ := openStore(t, e, sqlstore.Options{})
-		mustIdentity(t, s, "pat")
-		mustIdentity(t, s, "kim")
-		mustIdentity(t, s, "lee")
-		mustAdmin(t, s, "root")
-		ch := mustChannel(t, s, "c", ab2store.KindOrdinary, "pat", []ab2store.ACLEntry{{Identity: "kim", Permissions: []ab2store.Permission{"read"}}})
-		wantPerms(t, s, ch.ID, "pat", perm{Admin: true})
-		wantPerms(t, s, ch.ID, "root", perm{Admin: true})
-		wantPerms(t, s, ch.ID, "kim", perm{Read: true})
-		wantPerms(t, s, ch.ID, "lee", perm{})
-		wantPerms(t, s, ch.ID, "ghost", perm{})
-		err := s.Read(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
-			_, err := tx.EffectivePermissions(ctx, 9999, "pat")
-			return err
-		})
-		if !errors.Is(err, ab2store.ErrNotFound) {
-			t.Errorf("unknown channel err = %v, want ErrNotFound", err)
-		}
+		wantStored(t, s, ch.ID, "everyone", perm{})
 	})
 }
 
@@ -134,7 +129,7 @@ func TestACLDuplicateEntriesAreAdditive(t *testing.T) {
 			{Identity: "kim", Permissions: []ab2store.Permission{"write"}},
 		}
 		ch := mustChannel(t, s, "c", ab2store.KindOrdinary, "", acl)
-		wantPerms(t, s, ch.ID, "kim", perm{Read: true, Write: true})
+		wantStored(t, s, ch.ID, "kim", perm{Read: true, Write: true})
 		wantACL(t, aclOf(t, s, ch.ID), acl)
 	})
 }
@@ -257,35 +252,7 @@ func TestACLGeneralHasDefaultAndNoCreator(t *testing.T) {
 		if ch.Creator != "" {
 			t.Errorf("Creator = %q, want empty", ch.Creator)
 		}
-		wantPerms(t, s, ch.ID, "pat", perm{Read: true, Write: true})
-		// A creatorless channel stores creator '' (Decision 92): the empty
-		// identity must not match it and gain admin.
-		wantPerms(t, s, ch.ID, "", perm{Read: true, Write: true})
-	})
-}
-
-func TestACLRemovingAdminsAndCreatorRowsKeepsImplicitAdmin(t *testing.T) {
-	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		s, _, _ := openStore(t, e, sqlstore.Options{})
-		mustIdentity(t, s, "pat")
-		mustAdmin(t, s, "root")
-		ch := mustChannel(t, s, "c", ab2store.KindOrdinary, "pat", nil)
-		if err := setACL(s, ch.ID, []ab2store.ACLEntry{{Identity: "everyone", Permissions: rwPerms}}); err != nil {
-			t.Fatal(err)
-		}
-		all := perm{Read: true, Write: true, Admin: true}
-		wantPerms(t, s, ch.ID, "pat", all)
-		wantPerms(t, s, ch.ID, "root", all)
-		if err := setACL(s, ch.ID, []ab2store.ACLEntry{}); err != nil {
-			t.Fatal(err)
-		}
-		wantACL(t, aclOf(t, s, ch.ID), nil)
-		wantPerms(t, s, ch.ID, "pat", perm{Admin: true})
-		wantPerms(t, s, ch.ID, "root", perm{Admin: true})
-		if err := setACL(s, ch.ID, []ab2store.ACLEntry{{Identity: "pat", Permissions: []ab2store.Permission{"read"}}}); err != nil {
-			t.Fatal(err)
-		}
-		wantPerms(t, s, ch.ID, "pat", perm{Read: true, Admin: true})
+		wantStored(t, s, ch.ID, "everyone", perm{Read: true, Write: true})
 	})
 }
 
@@ -293,44 +260,6 @@ func TestACLDeleteChannelRemovesEntries(t *testing.T) {
 	TestChannelDeleteRemovesACL(t)
 }
 
-func TestACLReadableChannels(t *testing.T) {
-	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		s, _, _ := openStore(t, e, sqlstore.Options{})
-		mustIdentity(t, s, "kim")
-		mustAdmin(t, s, "root")
-		read := []ab2store.Permission{"read"}
-		c1 := mustChannel(t, s, "c1", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: "kim", Permissions: read}})
-		c2 := mustChannel(t, s, "c2", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: "everyone", Permissions: read}})
-		mustChannel(t, s, "c3", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: "admins", Permissions: []ab2store.Permission{"admin"}}})
-		// c4 stores a read row for admins: only an identity with is_admin
-		// reads it (Decision 96), and EffectivePermissions must agree.
-		c4 := mustChannel(t, s, "c4", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: "admins", Permissions: read}})
-		readable := func(who string) []int64 {
-			var ids []int64
-			mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) (err error) {
-				ids, err = tx.ReadableChannels(ctx, who)
-				return err
-			})
-			return ids
-		}
-		if got := readable("kim"); !reflect.DeepEqual(got, []int64{c1.ID, c2.ID}) {
-			t.Errorf("kim = %v, want [%d %d]", got, c1.ID, c2.ID)
-		}
-		if got := readable("root"); !reflect.DeepEqual(got, []int64{c2.ID, c4.ID}) {
-			t.Errorf("root = %v, want [%d %d]", got, c2.ID, c4.ID)
-		}
-		if got := readable("ghost"); !reflect.DeepEqual(got, []int64{c2.ID}) {
-			t.Errorf("ghost = %v, want [%d]", got, c2.ID)
-		}
-		wantPerms(t, s, c4.ID, "root", perm{Read: true, Admin: true})
-		wantPerms(t, s, c4.ID, "kim", perm{})
-		wantPerms(t, s, c4.ID, "ghost", perm{})
-	})
-}
-
-// TestACLRowsFor: the fact query returns the stored rows for the names it is
-// given and nothing else, in (channel_id, identity) order; a name that fails
-// TextRule matches nothing and is not an error.
 func TestACLRowsFor(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		s, _, _ := openStore(t, e, sqlstore.Options{})

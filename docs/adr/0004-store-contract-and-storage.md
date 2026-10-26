@@ -468,3 +468,27 @@ rest are choices of the plan, not new design decisions.
   both engines (SQLite: `sqlite_master` text with whitespace removed, plus
   the column, foreign key and index pragmas; Postgres: `information_schema`
   columns, constraints, indexes, triggers and functions) and matched.
+
+## Access facts, not rules (2026-10-25)
+
+- **Decision (Eric, 2026-10-25, accesscheck 1): one access check.** "The right
+  way to check if someone has access to something is accesscheck(principal,
+  object). We should NOT have multiple different pieces of code each
+  attempting to calculate this on their own." The rule (administrator,
+  owner, group membership, implicit entries) lives in `internal/core/access`
+  and nowhere else.
+- **Decision (Eric, 2026-10-25, answer to question 9): `EffectivePermissions`
+  and `ReadableChannels` are deleted from the Store contract.** They were two
+  SQL statements for one rule that agreed only by inspection. `Tx.ACLRowsFor`
+  (the stored `channel_acl` rows whose identity is one of the given names,
+  ordered by channel and identity; a malformed or unregistered name matches
+  nothing) and `Tx.ACL` serve the facts, and `access` decides over them. The
+  Store applies no permission filter, no administrator join and no implicit
+  entry, and no longer binds a malformed name to `everyone`. The suite
+  asserts stored rows (`TestACLRowsFor`, `TestACLDuplicateEntriesAreAdditive`);
+  the rule is asserted in `internal/core/access` (`decide_test.go` and
+  `TestACLMatrix`).
+- Decisions 73 and 96 of this ADR's original text (the union over the
+  everyone and admins rows plus the implicit creator and administrator
+  entries) are now implemented by `access`, not the Store; the amendments
+  in the accesscheck design (no implicit creator entry) apply.
