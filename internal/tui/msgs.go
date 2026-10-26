@@ -17,12 +17,14 @@ type (
 	// statusTickMsg is the periodic status timer.
 	statusTickMsg struct{}
 	// statusMsg is the rail's source: channels, identities, tag
-	// subscriptions and, for an administrator, Status.
+	// subscriptions and Status (answered or not, as the server decides).
 	statusMsg struct {
 		channels   []bus.Channel
 		identities []bus.IdentityInfo
 		tags       [][]string
 		admin      bool
+		keepAdmin  bool  // Status failed for another reason than forbidden
+		statusFail error // that failure, shown in the status bar
 		status     bus.Status
 		statusOK   bool
 		err        error

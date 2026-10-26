@@ -164,8 +164,8 @@ func (m *Model) dropStaleDraft() tea.Cmd {
 	return m.dropDraft()
 }
 
-// takeTask (t in a task list) claims the cursor task for the TUI at once (a
-// claim takes over; the server answers conflict only for a blocked task) (Claim: the owner is the TUI's identity, the status in progress).
+// takeTask (t in a task list) claims the cursor task for the TUI at once.
+// A claim takes over; the server answers conflict only for a blocked task. (Claim: the owner is the TUI's identity, the status in progress).
 func (m *Model) takeTask() tea.Cmd {
 	t, ok := m.cursorTask()
 	if !ok {
@@ -185,8 +185,7 @@ func (m *Model) takeTask() tea.Cmd {
 	return m.loadTasks(m.selName())
 }
 
-// unassignTask (u in a task list) releases the TUI's own not-started cursor
-// task at once (Release: no owner, pending).
+// unassignTask (u in a task list) releases the not-started cursor task at once (Release: no owner, pending).
 func (m *Model) unassignTask() tea.Cmd {
 	t, ok := m.cursorTask()
 	if !ok {

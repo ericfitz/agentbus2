@@ -1160,3 +1160,36 @@ func sameSet(a, b map[string]bool) bool {
 	}
 	return true
 }
+
+// statusFailBus fails Status with a fixed error.
+type statusFailBus struct {
+	bus.Bus
+	err error
+}
+
+func (b statusFailBus) Status(context.Context) (bus.Status, error) { return bus.Status{}, b.err }
+
+// A transient Status error keeps a known administrator an administrator, and
+// the error is shown; a forbidden clears admin with nothing shown.
+func TestStatusTransientErrorKeepsAdmin(t *testing.T) {
+	f := newFixture(t)
+	setAdmin(t, f.core, "eric")
+	f.run(f.m.statusCmd())
+	if !f.m.admin || !f.m.statusOK {
+		t.Fatalf("setup: admin=%v statusOK=%v", f.m.admin, f.m.statusOK)
+	}
+	real := f.m.c.b
+	f.m.c.b = statusFailBus{real, bus.Errorf(bus.CodeUnavailable, true, "store busy")}
+	f.run(f.m.statusCmd())
+	if !f.m.admin || f.m.statusOK || f.m.statusErr == nil || f.m.toast != "" {
+		t.Fatalf("admin=%v statusOK=%v err=%v toast=%q", f.m.admin, f.m.statusOK, f.m.statusErr, f.m.toast)
+	}
+	if bar := stripANSI(f.m.renderStatusBar()); !strings.Contains(bar, "store busy") {
+		t.Fatalf("status bar lacks the error: %q", bar)
+	}
+	f.m.c.b = statusFailBus{real, bus.Errorf(bus.CodeForbidden, false, "no")}
+	f.run(f.m.statusCmd())
+	if f.m.admin || f.m.statusOK || f.m.statusErr != nil || f.m.toast != "" {
+		t.Fatalf("forbidden: admin=%v statusOK=%v err=%v toast=%q", f.m.admin, f.m.statusOK, f.m.statusErr, f.m.toast)
+	}
+}

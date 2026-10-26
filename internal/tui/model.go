@@ -1271,8 +1271,8 @@ func (m *Model) onBatch(res bus.ReceiveResult) tea.Cmd {
 
 // onStatus refreshes the rail's data: the channels (learning those created
 // since startup and subscribing from oldest so nothing is missed), the
-// identities with their live sessions, the followed tag sets and, for an
-// administrator, the status report. sessionsSeen tracks when each session
+// identities with their live sessions, the followed tag sets and, when the
+// server answers it, the status report. sessionsSeen tracks when each session
 // display name was last listed live.
 func (m *Model) onStatus(msg statusMsg) tea.Cmd {
 	m.statusErr = msg.err
@@ -1280,7 +1280,10 @@ func (m *Model) onStatus(msg statusMsg) tea.Cmd {
 		return nil
 	}
 	m.identities = msg.identities
-	m.admin = msg.admin
+	m.statusErr = msg.statusFail
+	if !msg.keepAdmin {
+		m.admin = msg.admin
+	}
 	m.status, m.statusOK = msg.status, msg.statusOK
 	now := time.Now()
 	for _, id := range msg.identities {
@@ -1362,9 +1365,9 @@ func (m *Model) subscribeCmd(ch bus.Channel, from string) tea.Cmd {
 
 // statusCmd is one command: ListChannels, Identities and TagSubscriptions,
 // then Status. The server decides who may read Status: an answer sets admin
-// and statusOK, any error (a forbidden for a non-administrator included)
-// only clears them and is never a toast, because the server decided and the
-// periodic round is not the user's action.
+// and statusOK; a forbidden clears them, with no toast and no error shown
+// (the server decided); any other error keeps the last admin answer, clears
+// statusOK and is carried in statusFail for the status bar.
 func (m *Model) statusCmd() tea.Cmd {
 	c := m.c
 	return func() tea.Msg {
@@ -1382,8 +1385,15 @@ func (m *Model) statusCmd() tea.Cmd {
 		}
 		msg := statusMsg{channels: chans, identities: ids, tags: tags}
 		st, err := c.b.Status(c.ctx)
-		msg.status, msg.statusOK = st, err == nil
-		msg.admin = err == nil
+		switch {
+		case err == nil:
+			msg.status, msg.statusOK, msg.admin = st, true, true
+		case bus.CodeOf(err) == bus.CodeForbidden:
+			// The server decided: not an administrator. Not an error to show.
+		default:
+			// Transient: keep the last admin answer and show the error.
+			msg.keepAdmin, msg.statusFail = true, err
+		}
 		return msg
 	}
 }

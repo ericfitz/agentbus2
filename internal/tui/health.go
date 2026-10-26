@@ -58,7 +58,8 @@ func (m *Model) healthCmd() tea.Cmd {
 }
 
 // usageCmd fetches storage use for the admin block of the overlay: nil unless
-// the identity is an administrator, so a non-admin never calls Usage. A
+// the last Status round was answered (the server's word that the identity is
+// an administrator), so a non-admin does not call Usage. A
 // failure (a forbidden among them) is carried in the message and ignored by
 // the handler: it is never a toast, and the storage line is simply absent.
 func (m *Model) usageCmd() tea.Cmd {
