@@ -201,10 +201,11 @@ func TestDraftIsDiscardedWhenTheTaskDisappears(t *testing.T) {
 	}
 }
 
-// TestAgentOwnedTaskCannotBeChanged (decision 1): a task owned by anyone
-// else, in progress or merely assigned, refuses space, t and u with the
-// owned-by toast and never drafts.
-func TestAgentOwnedTaskCannotBeChanged(t *testing.T) {
+// TestAgentOwnedTaskIsSentToTheServer: the TUI decides nothing about task
+// ownership. On a task another identity owns, t (a claim takes over) and
+// space then enter (a status change) are sent and succeed; u on a pending
+// one releases it.
+func TestAgentOwnedTaskIsSentToTheServer(t *testing.T) {
 	f := newFixture(t)
 	ts := f.openTasks(t, "theirs", "assigned") // cursor on "assigned"
 	if _, err := f.sam.Claim(taskCtx, bus.TaskClaimInput{ID: ts[0].ID}); err != nil {
@@ -215,21 +216,33 @@ func TestAgentOwnedTaskCannotBeChanged(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.receive(t)
-	want := ownedToast("sam")
-	for _, id := range []int64{ts[1].ID, ts[0].ID} {
-		for _, k := range []string{" ", "t", "u"} {
-			f.key(k)
-			if f.m.toast != want || f.m.toastHint || f.m.draft.id != 0 {
-				t.Fatalf("task %d key %q: toast=%q hint=%v draft=%+v", id, k, f.m.toast, f.m.toastHint, f.m.draft)
-			}
-		}
-		f.key("up")
+	f.key("t") // takes over sam's pending task
+	if got := f.task(t, ts[1].ID); got.Owner != "eric" || got.Status != "in_progress" || f.m.toast != "" {
+		t.Fatalf("take over: %+v toast=%q", got, f.m.toast)
 	}
-	if got := f.task(t, ts[0].ID); got.Owner != "sam" || got.Status != "in_progress" {
-		t.Fatalf("untouched: %+v", got)
+	f.key("up")
+	f.key(" ") // sam's in-progress task drafts completed
+	if f.m.draft.id != ts[0].ID {
+		t.Fatalf("space on another's task must draft: draft=%+v toast=%q", f.m.draft, f.m.toast)
 	}
-	if got := f.task(t, ts[1].ID); got.Owner != "sam" || got.Status != "pending" {
-		t.Fatalf("untouched: %+v", got)
+	f.key("enter")
+	if got := f.task(t, ts[0].ID); got.Owner != "sam" || got.Status != "completed" || f.m.toast != "" {
+		t.Fatalf("status change on another's task: %+v toast=%q", got, f.m.toast)
+	}
+}
+
+// TestReleaseOfAnothersPendingTask: u is sent for a task sam owns.
+func TestReleaseOfAnothersPendingTask(t *testing.T) {
+	f := newFixture(t)
+	a := f.openTasks(t, "a")[0]
+	owner := "sam"
+	if _, err := f.sam.Update(taskCtx, bus.TaskPatch{ID: a.ID, Owner: &owner}); err != nil {
+		t.Fatal(err)
+	}
+	f.receive(t)
+	f.key("u")
+	if got := f.task(t, a.ID); got.Owner != "" || f.m.toast != "" {
+		t.Fatalf("release: %+v toast=%q", got, f.m.toast)
 	}
 }
 
@@ -306,20 +319,6 @@ func TestEscDiscardsDraft(t *testing.T) {
 	}
 	if got := f.task(t, a.ID); got.Status != "pending" || got.Owner != "" {
 		t.Fatalf("esc writes nothing: %+v", got)
-	}
-}
-
-// TestOwnedByAgentIsRefused: the refusal names the owner and the rule.
-func TestOwnedByAgentIsRefused(t *testing.T) {
-	f := newFixture(t)
-	a := f.openTasks(t, "a")[0]
-	if _, err := f.sam.Claim(taskCtx, bus.TaskClaimInput{ID: a.ID}); err != nil {
-		t.Fatal(err)
-	}
-	f.receive(t)
-	f.key(" ")
-	if f.m.toast != "owned by sam; only unassigned tasks or yours can be changed here" || f.m.draft.id != 0 {
-		t.Fatalf("toast=%q draft=%+v", f.m.toast, f.m.draft)
 	}
 }
 
@@ -446,9 +445,10 @@ func TestAssignPicker(t *testing.T) {
 	}
 
 	f.key("a")
-	if f.m.mode != modeNormal || f.m.toast != ownedToast("sam") {
-		t.Fatalf("an agent's task cannot be reassigned: mode=%v toast=%q", f.m.mode, f.m.toast)
+	if f.m.mode != modeAssign {
+		t.Fatalf("the picker opens on an agent's task too: mode=%v toast=%q", f.m.mode, f.m.toast)
 	}
+	f.key("esc")
 
 	f.key("up") // task a
 	f.key("t")
@@ -495,5 +495,25 @@ func TestAssignPickerIgnoresOtherKeys(t *testing.T) {
 	f.key("enter") // already the owner: no write
 	if got := f.task(t, a.ID); got.Revision != rev {
 		t.Fatalf("enter on the current owner wrote: %+v", got)
+	}
+}
+
+// TestBlockedClaimShowsTheServersAnswer: t on a blocked task is sent; the
+// server's conflict text is the toast and nothing changes.
+func TestBlockedClaimShowsTheServersAnswer(t *testing.T) {
+	f := newFixture(t)
+	ts := f.openTasks(t, "first")
+	b, err := f.sam.Create(taskCtx, bus.TaskCreateInput{Channel: "todo", Subject: "second", BlockedBy: []int64{ts[0].ID}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.run(f.m.loadTasks("todo"))
+	f.key("down")
+	if c, ok := f.m.cursorTask(); !ok || c.ID != b.ID {
+		t.Fatalf("cursor not on the blocked task: %+v", c)
+	}
+	f.key("t")
+	if !strings.HasPrefix(f.m.toast, "task: ") || f.task(t, b.ID).Owner != "" {
+		t.Fatalf("toast=%q task=%+v", f.m.toast, f.task(t, b.ID))
 	}
 }

@@ -616,19 +616,6 @@ func TestFixtureHelpers(t *testing.T) {
 		t.Fatalf("pending after the ack = %d", got)
 	}
 	setAdmin(t, f.core, "eric")
-	ids, err := f.bus.Identities(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	var admin bool
-	for _, id := range ids {
-		if id.Name == "eric" {
-			admin = id.Admin
-		}
-	}
-	if !admin {
-		t.Fatal("setAdmin did not flag eric")
-	}
 }
 
 // TestResumeOfSweptSessionKeepsTheHint: a session swept by the retention job

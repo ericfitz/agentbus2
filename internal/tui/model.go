@@ -1361,10 +1361,10 @@ func (m *Model) subscribeCmd(ch bus.Channel, from string) tea.Cmd {
 }
 
 // statusCmd is one command: ListChannels, Identities and TagSubscriptions,
-// then Status when the own row of that Identities result has Admin set (the
-// answer of this round, not m.admin, which is last round's). A non-admin
-// never calls Status, so a forbidden is never a toast (Decision 73); a
-// Status failure only clears statusOK.
+// then Status. The server decides who may read Status: an answer sets admin
+// and statusOK, any error (a forbidden for a non-administrator included)
+// only clears them and is never a toast, because the server decided and the
+// periodic round is not the user's action.
 func (m *Model) statusCmd() tea.Cmd {
 	c := m.c
 	return func() tea.Msg {
@@ -1381,15 +1381,9 @@ func (m *Model) statusCmd() tea.Cmd {
 			return statusMsg{channels: chans, identities: ids, err: err}
 		}
 		msg := statusMsg{channels: chans, identities: ids, tags: tags}
-		for _, id := range ids {
-			if id.Name == c.identity {
-				msg.admin = id.Admin
-			}
-		}
-		if msg.admin {
-			st, err := c.b.Status(c.ctx)
-			msg.status, msg.statusOK = st, err == nil
-		}
+		st, err := c.b.Status(c.ctx)
+		msg.status, msg.statusOK = st, err == nil
+		msg.admin = err == nil
 		return msg
 	}
 }

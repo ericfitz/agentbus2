@@ -128,7 +128,7 @@ The channel create prompt takes a kind (`memory` or `tasks`) as its second word;
 
 ### Task lists
 
-A channel of kind `tasks` shows the task tree. A task is editable when it is unassigned or yours. `space` cycles the draft state (not started, in progress, completed) and `enter` saves it; `esc` cancels. `t` takes the cursor task (claim: it becomes yours and in progress), `u` releases it, and `a` assigns it to an identity chosen from the list of identities. The bus's owner rules stay authoritative; a refusal is a toast.
+A channel of kind `tasks` shows the task tree. `space` cycles the draft state (not started, in progress, completed) and `enter` saves it; `esc` cancels. `t` takes the cursor task (claim: it becomes yours and in progress), `u` releases it, and `a` assigns it to an identity chosen from the list of identities. The TUI decides nothing about who may change a task: it sends the change and shows the server's answer, and a refusal is a toast.
 
 ### Search
 
@@ -136,7 +136,7 @@ A channel of kind `tasks` shows the task tree. A task is editable when it is una
 
 ### Health
 
-`h` shows the version, the mode line (`local · <sqlite path>` or `server · <url>`), your identity, display name and session id, the live sessions, the channels by kind, the receive state (last batch, gaps, last error), the server line (the server's own status, version, store engine and schema, and embedding state, from its health endpoint, fetched each time the overlay opens, so a reopen shows no stale answer; `server unavailable · <error>` when the endpoint fails, never a toast), the administrator block when your identity is an administrator (capacity notices, the embedding backlog and errors, storage, and the maintenance line: lock held, held elsewhere or unknown, the time of the last tick, the job count and failures, with one line per failed job and a `lock error:` line when the lock attempt failed), the warnings printed at start, the theme with each resolved value, the icon set, the config path and the effective `tui` settings. A non-administrator never calls the admin operations (`Status`, `Usage`) and sees a line saying so.
+`h` shows the version, the mode line (`local · <sqlite path>` or `server · <url>`), your identity, display name and session id, the live sessions, the channels by kind, the receive state (last batch, gaps, last error), the server line (the server's own status, version, store engine and schema, and embedding state, from its health endpoint, fetched each time the overlay opens, so a reopen shows no stale answer; `server unavailable · <error>` when the endpoint fails, never a toast), the administrator block when your identity is an administrator (capacity notices, the embedding backlog and errors, storage, and the maintenance line: lock held, held elsewhere or unknown, the time of the last tick, the job count and failures, with one line per failed job and a `lock error:` line when the lock attempt failed), the warnings printed at start, the theme with each resolved value, the icon set, the config path and the effective `tui` settings. The status round always calls `Status`: an answer marks the identity as an administrator for the display, and a `forbidden` only leaves it unmarked, with no toast (the server decides). `Usage` is called only after such an answer. A non-administrator sees a line saying so.
 
 `o` opens `config.json` in `$VISUAL`, else `$EDITOR`, else `vi` (`notepad` on Windows), and re-validates the file when the editor exits. Settings apply the next time the TUI starts.
 

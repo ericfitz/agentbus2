@@ -813,19 +813,20 @@ func TestDeleteChannelConfirm(t *testing.T) {
 	}
 }
 
-// Review Focus 1: a non-admin's tick never calls Status and never toasts
-// forbidden (Decision 73).
+// A non-admin's tick calls Status, the server answers forbidden, and that
+// leaves admin and statusOK false with no toast (the server decided).
 func TestStatusTickNonAdminIsQuiet(t *testing.T) {
 	f, cb := newCountingFixture(t)
 	before := cb.count("Identities")
+	statusBefore := cb.count("Status")
 	for range 3 {
 		f.run(f.m.statusCmd())
 	}
 	if f.m.toast != "" || f.m.statusOK || f.m.admin {
 		t.Fatalf("toast=%q statusOK=%v admin=%v", f.m.toast, f.m.statusOK, f.m.admin)
 	}
-	if n := cb.count("Status"); n != 0 {
-		t.Fatalf("a non-admin called Status %d times", n)
+	if n := cb.count("Status") - statusBefore; n != 3 {
+		t.Fatalf("%d Status calls, want 3 (the server decides)", n)
 	}
 	if n := cb.count("Identities") - before; n != 3 {
 		t.Fatalf("%d Identities calls, want 3 (the rounds must have run)", n)
@@ -841,6 +842,7 @@ func TestStatusTickAdminShowsNotices(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	statusBefore := cb.count("Status")
 	for round := 1; round <= 2; round++ {
 		f.run(f.m.statusCmd())
 		if !f.m.statusOK || !f.m.admin {
@@ -849,7 +851,7 @@ func TestStatusTickAdminShowsNotices(t *testing.T) {
 		if bar := stripANSI(f.m.renderStatusBar()); !strings.Contains(bar, "store at 95%") {
 			t.Fatalf("round %d: status bar lacks the notice: %q", round, bar)
 		}
-		if n := cb.count("Status"); n != round {
+		if n := cb.count("Status") - statusBefore; n != round {
 			t.Fatalf("round %d: %d Status calls", round, n)
 		}
 		if f.m.toast != "" {

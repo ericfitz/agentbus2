@@ -52,20 +52,8 @@ const (
 	staleTaskToast       = "task changed; reloading"
 )
 
-// ownedToast is the refusal for a task some other identity owns: the bus
-// has no user/agent kind, so only the TUI's own identity counts as the
-// user (ADR 0011 decision 1).
-func ownedToast(owner string) string {
-	return "owned by " + owner + "; only unassigned tasks or yours can be changed here"
-}
-
 // nextStatus is space's cycle.
 var nextStatus = map[string]string{"pending": "in_progress", "in_progress": "completed", "completed": "pending"}
-
-// taskEditable reports whether the TUI may change t: unassigned, or its own.
-func (m *Model) taskEditable(t bus.TaskSummary) bool {
-	return t.Owner == "" || t.Owner == m.c.identity
-}
 
 // shownTask is t as its row shows it, with the draft applied when t holds
 // it; drafted reports which.
@@ -90,9 +78,6 @@ func (m *Model) cycleTaskState() tea.Cmd {
 	t, ok := m.cursorTask()
 	if !ok {
 		return nil
-	}
-	if !m.taskEditable(t) {
-		return m.showToast(ownedToast(t.Owner))
 	}
 	ch := m.selName()
 	shown, drafted := m.shownTask(ch, t)
@@ -179,8 +164,8 @@ func (m *Model) dropStaleDraft() tea.Cmd {
 	return m.dropDraft()
 }
 
-// takeTask (t in a task list) claims an unassigned cursor task for the TUI
-// at once (Claim: the owner is the TUI's identity, the status in progress).
+// takeTask (t in a task list) claims the cursor task for the TUI at once (a
+// claim takes over; the server answers conflict only for a blocked task) (Claim: the owner is the TUI's identity, the status in progress).
 func (m *Model) takeTask() tea.Cmd {
 	t, ok := m.cursorTask()
 	if !ok {
@@ -189,10 +174,7 @@ func (m *Model) takeTask() tea.Cmd {
 	if m.draft.id != 0 {
 		return m.showHint(draftHintToast)
 	}
-	if !m.taskEditable(t) {
-		return m.showToast(ownedToast(t.Owner))
-	}
-	if t.Owner != "" {
+	if t.Owner == m.c.identity {
 		return nil // already yours
 	}
 	ctx, cancel := m.c.callCtx()
@@ -212,9 +194,6 @@ func (m *Model) unassignTask() tea.Cmd {
 	}
 	if m.draft.id != 0 {
 		return m.showHint(draftHintToast)
-	}
-	if !m.taskEditable(t) {
-		return m.showToast(ownedToast(t.Owner))
 	}
 	if t.Owner == "" {
 		return nil
@@ -241,8 +220,8 @@ type assignPicker struct {
 	sel   int
 }
 
-// openAssign (a in a task list) opens the picker for an unassigned task or
-// the TUI's own; an agent's task gets the owned toast, like t and u.
+// openAssign (a in a task list) opens the picker for the cursor task; the server
+// decides whether the assignment is allowed.
 func (m *Model) openAssign() tea.Cmd {
 	t, ok := m.cursorTask()
 	if !ok {
@@ -250,9 +229,6 @@ func (m *Model) openAssign() tea.Cmd {
 	}
 	if m.draft.id != 0 {
 		return m.showHint(draftHintToast)
-	}
-	if !m.taskEditable(t) {
-		return m.showToast(ownedToast(t.Owner))
 	}
 	names := []string{m.c.identity}
 	for _, id := range m.identities {
