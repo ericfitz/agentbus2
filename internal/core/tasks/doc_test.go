@@ -187,8 +187,7 @@ func TestApplyPatch(t *testing.T) {
 	}
 	cases := []tc{
 		{name: "rule 1 delete with other changes", cur: 1, p: bus.TaskPatch{Delete: true, Subject: str("x")}, as: "pat", code: bus.CodeValidation},
-		{name: "rule 2 owner guard on in_progress", cur: 2, p: bus.TaskPatch{Description: str("d")}, as: "kim", code: bus.CodeConflict},
-		{name: "rule 2 force bypasses", cur: 2, p: bus.TaskPatch{Description: str("d"), Force: true}, as: "kim", chk: func(t *testing.T, g task) {
+		{name: "no owner guard: a non-owner changes an in_progress task", cur: 2, p: bus.TaskPatch{Description: str("d")}, as: "kim", chk: func(t *testing.T, g task) {
 			if g.Description != "d" || g.Owner != "pat" {
 				t.Errorf("got %+v", g)
 			}
@@ -199,7 +198,7 @@ func TestApplyPatch(t *testing.T) {
 			}
 		}},
 		{name: "rule 4 delete with children", cur: 2, p: bus.TaskPatch{Delete: true}, as: "pat", code: bus.CodeConflict},
-		{name: "rule 4 force does not bypass children", cur: 2, p: bus.TaskPatch{Delete: true, Force: true}, as: "kim", code: bus.CodeConflict},
+		{name: "rule 4 delete with children by a non-owner", cur: 2, p: bus.TaskPatch{Delete: true}, as: "kim", code: bus.CodeConflict},
 		{name: "rule 4 delete leaf", cur: 1, p: bus.TaskPatch{Delete: true}, as: "pat", same: true},
 		{name: "rule 5 subject invalid", cur: 1, p: bus.TaskPatch{Subject: str("")}, as: "pat", code: bus.CodeValidation},
 		{name: "rule 5 metadata merge and delete", cur: 1, p: bus.TaskPatch{Metadata: map[string]string{"a": "1", "b": ""}}, as: "pat", chk: func(t *testing.T, g task) {
@@ -280,20 +279,6 @@ func TestApplyPatchPrunesDeadBlockers(t *testing.T) {
 	got, err := applyPatch(ts, ts[0], bus.TaskPatch{Description: str("d")}, "pat", 1, owners())
 	if err != nil || len(got.BlockedBy) != 0 {
 		t.Fatalf("got %+v, %v; want the dead blocker pruned", got.BlockedBy, err)
-	}
-}
-
-func TestOwnerGuardBlocked(t *testing.T) {
-	cur := mk(1, 0, "V", "in_progress", "pat").Task
-	if !ownerGuardBlocked(cur, bus.TaskPatch{}, "kim") || ownerGuardBlocked(cur, bus.TaskPatch{}, "pat") {
-		t.Fatal("in_progress is guarded for non-owners only")
-	}
-	pend := mk(1, 0, "V", "pending", "pat").Task
-	if !ownerGuardBlocked(pend, bus.TaskPatch{Owner: str("kim")}, "kim") {
-		t.Fatal("taking a task owned by another is guarded")
-	}
-	if ownerGuardBlocked(pend, bus.TaskPatch{Owner: str("")}, "kim") {
-		t.Fatal("clearing an owner is not a takeover")
 	}
 }
 

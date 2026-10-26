@@ -1011,7 +1011,6 @@ type TaskPatch struct {
 	Before          *int64             `json:"before,omitempty"`
 	Delete          *bool              `json:"delete,omitempty"`
 	Description     *string            `json:"description,omitempty"`
-	Force           *bool              `json:"force,omitempty"`
 	LeasedUntil     *int64             `json:"leased_until,omitempty"`
 	Metadata        *map[string]string `json:"metadata,omitempty"`
 	Owner           *string            `json:"owner,omitempty"`

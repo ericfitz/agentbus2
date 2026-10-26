@@ -142,8 +142,9 @@ unit of handoff: if you would otherwise write "remaining: X, Y, Z" in
 
 1. `task_list` before starting work: see what is claimed and what is
    blocked.
-2. `task_claim` before you start. `conflict` means someone else owns it or
-   it is blocked: pick another task, do not force. A claimed task is
+2. `task_claim` before you start. Any identity with write on the list may
+   change any task, so claim before working: others then see the owner.
+   `conflict` means it is blocked: pick another task. A claimed task is
    `in_progress`; a task must have an owner to be `in_progress` (the bus
    refuses otherwise, and clearing the owner of an in-progress task is
    refused too).
@@ -162,8 +163,8 @@ unit of handoff: if you would otherwise write "remaining: X, Y, Z" in
 
 ### Coordinating through a list
 
-- `force: true` overrides another owner and is recorded. Use it only when
-  the user tells you to, never over a live agent's task.
+- Any identity with write on the list may change or delete any task on it;
+  do not take over a live agent's task unless the user tells you to.
 - Post to the project channel when you claim or finish something others are
   waiting on (a blocker, a handoff); the list itself is quiet.
 - `receive` delivers a task's latest revision, not every intermediate one,

@@ -256,9 +256,9 @@ func TestTaskPatchMembersRoundTrip(t *testing.T) {
 		t.Fatalf("owner/status/lease: %+v", tk)
 	}
 
-	// Force only matters against the owner guard: give b to another identity
-	// (with a live session, or the task is reclaimed as abandoned) and in
-	// progress, then Delete alone is refused and Delete with Force deletes.
+	// There is no owner guard (spec 3.14): any identity with write deletes
+	// another identity's in_progress task. Give b to sam (with a live session,
+	// or the task is reclaimed as abandoned), then delete it as the caller.
 	f.e.identity("sam", false)
 	if _, err := (sessions.Service{Core: f.e.core}).Open(ctx, "sam", ab2bus.OpenSessionInput{}); err != nil {
 		t.Fatalf("open sam's session: %v", err)
@@ -270,13 +270,8 @@ func TestTaskPatchMembersRoundTrip(t *testing.T) {
 	}
 	tr := true
 	r, err := f.c.UpdateTaskWithResponse(ctx, b, &gen.UpdateTaskParams{}, gen.TaskPatch{Delete: &tr})
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantProblem(t, r.StatusCode(), r.ApplicationproblemJSONDefault, http.StatusConflict, gen.Conflict)
-	r, err = f.c.UpdateTaskWithResponse(ctx, b, &gen.UpdateTaskParams{}, gen.TaskPatch{Delete: &tr, Force: &tr})
 	if err != nil || r.JSON200 == nil || r.JSON200.Deleted == nil || !*r.JSON200.Deleted {
-		t.Fatalf("delete/force: %+v, %v", r, err)
+		t.Fatalf("delete another's in_progress task: %+v, %v", r, err)
 	}
 }
 

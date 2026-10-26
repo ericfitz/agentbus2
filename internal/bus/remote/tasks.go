@@ -54,9 +54,6 @@ func (b *Bus) Update(ctx context.Context, p ab2bus.TaskPatch) (ab2bus.TaskUpdate
 	if p.Delete {
 		body.Delete = ptr(true)
 	}
-	if p.Force {
-		body.Force = ptr(true)
-	}
 	r, err := b.c.UpdateTaskWithResponse(ctx, p.ID, &gen.UpdateTaskParams{IdempotencyKey: key(p.IdempotencyKey)}, body)
 	if err := mtCheck(ctx, r, err, func(r *gen.UpdateTaskResponse) bool { return r.JSON200 != nil }); err != nil {
 		return ab2bus.TaskUpdateResult{}, err

@@ -708,14 +708,14 @@ func (s *server) addTools(srv *mcp.Server) {
 				return b.Release(ctx, bus.TaskReleaseInput{ID: in.TaskID, IdempotencyKey: in.IdempotencyKey})
 			})
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "task_update", Description: "Agentbus2: change a task by id; only the fields you pass change. status is pending, in_progress or completed. While a task is in_progress only its owner may change or delete it; force=true overrides that for anyone and is recorded. owner=<name> takes an unassigned task, or hands your own task to another registered identity (keeping its status); owner=\"\" clears the owner, parent=0 moves the task to the top level, leased_until=0 clears the lease (any other value must be in the future). before/after reorder among siblings. delete=true deletes a task that has no subtasks. To renew a lease use task_claim again. An in_progress task always has an owner."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "task_update", Description: "Agentbus2: change a task by id; only the fields you pass change. status is pending, in_progress or completed. Any identity with write on the task list may change or delete any task on it (Eric's decision 2026-10-25). owner=<name> assigns the task to a registered identity (keeping its status); owner=\"\" clears the owner, parent=0 moves the task to the top level, leased_until=0 clears the lease (any other value must be in the future). before/after reorder among siblings. delete=true deletes a task that has no subtasks. To renew a lease use task_claim again. An in_progress task always has an owner."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in taskUpdateIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) {
 				return b.Update(ctx, bus.TaskPatch{
 					ID: in.TaskID, Status: in.Status, Owner: in.Owner, Subject: in.Subject, Description: in.Description,
 					Parent: in.Parent, Before: in.Before, After: in.After, AddBlockedBy: in.AddBlockedBy,
 					RemoveBlockedBy: in.RemoveBlockedBy, LeasedUntil: in.LeasedUntil, Metadata: in.Metadata,
-					Delete: in.Delete, Force: in.Force, IdempotencyKey: in.IdempotencyKey,
+					Delete: in.Delete, IdempotencyKey: in.IdempotencyKey,
 				})
 			})
 		})

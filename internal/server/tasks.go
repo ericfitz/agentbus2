@@ -104,7 +104,7 @@ func (a *api) UpdateTask(ctx context.Context, r gen.UpdateTaskRequestObject) (ge
 		Parent: b.Parent, Before: derefOr(b.Before), After: derefOr(b.After),
 		AddBlockedBy: derefOr(b.AddBlockedBy), RemoveBlockedBy: derefOr(b.RemoveBlockedBy),
 		LeasedUntil: b.LeasedUntil, Metadata: derefOr(b.Metadata),
-		Delete: derefOr(b.Delete), Force: derefOr(b.Force),
+		Delete:         derefOr(b.Delete),
 		IdempotencyKey: idemKey(r.Params.IdempotencyKey),
 	}
 	res, err := a.tasks.Update(ctx, IdentityFrom(ctx), p)

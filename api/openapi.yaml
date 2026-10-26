@@ -1770,8 +1770,6 @@ components:
             type: string
         delete:
           type: boolean
-        force:
-          type: boolean
     TaskUpdateResult:
       type: object
       required: [task, replaced]

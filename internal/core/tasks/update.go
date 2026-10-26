@@ -24,24 +24,12 @@ func openBlockers(ts []task, blockedBy []int64) []int64 {
 	return open
 }
 
-// ownerGuardBlocked reports whether the owner guard (rules 2 and 3: only the
-// owner may change an in_progress task, and taking ownership needs the owner
-// to be empty or the one handing it off) would refuse p against cur,
-// ignoring Force. Update uses it, after applyPatch ran with Force honored, to
-// tell whether Force actually bypassed the guard, which decides the "forced"
-// revision type.
-func ownerGuardBlocked(cur bus.Task, p bus.TaskPatch, as string) bool {
-	if cur.Status == "in_progress" && cur.Owner != as {
-		return true
-	}
-	return p.Owner != nil && *p.Owner != "" && *p.Owner != cur.Owner && cur.Owner != "" && cur.Owner != as
-}
-
 // applyPatch is pure: it returns the patched task or the rule violation.
-// Rule order is the design's: delete combination, owner guard, delete,
-// scalar fields, owner existence, status, lease, links, order, no-op. ts
-// includes cur itself; ownerKnown reports whether a candidate owner is a
-// registered identity (Decision 81).
+// Rule order is the design's: delete combination, delete (there is no owner
+// guard: write on the list permits changing any task), scalar fields, owner
+// existence, status, lease, links, order, no-op. ts includes cur itself;
+// ownerKnown reports whether a candidate owner is a registered identity
+// (Decision 81).
 func applyPatch(ts []task, cur task, p bus.TaskPatch, as string, now int64, ownerKnown func(string) (bool, error)) (task, error) {
 	// Rule 1: delete cannot be combined with any other change.
 	if p.Delete && (p.Status != nil || p.Owner != nil || p.Subject != nil || p.Description != nil ||
@@ -50,16 +38,7 @@ func applyPatch(ts []task, cur task, p bus.TaskPatch, as string, now int64, owne
 		return task{}, core.E(bus.CodeValidation, "delete cannot be combined with other changes")
 	}
 
-	// Rules 2 and 3: the owner guard, bypassed by Force. The two conditions
-	// are re-checked only to pick the message.
-	if !p.Force && ownerGuardBlocked(cur.Task, p, as) {
-		if cur.Status == "in_progress" && cur.Owner != as {
-			return task{}, core.E(bus.CodeConflict, "task %d is in progress, owned by %s", cur.ID, cur.Owner)
-		}
-		return task{}, core.E(bus.CodeConflict, "task %d is owned by %s", cur.ID, cur.Owner)
-	}
-
-	// Rule 4: delete, once the guard clears. Force does not bypass subtasks.
+	// Rule 4: delete, refused while the task has subtasks.
 	if p.Delete {
 		var children []int64
 		for _, t := range ts {
@@ -295,34 +274,12 @@ func (s Service) update(ctx context.Context, tx store.Tx, identity string, pr ac
 	if err != nil {
 		return bus.TaskUpdateResult{}, err
 	}
-	forced := p.Force && ownerGuardBlocked(cur.Task, p, identity)
-
 	if p.Delete {
-		if forced {
-			// The override is recorded: one "forced" revision with the task's
-			// unchanged content, then tombstoned itself, so the revisions end
-			// with a forced row naming the deleter.
-			size, err := s.envelopeSize(ch, identity, "forced", cur.Task)
-			if err != nil {
-				return bus.TaskUpdateResult{}, err
-			}
-			if err := s.rateCheck(identity, size, fx); err != nil {
-				return bus.TaskUpdateResult{}, err
-			}
-			marker, err := s.writeRevision(ctx, tx, ch, identity, kind, *cur, "forced", fx)
-			if err != nil {
-				return bus.TaskUpdateResult{}, err
-			}
-			if _, err := tx.TombstoneMessage(ctx, marker.seq, s.NowMs()); err != nil {
-				return bus.TaskUpdateResult{}, core.FromStore(err)
-			}
-		} else {
-			if err := s.rateCheck(identity, 0, fx); err != nil {
-				return bus.TaskUpdateResult{}, err
-			}
-			if _, err := tx.TombstoneMessage(ctx, cur.seq, s.NowMs()); err != nil {
-				return bus.TaskUpdateResult{}, core.FromStore(err)
-			}
+		if err := s.rateCheck(identity, 0, fx); err != nil {
+			return bus.TaskUpdateResult{}, err
+		}
+		if _, err := tx.TombstoneMessage(ctx, cur.seq, s.NowMs()); err != nil {
+			return bus.TaskUpdateResult{}, core.FromStore(err)
 		}
 		return bus.TaskUpdateResult{Task: cur.Task, Replaced: cur.seq, Deleted: true}, nil
 	}
@@ -331,18 +288,14 @@ func (s Service) update(ctx context.Context, tx store.Tx, identity string, pr ac
 		return bus.TaskUpdateResult{Task: cur.Task}, nil
 	}
 
-	typ := ""
-	if forced {
-		typ = "forced"
-	}
-	size, err := s.envelopeSize(ch, identity, typ, patched.Task)
+	size, err := s.envelopeSize(ch, identity, "", patched.Task)
 	if err != nil {
 		return bus.TaskUpdateResult{}, err
 	}
 	if err := s.rateCheck(identity, size, fx); err != nil {
 		return bus.TaskUpdateResult{}, err
 	}
-	newTask, err := s.writeRevision(ctx, tx, ch, identity, kind, patched, typ, fx)
+	newTask, err := s.writeRevision(ctx, tx, ch, identity, kind, patched, "", fx)
 	if err != nil {
 		return bus.TaskUpdateResult{}, err
 	}

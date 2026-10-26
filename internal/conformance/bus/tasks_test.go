@@ -126,19 +126,22 @@ func TestTaskClaimUpdateRelease(t *testing.T) {
 		if res.Task.Owner != "pat" || res.Task.Status != "in_progress" || res.Task.LeasedUntil != lease || res.Task.Revision != 2 || res.Replaced == 0 {
 			t.Fatalf("claim = %+v", res)
 		}
-		// Another identity's update is refused by the owner guard.
-		_, err = kim.Update(ctx, ab2bus.TaskPatch{ID: made.ID, Description: taskPtr("mine now")})
-		codeOf(t, err, ab2bus.CodeConflict)
-		_, err = kim.Claim(ctx, ab2bus.TaskClaimInput{ID: made.ID})
-		codeOf(t, err, ab2bus.CodeConflict)
-		// Force overrides and is recorded.
-		forced, err := kim.Update(ctx, ab2bus.TaskPatch{ID: made.ID, Description: taskPtr("by force"), Force: true})
-		if err != nil || forced.Task.Description != "by force" || forced.Task.UpdatedBy != "kim" {
-			t.Fatalf("forced = %+v, %v", forced, err)
+		// There is no owner guard: another writer updates and takes over the task,
+		// and the update writes an ordinary revision.
+		upd, err := kim.Update(ctx, ab2bus.TaskPatch{ID: made.ID, Description: taskPtr("mine now")})
+		if err != nil || upd.Task.Description != "mine now" || upd.Task.UpdatedBy != "kim" {
+			t.Fatalf("non-owner update = %+v, %v", upd, err)
 		}
-		revs := h.taskRevisions(made.ID)
-		if last := revs[len(revs)-1]; last.Type != "forced" || last.Tombstone {
-			t.Fatalf("last revision = %+v, want a live forced row", last)
+		if _, err := kim.Claim(ctx, ab2bus.TaskClaimInput{ID: made.ID}); err != nil {
+			t.Fatalf("non-owner claim: %v", err)
+		}
+		for _, r := range h.taskRevisions(made.ID) {
+			if r.Type == "forced" {
+				t.Fatalf("a forced revision was written: %+v", r)
+			}
+		}
+		if _, err := pat.Claim(ctx, ab2bus.TaskClaimInput{ID: made.ID, LeasedUntil: lease}); err != nil {
+			t.Fatal(err)
 		}
 		// Release clears owner and lease.
 		rel, err := pat.Release(ctx, ab2bus.TaskReleaseInput{ID: made.ID})
@@ -425,20 +428,18 @@ func TestTaskDelete(t *testing.T) {
 		_, err = pat.GetTask(ctx, child.ID)
 		codeOf(t, err, ab2bus.CodeNotFound)
 
-		// Forced delete of another identity's in_progress task leaves a tombstoned forced row.
+		// A non-owner deletes another identity's in_progress task: no owner guard,
+		// and the last revision is an ordinary tombstone.
 		if _, err := pat.Claim(ctx, ab2bus.TaskClaimInput{ID: parent.ID}); err != nil {
 			t.Fatal(err)
 		}
-		_, err = kim.Update(ctx, ab2bus.TaskPatch{ID: parent.ID, Delete: true})
-		codeOf(t, err, ab2bus.CodeConflict)
-		res, err = kim.Update(ctx, ab2bus.TaskPatch{ID: parent.ID, Delete: true, Force: true})
+		res, err = kim.Update(ctx, ab2bus.TaskPatch{ID: parent.ID, Delete: true})
 		if err != nil || !res.Deleted {
-			t.Fatalf("forced delete = %+v, %v", res, err)
+			t.Fatalf("non-owner delete = %+v, %v", res, err)
 		}
 		revs := h.taskRevisions(parent.ID)
-		last := revs[len(revs)-1]
-		if last.Type != "forced" || last.Sender != "kim" || !last.Tombstone {
-			t.Fatalf("last revision = %+v, want a tombstoned forced row naming kim", last)
+		if last := revs[len(revs)-1]; last.Type == "forced" || !last.Tombstone {
+			t.Fatalf("last revision = %+v, want an ordinary tombstone", last)
 		}
 		for _, r := range revs {
 			if !r.Tombstone {
@@ -582,6 +583,57 @@ func TestTaskWritePublishesHint(t *testing.T) {
 			}
 		case <-time.After(time.Second):
 			t.Fatal("no hint after a committed create")
+		}
+	})
+}
+
+// TestAnyWriterChangesAnyTask: write on a task list is the only gate (Eric
+// 2026-10-25, spec 3.14); there is no owner guard and no force.
+func TestAnyWriterChangesAnyTask(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		h.taskList("work", "pat", "kim")
+		pat, kim := h.as("pat"), h.as("kim")
+
+		first, err := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "first"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := kim.Claim(ctx, ab2bus.TaskClaimInput{ID: first.ID}); err != nil {
+			t.Fatal(err)
+		}
+		res, err := pat.Update(ctx, ab2bus.TaskPatch{ID: first.ID, Status: taskPtr("completed")})
+		if err != nil || res.Task.Status != "completed" || res.Task.UpdatedBy != "pat" {
+			t.Fatalf("non-owner complete = %+v, %v", res, err)
+		}
+
+		second, err := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "second"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := kim.Claim(ctx, ab2bus.TaskClaimInput{ID: second.ID}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pat.Update(ctx, ab2bus.TaskPatch{ID: second.ID, Description: taskPtr("edited by pat")}); err != nil {
+			t.Fatalf("non-owner edit of an in_progress task: %v", err)
+		}
+		if _, err := pat.Release(ctx, ab2bus.TaskReleaseInput{ID: second.ID}); err != nil {
+			t.Fatalf("non-owner release: %v", err)
+		}
+		if _, err := kim.Claim(ctx, ab2bus.TaskClaimInput{ID: second.ID}); err != nil {
+			t.Fatal(err)
+		}
+		del, err := pat.Update(ctx, ab2bus.TaskPatch{ID: second.ID, Delete: true})
+		if err != nil || !del.Deleted {
+			t.Fatalf("non-owner delete = %+v, %v", del, err)
+		}
+		for _, id := range []int64{first.ID, second.ID} {
+			for _, r := range h.taskRevisions(id) {
+				if r.Type == "forced" {
+					t.Fatalf("task %d: a forced revision was written: %+v", id, r)
+				}
+			}
 		}
 	})
 }

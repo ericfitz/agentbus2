@@ -194,7 +194,6 @@ type taskUpdateIn struct {
 	LeasedUntil     *int64            `json:"leased_until,omitempty" jsonschema:"lease end as unix time in milliseconds; 0 clears the lease"`
 	Metadata        map[string]string `json:"metadata,omitempty" jsonschema:"string key-value pairs to set"`
 	Delete          bool              `json:"delete,omitempty" jsonschema:"delete a task that has no subtasks"`
-	Force           bool              `json:"force,omitempty" jsonschema:"override the in-progress owner guard; recorded"`
 	IdempotencyKey  string            `json:"idempotency_key,omitempty" jsonschema:"makes a retry safe: the same key replays the first result"`
 }
 

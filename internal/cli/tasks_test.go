@@ -48,8 +48,12 @@ func TestTasksLifecycle(t *testing.T) {
 	if code, _, errs = run("pat", "claim", "2"); code != 0 {
 		t.Fatalf("claim: %d %q", code, errs)
 	}
-	if code, out, errs = run("sam", "claim", "2"); code != 1 || !strings.Contains(errs, "conflict") {
+	// No owner guard: a second claim by another writer takes the task over.
+	if code, out, errs = run("sam", "claim", "2"); code != 0 || !strings.Contains(out, `"owner": "sam"`) {
 		t.Fatalf("second claim: %d %q %q", code, errs, out)
+	}
+	if code, _, errs = run("pat", "claim", "2"); code != 0 {
+		t.Fatalf("claim back: %d %q", code, errs)
 	}
 	if code, out, errs = run("pat", "list", "-owner", "pat", "todo"); code != 0 || !strings.Contains(out, `"id": 2`) || strings.Contains(out, `"id": 1,`) {
 		t.Fatalf("list -owner: %d %q %q", code, out, errs)
@@ -64,7 +68,7 @@ func TestTasksLifecycle(t *testing.T) {
 	if code, _, errs = run("sam", "update", "-delete", "1"); code != 1 || !strings.Contains(errs, "subtasks") {
 		t.Fatalf("delete with a subtask: %d %q", code, errs)
 	}
-	if code, _, errs = run("sam", "update", "-delete", "-force", "2"); code != 0 {
+	if code, _, errs = run("sam", "update", "-delete", "2"); code != 0 {
 		t.Fatalf("delete child: %d %q", code, errs)
 	}
 	if code, _, errs = run("sam", "update", "-delete", "1"); code != 0 {

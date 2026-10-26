@@ -73,7 +73,6 @@ type TaskPatch struct {
 	LeasedUntil     *int64            `json:"leased_until,omitempty"`
 	Metadata        map[string]string `json:"metadata,omitempty"`
 	Delete          bool              `json:"delete,omitempty"`
-	Force           bool              `json:"force,omitempty"`
 	IdempotencyKey  string            `json:"idempotency_key,omitempty"`
 }
 

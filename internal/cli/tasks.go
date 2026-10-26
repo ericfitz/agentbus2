@@ -34,7 +34,7 @@ func runTasks(ctx context.Context, sub string, args []string, environ []string, 
 	var (
 		description, status, owner, subject, key string
 		parent, leasedUntil, before, after       int64
-		clearOwner, del, force                   bool
+		clearOwner, del                          bool
 		blockedBy, addBlocked, removeBlocked     opList
 		meta                                     opMeta
 	)
@@ -64,7 +64,6 @@ func runTasks(ctx context.Context, sub string, args []string, environ []string, 
 		fs.Int64Var(&leasedUntil, "leased-until", 0, "lease expiry, Unix milliseconds")
 		fs.Var(&meta, "metadata", "metadata k=v (repeatable)")
 		fs.BoolVar(&del, "delete", false, "delete the task")
-		fs.BoolVar(&force, "force", false, "force")
 		fs.StringVar(&key, "key", "", "idempotency key")
 	case "claim":
 		fs.Int64Var(&leasedUntil, "leased-until", 0, "lease expiry, Unix milliseconds")
@@ -171,7 +170,7 @@ func runTasks(ctx context.Context, sub string, args []string, environ []string, 
 	// update
 	p := bus.TaskPatch{
 		ID: id, Before: before, After: after, AddBlockedBy: adds, RemoveBlockedBy: removes,
-		Metadata: meta, Delete: del, Force: force, IdempotencyKey: key,
+		Metadata: meta, Delete: del, IdempotencyKey: key,
 	}
 	if c.seen("status") {
 		p.Status = &status
