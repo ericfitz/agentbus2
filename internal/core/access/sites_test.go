@@ -40,7 +40,7 @@ var memoryScope = []string{"internal/mcpserver", "internal/cli"}
 // condition, a switch tag or case, an operand of && || == !=), so
 // `return p.Admin` is not seen; tx.ACL( is matched only on a receiver named
 // tx; package-level initializers are not walked; the SQL fragments are exact
-// substrings of string literals.
+// substrings of string literals. Closing these limits is issue #19.
 var ruleAllowed = map[string][]string{
 	// Sites that copy the flag or the scope (spec 3.7 item 4).
 	"internal/core/channels/channels.go Create":         {"Scope"}, // scope := p.Scope, a copy

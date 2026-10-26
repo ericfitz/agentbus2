@@ -1157,7 +1157,7 @@ outside its scope is disclosed. Options rejected: per-scope uniqueness
 on the wire for unscoped callers), a text-less `conflict` (the code is the
 leak), accepting the leak (contradicts 4.1 (d)).
 
-**Controller ruling 2026-10-26 (for Eric to confirm, not his decision).** `CreateScope` also refuses a name whose `<name>-` prefix nests with an existing scope's, in either order and any state (`conflict`, `scope %q: the name prefix %q- overlaps scope %q`), so a hyphenated scope such as `job-2` is not made unusable by `job`. Any channel creator can learn whether a scope `s` exists from the `<s>-` `validation` answer; this is an accepted consequence of the text above.
+**Eric's decision 2026-10-26 (a controller ruling he ratified).** `CreateScope` also refuses a name whose `<name>-` prefix nests with an existing scope's, in either order and any state (`conflict`, `scope %q: the name prefix %q- overlaps scope %q`), so a hyphenated scope such as `job-2` is not made unusable by `job`. Any channel creator can learn whether a scope `s` exists from the `<s>-` `validation` answer; this is an accepted consequence of the text above.
 
 **Existing names (Eric's decision 2026-10-25).** Existing names that violate the prefix rule get no migration and no compatibility handling; the rule is
 enforced at create, rename and scope creation from the first release, and the
