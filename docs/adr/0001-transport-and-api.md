@@ -356,3 +356,17 @@ internal/` then prints nothing).
   with `Config.OnTick` and has two leaves on each engine (`one-holder`,
   `failover`). `scripts/m7-exit-checks.sh` counts them (`wake_postgres=6`,
   `wake_sqlite=4`, `maint_*=2`) and checks the import rule.
+
+## Access check addendum (2026-10-25; Eric's decision, ADR 0011)
+
+- **`count` is no longer omitted for filtered memory channels.** The Milestone 6
+  choice 9 sentence "`count` is omitted on a wake whose memory channels were
+  filtered out, decision 20" is superseded: the server never wakes an agent for
+  a memory channel (the `Deliver` action of `internal/core/access`), so a wake
+  always carries a count of the channels it names. The JSON field keeps its
+  `omitempty` tag; a count of zero does not occur.
+- **The `force` member of the task update body is removed** (a request member
+  removed without a version bump: `info.version` is `2.0.0-dev` and no release
+  has shipped; ADR 0011). The request schema forbids additional properties, so
+  a client that still sends `force` is answered `validation` (HTTP 400), not
+  silently ignored.

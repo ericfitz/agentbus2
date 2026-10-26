@@ -546,10 +546,20 @@ channel whose ACL names its participants (ADR 0008).
   actions only, and can grant itself `read` and `write` back.
 - An empty permission list is rejected.
 
+*Amended 2026-10-25 (Eric; ADR 0011).* The table above is evaluated by
+`internal/core/access`, the one access check, and by nothing else; the Store
+serves the stored rows. The implicit creator entry is retired: a creator holds
+`admin` only through a stored row, and a server administrator may discover
+any channel and holds `admin` on it. A third group, `humans`, joins `everyone`
+and `admins`. Scope is an access boundary for scoped agents: an object outside
+the agent's scope is `not_found`; inside it the ACL decides. An agent cannot
+remove a human's or an administrator's access through `set_acl`.
+
 Elaboration, not part of Decision 80: an unknown permission value or a
 malformed entry is rejected too (the project rule that unrecognized
 inputs are refused). Decision 96 (Eric, 2026-10-20): an entry must name
-a registered identity, `everyone` or `admins`; otherwise it is rejected.
+a registered identity, `everyone` or `admins` (and, since 2026-10-25,
+`humans`); otherwise it is rejected.
 
 Decision 88 (Eric, 2026-10-20): create-channel takes an optional ACL. When
 it is omitted, the server-configured default ACL applies (section 6.5).

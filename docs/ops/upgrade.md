@@ -22,6 +22,23 @@ Each migration step is a transaction of its own that re-reads the version under 
 - A pre-release database that misbehaves in any other way is recreated the same way, not repaired.
 - Steps after the first release will be numbered 2 and up, each a file of its own per engine. Stop every replica before starting a binary that migrates the schema (procedure step 2): an old replica does not know the new columns.
 
+## Access-rule changes before the first release
+
+These are Eric's decisions of 2026-10-25 (ADR 0011). No release has shipped, so no deployment is upgraded across them, but a pre-release database that holds channels created under the old rule behaves differently.
+
+- **The implicit creator entry is retired.** A channel created with an explicit ACL that omits its creator (including `acl: []`) used to leave the creator `admin` through an implicit entry. It no longer does: only a stored `admin` holder or a server administrator can manage, rename or delete such a channel, and the creator lists it only if a stored row names it. A channel created without an ACL stores the default, whose `<creator>` row keeps `admin`, and `general` has no creator; neither is affected. To find the channels whose creator lost `admin`, run against the database (the columns are the same on SQLite and Postgres; Postgres stores the flags as booleans, SQLite as integers, and both accept this form):
+
+  ```sql
+  SELECT c.name FROM channels c
+  WHERE c.creator <> ''
+    AND NOT EXISTS (SELECT 1 FROM channel_acl a
+                    WHERE a.channel_id = c.id AND a.identity = c.creator AND a.can_admin);
+  ```
+
+  An administrator restores a creator's access with `set_acl` (send the full list, since it replaces every entry).
+- **A scoped agent sees only its own scope.** It gets `not_found` for a channel outside its scope, `general` included, and creates channels in its scope only. Administrators and humans are never scoped; a stored scope on either is cleared by maintenance and logged.
+- **The task update body has no `force` member.** A client that still sends it is refused `validation` (HTTP 400).
+
 ## Procedure
 
 1. Back up the database (`backup.md`).

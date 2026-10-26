@@ -54,7 +54,9 @@ Eric decided:
    stored; multiple entries for one identity are additive (the union of
    their permissions); any admin may remove the stored entries for
    `admins` or the creator, and the implicit entries still apply, so a
-   channel can never become unmanageable. The example's creator entry
+   channel can never become unmanageable. (Superseded in part, 2026-10-25:
+   the implicit creator entry is retired; see "Decisions of 2026-10-25
+   (Eric)" below.) The example's creator entry
    `[read, write, admin]` is a stored entry; the implicit creator entry
    grants `admin` only. (Decision 80)
 2. **The create-channel call takes an ACL.** When it is omitted, the
@@ -62,7 +64,10 @@ Eric decided:
    `everyone` read and `everyone` write; read with the example, the
    stored default is `[{everyone, [read, write]},
    {<creator>, [read, write, admin]}, {admins, [admin]}]`. The creator's
-   `admin` is always present through the implicit entry. (Decision 88)
+   `admin` is always present through the implicit entry. (Decision 88;
+   superseded in part, 2026-10-25: it is present through the stored default
+   row, and a channel created with an explicit ACL that omits its creator
+   has no creator `admin`.)
 3. **Channel names have no reserved shapes.** Ownership is a stored
    attribute, the channel ACL, not part of the name. This supersedes
    Eric's first answer to Question 13 (`<identity>/<name>`). (Decision 76)
@@ -112,6 +117,8 @@ Negative:
   refinement says so), and the implicit entries guarantee it can.
 - The Store must record each channel's creator durably, since the
   implicit creator entry is evaluated from it and not from the ACL rows.
+  (Superseded in part, 2026-10-25: the creator column stays as data for
+  `ChannelInfo.Creator` and `status`; no rule reads it.)
 - An entry must name a registered identity, `everyone`, `admins` or `humans`
   (Decision 96), so an ACL cannot be prepared for a member that has not
   registered yet.
@@ -195,7 +202,9 @@ None. Questions 25 to 32 were decided on 2026-10-20 as above.
 
 ## Milestone 3 addendum (2026-10-21)
 
-- **The core check.** `Core.Authorize(ctx, tx, identity, channelID, p)` in
+- **The core check.** (Superseded, 2026-10-25: `internal/core/authz.go` is
+  gone; `internal/core/access` is the one check, ADR 0011.)
+  `Core.Authorize(ctx, tx, identity, channelID, p)` in
   `internal/core/authz.go` is the one place a channel permission is
   decided. Reserved names are refused by `Authorize` and
   `ReadableChannelIDs`.
@@ -249,7 +258,7 @@ the markers are removed as the decisions land.
   `SetACL` replaces every entry); a channel created without an ACL carries
   the Decision 88 default.
 - **`default_acl`.** A setting whose entries may name only `everyone`,
-  `admins` and the placeholder `<creator>`: the Store enforces Decision 96 on
+  `admins` (and, since 2026-10-25, `humans`) and the placeholder `<creator>`: the Store enforces Decision 96 on
   every ACL write, and `general` is created before any identity row exists,
   so a concrete name could never start a server. A concrete name would need
   a decision and a different first-start bootstrap; this is a noted limit,
@@ -289,3 +298,35 @@ administrator may replace the ACL freely, and a channel created with an
 explicit `acl` has no stored ACL to lose from. Consequence: a private channel
 is created with its `acl`; an agent cannot make a channel private afterwards.
 The rule is the `ReplaceACL` action of `internal/core/access`.
+
+## Decisions of 2026-10-25 (Eric)
+
+These are Eric's decisions of 2026-10-25, recorded in ADR 0011 and
+`docs/superpowers/specs/2026-10-25-accesscheck-design.md`; the paragraphs
+above them that they change carry "superseded in part" markers.
+
+- **The implicit creator entry is retired** (answer to question 6). Decision
+  1's evaluation of every ACL as if it contained `[{admins, [admin]},
+  {<creator>, [admin]}]` loses its creator half. A creator holds `admin` only
+  through a stored row; a channel created with an explicit ACL that omits its
+  creator, or with `acl: []`, leaves its creator without `admin` (a server
+  administrator manages it). `channels.creator` remains as data.
+  `docs/ops/upgrade.md` has the query that finds such channels.
+- **The implicit administrator right is discover-and-`admin`.** A server
+  administrator may list any channel and holds `admin` on it (the full
+  channel-admin set: the ACL, rename, delete); there is no implicit `read` or
+  `write` for anyone, so an administrator grants itself `read` through
+  `set_acl`. The implicit `admins` entry grants `admin` only, as before.
+- **The rule's home.** The rule is evaluated in `internal/core/access` and
+  nowhere else; the Store serves rows (`Tx.ACL`, `Tx.ACLRowsFor`) and applies
+  no permission filter, administrator join or implicit entry.
+  `EffectivePermissions`, `ReadableChannels`, `Core.Authorize` and
+  `ReadableChannelIDs` are gone. Reserved names are refused by
+  `access.Resolve`. The `TestACLMatrix` row set (52 leaves per engine) is
+  unchanged and proves it is the same rule.
+- **The `humans` group and the protected entries** are the two sections
+  above, in the order they were written; `humans` is also refused `read` and
+  `write` on a bridged channel (ADR 0009 decision 12, ADR 0011 decision 13).
+- **Scope is an access boundary** for scoped agents (ADR 0011 decisions 4 to
+  6): an object outside the agent's scope is `not_found`; inside it the ACL
+  decides.

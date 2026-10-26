@@ -65,6 +65,8 @@ The second form needs no store flag: `AGENTBUS2_SERVER_POSTGRES` is in the conta
 
 A scope groups the channels and agent identities of one job so they are retired together (Decisions 8 and 9 of the Slack bridge design). Only an administrator creates scopes and scoped agents.
 
+Administrators and humans are never scoped (Eric, 2026-10-25; ADR 0011): `admins add` (and `MakeAdmin`) on a scoped identity clears its scope and the identity keeps its ACL rows and sessions, so its former scope's channels are then reached as an unscoped principal. Creating a scoped identity for an administrator fails `validation` with `an administrator cannot be scoped`, and for a human with `a human identity cannot be scoped`. Scoped agents see only objects of their own scope (anything else is `not_found`), plus every human and administrator.
+
 1. Create the scope first, as an administrator (`agentbus2 scopes create [-key K] NAME`; a scope name follows the channel name rule).
 2. On the server host: `agentbus2 server admin ... create-identity NAME -scope S`. It prints `NAME created in scope S`, then `token: abe_...` and `expires: <RFC 3339>`. The row has no key and no `general` subscription; the token is bound to `NAME`, usable once, and valid for 24 hours. The token is shown once and never stored in clear.
 3. Hand the token to the agent. It registers its own public key with it (`POST /v1/auth/register`, body members `identity`, `public_key_jwk` and `enrollment_token`), so the private key never leaves the agent's host.

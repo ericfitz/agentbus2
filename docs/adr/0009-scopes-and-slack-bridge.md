@@ -22,15 +22,15 @@ Each of these is Eric's decision.
 8. Scopes. A channel belongs to zero or one scope. An agent identity has zero or one scope, set at creation. A channel created by a scoped identity takes that scope. pai itself is unscoped but may create scoped objects. pai creates fresh agent identities per job, so identities never change scope.
 9. Only admins create scopes, create agent identities (optionally scoped) and create bridges. A bridge requires a scoped channel. Non-admins may create channels; those take the creator's scope, if any.
 10. Slack message appearance: each agent posts under its own name and avatar; subject bold; tags as chips; bus replies are Slack thread replies.
-11. The bridge's allowed humans are the human identities with `write` on the bridged channel. No separate list.
-12. A bridged channel's ACL may grant `read` or `write` only to named identities, never to `everyone` or `admins`.
+11. The bridge's allowed humans are the human identities with `write` on the bridged channel. No separate list. (2026-10-25: evaluated by `Check(Post)` and `Holders(Post)` of `internal/core/access`, not by scanning stored rows; see "Decisions of 2026-10-25 (Eric)".)
+12. A bridged channel's ACL may grant `read` or `write` only to named identities, never to `everyone` or `admins`. (2026-10-25: nor to `humans`.)
 13. `reply_to` is validated: the parent must exist and be in the same channel at send time, and must not be a memory record. Otherwise the send is a `validation` error. This applies to every channel.
 14. On a bridged channel, after validation, `reply_to` is rewritten to the root of the parent's thread (flat threads, Slack's model).
 15. The message number to Slack message map is pruned when its scope is retired.
 16. Human membership is fixed at bridge creation for now; may be revisited.
 17. Scoped agent credentials. An admin API operation `identities create NAME -scope S` creates a scoped agent identity and returns a one-time enrollment token bound to NAME. The agent registers its own key with it, so the private key never leaves the agent's host. A scoped identity can be claimed only with its bound token, in every registration mode.
 18. Slack trust. Only full members of the workspace count: Slack guests (restricted and ultra-restricted users) and external (Slack Connect) users never do, even with a matching email. The first verified message records the Slack user ID against the human identity; afterwards a different Slack account presenting the same email is refused.
-19. Scoped identity footprint. Scoped agents get no `general` subscription. At retirement their ACL entries and subscriptions are removed everywhere and their task claims released; their names are blocked from reuse permanently. Messages they sent on other channels stay.
+19. Scoped identity footprint. Scoped agents get no `general` subscription. At retirement their ACL entries and subscriptions are removed everywhere and their task claims released; their names are blocked from reuse permanently. Messages they sent on other channels stay. (2026-10-25: moot as worded. Under the scope gate a scoped agent never writes outside its scope, so it has no messages on other channels; the retained-message rule now applies to the channels of its scope that are not retired with it.)
 20. Retention fix (every deployment). A subscription does not keep a channel alive when its holder is the bridge, or an identity with no live or resumable session (none within `session_retention_hours`). This supersedes the empty-channel rule of ADR 0008 decision 8, which counted any subscription.
 21. Registration modes (decided 2026-10-23, after the plan review; amends ADR 0002 decisions 5 and 8). The `closed` registration mode is removed; the modes are `open` (anyone claims a free name, trust on first use) and `enrollment` (an admin-minted token is required). Whether a token is bound to a name is the administrator's choice when minting it; no server setting forbids unbound tokens. Decision 17 applies in both modes. No release has shipped, so `closed` is an unknown value like any other.
 
@@ -81,6 +81,16 @@ Choices made while building, recorded because they change behavior:
 - Duplicate Slack posts: a posted-but-unrecorded message is remembered across a lost runner lock and recorded without reposting; after an uncertain post failure (transport error, timeout, 5xx/408, Slack `internal_error`/`fatal_error`/`service_unavailable`/`request_timeout`) the bridge searches the channel or thread for its own post (matching metadata seq and the app's bot id) before posting again, and posts nothing while the search fails.
 - Channel mentions are neutral in both directions: Slack `<#C…|name>` reaches the bus as plain `#name` and a mention without a name as `#channel`; an agent's `#name` reaches Slack unlinked. Resolving a nameless mention to its channel name (which needs the `channels:read` scope) is deferred.
 - A local OIDC provider for signing a human into the TUI against a local server is deferred (issue #17).
+
+## Decisions of 2026-10-25 (Eric)
+
+Recorded in ADR 0011; the changes to this record:
+
+- **Decision 8 makes scope an access boundary.** The scope gate of `internal/core/access` denies a scoped agent everything outside its scope as `not_found` (the text of a thing that does not exist), and inside its scope the ACL decides. Humans and administrators are never scoped and are visible to every agent. Scoped agents create and rename channels only to `<scope>-*` names, and no one else may take such a name (decision 19 of ADR 0011; implemented by Task 11 of the accesscheck plan).
+- **Decision 11 uses the access check.** The bridge asks `Check(Post)` (a human holding `write` through any additive row, a group row included) and invites the `Holders(Post)` list, in identity order. The decision itself is unchanged.
+- **Decision 12 covers `humans`.** `CheckBridgeACL` refuses `read` and `write` for `humans` as for `everyone` and `admins`, so the invite list stays explicit.
+- **Decision 19** is marked moot above.
+- **Bridge not configured** is `unavailable`, not retryable (it was `forbidden`); see "Claude's calls".
 
 ## Consequences
 

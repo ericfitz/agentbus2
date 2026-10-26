@@ -204,7 +204,8 @@ These are Claude's choices under the spec's delegation (Decisions 51 and
    stored entry, `channel_acl(id, channel_id, identity, can_read, can_write,
    can_admin)` with `CHECK (can_read OR can_write OR can_admin)`. One row is
    one entry, so a stored ACL round-trips as given (several rows may name
-   one identity; `EffectivePermissions` takes the union), "removing the
+   one identity; `EffectivePermissions` takes the union (superseded: see
+   "Access facts, not rules" below)), "removing the
    entries for `admins`" is a `DELETE` by identity, and the database
    enforces the non-empty rule as well as Go. One row per
    `(channel, identity, permission)` cannot represent "an entry".

@@ -758,8 +758,10 @@ by `rg -n -i '\bforce\b|forced|ownerGuard' internal api docs` (excluding
   removed. Under Eric's protocol-versioning decision a removal is
   major-shaped, but `info.version` is `2.0.0-dev` and no release has
   shipped, so it lands without a bump and is listed in the version's
-  changelog; a server receiving `force` from an older client ignores an
-  unknown member as the generated decoder does today.
+  changelog; a server receiving `force` from an older client answers
+  `validation` (HTTP 400), because `TaskPatch` sets
+  `additionalProperties: false` (the convention of `server_test.go`), so the
+  member is refused rather than ignored.
 - MCP: `internal/mcpserver/inputs.go:197` `Force`; `server.go:724` the
   `task_update` description ("While a task is in_progress only its owner
   may change or delete it; force=true overrides that for anyone and is
