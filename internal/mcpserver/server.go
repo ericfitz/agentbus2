@@ -696,7 +696,7 @@ func (s *server) addTools(srv *mcp.Server) {
 				})
 			})
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "task_claim", Description: "Agentbus2: claim a task: if it has no owner you become its owner and it becomes in_progress. Fails with conflict if someone else owns it or it is blocked. A task whose owner's session has ended, or whose lease ran out, counts as unowned. leased_until (unix ms UTC, optional) sets a lease; renew it by calling task_claim again with a later leased_until before it passes. Call task_list first; claim before starting work."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "task_claim", Description: "Agentbus2: claim a task: you become its owner and it becomes in_progress. Fails with conflict only if the task is blocked; if someone else owns it you take it over (any identity with write on the list may), so claim before working and others see the owner. A task whose owner's session has ended, or whose lease ran out, counts as unowned. leased_until (unix ms UTC, optional) sets a lease; renew it by calling task_claim again with a later leased_until before it passes. Call task_list first; claim before starting work."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in taskClaimIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) {
 				return b.Claim(ctx, bus.TaskClaimInput{ID: in.TaskID, LeasedUntil: in.LeasedUntil, IdempotencyKey: in.IdempotencyKey})

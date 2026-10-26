@@ -144,7 +144,9 @@ unit of handoff: if you would otherwise write "remaining: X, Y, Z" in
    blocked.
 2. `task_claim` before you start. Any identity with write on the list may
    change any task, so claim before working: others then see the owner.
-   `conflict` means it is blocked: pick another task. A claimed task is
+   A claim fails with `conflict` only if the task is blocked (pick another
+   task); claiming a task someone else owns takes it over, so do that only
+   when the user says to. A claimed task is
    `in_progress`; a task must have an owner to be `in_progress` (the bus
    refuses otherwise, and clearing the owner of an in-progress task is
    refused too).
