@@ -137,9 +137,16 @@ func TestCreateAgentIdentity(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, err = s.CreateAgentIdentityAs(ctx, "root", bus.CreateAgentIdentityInput{Name: name, Scope: "job1"})
-		wantCode(t, err, bus.CodeConflict)
+		wantCode(t, err, bus.CodeValidation)
+		wantDetail(t, err, "a human identity cannot be scoped")
 		_, err = s.CreateAgentIdentityAs(ctx, "root", bus.CreateAgentIdentityInput{Name: name})
 		wantCode(t, err, bus.CodeConflict)
+	})
+
+	t.Run("admin name", func(t *testing.T) {
+		_, err := s.CreateAgentIdentityAs(ctx, "root", bus.CreateAgentIdentityInput{Name: "root", Scope: "job1"})
+		wantCode(t, err, bus.CodeValidation)
+		wantDetail(t, err, "an administrator cannot be scoped")
 	})
 
 	t.Run("scope states", func(t *testing.T) {

@@ -132,3 +132,25 @@ func TestScopeGateServer(t *testing.T) {
 		}
 	})
 }
+
+// TestCreateAgentIdentityScopedRefusals: through the Bus, a scoped
+// CreateAgentIdentity for an existing human or administrator row is
+// validation with the 4.3/4.5 texts; unscoped for a human stays conflict.
+func TestCreateAgentIdentityScopedRefusals(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		h.rtScope("job1")
+		root := h.localAdmin("root")
+		h.human("eric@corp.example")
+		for name, want := range map[string]string{"root": "an administrator cannot be scoped", "eric@corp.example": "a human identity cannot be scoped"} {
+			_, err := root.CreateAgentIdentity(ctx, ab2bus.CreateAgentIdentityInput{Name: name, Scope: "job1"})
+			codeOf(t, err, ab2bus.CodeValidation)
+			if msgOf(err) != want {
+				t.Errorf("%s: %q, want %q", name, msgOf(err), want)
+			}
+		}
+		_, err := root.CreateAgentIdentity(ctx, ab2bus.CreateAgentIdentityInput{Name: "eric@corp.example"})
+		codeOf(t, err, ab2bus.CodeConflict)
+	})
+}

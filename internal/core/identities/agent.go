@@ -116,6 +116,12 @@ func (s Service) ensureAgent(ctx context.Context, tx store.Tx, in bus.CreateAgen
 	case err != nil:
 		return false, err
 	}
+	if in.Scope != "" && id.Kind == store.IdentityHuman {
+		return false, core.E(bus.CodeValidation, "a human identity cannot be scoped")
+	}
+	if in.Scope != "" && id.Admin {
+		return false, core.E(bus.CodeValidation, "an administrator cannot be scoped")
+	}
 	if id.Kind == store.IdentityHuman {
 		return false, core.E(bus.CodeConflict, "identity %q is a human; it takes no agent token", in.Name)
 	}

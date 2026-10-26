@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"math/rand/v2"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/profile"
 	"github.com/ericfitz/agentbus2/internal/server"
 	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
 )
 
 // defaultPollInterval is v1's WaitPollInterval: how often a Watch re-reads the
@@ -47,7 +49,13 @@ func openLocal(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 	if openLogger == nil {
 		openLogger = o.OpenLogger
 	}
-	st, err := sqlite.Open(ctx, profile.SQLitePath(r.Profile, r.DataDir), sqlite.Options{Logger: openLogger})
+	// The Store's read-normalization errors go to the client's own logger, never
+	// to slog.Default() (stderr), which the TUI's screen would show.
+	storeLogger := o.Logger
+	if storeLogger == nil {
+		storeLogger = slog.New(slog.NewTextHandler(io.Discard, nil))
+	}
+	st, err := sqlite.Open(ctx, profile.SQLitePath(r.Profile, r.DataDir), sqlite.Options{Logger: openLogger, Store: sqlstore.Options{Logger: storeLogger}})
 	if err != nil {
 		return nil, err
 	}

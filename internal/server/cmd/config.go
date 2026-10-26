@@ -13,6 +13,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/store/postgres"
 	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
 )
 
 // flags holds the flag values `server` and `server admin` share (choice 14).
@@ -118,12 +119,12 @@ func newLogger(cfg config.Config, stderr io.Writer) *slog.Logger {
 // A SQLite file readable by group or others is refused: it holds the signing key.
 func openStore(ctx context.Context, cfg config.Config, logger *slog.Logger) (st store.Store, err error) {
 	if cfg.SQLite != "" {
-		st, err = sqlite.Open(ctx, cfg.SQLite, sqlite.Options{RequirePrivate: true, Logger: logger})
+		st, err = sqlite.Open(ctx, cfg.SQLite, sqlite.Options{RequirePrivate: true, Logger: logger, Store: sqlstore.Options{Logger: logger}})
 		if err != nil {
 			err = fmt.Errorf("opening the sqlite store: %w", err)
 		}
 	} else {
-		st, err = postgres.Open(ctx, cfg.Postgres, postgres.Options{})
+		st, err = postgres.Open(ctx, cfg.Postgres, postgres.Options{Store: sqlstore.Options{Logger: logger}})
 		if err != nil {
 			err = fmt.Errorf("opening the postgres store: %w", err)
 		}
