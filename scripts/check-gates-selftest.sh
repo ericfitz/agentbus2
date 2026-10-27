@@ -831,6 +831,79 @@ block_tui_hint_mutation() {
 	revert
 }
 
+# --- 29. access-rule-sites-fires ---------------------------------------------------------
+# Docker-free. TestAccessRuleSites (internal/core/access/sites_test.go) must
+# pass on the clean tree and fail, naming the site, for one mutation per
+# clause (issue #19): a condition in an unlisted function (the accesscheck plan's
+# channels.go Delete and stophook.go checks), one more and one fewer occurrence
+# in a listed function, a flag read outside a condition, ACL( on a receiver not
+# named tx, a package-level initializer, and a flag filter in the sqlstore SQL.
+# sites_probe LABEL N FILE FROM TO WANT: replace the exact text FROM (exactly
+# once in FILE) with TO, or append TO when FROM is empty, then require FAIL and
+# WANT in the gate's log.
+sites_probe() {
+	local label="$1" n="$2" file="$3" from="$4" to="$5" want="$6" log="$tmp/b29.log" f="$wt/$3" content
+	if [ -z "$from" ]; then
+		printf '\n%s\n' "$to" >>"$f"
+	elif [ "$(grep -cF -- "$from" "$f")" -ne 1 ]; then
+		problem "$label" "mutation $n: anchor text not exactly once in $file: $from"
+		return
+	else
+		content="$(cat "$f")"
+		printf '%s\n' "${content//"$from"/"$to"}" >"$tmp/x" && cp "$tmp/x" "$f"
+	fi
+	if ! grep -qF -- "${to%%$'\n'*}" "$f"; then
+		problem "$label" "mutation $n changed nothing in $file"
+	else
+		(cd "$wt" && go test -count=1 -run '^TestAccessRuleSites$' ./internal/core/access/ >"$log" 2>&1) || true
+		grep -qF -- '--- FAIL: TestAccessRuleSites' "$log" || problem "$label" "mutation $n: lacks '--- FAIL: TestAccessRuleSites': $(tail -n 3 "$log" | tr '\n' ' ')"
+		grep -qF -- "$want" "$log" || problem "$label" "mutation $n: log lacks '$want': $(grep -F "$file" "$log" | head -n 3 | tr '\n' ' ')"
+	fi
+	revert
+}
+
+block_access_rule_sites_fires() {
+	local label=access-rule-sites-fires log="$tmp/b29z.log" c=internal/core/channels/channels.go
+	begin
+	if ! (cd "$wt" && go test -count=1 -run '^TestAccessRuleSites$' ./internal/core/access/ >"$log" 2>&1); then
+		problem "$label" "clean tree: expected PASS: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	sites_probe "$label" 1 "$c" 'if err := protected(ch, "deleted"); err != nil {' \
+		'if p.Admin { return nil }
+		if err := protected(ch, "deleted"); err != nil {' \
+		"$c Delete: mentions Admin (1, none allowed)"
+	sites_probe "$label" 2 internal/cli/stophook.go 'names = append(names, c.Channel)' \
+		'if c.Kind == bus.KindMemory { continue }
+		names = append(names, c.Channel)' \
+		'internal/cli/stophook.go stopHookWork: mentions MemoryKind (1, none allowed)'
+	sites_probe "$label" 3 "$c" 'scope := p.Scope' \
+		'scope := p.Scope
+		if p.Scope == "probe" { return nil }' \
+		"$c Create: mentions Scope 5 times, 4 allowed"
+	sites_probe "$label" 4 "$c" '}{"create_channel", in.Name, kind, acl, in.Scope}' \
+		'}{"create_channel", in.Name, kind, acl, ""}' \
+		"$c Create: mentions Scope 3 times, the allowlist holds 4"
+	sites_probe "$label" 5 "$c" '' \
+		'func probeAdmin(p access.Principal) bool { ok := p.Admin; return ok }' \
+		"$c probeAdmin: mentions Admin (1, none allowed)"
+	sites_probe "$label" 6 "$c" '' \
+		'func probeACL(ctx context.Context, t store.Tx) error { _, err := t.ACL(ctx, 1); return err }' \
+		"$c probeACL: calls ACL( (1, none allowed)"
+	sites_probe "$label" 7 "$c" '' \
+		'var probeInit = func(p access.Principal) bool { return p.Admin }' \
+		"$c <init:probeInit>: mentions Admin (1, none allowed)"
+	sites_probe "$label" 8 internal/store/sqlstore/acl.go \
+		'FROM channel_acl WHERE channel_id = ? ORDER BY id' \
+		'FROM channel_acl WHERE channel_id = ? AND can_read = TRUE ORDER BY id' \
+		'internal/store/sqlstore/acl.go ACL: SQL filters on can_* (1, none allowed)'
+	sites_probe "$label" 9 internal/store/sqlstore/identities.go '' \
+		'const probeAdmins = "SELECT name FROM identities" +
+	" WHERE is_admin"' \
+		'internal/store/sqlstore/identities.go <init:probeAdmins>: SQL filters on is_admin (1, none allowed)'
+	finish "$label"
+	revert
+}
+
 block_skip_in_wiring
 block_unit_leak
 block_gen_edited
@@ -859,6 +932,7 @@ block_m8_exit_script_fires
 block_tui_hint_mutation
 block_slackbridge_overlap_row
 block_slackbridge_catchup_before_drain
+block_access_rule_sites_fires
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"
