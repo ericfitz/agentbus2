@@ -35,10 +35,11 @@ import (
 //   - Each count is exact per site and clause: one occurrence more fails and
 //     names the site, one fewer fails the same way, so the list holds neither
 //     a second rule hidden behind a copy nor a dead exemption.
-//   - Every method call named ACL with two arguments (the shape of
-//     store.Tx.ACL(ctx, id)) under internal, whatever the receiver, outside
-//     internal/core/access and internal/store/sqlstore. The match is
-//     syntactic, so Bus.ACL(ctx, channel) callers are listed too.
+//   - Every method call named ACL under internal, whatever the receiver and
+//     however many arguments, outside internal/core/access and
+//     internal/store/sqlstore (Eric 2026-10-27). The match is syntactic, so
+//     besides store.Tx.ACL(ctx, id) the callers of Bus.ACL(ctx, channel) and
+//     of channels.Service.ACL(ctx, identity, channel) are listed too.
 //   - Package-level var and const initializers, function literals inside them
 //     included, as the site "file <init:name>".
 //   - The sqlstore SQL: no string literal, and no + chain of string literals,
@@ -129,17 +130,19 @@ var ruleAllowed = map[string]map[string]int{
 	"internal/server/tasks.go UpdateTask":         {"Owner": 1},  // wire copy of the patch's owner (kind N)
 }
 
-// aclAllowed maps a site to the exact number of two-argument ACL( calls it may
-// make (the get-ACL display and the bridge's two ACL mutations; access reads
-// the rows to decide).
+// aclAllowed maps a site to the exact number of ACL( calls it may make (the
+// get-ACL display and the bridge's two ACL mutations; access reads the rows
+// to decide).
 var aclAllowed = map[string]int{
 	"internal/core/channels/channels.go ACL":   1,
 	"internal/slackbridge/archive.go Remove":   1,
 	"internal/slackbridge/create.go reserveTx": 1, // step 1: reads the ACL to check its shape (CheckBridgeACL)
 	"internal/slackbridge/create.go goLive":    1, // step 4: pins the slack-bridge read row
-	// Bus.ACL(ctx, channel) has the same shape: the get-ACL display of the clients.
-	"internal/cli/channels.go runChannelsACL": 1,
-	"internal/mcpserver/server.go addTools":   1,
+	// The get-ACL display through the Bus and the service, not the Store.
+	"internal/cli/channels.go runChannelsACL": 1, // Bus.ACL(ctx, channel)
+	"internal/mcpserver/server.go addTools":   1, // Bus.ACL(ctx, channel)
+	"internal/bus/local/channels.go ACL":      1, // channels.Service.ACL(ctx, identity, channel)
+	"internal/server/channels.go GetACL":      1, // channels.Service.ACL(ctx, identity, channel)
 }
 
 // sqlFilters are the flag and creator filters no SQL of internal/store/sqlstore
@@ -354,11 +357,11 @@ func TestAccessRuleSites(t *testing.T) {
 	}
 	compare(&bad, "mentions", got, ruleAllowed)
 
-	// Clause 3: ACL( with two arguments, on any receiver.
+	// Clause 3: ACL( with any arguments, on any receiver.
 	acl := map[string]map[string]int{}
 	for _, u := range sites(t, []string{"internal"}, "internal/core/access/", "internal/store/sqlstore/") {
 		ast.Inspect(u.node, func(n ast.Node) bool {
-			if call, ok := n.(*ast.CallExpr); ok && len(call.Args) == 2 {
+			if call, ok := n.(*ast.CallExpr); ok {
 				if sel, ok := call.Fun.(*ast.SelectorExpr); ok && sel.Sel.Name == "ACL" {
 					if acl[u.site] == nil {
 						acl[u.site] = map[string]int{}

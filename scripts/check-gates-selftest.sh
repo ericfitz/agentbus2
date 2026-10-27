@@ -837,7 +837,8 @@ block_tui_hint_mutation() {
 # clause (issue #19): a condition in an unlisted function (the accesscheck plan's
 # channels.go Delete and stophook.go checks), one more and one fewer occurrence
 # in a listed function, a flag read outside a condition, ACL( on a receiver not
-# named tx, a package-level initializer, and a flag filter in the sqlstore SQL.
+# named tx, a three-argument ACL( call, a package-level initializer, and a flag
+# filter in the sqlstore SQL.
 # sites_probe LABEL N FILE FROM TO WANT: replace the exact text FROM (exactly
 # once in FILE) with TO, or append TO when FROM is empty, then require FAIL and
 # WANT in the gate's log.
@@ -889,6 +890,9 @@ block_access_rule_sites_fires() {
 	sites_probe "$label" 6 "$c" '' \
 		'func probeACL(ctx context.Context, t store.Tx) error { _, err := t.ACL(ctx, 1); return err }' \
 		"$c probeACL: calls ACL( (1, none allowed)"
+	sites_probe "$label" 10 "$c" '' \
+		'func (s Service) probeServiceACL(ctx context.Context) error { _, err := s.ACL(ctx, "pat", "general"); return err }' \
+		"$c probeServiceACL: calls ACL( (1, none allowed)"
 	sites_probe "$label" 7 "$c" '' \
 		'var probeInit = func(p access.Principal) bool { return p.Admin }' \
 		"$c <init:probeInit>: mentions Admin (1, none allowed)"
