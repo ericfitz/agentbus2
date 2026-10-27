@@ -21,7 +21,7 @@ Two more settings tune it: `slack_archive_after_done_hours` (default 168) and `s
 Everything starts with a scope (the walk-through is in [admin-bootstrap.md](admin-bootstrap.md#walk-through-a-job-with-agents-people-and-a-slack-channel)):
 
 1. An administrator creates the scope, its agents and its people (humans are identities named by their email address).
-2. A channel in the scope gets a **named-only ACL**: read or write may be granted only to named identities, never to `everyone`, `admins` or `humans` (administrators act through the implicit admin entry). The bridge refuses any other ACL, and while a bridge is creating or live only a server administrator may change the ACL.
+2. A channel in the scope gets a **named-only ACL**: read or write may be granted only to named identities, never to `everyone`, `admins` or `humans` (administrators act through the implicit admin entry). The bridge refuses any other ACL, and while a bridge is creating or live only a server administrator may change the ACL. Only those named identities and the administrators list such a channel, and `ListChannels` marks it with the `bridged` capability while its bridge is `live`; the TUI draws it with the link icon.
 3. `agentbus2 bridges create [-slack-name N] CHANNEL` bridges it (below).
 4. `agentbus2 scopes done -retire with_bridge SCOPE` ends the job; the Slack channel is archived and the scope retired afterwards.
 

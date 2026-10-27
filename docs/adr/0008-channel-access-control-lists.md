@@ -182,7 +182,7 @@ ADR 0007):
   optional `kind`. (Question 29; departs from Claude's proposal, which
   had no switch and allowed `/`)
 - **Decision 94.** Every channel's name and kind are visible to any
-  authenticated identity; content needs `read`. (Question 30)
+  authenticated identity; content needs `read`. (Question 30) *Superseded by Eric's decision 2026-10-25 (1) as amended 2026-10-26 (1); see "Channel visibility" below.*
 - **Decision 95.** The spec's section 4.6 mapping is accepted as written:
   unsubscribe needs nothing; tag matches, search, history, memory get and
   revisions, task get and list, and offered cursors need `read`; memory
@@ -214,7 +214,7 @@ None. Questions 25 to 32 were decided on 2026-10-20 as above.
   `scripts/m3-exit-counts.sh`. Gate self-test block `acl-check-removed`
   proves the matrix fails on both engines when the readable-channel check in
   `Receive` is removed.
-- **Decision 94 in the types.** `bus.Channel` carries name and kind only,
+- **Decision 94 in the types** (*superseded by Eric's decision 2026-10-25 (1) as amended 2026-10-26 (1); `bus.Channel` also carries `Capabilities`, see "Channel visibility" below*). `bus.Channel` carries name and kind only,
   which is what `ListChannels` returns to anyone. `bus.ChannelInfo` embeds it
   with `Creator` and `CreatedAt` and is returned only to the creator on
   `CreateChannel` and to an administrator on `Status`.
@@ -273,8 +273,10 @@ a followed tag set, else an ordinary channel); nothing in `internal/tui`
 inspects a channel name's prefix. The one synthetic prefix is the rail's own
 `tags:` entry, which never reaches the bus. v1's `shortName`, which stripped
 the `general/`, `memory/` and `tasks/` prefixes from a row, is not ported: rows
-show the full name. A channel whose ACL denies `read` is listed (Decision 94)
-and marked `(no access)`; the TUI does not subscribe to it or read its history.
+show the full name. A channel whose ACL denies `read` is listed to an administrator and to a
+write-only or admin-only holder (a stored row or the administrator flag lists
+a channel: "Channel visibility" below; this replaces the earlier "Decision 94"
+reason) and marked `(no access)`; the TUI does not subscribe to it or read its history.
 
 ## The `humans` group (Eric, 2026-10-25)
 
@@ -330,3 +332,11 @@ above them that they change carry "superseded in part" markers.
 - **Scope is an access boundary** for scoped agents (ADR 0011 decisions 4 to
   6): an object outside the agent's scope is `not_found`; inside it the ACL
   decides.
+
+## Channel visibility (Eric, 2026-10-25 and 2026-10-26)
+
+These are Eric's decisions of 2026-10-25 (the filtered list, the `bridged` trait) as amended by his decisions of 2026-10-26, recorded in ADR 0011 ("Eric's decisions of 2026-10-26") and `docs/superpowers/specs/2026-10-25-channel-visibility-design.md` section 8. They supersede Decision 94 and its two echoes above.
+
+- **The list is filtered.** `ListChannels` (the REST operation, `internal/core`, the MCP tool, the CLI and the TUI) returns a channel only to a principal that holds a stored ACL row on it, for its own name, `everyone`, `admins` when it is an administrator or `humans` when it is a human, or that is a server administrator (the administrator's list is every channel). There is no creator clause: the implicit creator entry is retired (above), so a creator with no stored row lists nothing. A scoped agent also needs the channel in its scope (the scope gate runs first). The rule is the `List` action of `internal/core/access`; the Store gained no query.
+- **A channel the caller cannot read can still be listed**: to an administrator, and to a holder of `write` or `admin` without `read`. The TUI marks such a row `(no access)`. Unsubscribe and the `receive` channel filter need no row (the `Unsubscribe` and `FilterReceive` actions: the scope gate alone), so a reader whose rows were revoked can still leave and still name the channel in a filter.
+- **`capabilities`.** `bus.Channel` (and so `bus.ChannelInfo`) carries `Capabilities`, a required array of strings on the wire, `[]` and never null. The first value, `bridged`, is present while the channel's bridge row is in state `live` exactly (`creating` and `archived` are not `bridged`; the pin rule of ADR 0009, `creating` or `live`, is separate and unchanged). Clients ignore strings they do not know. `CreateChannel` returns `[]` (a bridge cannot exist yet); the administrator's `Status` computes the same set.

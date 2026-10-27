@@ -1,11 +1,16 @@
 # Channel visibility design (ACL-filtered listing, channel `capabilities`, the TUI's bridged icon)
 
-Status: Agent design of 2026-10-25 for Eric's decisions of the same day.
+Status: Agent design of 2026-10-25 for Eric's decisions of the same day;
+implemented by `docs/superpowers/plans/2026-10-26-channel-visibility.md`,
+which follows Eric's decisions of 2026-10-26 (section 8). Sections 3.1, the
+creator clause of 3.7, the creator clause of section 4 question 1 and section 5
+are superseded by section 8.
 Section 1 records the four decisions Eric made first; section 4 records his
 answers to the ten questions the design raised, each labeled **Eric's
-decision 2026-10-25**. One item is pending (section 5). Nothing else in
-this document is a decision. The implementation plan is
-`docs/superpowers/plans/2026-10-25-channel-visibility.md`.
+decision 2026-10-25**. The item pending in section 5 is closed by section 8. Nothing else in
+this document is a decision. The first implementation plan,
+`docs/superpowers/plans/2026-10-25-channel-visibility.md`, is superseded by
+`docs/superpowers/plans/2026-10-26-channel-visibility.md`.
 
 Related: `docs/superpowers/specs/2026-10-19-agentbus2-design.md` sections
 3.1 (Decision 43, discovery and capabilities), 3.2 (the channels row of the
@@ -149,6 +154,8 @@ Slack bridge; decisions 11, 12, 19 and "Protecting a live bridge");
 
 ### 3.1 The rule, in the Store and the core
 
+**Superseded by section 8 (Eric's decision 2026-10-26 (1)): there is no `Tx.VisibleChannels` and no creator clause; `List` is the `access` action "a stored row, or the administrator flag". The text below is history.**
+
 A new Store query, `Tx.VisibleChannels(ctx, identity) ([]int64, error)`,
 lists the ids of the channels on which the identity holds any ACL entry,
 under ADR 0008's own definition of the ACL (every ACL is evaluated as if it
@@ -205,7 +212,7 @@ ignores strings it does not know.
   `fromGenChannelInfo` copy the strings through, refusing nothing
   (Definition of Done B applies to values a client acts on; an unknown
   trait is one it does not act on, by the principle).
-- `GET /v1/discover` `capabilities` gains one name so a client can tell a
+- *Superseded by `protocol_version` (section 8, Eric's decision 2026-10-26 (4)).* `GET /v1/discover` `capabilities` gains one name so a client can tell a
   server with channel capabilities from an older one; the name,
   `channel_capabilities`, is proposed and pending (section 5).
   `server.Capabilities` is the one place; sorted output.
@@ -294,6 +301,8 @@ included, ADR 0009 decision 11) and the administrators.
 
 ### 3.7 Consequences
 
+*The creator clause below is superseded by section 8 (Eric's decision 2026-10-26 (1)): a creator with no stored row lists nothing.*
+
 - A write-only identity sees the channel in the list (it holds an entry)
   but cannot read it: in the TUI it is a `(no access)` row; `subscribe`
   and `history` answer `forbidden` as before. A channel administrator
@@ -322,12 +331,13 @@ included, ADR 0009 decision 11) and the administrators.
 - Older client, newer server: the client ignores `capabilities` (the
   generated client decodes into known members) and gets a shorter list;
   the TUI of such a client shows `(no access)` rows only where it still
-  would, and the discovery capability tells an operator why.
+  would, and the discovery capability tells an operator why (*superseded: `protocol_version` tells, section 8*).
 - Newer client, older server: `capabilities` is absent and normalizes to
   empty; the list is unfiltered and the client's `(no access)` path still
   works; no bridged icon is shown. The remote Bus does not refuse the
   response (an absent array is not an unrecognized value); the discovery
-  capability is how a client tells the two servers apart.
+  capability is how a client tells the two servers apart (*superseded:
+  `protocol_version` tells them apart, section 8*).
 - No schema change (the new Store query reads existing tables), no
   setting, no migration, no change to the MCP tool count (25).
 
@@ -340,7 +350,8 @@ its answer).
 
 1. **Any ACL entry lists the channel**, not `read` alone: an identity
    holding `read`, `write` or `admin` (stored, or the implicit creator
-   entry under ADR 0008's definition) on a channel sees it in the list.
+   entry under ADR 0008's definition; *superseded: "or the implicit creator
+   entry" no longer applies, section 8*) on a channel sees it in the list.
    Administrators get the unfiltered list. (Option C.)
 2. **No name secrecy**: `forbidden` and `conflict` stay as they are;
    nothing becomes `not_found` to hide a channel's existence. (Option A.)
@@ -367,7 +378,7 @@ its answer).
 10. **The bridged icon is drawn at every kind-icon site** through one
     helper. (Option A.)
 
-## 5. Pending Eric
+## 5. Pending Eric (superseded by section 8: moot under the protocol-versioning decision)
 
 - **The discovery capability name.** `GET /v1/discover` `capabilities`
   gains one string so a client can tell a server that sends channel
@@ -437,3 +448,16 @@ Decision 94 (`internal/bus/types.go`, `internal/core/convert.go`,
 `internal/core/channels/channels.go`, `internal/tui/view.go`); `CLAUDE.md`
 (the agentview sentence gains "and `ListChannels` lists only the channels
 the caller holds an ACL entry on, administrators excepted").
+
+## 8. Eric's decisions of 2026-10-26
+
+These decisions closed the pending item and amended section 1 and section 4 question 1. The plan is `docs/superpowers/plans/2026-10-26-channel-visibility.md`; ADR 0011 ("Eric's decisions of 2026-10-26") records them. Superseded by them: 3.1 (`Tx.VisibleChannels`: not built; the rule is the `List` action of `internal/core/access`), the creator clause of 3.7 and "or the implicit creator entry" in section 4 question 1, and section 5 (the discovery capability name: moot, since a minor protocol bump replaces a capability string).
+
+1. **Eric's decision 2026-10-26 (1): `List` is a stored row or the administrator flag.** The principal holds a stored ACL row on the channel (for its name, `everyone`, `admins` when an administrator, `humans` when a human), or is a server administrator. No creator clause. The scope gate runs first.
+2. **Eric's decision 2026-10-26 (2): Unsubscribe gets a dedicated scope-only action**, refined to two actions named for their operations: `Unsubscribe` (Decision 95) and `FilterReceive` (the `receive` channel filter). Both are the scope gate alone. The names are internal; the wire, MCP and CLI names do not change.
+3. **Eric's decision 2026-10-26 (3): issue #18, both parts.** The scope-prefix name rules become `decide`'s `TakeName` action on `ChannelName` and `ScopeName`; both allowlist entries leave `TestAccessRuleSites`; `TestScopeNamespace` and `TestScopeGateChannels` keep their codes and texts.
+4. **Eric's decision 2026-10-26 (4): the protocol version is stamped.** `info.version` is `1.0.0` (major = the `/v1` path, minor per addition, patch documentation-only); `internal/version.Protocol` is pinned to it by a test; `GET /v1/discover` and `GET /v1/health` carry a required `protocol_version`; no new discovery capability string.
+5. **Eric's decision 2026-10-26 (5): channel `capabilities` and the TUI bridged icon stand** as in sections 1 and 4: a required string array (`[]`, never null), first value `bridged` (state `live` exactly), unknown strings passed through; the link icon (🔗; `fa-slack` in the Nerd Font set).
+6. **Eric's decision 2026-10-26 (6): search hits use the same channel icon** as the rail, the header and the compose prompt: the chat bubble for an ordinary channel, the link icon for a bridged one, the tasks and memory icons as before.
+
+Agent choices, not Eric's: the `List` denial (`forbidden`, `no_permission`, `%s holds no ACL entry on channel %q`; no caller sees it), the single `TakeName` action with Reason `name_prefix`, and the protocol version on the TUI health overlay's `server` line.

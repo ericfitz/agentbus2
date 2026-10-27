@@ -207,6 +207,8 @@ configured) and auth methods. Breaking changes get a new path version;
 additions get a capability. Examples of capabilities: pgvector (section
 5.4), the future WebSocket endpoint (Decision 11).
 
+Superseded by ADR 0001's "Protocol versioning addendum" (Eric's decision 2026-10-26): additions bump the minor of `info.version`, exposed as `protocol_version`, and get no capability string.
+
 The spike confirmed both candidate generators route a path with a dot in
 its first segment and honor `security: []` on these two operations (spike,
 need 5).
@@ -235,7 +237,7 @@ section 4.6 maps each operation to a permission).
 | Discovery | `GET /.well-known/agentbus2`, `GET /v1/discover` | Unauthenticated. Decision 43. Advertised auth methods agree with the document's security schemes (Decision 65). |
 | Auth | `POST /v1/auth/token` (`private_key_jwt` exchange); `register` (trust-on-first-use or enrollment token) | Decisions 19, 20. Path and token lifetime (a server setting, default one hour): Decision 84 (Eric). |
 | Sessions | Open (hint, optional resume token, optional offered cursors); close; `watch`; `receive` (with optional `ack`); `peek` (read-only pending counts computed with the watch floor; Decision (Eric, 2026-10-21), Milestone 6 item 2) | Delivery state is per session. Decisions 15, 16, 40, 42. Decision 83 (Eric): `receive` is non-blocking on the API; `watch` is the only server-side wait. The MCP `receive` tool may keep `wait_seconds` by calling `watch` then `receive` in the client. |
-| Channels | List (names and kinds visible to any authenticated identity, Decision 94); create (optional `kind`, one of `ordinary`, `memory`, `tasks`, default `ordinary`, Decisions 82, 90, 93; optional ACL, Decision 88); get and set the ACL; delete and rename (channel `admin`, Decision 89); subscribe and unsubscribe (on the identity); tag subscriptions | Membership is server-held. Decisions 17, 37, 38. No name prefixes and no reserved name shapes (Decisions 76, 82); names pass v1 `NameRule` exactly, so `/` is banned (Decision 93). Open creation is a server switch, on by default (Decision 93). |
+| Channels | List (names and kinds visible to any authenticated identity, Decision 94; superseded by `docs/superpowers/specs/2026-10-25-channel-visibility-design.md` section 8); create (optional `kind`, one of `ordinary`, `memory`, `tasks`, default `ordinary`, Decisions 82, 90, 93; optional ACL, Decision 88); get and set the ACL; delete and rename (channel `admin`, Decision 89); subscribe and unsubscribe (on the identity); tag subscriptions | Membership is server-held. Decisions 17, 37, 38. No name prefixes and no reserved name shapes (Decisions 76, 82); names pass v1 `NameRule` exactly, so `/` is banned (Decision 93). Open creation is a server switch, on by default (Decision 93). |
 | Messages | Send (idempotent); history by seq range with tag filters; search (text, semantic, both) | Decision 46; search language in section 5.4. |
 | Memories | Get; edit (idempotent, new revision); delete; revisions | `edit_memory` gains an idempotency key. Decision 46. An edit keeps every field it omits (content, subject, type, metadata, tags) and clears one given empty; empty content is a validation error (delete instead); an optional `if_revision` fails with `conflict` when the live revision differs. post-build decision 10 (Eric, 2026-10-21). |
 | Tasks | Create, claim, release, update, get, list on a task list | Ported from v1; leases and reclaim. Owner checked against the identity registry (Decision 81). A task list is a channel of kind `tasks` (Decision 90); task operations accept only that kind. |
@@ -592,6 +594,8 @@ may create channels.
 Decision 94 (Eric, 2026-10-20): every channel's name and kind are visible
 to any authenticated identity; content needs `read`.
 
+Superseded by Eric's decisions 2026-10-25 (1) and 2026-10-26 (1) (`docs/superpowers/specs/2026-10-25-channel-visibility-design.md` section 8): a channel is listed to a principal with a stored ACL row on it, and to an administrator.
+
 Operation to permission. Each channel operation needs exactly one
 permission on the channel it touches. Rows marked "Decision 80" follow
 from its action sets; the remaining rows were Claude's proposals in
@@ -607,7 +611,7 @@ Questions 25, 29, 30 and 31 and are decided as written (Decisions 89, 93,
 | rename (metadata, when it exists) | `admin` | Decisions 80, 89 |
 | delete a channel | `admin` | Decision 89 |
 | create a channel | none on the new channel; open creation when the switch is on, administrators only when off | Decision 93 |
-| list channels (names and kinds) | none; content needs `read` | Decision 94 |
+| list channels (names and kinds) | none; content needs `read` | Decision 94 (superseded: visibility spec section 8) |
 | unsubscribe | none | Decision 95 |
 | tag subscription match on a channel | `read` on that channel | Decision 95 |
 | memory get, revisions | `read` | Decision 95 |
@@ -1399,7 +1403,9 @@ ADR 0008.
 Question 30. Channel visibility without `read`. Decided by Eric on
 2026-10-20: every channel's name and kind are visible to any
 authenticated identity; content needs `read` (option B). Recorded as
-Decision 94 and ADR 0008.
+Decision 94 and ADR 0008. Superseded by Eric's decisions of 2026-10-25 and
+2026-10-26 (`docs/superpowers/specs/2026-10-25-channel-visibility-design.md`
+section 8; ADR 0008 "Channel visibility").
 
 Question 31. Permission mapping for the operations Decision 80 does not
 name. Decided by Eric on 2026-10-20: the section 4.6 table as proposed
