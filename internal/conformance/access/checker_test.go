@@ -181,7 +181,7 @@ func TestChannelsAgreesWithCheck(t *testing.T) {
 			}
 			mkChannel(t, s, "c"+string(rune('a'+i/26))+string(rune('a'+i%26)), kinds[rng.IntN(len(kinds))], creators[rng.IntN(len(creators))], scopes[rng.IntN(len(scopes))], acl)
 		}
-		actions := []access.Action{access.Read, access.Write, access.Admin, access.List, access.Deliver, access.Post}
+		actions := []access.Action{access.Read, access.Write, access.Admin, access.List, access.Unsubscribe, access.FilterReceive, access.Deliver, access.Post}
 		allowedN, deniedN := 0, 0
 		mustRead(t, s, func(ctx context.Context, tx store.Tx) error {
 			for _, who := range []string{"root", "pat", "kim", halName, hal2Name, "job1-coder"} {

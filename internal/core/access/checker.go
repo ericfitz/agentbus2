@@ -144,7 +144,7 @@ func (c Checker) Require(ctx context.Context, tx store.Tx, p Principal, o Object
 // channelActions are the actions Channels accepts.
 func channelAction(a Action) bool {
 	switch a {
-	case Read, Write, Admin, List, Deliver, Post:
+	case Read, Write, Admin, List, Unsubscribe, FilterReceive, Deliver, Post:
 		return true
 	}
 	return false

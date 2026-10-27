@@ -88,7 +88,7 @@ The section of a channel comes from its kind, never from its name. Rows show the
 Rail markers:
 
 - `(off)` after a channel name: you are not subscribed to it (`s` toggles).
-- `(no access)` in the dim style: the channel's ACL denies you read. `ListChannels` shows every channel, so the rail lists it, but nothing subscribes to it or reads its history, and selecting it shows `no read access to <name>`.
+- `(no access)` in the dim style: the channel's ACL denies you read. `ListChannels` lists a channel for a stored ACL row of any permission (and every channel for an administrator), so the rail shows this marker for an administrator without a read row, for a write-only or admin-only holder, and for the moment after a read row is revoked. Nothing subscribes to it or reads its history, and selecting it shows `no read access to <name>`.
 
 `<` and `>` narrow and widen the rail and save the width as `tui.rail_width` in `config.json`.
 

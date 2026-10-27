@@ -52,8 +52,23 @@ func TestDecideChannelRules(t *testing.T) {
 		{"stored admin row admins", pat, chFacts("", ord, entry("pat", rwa)), Admin, true, ""},
 		{"implicit admin is not read", root, chFacts("", ord), Read, false, ReasonNoPermission},
 		{"implicit admin is not write", root, chFacts("", ord), Write, false, ReasonNoPermission},
-		{"list unscoped, no rows", pat, chFacts("", ord), List, true, ""},
-		{"list unscoped, rows", pat, chFacts("", ord, entry("kim", r)), List, true, ""},
+		{"list unscoped, no rows", pat, chFacts("", ord), List, false, ReasonNoPermission},
+		{"list unscoped, another's row", pat, chFacts("", ord, entry("kim", r)), List, false, ReasonNoPermission},
+		{"list via own write row", pat, chFacts("", ord, entry("pat", w)), List, true, ""},
+		{"list via own admin row", pat, chFacts("", ord, entry("pat", []store.Permission{store.PermAdmin})), List, true, ""},
+		{"list via everyone", pat, chFacts("", ord, entry(store.Everyone, w)), List, true, ""},
+		{"list admin, no rows", root, chFacts("", ord), List, true, ""},
+		{"list admins row, non-admin", pat, chFacts("", ord, entry(store.Admins, r)), List, false, ReasonNoPermission},
+		{"list humans row, human", hal, chFacts("", ord, entry(store.Humans, r)), List, true, ""},
+		{"list humans row, agent", pat, chFacts("", ord, entry(store.Humans, r)), List, false, ReasonNoPermission},
+		{"creator without a row does not list", pat, channelFacts{Channel: store.Channel{ID: 1, Name: "work", Creator: "pat"}}, List, false, ReasonNoPermission},
+		{"scoped list via everyone", coder, chFacts("job1", ord, entry(store.Everyone, r)), List, true, ""},
+		{"unsubscribe unscoped, no rows", pat, chFacts("", ord), Unsubscribe, true, ""},
+		{"unsubscribe scoped in scope, no rows", coder, chFacts("job1", ord), Unsubscribe, true, ""},
+		{"unsubscribe admin, no rows", root, chFacts("", ord), Unsubscribe, true, ""},
+		{"filter_receive unscoped, no rows", pat, chFacts("", ord), FilterReceive, true, ""},
+		{"filter_receive scoped in scope, no rows", coder, chFacts("job1", ord), FilterReceive, true, ""},
+		{"filter_receive admin, no rows", root, chFacts("", ord), FilterReceive, true, ""},
 		{"deliver agent ordinary", pat, chFacts("", ord, entry("pat", r)), Deliver, true, ""},
 		{"deliver agent memory", pat, chFacts("", store.KindMemory, entry("pat", r)), Deliver, false, ReasonMemoryChannel},
 		{"deliver human memory", hal, chFacts("", store.KindMemory, entry("hal", r)), Deliver, true, ""},
@@ -63,7 +78,7 @@ func TestDecideChannelRules(t *testing.T) {
 		{"post agent with write", pat, chFacts("", ord, entry("pat", w)), Post, false, ReasonNotHuman},
 		{"post human without write", hal, chFacts("", ord, entry("hal", r)), Post, false, ReasonNoWrite},
 		{"scoped in scope read", coder, chFacts("job1", ord, entry(store.Everyone, rw)), Read, true, ""},
-		{"scoped in scope list", coder, chFacts("job1", ord), List, true, ""},
+		{"scoped in scope list, no rows", coder, chFacts("job1", ord), List, false, ReasonNoPermission},
 	}
 	for _, c := range cases {
 		d := decide(c.p, c.f, c.a)
@@ -88,6 +103,10 @@ func TestDecideDenialTexts(t *testing.T) {
 	d := decide(pat, chFacts("", store.KindOrdinary, entry("pat", r)), Write)
 	if d.Code != bus.CodeForbidden || d.Text != `pat needs write on channel "work"` {
 		t.Errorf("write denial = %+v", d)
+	}
+	d = decide(pat, chFacts("", store.KindOrdinary), List)
+	if d.Code != bus.CodeForbidden || d.Text != `pat holds no ACL entry on channel "work"` {
+		t.Errorf("list denial = %+v", d)
 	}
 	d = decide(pat, chFacts("", store.KindMemory, entry("pat", r)), Deliver)
 	want := "work is a memory channel: agents do not subscribe to memories (decision 20); use search to find a memory and get_memory to read it"
@@ -190,13 +209,13 @@ func TestScopeGate(t *testing.T) {
 	rows := entry(store.Everyone, rw)
 	for _, scope := range []string{"", "job2"} {
 		f := chFacts(scope, ord, rows)
-		for _, a := range []Action{Read, Write, Admin, List, Deliver, Post} {
+		for _, a := range []Action{Read, Write, Admin, List, Unsubscribe, FilterReceive, Deliver, Post} {
 			d := decide(coder, f, a)
 			if d.Allowed || d.Reason != ReasonOutOfScope || d.Code != bus.CodeNotFound || d.Text != `channel "work" does not exist` {
 				t.Errorf("scope %q %s: %+v", scope, a, d)
 			}
 			// the unscoped principal with identical rows is not restricted
-			if a == Read || a == Write || a == List {
+			if a == Read || a == Write || a == List || a == Unsubscribe || a == FilterReceive {
 				if !decide(pat, f, a).Allowed {
 					t.Errorf("unscoped principal denied %s on scope %q", a, scope)
 				}
@@ -229,7 +248,7 @@ func TestScopeGate(t *testing.T) {
 }
 
 func TestAnonymousDeniedEverything(t *testing.T) {
-	all := []Action{Read, Write, Admin, List, Deliver, Post, Administer, CreateChannel, Use, See}
+	all := []Action{Read, Write, Admin, List, Unsubscribe, FilterReceive, Deliver, Post, Administer, CreateChannel, Use, See}
 	fs := []facts{
 		chFacts("", store.KindOrdinary, entry(store.Everyone, rwa)),
 		serverFacts{ChannelCreation: "open"},
@@ -370,7 +389,7 @@ func TestReplaceACLProtectedEntries(t *testing.T) {
 func TestEmptyNameOnChannelWithoutCreator(t *testing.T) {
 	empty := Principal{Name: "", Kind: store.IdentityAgent}
 	f := channelFacts{Channel: store.Channel{ID: 1, Name: "work", Creator: ""}}
-	for _, a := range []Action{Read, Write, Admin, Deliver, Post} {
+	for _, a := range []Action{Read, Write, Admin, List, Deliver, Post} {
 		if d := decide(empty, f, a); d.Allowed {
 			t.Errorf("empty name allowed %s on a channel with no creator: %+v", a, d)
 		}

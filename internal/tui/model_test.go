@@ -860,17 +860,62 @@ func TestStatusTickAdminShowsNotices(t *testing.T) {
 	}
 }
 
-// Review Focus 2: a channel whose ACL denies read is marked once in the rail,
-// selecting it shows one dim line, and nothing retries it on the tick.
-func TestNoAccessChannelInRail(t *testing.T) {
+// A channel on which the TUI identity holds no ACL row is not listed: the
+// rail lacks it and nothing subscribes to it or reads its history.
+func TestChannelWithoutEntryAbsentFromRail(t *testing.T) {
 	f, cb := newCountingFixture(t)
-	ctx := context.Background()
-	_, err := f.sam.CreateChannel(ctx, bus.CreateChannelInput{Name: "private", ACL: []bus.ACLEntry{
+	_, err := f.sam.CreateChannel(context.Background(), bus.CreateChannelInput{Name: "private", ACL: []bus.ACLEntry{
 		{Identity: "sam", Permissions: []bus.Permission{bus.PermRead, bus.PermWrite, bus.PermAdmin}},
 	}})
 	if err != nil {
 		t.Fatal(err)
 	}
+	f.m.host.RailWidth = 40
+	f.m.layout()
+	f.run(f.m.statusCmd())
+	if f.c.known("private") {
+		t.Fatal("private must not be known: eric holds no row on it")
+	}
+	if rail := stripANSI(f.m.renderRails()); strings.Contains(rail, "private") {
+		t.Fatalf("rail must not list private:\n%s", rail)
+	}
+	for _, m := range []string{"Subscribe", "History"} {
+		if slices.Contains(cb.channelsOf(m), "private") {
+			t.Fatalf("%s was called for private", m)
+		}
+	}
+}
+
+// Review Focus 2: a listed channel whose ACL denies read is marked once in the
+// rail, selecting it shows one dim line, and nothing retries it on the tick.
+// An administrator lists it with no row.
+func TestAdminSeesNoAccessRow(t *testing.T) {
+	f, cb := newCountingFixture(t)
+	setAdmin(t, f.core, "eric")
+	_, err := f.sam.CreateChannel(context.Background(), bus.CreateChannelInput{Name: "private", ACL: []bus.ACLEntry{
+		{Identity: "sam", Permissions: []bus.Permission{bus.PermRead, bus.PermWrite, bus.PermAdmin}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkNoAccessRow(t, f, cb)
+}
+
+// A write-only holder lists the channel but may not read it.
+func TestWriteOnlySeesNoAccessRow(t *testing.T) {
+	f, cb := newCountingFixture(t)
+	_, err := f.sam.CreateChannel(context.Background(), bus.CreateChannelInput{Name: "private", ACL: []bus.ACLEntry{
+		{Identity: "sam", Permissions: []bus.Permission{bus.PermRead, bus.PermWrite, bus.PermAdmin}},
+		{Identity: "eric", Permissions: []bus.Permission{bus.PermWrite}},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	checkNoAccessRow(t, f, cb)
+}
+
+func checkNoAccessRow(t *testing.T, f *fixture, cb *countingBus) {
+	t.Helper()
 	f.m.host.RailWidth = 40 // wide enough that the marker is not cut
 	f.m.layout()
 	f.run(f.m.statusCmd())

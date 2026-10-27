@@ -9,7 +9,9 @@ const (
 	Read          Action = "read"           // channel (Decision 80)
 	Write         Action = "write"          // channel
 	Admin         Action = "admin"          // channel
-	List          Action = "list"           // channel (interim clause until the channel-visibility rebuild)
+	List          Action = "list"           // channel: a stored ACL row for the principal's names, or the administrator flag (Eric 2026-10-26)
+	Unsubscribe   Action = "unsubscribe"    // channel: the scope gate alone (Decision 95)
+	FilterReceive Action = "filter_receive" // channel: the scope gate alone (the receive channel filter)
 	Deliver       Action = "deliver"        // channel: Read, minus memory channels for an agent (decision 20)
 	Post          Action = "post"           // channel: Write held by a human (the Slack bridge, ADR 0009 decision 11)
 	Administer    Action = "administer"     // server

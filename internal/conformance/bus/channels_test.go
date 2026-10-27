@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"reflect"
+	"sort"
 	"sync"
 	"testing"
 	"time"
@@ -152,24 +153,43 @@ func TestChannelCreationSwitch(t *testing.T) {
 	})
 }
 
-func TestChannelListNeedsNoRead(t *testing.T) {
+func TestChannelListFiltersByEntry(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
 		ctx := context.Background()
 		h.ensureIdentity("pat")
-		h.channel("secret", ab2store.KindMemory, "", []ab2store.ACLEntry{{Identity: "pat", Permissions: []ab2store.Permission{ab2store.PermRead}}})
+		h.ensureIdentity("kim")
+		hal := h.human("hal@corp.example")
+		perms := func(p ...ab2store.Permission) []ab2store.Permission { return p }
+		h.channel("secret", ab2store.KindMemory, "", []ab2store.ACLEntry{{Identity: "pat", Permissions: perms(ab2store.PermRead)}})
 		h.channel("alpha", ab2store.KindOrdinary, "pat", nil)
-		got, err := h.as("kim").ListChannels(ctx)
-		if err != nil {
-			t.Fatal(err)
+		h.channel("adminonly", ab2store.KindOrdinary, "kim", []ab2store.ACLEntry{{Identity: "kim", Permissions: perms(ab2store.PermAdmin)}})
+		h.channel("writeonly", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: "kim", Permissions: perms(ab2store.PermWrite)}})
+		h.channel("mine", ab2store.KindOrdinary, "kim", []ab2store.ACLEntry{})
+		h.channel("humansonly", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: ab2store.Humans, Permissions: perms(ab2store.PermRead)}})
+		o, m := ab2bus.KindOrdinary, ab2bus.KindMemory
+		for _, c := range []struct {
+			who  string
+			b    ab2bus.Bus
+			want map[string]ab2bus.Kind
+		}{
+			{"kim", h.as("kim"), map[string]ab2bus.Kind{"adminonly": o, "alpha": o, "writeonly": o}}, // mine: a creator without a row lists nothing
+			{"pat", h.as("pat"), map[string]ab2bus.Kind{"alpha": o, "secret": m}},
+			{"hal", hal, map[string]ab2bus.Kind{"alpha": o, "humansonly": o}},
+			{"root", h.admin("root"), map[string]ab2bus.Kind{"adminonly": o, "alpha": o, "humansonly": o, "mine": o, "secret": m, "writeonly": o}},
+		} {
+			if got := channelNames(t, c.b); !reflect.DeepEqual(got, c.want) {
+				t.Errorf("%s lists %v, want %v", c.who, got, c.want)
+			}
 		}
-		want := []ab2bus.Channel{{Name: "alpha", Kind: ab2bus.KindOrdinary}, {Name: "secret", Kind: ab2bus.KindMemory}}
-		if !reflect.DeepEqual(got, want) {
-			t.Fatalf("ListChannels = %+v, want %+v", got, want)
+		cs, err := h.as("kim").ListChannels(ctx)
+		must(t, err)
+		var names []string
+		for _, c := range cs {
+			names = append(names, c.Name)
 		}
-		info, err := h.as("kim").CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "mine"})
-		if err != nil || info.Creator != "kim" {
-			t.Fatalf("Create = %+v, %v; the creator sees the creator", info, err)
+		if !sort.StringsAreSorted(names) {
+			t.Errorf("ListChannels names %v are not in byte order", names)
 		}
 	})
 }

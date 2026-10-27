@@ -17,10 +17,9 @@ import (
 // deleteChannel without the subscriber refusal, RenameChannel on the id),
 // under the channel ACL (Decisions 80, 89, 93, 94).
 
-// List returns the channels the identity may list, by name with their kind
-// and nothing else. Until the channel-visibility rebuild the List action
-// admits every channel of the principal's scope (Decision 94 for an unscoped
-// principal: every channel; accesscheck spec 3.2).
+// List returns the channels the identity may list (the List action: a stored
+// ACL row for the identity's names, or the administrator flag; Eric's decision
+// 2026-10-26 (1)), by name with their kind.
 func (s Service) List(ctx context.Context, identity string) ([]bus.Channel, error) {
 	out := []bus.Channel{}
 	err := s.read(ctx, identity, func(ctx context.Context, tx store.Tx, p access.Principal) error {

@@ -130,7 +130,7 @@ func TestScopeGateChannels(t *testing.T) {
 		if got := list(coder); !reflect.DeepEqual(got, []string{"job1-next", "job1-work"}) {
 			t.Fatalf("scoped list = %v, want [job1-next job1-work]", got)
 		}
-		if got := list(pat); len(got) != 4 { // Decision 94, interim: every channel
+		if got := list(pat); len(got) != 4 { // every channel here carries the default everyone row
 			t.Fatalf("unscoped list = %v, want all four channels", got)
 		}
 
@@ -471,7 +471,7 @@ func TestScopeGateBeforeKind(t *testing.T) {
 
 // TestUnsubscribeNeedsNoRow: an identity with no ACL row on a channel in its
 // scope (or any channel, unscoped) can still leave it (Decision 95). This
-// must keep passing when List changes meaning.
+// is the Unsubscribe action, the scope gate alone.
 func TestUnsubscribeNeedsNoRow(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
@@ -497,6 +497,39 @@ func TestUnsubscribeNeedsNoRow(t *testing.T) {
 			}
 			if err := c.who.Unsubscribe(ctx, ab2bus.UnsubscribeInput{Channel: c.ch}); err != nil {
 				t.Errorf("Unsubscribe from %s with no ACL row: %v", c.ch, err)
+			}
+		}
+	})
+}
+
+// TestReceiveFilterNeedsNoRow: naming a channel in a receive filter needs no
+// ACL row (the FilterReceive action is the scope gate alone): the call returns
+// no error and no messages.
+func TestReceiveFilterNeedsNoRow(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		h.rtScope("job1")
+		coder := h.scopedIdentity("job1-coder", "job1")
+		pat := h.localAs("pat")
+		root := h.localAdmin("root")
+		for _, c := range []struct {
+			who ab2bus.Bus
+			ch  string
+		}{{coder, "job1-filter-ch"}, {pat, "plain-filter-ch"}} {
+			if _, err := c.who.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: c.ch}); err != nil {
+				t.Fatal(err)
+			}
+			if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: c.ch}); err != nil {
+				t.Fatal(err)
+			}
+			s, err := c.who.Open(ctx, ab2bus.OpenSessionInput{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := c.who.Receive(ctx, ab2bus.ReceiveInput{Session: s.ID, Channels: []string{c.ch}})
+			if err != nil || len(got.Messages) != 0 {
+				t.Errorf("Receive filtered to %s with no ACL row = %+v, %v; want no error, no messages", c.ch, got, err)
 			}
 		}
 	})

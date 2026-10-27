@@ -58,9 +58,9 @@ func (s Service) Unsubscribe(ctx context.Context, identity string, in bus.Unsubs
 			return err
 		}
 		// No permission is needed (Decision 95), but a channel outside the
-		// principal's scope does not exist for it: List is the scope gate
-		// alone until the channel-visibility rebuild.
-		if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.List); err != nil {
+		// principal's scope does not exist for it: Unsubscribe is the scope gate
+		// alone (the Unsubscribe action).
+		if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.Unsubscribe); err != nil {
 			return err
 		}
 		return tx.Unsubscribe(ctx, identity, ch.ID)

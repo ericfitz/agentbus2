@@ -359,11 +359,16 @@ func matrixRows() []aclRow {
 		{row: "list channels", perm: "", kind: ab2store.KindOrdinary, subs: []subcase{
 			{name: "list channels",
 				refuse: func(t *testing.T, h *harness, b ab2bus.Bus, ch string) {
-					_, err := b.History(ctx(), ab2bus.HistoryInput{Channel: ch})
-					forb(t, err)
+					if _, ok := channelNames(t, b)[ch]; ok {
+						t.Fatalf("channel %s listed without a row: %v", ch, channelNames(t, b))
+					}
 				},
 				allow: func(t *testing.T, h *harness, b ab2bus.Bus, ch string) {
-					if k, ok := channelNames(t, b)[ch]; !ok || k != ab2bus.KindOrdinary {
+					must(t, h.as("pat").SetACL(ctx(), ab2bus.SetACLInput{Channel: ch, Entries: []ab2bus.ACLEntry{
+						{Identity: "pat", Permissions: aclPerms(ab2bus.PermRead, ab2bus.PermWrite, ab2bus.PermAdmin)},
+						{Identity: fixOf(h, ch).kim, Permissions: aclPerms(ab2bus.PermWrite)},
+					}}))
+					if k := channelNames(t, b)[ch]; k != ab2bus.KindOrdinary {
 						t.Fatalf("channels = %v", channelNames(t, b))
 					}
 				}},

@@ -156,8 +156,8 @@ func (s Service) receive(ctx context.Context, tx store.Tx, identity string, in b
 			return err
 		}
 		// A filter names a channel the caller may not even see as it names
-		// one that never existed: List is the scope-only gate here.
-		if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.List); err != nil {
+		// one that never existed: FilterReceive is the scope gate alone.
+		if err := s.Access.Require(ctx, tx, p, access.Channel{ID: ch.ID}, access.FilterReceive); err != nil {
 			return err
 		}
 		inFilter[ch.ID] = true

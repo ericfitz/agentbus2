@@ -180,16 +180,21 @@ func decideServer(p Principal, f serverFacts, a Action) Decision {
 	return undefined(f, a)
 }
 
+// appliesTo reports whether the stored row e names p: its name, everyone,
+// admins for an administrator, humans for a human.
+func appliesTo(p Principal, e store.ACLEntry) bool {
+	return e.Identity == p.Name || e.Identity == store.Everyone ||
+		(e.Identity == store.Admins && actsAsAdmin(p)) ||
+		(e.Identity == store.Humans && p.Kind == store.IdentityHuman)
+}
+
 // permsOf is the union of the stored rows for p.Name, everyone, for an
 // administrator admins and for a human humans (Decision 80, Eric 2026-10-25).
 // The implicit admins entry is applied by the Admin action, not here.
 func permsOf(p Principal, rows []store.ACLEntry) store.Permissions {
 	var u store.Permissions
-	admin := actsAsAdmin(p)
-	human := p.Kind == store.IdentityHuman
 	for _, e := range rows {
-		if e.Identity != p.Name && e.Identity != store.Everyone &&
-			(!admin || e.Identity != store.Admins) && (!human || e.Identity != store.Humans) {
+		if !appliesTo(p, e) {
 			continue
 		}
 		var ep store.Permissions
@@ -214,7 +219,7 @@ func needs(p Principal, perm store.Permission, ch store.Channel) Decision {
 
 func decideChannel(p Principal, f channelFacts, a Action) Decision {
 	switch a {
-	case Read, Write, Admin, List, Deliver, Post:
+	case Read, Write, Admin, List, Unsubscribe, FilterReceive, Deliver, Post:
 	default:
 		return undefined(f, a)
 	}
@@ -236,7 +241,21 @@ func decideChannel(p Principal, f channelFacts, a Action) Decision {
 			return needs(p, store.PermAdmin, f.Channel)
 		}
 	case List:
-		// interim (spec 3.2): every channel in scope, until the channel-visibility rebuild
+		if actsAsAdmin(p) {
+			break
+		}
+		listed := false
+		for _, e := range f.Rows {
+			if appliesTo(p, e) {
+				listed = true
+				break
+			}
+		}
+		if !listed {
+			return deny(bus.CodeForbidden, ReasonNoPermission, "%s holds no ACL entry on channel %q", p.Name, f.Channel.Name)
+		}
+	case Unsubscribe, FilterReceive:
+		// the scope gate above is the whole rule
 	case Deliver:
 		if !perms.Read {
 			return needs(p, store.PermRead, f.Channel)

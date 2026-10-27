@@ -199,6 +199,7 @@ func TestNoAccessChannelIsMarkedOnce(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	setAdmin(t, f.core, "ann")
 	cb := newCountingBus(identityBus(t, f.core, "ann"))
 	c, err := newClient(context.Background(), cb, "ann", "")
 	if err != nil {
