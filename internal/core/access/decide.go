@@ -23,6 +23,7 @@ const (
 	ReasonNotRegistered  = "not_registered"
 	ReasonProtectedEntry = "protected_entry"
 	ReasonUndefined      = "undefined"
+	ReasonNamePrefix     = "name_prefix"
 )
 
 // Decision is the answer of the access check. Code and Text are set only when
@@ -60,10 +61,27 @@ type sessionFacts struct{ store.Session }
 
 type identityFacts struct{ store.Identity }
 
-func (channelFacts) factsObject()  {}
-func (serverFacts) factsObject()   {}
-func (sessionFacts) factsObject()  {}
-func (identityFacts) factsObject() {}
+// channelNameFacts carries a proposed channel name, the scope the channel will
+// carry and every scope in every state.
+type channelNameFacts struct {
+	Name, Scope string
+	Scopes      []store.Scope
+}
+
+// scopeNameFacts carries a proposed scope name, every scope in every state and
+// every channel.
+type scopeNameFacts struct {
+	Name     string
+	Scopes   []store.Scope
+	Channels []store.Channel
+}
+
+func (channelNameFacts) factsObject() {}
+func (scopeNameFacts) factsObject()   {}
+func (channelFacts) factsObject()     {}
+func (serverFacts) factsObject()      {}
+func (sessionFacts) factsObject()     {}
+func (identityFacts) factsObject()    {}
 
 var allowed = Decision{Allowed: true}
 
@@ -98,6 +116,8 @@ func inScope(p Principal, f facts) bool {
 		return true
 	case serverFacts:
 		return true // Administer is refused by its own clause for a scoped principal
+	case channelNameFacts, scopeNameFacts:
+		return true // the scoped principal is handled by the name rule; ScopeName callers hold Administer first
 	}
 	return false
 }
@@ -114,6 +134,10 @@ func objectKind(f facts) string {
 		return "session"
 	case identityFacts:
 		return "identity"
+	case channelNameFacts:
+		return "channel name"
+	case scopeNameFacts:
+		return "scope name"
 	}
 	return fmt.Sprintf("%T", f)
 }
@@ -137,6 +161,10 @@ func decide(p Principal, f facts, a Action) Decision {
 		return decideACLChange(p, f, a)
 	case serverFacts:
 		return decideServer(p, f, a)
+	case channelNameFacts:
+		return decideChannelName(p, f, a)
+	case scopeNameFacts:
+		return decideScopeName(f, a)
 	case sessionFacts:
 		if a != Use {
 			return undefined(f, a)
@@ -155,6 +183,50 @@ func decide(p Principal, f facts, a Action) Decision {
 		return allowed
 	}
 	return undefined(f, a)
+}
+
+// decideChannelName is the scope-prefixed naming rule (accesscheck spec 4.2,
+// Eric's decision 2026-10-25): a scoped principal's channel is named
+// <scope>-<rest>, and a name starting with <s>- for an existing scope s (any
+// state) belongs to s. It validates the name's shape; names that violate it
+// already stored are not converted (pre-release).
+func decideChannelName(p Principal, f channelNameFacts, a Action) Decision {
+	if a != TakeName {
+		return undefined(f, a)
+	}
+	if p.Scope != "" && !strings.HasPrefix(f.Name, p.Scope+"-") {
+		return deny(bus.CodeValidation, ReasonNamePrefix, "a channel of scope %q is named %s-<name>", p.Scope, p.Scope)
+	}
+	for _, sc := range f.Scopes {
+		if strings.HasPrefix(f.Name, sc.Name+"-") && f.Scope != sc.Name {
+			return deny(bus.CodeValidation, ReasonNamePrefix, "names starting with %q- belong to scope %q", sc.Name, sc.Name)
+		}
+	}
+	return allowed
+}
+
+// decideScopeName is the scope-name rule (spec 4.2): two scopes whose prefixes
+// nest would make the longer one unusable, and the prefix <name>- must not
+// already name a channel of another scope or of none. The caller holds
+// Administer first.
+func decideScopeName(f scopeNameFacts, a Action) Decision {
+	if a != TakeName {
+		return undefined(f, a)
+	}
+	for _, sc := range f.Scopes {
+		if strings.HasPrefix(sc.Name+"-", f.Name+"-") || strings.HasPrefix(f.Name+"-", sc.Name+"-") {
+			if sc.Name == f.Name {
+				continue // the store's own conflict for an existing name
+			}
+			return deny(bus.CodeConflict, ReasonNamePrefix, "scope %q: the name prefix %q- overlaps scope %q", f.Name, f.Name, sc.Name)
+		}
+	}
+	for _, c := range f.Channels {
+		if strings.HasPrefix(c.Name, f.Name+"-") && c.Scope != f.Name {
+			return deny(bus.CodeConflict, ReasonNamePrefix, "scope %q: the name prefix %q- is in use by channel %q", f.Name, f.Name, c.Name)
+		}
+	}
+	return allowed
 }
 
 func decideServer(p Principal, f serverFacts, a Action) Decision {

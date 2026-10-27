@@ -43,13 +43,11 @@ var memoryScope = []string{"internal/mcpserver", "internal/cli"}
 // substrings of string literals. Closing these limits is issue #19.
 var ruleAllowed = map[string][]string{
 	// Sites that copy the flag or the scope (spec 3.7 item 4).
-	"internal/core/channels/channels.go Create":         {"Scope"}, // scope := p.Scope, a copy
-	"internal/core/channels/channels.go namePrefixRule": {"Scope"}, // name validation: scope-prefixed channel names (spec 4.2), like CheckBridgeACL's shape checks
-	"internal/core/scopes/service.go Create":            {"Scope"}, // name validation: the prefix <scope>- must be free (spec 4.2)
-	"internal/server/admin_auth.go AdminReset":          {"Scope"}, // wire copy of the request's reset scope (spec Appendix A, kind N)
-	"internal/server/channels.go CreateChannel":         {"Scope"}, // wire copy of the request's scope field (kind N)
-	"internal/server/channels.go channelInfoToGen":      {"Scope"}, // wire copy of the channel's scope field (kind N)
-	"internal/server/scopes.go CreateAgentIdentity":     {"Scope"}, // wire copy of the request's and result's scope (kind N)
+	"internal/core/channels/channels.go Create":     {"Scope"}, // scope := p.Scope, a copy
+	"internal/server/admin_auth.go AdminReset":      {"Scope"}, // wire copy of the request's reset scope (spec Appendix A, kind N)
+	"internal/server/channels.go CreateChannel":     {"Scope"}, // wire copy of the request's scope field (kind N)
+	"internal/server/channels.go channelInfoToGen":  {"Scope"}, // wire copy of the channel's scope field (kind N)
+	"internal/server/scopes.go CreateAgentIdentity": {"Scope"}, // wire copy of the request's and result's scope (kind N)
 	// Identity rules in registration and sign-in (spec 3.7 item 4, question 5).
 	"internal/core/identities/human.go signInHumanTx":   {"Admin"},        // sign-in sets a human's kind and never a scope (4.5)
 	"internal/core/identities/human.go createByEmailTx": {"IdentityKind"}, // picks the conflict text for a human row (kind N)

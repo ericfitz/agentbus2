@@ -7,10 +7,10 @@ package scopes
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -55,34 +55,16 @@ func (s Service) Create(ctx context.Context, admin string, in bus.CreateScopeInp
 	var res bus.Scope
 	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		res = bus.Scope{}
-		if err := s.RequireServerAdmin(ctx, tx, admin); err != nil {
+		p, err := access.Resolve(ctx, tx, admin)
+		if err != nil {
 			return err
 		}
-		_, err := s.WithReceipt(ctx, tx, admin, in.IdempotencyKey, payload, &res, func() error {
-			// Spec 4.2 (controller ruling 2026-10-26): two scopes whose
-			// prefixes nest (job, job-2) would make the longer one unusable.
-			all, err := tx.ListScopes(ctx)
-			if err != nil {
+		if err := s.Access.Require(ctx, tx, p, access.Server{}, access.Administer); err != nil {
+			return err
+		}
+		_, err = s.WithReceipt(ctx, tx, admin, in.IdempotencyKey, payload, &res, func() error {
+			if err := s.Access.Require(ctx, tx, p, access.ScopeName{Name: in.Name}, access.TakeName); err != nil {
 				return err
-			}
-			for _, sc := range all {
-				if strings.HasPrefix(sc.Name+"-", in.Name+"-") || strings.HasPrefix(in.Name+"-", sc.Name+"-") {
-					if sc.Name == in.Name {
-						continue // the store's own conflict for an existing name
-					}
-					return core.E(bus.CodeConflict, "scope %q: the name prefix %q- overlaps scope %q", in.Name, in.Name, sc.Name)
-				}
-			}
-			// Spec 4.2: the prefix <name>- must not already name a channel
-			// of another scope or of none (one scan; channels are few).
-			chs, err := tx.ListChannels(ctx)
-			if err != nil {
-				return err
-			}
-			for _, c := range chs {
-				if strings.HasPrefix(c.Name, in.Name+"-") && c.Scope != in.Name {
-					return core.E(bus.CodeConflict, "scope %q: the name prefix %q- is in use by channel %q", in.Name, in.Name, c.Name)
-				}
 			}
 			if err := tx.CreateScope(ctx, in.Name, s.NowMs()); err != nil {
 				return err

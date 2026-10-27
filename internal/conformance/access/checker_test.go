@@ -403,3 +403,46 @@ func TestCheckReplaceACL(t *testing.T) {
 		})
 	})
 }
+
+func TestCheckTakeNameLoadsEveryScopeState(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		s := openStore(t, e)
+		seed(t, s)
+		mustTx(t, s, func(ctx context.Context, tx store.Tx) error {
+			if err := tx.CreateScope(ctx, "old", now); err != nil {
+				return err
+			}
+			if err := tx.MarkScopeRetired(ctx, "old", now); err != nil {
+				return err
+			}
+			if err := tx.CreateScope(ctx, "dn", now); err != nil {
+				return err
+			}
+			return tx.MarkScopeDone(ctx, "dn", store.RetireNormal, now)
+		})
+		mustRead(t, s, func(ctx context.Context, tx store.Tx) error {
+			for _, c := range []struct {
+				who string
+				o   access.Object
+				ref bus.Code
+			}{
+				{"pat", access.ChannelName{Name: "old-x"}, bus.CodeValidation},
+				{"pat", access.ChannelName{Name: "dn-x"}, bus.CodeValidation},
+				{"root", access.ScopeName{Name: "old-2"}, bus.CodeConflict},
+			} {
+				p, err := access.Resolve(ctx, tx, c.who)
+				if err != nil {
+					t.Fatalf("resolve: %v", err)
+				}
+				d, err := checker.Check(ctx, tx, p, c.o, access.TakeName)
+				if err != nil {
+					t.Fatalf("%+v: %v", c.o, err)
+				}
+				if d.Allowed || d.Code != c.ref {
+					t.Errorf("%+v: %+v, want denied %s", c.o, d, c.ref)
+				}
+			}
+			return nil
+		})
+	})
+}

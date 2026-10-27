@@ -19,6 +19,7 @@ const (
 	Use           Action = "use"            // session
 	See           Action = "see"            // identity
 	ReplaceACL    Action = "replace_acl"    // ACLChange (Eric 2026-10-25, spec 4.6)
+	TakeName      Action = "take_name"      // ChannelName and ScopeName: the scope-prefix naming rules (Eric 2026-10-26, issue #18)
 )
 
 // Object is what is asked about. The facts of each kind are loaded inside the
@@ -37,14 +38,23 @@ type Session struct{ ID string }
 // Identity is an identity by name (the Identities listing).
 type Identity struct{ Name string }
 
+// ChannelName is a name proposed for a channel that will carry Scope (a create
+// or a rename).
+type ChannelName struct{ Name, Scope string }
+
+// ScopeName is a name proposed for a new scope.
+type ScopeName struct{ Name string }
+
 // ACLChange is the replacement of a channel's whole ACL by Entries.
 type ACLChange struct {
 	ID      int64
 	Entries []store.ACLEntry
 }
 
-func (ACLChange) accessObject() {}
-func (Channel) accessObject()   {}
-func (Server) accessObject()    {}
-func (Session) accessObject()   {}
-func (Identity) accessObject()  {}
+func (ACLChange) accessObject()   {}
+func (Channel) accessObject()     {}
+func (Server) accessObject()      {}
+func (Session) accessObject()     {}
+func (Identity) accessObject()    {}
+func (ChannelName) accessObject() {}
+func (ScopeName) accessObject()   {}

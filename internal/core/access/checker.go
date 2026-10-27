@@ -91,6 +91,22 @@ func (c Checker) load(ctx context.Context, tx store.Tx, o Object) (facts, *Decis
 			named[e.Identity] = id
 		}
 		return aclChangeFacts{Channel: ch, Rows: rows, Proposed: o.Entries, Named: named}, nil, nil
+	case ChannelName:
+		scs, err := tx.ListScopes(ctx)
+		if err != nil {
+			return nil, nil, fromStore(err)
+		}
+		return channelNameFacts{Name: o.Name, Scope: o.Scope, Scopes: scs}, nil, nil
+	case ScopeName:
+		scs, err := tx.ListScopes(ctx)
+		if err != nil {
+			return nil, nil, fromStore(err)
+		}
+		chs, err := tx.ListChannels(ctx)
+		if err != nil {
+			return nil, nil, fromStore(err)
+		}
+		return scopeNameFacts{Name: o.Name, Scopes: scs, Channels: chs}, nil, nil
 	case Server:
 		return serverFacts{ChannelCreation: c.Cfg.ChannelCreation}, nil, nil
 	case Session:

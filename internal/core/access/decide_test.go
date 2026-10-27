@@ -248,12 +248,14 @@ func TestScopeGate(t *testing.T) {
 }
 
 func TestAnonymousDeniedEverything(t *testing.T) {
-	all := []Action{Read, Write, Admin, List, Unsubscribe, FilterReceive, Deliver, Post, Administer, CreateChannel, Use, See}
+	all := []Action{Read, Write, Admin, List, Unsubscribe, FilterReceive, Deliver, Post, Administer, CreateChannel, Use, See, TakeName}
 	fs := []facts{
 		chFacts("", store.KindOrdinary, entry(store.Everyone, rwa)),
 		serverFacts{ChannelCreation: "open"},
 		sessionFacts{store.Session{ID: "s", Identity: ""}},
 		identityFacts{store.Identity{Name: "pat"}},
+		channelNameFacts{Name: "x"},
+		scopeNameFacts{Name: "x"},
 	}
 	for _, f := range fs {
 		for _, a := range all {
@@ -278,6 +280,52 @@ func TestUndefinedPairIsInternal(t *testing.T) {
 	}
 	if d := decide(root, chFacts("", store.KindOrdinary), Use); d.Allowed || d.Code != bus.CodeInternal {
 		t.Errorf("channel/use = %+v", d)
+	}
+	if d := decide(root, channelNameFacts{}, Read); d.Allowed || d.Code != bus.CodeInternal {
+		t.Errorf("channel name/read = %+v", d)
+	}
+	if d := decide(root, scopeNameFacts{}, Administer); d.Allowed || d.Code != bus.CodeInternal {
+		t.Errorf("scope name/administer = %+v", d)
+	}
+	if d := decide(root, chFacts("", store.KindOrdinary), TakeName); d.Allowed || d.Code != bus.CodeInternal {
+		t.Errorf("channel/take_name = %+v", d)
+	}
+}
+
+func TestDecideTakeName(t *testing.T) {
+	job1 := store.Scope{Name: "job1", State: store.ScopeOpen}
+	cases := []struct {
+		name         string
+		p            Principal
+		f            facts
+		code         bus.Code
+		reason, text string
+	}{
+		{"scoped, no prefix", coder, channelNameFacts{Name: "x", Scope: "job1", Scopes: []store.Scope{job1}}, bus.CodeValidation, ReasonNamePrefix, `a channel of scope "job1" is named job1-<name>`},
+		{"scoped, prefix", coder, channelNameFacts{Name: "job1-x", Scope: "job1", Scopes: []store.Scope{job1}}, "", "", ""},
+		{"unscoped, claimed prefix", pat, channelNameFacts{Name: "job1-y", Scopes: []store.Scope{job1}}, bus.CodeValidation, ReasonNamePrefix, `names starting with "job1"- belong to scope "job1"`},
+		{"admin into scope", root, channelNameFacts{Name: "job1-z", Scope: "job1", Scopes: []store.Scope{job1}}, "", "", ""},
+		{"admin, other name in scope", root, channelNameFacts{Name: "k-chat", Scope: "job1", Scopes: []store.Scope{job1}}, "", "", ""},
+		{"retired scope claims", pat, channelNameFacts{Name: "job2-a", Scopes: []store.Scope{{Name: "job2", State: store.ScopeRetired}}}, bus.CodeValidation, ReasonNamePrefix, `names starting with "job2"- belong to scope "job2"`},
+		{"plain", pat, channelNameFacts{Name: "plain"}, "", "", ""},
+		{"scope nests inside existing", root, scopeNameFacts{Name: "ova-2", Scopes: []store.Scope{{Name: "ova"}}}, bus.CodeConflict, ReasonNamePrefix, `scope "ova-2": the name prefix "ova-2"- overlaps scope "ova"`},
+		{"existing nests inside scope", root, scopeNameFacts{Name: "ovb", Scopes: []store.Scope{{Name: "ovb-2"}}}, bus.CodeConflict, ReasonNamePrefix, `scope "ovb": the name prefix "ovb"- overlaps scope "ovb-2"`},
+		{"same scope name", root, scopeNameFacts{Name: "job1", Scopes: []store.Scope{job1}}, "", "", ""},
+		{"prefix in use", root, scopeNameFacts{Name: "job2", Channels: []store.Channel{{Name: "job2-old"}}}, bus.CodeConflict, ReasonNamePrefix, `scope "job2": the name prefix "job2"- is in use by channel "job2-old"`},
+		{"prefix used by own scope", root, scopeNameFacts{Name: "job2", Channels: []store.Channel{{Name: "job2-old", Scope: "job2"}}}, "", "", ""},
+		{"short name no match", root, scopeNameFacts{Name: "jo", Channels: []store.Channel{{Name: "job2-old"}}}, "", "", ""},
+	}
+	for _, c := range cases {
+		d := decide(c.p, c.f, TakeName)
+		if c.code == "" {
+			if !d.Allowed {
+				t.Errorf("%s: %+v, want allowed", c.name, d)
+			}
+			continue
+		}
+		if d.Allowed || d.Code != c.code || d.Reason != c.reason || d.Text != c.text {
+			t.Errorf("%s: %+v, want %s %s %q", c.name, d, c.code, c.reason, c.text)
+		}
 	}
 }
 
