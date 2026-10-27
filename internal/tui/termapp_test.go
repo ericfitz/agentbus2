@@ -27,6 +27,8 @@ type fakeTerm struct {
 	bot   int
 	sx    int // saved cursor (ESC 7 / ESC 8)
 	sy    int
+	last  string // the last graphic cluster put, for REP
+	lastW int
 	width func(cluster string) int
 }
 
@@ -133,6 +135,9 @@ func (f *fakeTerm) feed(stream string) {
 }
 
 func (f *fakeTerm) put(cluster string, w int) {
+	if w > 0 {
+		f.last, f.lastW = cluster, w
+	}
 	if w <= 0 {
 		if f.x > 0 {
 			f.cells[f.y][f.x-1] += cluster
@@ -196,6 +201,17 @@ func (f *fakeTerm) csi(seq string, p *ansi.Parser) {
 	if cmd.Prefix() != 0 || cmd.Intermediate() != 0 {
 		// Private modes (DECSET, DECRST, DECRQM), keyboard protocols, the
 		// mode reports: nothing a cell grid shows.
+		return
+	}
+	if cmd.Final() == 'b' {
+		// REP repeats the last graphic cluster like printing it again, so a
+		// pending wrap applies; a renderer picks it for some TERMs
+		// (xterm-ghostty). Nothing printed yet: nothing to repeat.
+		if f.last != "" {
+			for range param(0, 1) {
+				f.put(f.last, f.lastW)
+			}
+		}
 		return
 	}
 	f.wrap = false
@@ -424,5 +440,32 @@ func TestRailBorderAlignsOnGraphemeTerminals(t *testing.T) {
 		if gear != user {
 			t.Fatalf("%v: border at column %d on the gear row, %d on the user row:\n%s", env, gear, user, f.dump())
 		}
+	}
+}
+
+// TestFakeTermREP pins the harness's REP (CSI n b): it repeats the last
+// graphic cluster, wide glyphs included, honors a pending wrap, defaults to
+// one, and is a no-op before anything was printed.
+func TestFakeTermREP(t *testing.T) {
+	row := func(f *fakeTerm, y int) string { return strings.Join(f.cells[y], "|") }
+
+	f := newFakeTerm(t, 6, 2, graphemeTerminalWidth)
+	f.feed("\x1b[3b")
+	if got := row(f, 0); got != "|||||" {
+		t.Fatalf("REP before any glyph: row 0 = %q, want blank", got)
+	}
+	f.feed("ab\x1b[2b\x1b[b")
+	if got := row(f, 0); got != "a|b|b|b|b|" {
+		t.Fatalf("REP of b: row 0 = %q", got)
+	}
+	f.feed("c\x1b[b") // c fills the last column; the repeat wraps
+	if got := row(f, 1); got != "c|||||" {
+		t.Fatalf("REP across a pending wrap: row 1 = %q", got)
+	}
+
+	g := newFakeTerm(t, 6, 1, graphemeTerminalWidth)
+	g.feed("🔗\x1b[1b")
+	if got := row(g, 0); got != "🔗||🔗|||" {
+		t.Fatalf("REP of a wide glyph: row 0 = %q", got)
 	}
 }
