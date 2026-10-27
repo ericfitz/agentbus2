@@ -1269,7 +1269,7 @@ for the gate's scope). Dup: the inconsistency of 2.2 it belongs to.
 | # | Site | Rule encoded | Kind | Dup |
 | --- | --- | --- | --- | --- |
 | C17 | `core/scopes/service.go:57, 81, 104, 148` | scopes create, list, get, done: administrator only (ADR 0009 d9) | R | |
-| C18 | `scopes/acl.go:16-33` `CheckBridgeACL` | Decision 12: a bridged ACL grants `read`/`write` to named identities only; `slack-bridge` `read` pinned | N (ACL validity) | |
+| C18 | `scopes/acl.go:16-33` `CheckBridgeACL` | Decision 12: a bridged ACL grants `read`/`write` to named identities only, and names `everyone` and `humans` in no entry (Eric 2026-10-27); `slack-bridge` `read` pinned | N (ACL validity) | |
 | C19 | `scopes/retire.go` `Retire` (`RetireIdentity`) | ADR 0009 d19: retirement deletes the identity's ACL rows | N (mutation) | |
 
 ### Core, tasks, memories, search, messaging

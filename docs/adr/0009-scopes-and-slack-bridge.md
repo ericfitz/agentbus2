@@ -23,7 +23,7 @@ Each of these is Eric's decision.
 9. Only admins create scopes, create agent identities (optionally scoped) and create bridges. A bridge requires a scoped channel. Non-admins may create channels; those take the creator's scope, if any.
 10. Slack message appearance: each agent posts under its own name and avatar; subject bold; tags as chips; bus replies are Slack thread replies.
 11. The bridge's allowed humans are the human identities with `write` on the bridged channel. No separate list. (2026-10-25: evaluated by `Check(Post)` and `Holders(Post)` of `internal/core/access`, not by scanning stored rows; see "Decisions of 2026-10-25 (Eric)".)
-12. A bridged channel's ACL may grant `read` or `write` only to named identities, never to `everyone` or `admins`. (2026-10-25: nor to `humans`.)
+12. A bridged channel's ACL may grant `read` or `write` only to named identities, never to `everyone` or `admins`. (2026-10-25: nor to `humans`. 2026-10-27: `everyone` and `humans` hold no entry at all; `admins` may hold `admin` alone.)
 13. `reply_to` is validated: the parent must exist and be in the same channel at send time, and must not be a memory record. Otherwise the send is a `validation` error. This applies to every channel.
 14. On a bridged channel, after validation, `reply_to` is rewritten to the root of the parent's thread (flat threads, Slack's model).
 15. The message number to Slack message map is pruned when its scope is retired.
@@ -91,6 +91,10 @@ Recorded in ADR 0011; the changes to this record:
 - **Decision 12 covers `humans`.** `CheckBridgeACL` refuses `read` and `write` for `humans` as for `everyone` and `admins`, so the invite list stays explicit.
 - **Decision 19** is marked moot above.
 - **Bridge not configured** is `unavailable`, not retryable (it was `forbidden`); see "Claude's calls".
+
+## Decision of 2026-10-27 (Eric)
+
+- **Decision 12: no `everyone` or `humans` entry on a bridged channel.** Under the channel-visibility `List` rule any stored row lists a channel to its holders, and `admin` reads its ACL, so an `everyone` or `humans` row holding `admin` alone would show the bridged channel's name and named members to the whole group. `CheckBridgeACL` now refuses any entry for `everyone` or `humans` (`forbidden`, `a bridged channel's ACL may not name <group> (Decision 12)`), at bridge creation, at go-live and on every ACL change. `admins` may still hold `admin` alone: administrators hold it implicitly and list every channel, so that row exposes nothing.
 
 ## Consequences
 

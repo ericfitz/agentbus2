@@ -68,15 +68,17 @@ func TestBridgedChannelGuards(t *testing.T) {
 			t.Fatalf("coder SetACL message = %q", got)
 		}
 		// The server administrator is held to the bridge ACL rules.
-		everyoneMsg := "a bridged channel may grant read or write only to named identities (Decision 12)"
+		adminsMsg := "a bridged channel may grant read or write only to named identities (Decision 12)"
 		pinnedMsg := "the slack-bridge read entry is pinned while the bridge is live"
 		for _, c := range []struct {
 			name string
 			in   ab2bus.SetACLInput
 			msg  string
 		}{
-			{"everyone read", with(perm(ab2store.Everyone, R)), everyoneMsg},
-			{"admins read", bus(perm("job1-coder", R, W, A), perm("eric@corp.example", R, W), perm(ab2store.SlackBridge, R), perm(ab2store.Admins, R)), everyoneMsg},
+			{"everyone read", with(perm(ab2store.Everyone, R)), "a bridged channel's ACL may not name everyone (Decision 12)"},
+			{"everyone admin only", with(perm(ab2store.Everyone, A)), "a bridged channel's ACL may not name everyone (Decision 12)"},
+			{"humans admin only", with(perm(ab2store.Humans, A)), "a bridged channel's ACL may not name humans (Decision 12)"},
+			{"admins read", bus(perm("job1-coder", R, W, A), perm("eric@corp.example", R, W), perm(ab2store.SlackBridge, R), perm(ab2store.Admins, R)), adminsMsg},
 			{"slack-bridge dropped", bus(perm("job1-coder", R, W, A), perm("eric@corp.example", R, W), perm(ab2store.Admins, A)), pinnedMsg},
 		} {
 			err := adm.SetACL(ctx, c.in)
