@@ -41,6 +41,7 @@ The administrator flag is the one that gates `GET /v1/admin/status` (see `admin-
 | `status` | `ok`, `degraded` | probe | see the status rule below |
 | `tier` | `probe`, `identity`, `admin` | probe | what the caller got, so "healthy" and "I only got the probe view" differ |
 | `version` | string | probe | the server's version; the same value as `server_version` in `/v1/discover` |
+| `protocol_version` | string | probe | the wire protocol version (`info.version` of `api/openapi.yaml`; the same value as `protocol_version` in `/v1/discover`), independent of `version`: the major is the `/v1` path, the minor is bumped on every addition, the patch on a documentation-only change |
 | `now` | integer, Unix ms | probe | the server's clock |
 | `started_at` | integer, Unix ms | identity | when this process created its core |
 | `store.engine` | `sqlite`, `postgres` | identity | the store engine |
@@ -78,7 +79,7 @@ HTTP/1.1 200 OK
 Content-Type: application/json
 ...
 
-{"now":1792911374927,"status":"ok","tier":"probe","version":"2.0.0-dev"}
+{"now":1792911374927,"protocol_version":"1.0.0","status":"ok","tier":"probe","version":"2.0.0-dev"}
 ```
 
 A rejected bearer:
@@ -97,7 +98,7 @@ With a bearer: `agentbus2 login -profile P -identity I` on a server profile cach
 ```
 $ BEARER=$(jq -r .access_token "$AGENTBUS2_DATA_DIR/tokens/P/I.json")
 $ curl -sS -H "Authorization: Bearer $BEARER" http://127.0.0.1:8431/v1/health
-{"embeddings":{"backlog":0,"rejected":0,"state":"off"},"maintenance":{"interval_seconds":60,"jobs":[],"lock":"unknown","owner":"3b38e90889724e8727354d4f"},"notices":[],"now":1792911383866,"started_at":1792911383259,"status":"ok","storage":{"budget_bytes":2147483648,"bytes":352256,"evictable":true},"store":{"engine":"sqlite","schema_version":1},"tier":"admin","version":"2.0.0-dev"}
+{"embeddings":{"backlog":0,"rejected":0,"state":"off"},"maintenance":{"interval_seconds":60,"jobs":[],"lock":"unknown","owner":"3b38e90889724e8727354d4f"},"notices":[],"now":1792911383866,"protocol_version":"1.0.0","started_at":1792911383259,"status":"ok","storage":{"budget_bytes":2147483648,"bytes":352256,"evictable":true},"store":{"engine":"sqlite","schema_version":1},"tier":"admin","version":"2.0.0-dev"}
 ```
 
 `agentbus2 health [-profile P] [-identity I]` prints the same document, indented, using the profile's own credential. It exits 0 for `ok` and `degraded`, 1 for a `bus.Error` (an unreachable store among them) and 2 for a flag or resolution error.
@@ -118,4 +119,4 @@ A process that does not run the maintenance loop (an `agentbus2 health` or a hoo
 
 - TUI: `h` opens the overlay; its server line (status, server version, engine, schema, embeddings) comes from this endpoint when the overlay opens, and an administrator also sees the maintenance line. A failing endpoint shows `server unavailable · <error>`, never a toast. See `docs/tui.md`.
 - MCP: the `health` tool returns the document as the agent's identity may see it.
-- Discovery: `GET /v1/discover` lists `health` among `capabilities`, so a client can tell a server with the operation from an older one.
+- Discovery: `GET /v1/discover` lists `health` among `capabilities`, so a client can tell a server with the operation from an older one. A new operation or member bumps the protocol minor (`protocol_version`) instead of adding a capability; the existing capabilities stay.

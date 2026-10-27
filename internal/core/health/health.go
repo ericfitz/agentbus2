@@ -9,6 +9,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core/access"
 	"github.com/ericfitz/agentbus2/internal/core/channels"
 	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentbus2/internal/version"
 )
 
 // Notice kinds the document reads; they match the kinds channels.Status
@@ -43,11 +44,11 @@ func (s Service) unavailable(err error) error {
 	return &bus.Error{Code: bus.CodeUnavailable, Retryable: true, Message: "store unreachable"}
 }
 
-// Health builds the document for identity; "" is the probe tier. version is
+// Health builds the document for identity; "" is the probe tier. serverVersion is
 // the server's version string, passed in so the caller owns where it comes
 // from. A store that does not answer is an unavailable error, never a
 // document (spec section 3.1, agent decision 3).
-func (s Service) Health(ctx context.Context, identity, version string) (bus.Health, error) {
+func (s Service) Health(ctx context.Context, identity, serverVersion string) (bus.Health, error) {
 	schema, err := s.Store.SchemaVersion(ctx)
 	if err != nil {
 		return bus.Health{}, s.unavailable(err)
@@ -106,7 +107,7 @@ func (s Service) Health(ctx context.Context, identity, version string) (bus.Heal
 			degraded = true
 		}
 	}
-	h := bus.Health{Status: bus.HealthOK, Tier: tier, Version: version, Now: s.NowMs()}
+	h := bus.Health{Status: bus.HealthOK, Tier: tier, Version: serverVersion, ProtocolVersion: version.Protocol, Now: s.NowMs()}
 	if degraded {
 		h.Status = bus.HealthDegraded
 	}

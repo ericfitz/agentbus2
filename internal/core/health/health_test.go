@@ -15,6 +15,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core/channels"
 	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentbus2/internal/version"
 )
 
 const startMs = 1_700_000_000_000
@@ -98,6 +99,9 @@ func TestHealthProbeTier(t *testing.T) {
 	h := e.health(t, "")
 	if h.Status != bus.HealthOK || h.Tier != bus.TierProbe || h.Version != "9.9.9" || h.Now != startMs {
 		t.Fatalf("probe = %+v", h)
+	}
+	if h.ProtocolVersion != version.Protocol {
+		t.Fatalf("protocol_version %q, want %q", h.ProtocolVersion, version.Protocol)
 	}
 	if h.StartedAt != 0 || h.Store != nil || h.Embeddings != nil || h.Storage != nil || h.Notices != nil || h.Maintenance != nil {
 		t.Fatalf("probe tier leaks members: %+v", h)

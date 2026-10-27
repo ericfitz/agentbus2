@@ -620,7 +620,10 @@ type Discovery struct {
 
 	// OpenidConfiguration URL of the same document under /.well-known/openid-configuration, kept for existing clients.
 	OpenidConfiguration *string `json:"openid_configuration,omitempty"`
-	ServerVersion       string  `json:"server_version"`
+
+	// ProtocolVersion The protocol version (this document's info.version): the major is the /v1 path, the minor is bumped on every addition, the patch on a documentation-only change. Independent of server_version.
+	ProtocolVersion string `json:"protocol_version"`
+	ServerVersion   string `json:"server_version"`
 }
 
 // DoneScopeRequest defines model for DoneScopeRequest.
@@ -664,12 +667,15 @@ type Health struct {
 	Maintenance *HealthMaintenance `json:"maintenance,omitempty"`
 	Notices     *[]Notice          `json:"notices,omitempty"`
 	Now         int64              `json:"now"`
-	StartedAt   *int64             `json:"started_at,omitempty"`
-	Status      HealthStatus       `json:"status"`
-	Storage     *Usage             `json:"storage,omitempty"`
-	Store       *HealthStore       `json:"store,omitempty"`
-	Tier        HealthTier         `json:"tier"`
-	Version     string             `json:"version"`
+
+	// ProtocolVersion The protocol version (this document's info.version): the major is the /v1 path, the minor is bumped on every addition, the patch on a documentation-only change. Independent of version.
+	ProtocolVersion string       `json:"protocol_version"`
+	StartedAt       *int64       `json:"started_at,omitempty"`
+	Status          HealthStatus `json:"status"`
+	Storage         *Usage       `json:"storage,omitempty"`
+	Store           *HealthStore `json:"store,omitempty"`
+	Tier            HealthTier   `json:"tier"`
+	Version         string       `json:"version"`
 }
 
 // HealthStatus defines model for Health.Status.

@@ -44,6 +44,9 @@ func TestDiscoverAgreesWithDocument(t *testing.T) {
 	if d.OpenidConfiguration == nil || *d.OpenidConfiguration != oidc {
 		t.Errorf("top-level openid_configuration %v", d.OpenidConfiguration)
 	}
+	if d.ProtocolVersion != version.Protocol || d.ProtocolVersion != Spec().Info.Version {
+		t.Errorf("protocol_version %q, version.Protocol %q, info.version %q", d.ProtocolVersion, version.Protocol, Spec().Info.Version)
+	}
 	if !slices.Equal(d.ApiVersions, []string{"v1"}) || d.ServerVersion != version.Version {
 		t.Errorf("versions %v %q", d.ApiVersions, d.ServerVersion)
 	}

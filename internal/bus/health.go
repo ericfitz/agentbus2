@@ -64,16 +64,17 @@ func ValidMaintenanceLock(l MaintenanceLock) bool {
 // 2026-10-25 section 4). Members above the probe tier are the zero value (nil
 // pointers and slices) below their tier.
 type Health struct {
-	Status      HealthStatus
-	Tier        HealthTier
-	Version     string
-	Now         int64
-	StartedAt   int64              // identity tier and up; 0 below
-	Store       *HealthStore       // nil below the identity tier
-	Embeddings  *HealthEmbeddings  // nil below the identity tier
-	Storage     *Usage             // nil below the admin tier
-	Notices     []Notice           // nil below the admin tier; non-nil (possibly empty) at it
-	Maintenance *HealthMaintenance // nil below the admin tier
+	Status          HealthStatus
+	Tier            HealthTier
+	Version         string
+	ProtocolVersion string // probe tier; "" from a server that sends none
+	Now             int64
+	StartedAt       int64              // identity tier and up; 0 below
+	Store           *HealthStore       // nil below the identity tier
+	Embeddings      *HealthEmbeddings  // nil below the identity tier
+	Storage         *Usage             // nil below the admin tier
+	Notices         []Notice           // nil below the admin tier; non-nil (possibly empty) at it
+	Maintenance     *HealthMaintenance // nil below the admin tier
 }
 
 // HealthStore names the engine and its schema version.

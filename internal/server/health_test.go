@@ -23,6 +23,9 @@ func TestHealthProbeTier(t *testing.T) {
 	if h.Tier != "probe" || h.Status != "ok" || h.Version != version.Version || h.Now != fixedNowMs {
 		t.Fatalf("%+v", h)
 	}
+	if h.ProtocolVersion != version.Protocol {
+		t.Fatalf("protocol_version %q, want %q", h.ProtocolVersion, version.Protocol)
+	}
 	if h.StartedAt != nil || h.Store != nil || h.Embeddings != nil || h.Storage != nil || h.Notices != nil || h.Maintenance != nil {
 		t.Fatalf("probe tier carries members: %+v", h)
 	}
@@ -33,10 +36,10 @@ func TestHealthProbeTier(t *testing.T) {
 	if err := json.Unmarshal(body, &m); err != nil {
 		t.Fatal(err)
 	}
-	if len(m) != 4 {
-		t.Fatalf("probe body keys = %v, want exactly status, tier, version, now", m)
+	if len(m) != 5 {
+		t.Fatalf("probe body keys = %v, want exactly status, tier, version, protocol_version, now", m)
 	}
-	for _, k := range []string{"status", "tier", "version", "now"} {
+	for _, k := range []string{"status", "tier", "version", "protocol_version", "now"} {
 		if _, ok := m[k]; !ok {
 			t.Fatalf("probe body %s lacks %q", body, k)
 		}

@@ -38,7 +38,7 @@ func TestHealthRejectsUnknownEnums(t *testing.T) {
 }
 
 func TestHealthConvertsEveryMember(t *testing.T) {
-	body := `{"status":"degraded","tier":"admin","version":"v1","now":9,"started_at":3,
+	body := `{"status":"degraded","tier":"admin","version":"v1","protocol_version":"1.0.0","now":9,"started_at":3,
 	"store":{"engine":"sqlite","schema_version":1},
 	"embeddings":{"state":"failing","backlog":2,"rejected":1,"model":"m","last_error":"e","last_error_at":4,"rejected_last":"r"},
 	"storage":{"bytes":10,"budget_bytes":20,"evictable":true,"notice":"n"},
@@ -50,13 +50,26 @@ func TestHealthConvertsEveryMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := h.Maintenance
-	if h.Status != ab2bus.HealthDegraded || h.Tier != ab2bus.TierAdmin || h.Version != "v1" || h.Now != 9 || h.StartedAt != 3 ||
+	if h.Status != ab2bus.HealthDegraded || h.Tier != ab2bus.TierAdmin || h.Version != "v1" || h.ProtocolVersion != "1.0.0" || h.Now != 9 || h.StartedAt != 3 ||
 		h.Store == nil || *h.Store != (ab2bus.HealthStore{Engine: "sqlite", SchemaVersion: 1}) ||
 		h.Embeddings == nil || *h.Embeddings != (ab2bus.HealthEmbeddings{State: ab2bus.EmbeddingsFailing, Backlog: 2, Rejected: 1, Model: "m", LastError: "e", LastErrorAt: 4, RejectedLast: "r"}) ||
 		h.Storage == nil || *h.Storage != (ab2bus.Usage{Bytes: 10, BudgetBytes: 20, Evictable: true, Notice: "n"}) ||
 		len(h.Notices) != 1 || h.Notices[0] != (ab2bus.Notice{Kind: "capacity", Message: "full", SetAt: 5}) ||
 		m == nil || m.IntervalSeconds != 60 || m.Owner != "o" || m.Lock != ab2bus.LockHeld || m.LastTickAt != 7 || m.LockError != "le" ||
 		len(m.Jobs) != 1 || m.Jobs[0] != (ab2bus.HealthJob{Name: "j", Changed: 2, Error: "x", Skipped: true}) {
+		t.Fatalf("converted = %+v", h)
+	}
+}
+
+// A server speaking an earlier draft sends no protocol_version: it maps to ""
+// and is never refused.
+func TestHealthWithoutProtocolVersion(t *testing.T) {
+	c := &canned{status: 200, ctype: "application/json", body: `{"status":"ok","tier":"probe","version":"v","now":1}`}
+	h, err := newBus(t, c).Health(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.ProtocolVersion != "" || h.Version != "v" {
 		t.Fatalf("converted = %+v", h)
 	}
 }

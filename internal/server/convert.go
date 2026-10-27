@@ -51,7 +51,7 @@ func optStr(s string) *string {
 func healthToGen(h bus.Health) gen.Health {
 	out := gen.Health{
 		Status: gen.HealthStatus(h.Status), Tier: gen.HealthTier(h.Tier),
-		Version: h.Version, Now: h.Now,
+		Version: h.Version, ProtocolVersion: h.ProtocolVersion, Now: h.Now,
 	}
 	if h.StartedAt != 0 {
 		out.StartedAt = &h.StartedAt

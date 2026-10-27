@@ -156,7 +156,7 @@ func unknownEnum(member, v string) error {
 func fromGenHealth(g gen.Health) (ab2bus.Health, error) {
 	out := ab2bus.Health{
 		Status: ab2bus.HealthStatus(g.Status), Tier: ab2bus.HealthTier(g.Tier),
-		Version: g.Version, Now: g.Now, StartedAt: deref(g.StartedAt),
+		Version: g.Version, ProtocolVersion: g.ProtocolVersion, Now: g.Now, StartedAt: deref(g.StartedAt),
 	}
 	if !ab2bus.ValidHealthStatus(out.Status) {
 		return ab2bus.Health{}, unknownEnum("status", string(g.Status))

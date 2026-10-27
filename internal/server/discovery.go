@@ -7,6 +7,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentbus2/internal/version"
 )
 
 type baseURLKey struct{}
@@ -119,6 +120,7 @@ func (a *api) Discover(ctx context.Context, _ gen.DiscoverRequestObject) (gen.Di
 		Capabilities:        Capabilities(a.core),
 		Issuers:             issuers,
 		OpenidConfiguration: &oidcURL,
+		ProtocolVersion:     version.Protocol,
 		ServerVersion:       a.version,
 	}, nil
 }

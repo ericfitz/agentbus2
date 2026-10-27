@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: agentbus2
-  version: 2.0.0-dev
+  version: 1.0.0
   description: >-
     The agentbus2 HTTP API (spec section 3, Decision 65). Path parameters: a
     client percent-encodes every path parameter exactly once (a space is %20,
@@ -1204,7 +1204,7 @@ components:
           type: string
     Discovery:
       type: object
-      required: [api_versions, server_version, capabilities, auth_methods, issuers]
+      required: [api_versions, server_version, protocol_version, capabilities, auth_methods, issuers]
       properties:
         api_versions:
           type: array
@@ -1212,6 +1212,12 @@ components:
             type: string
         server_version:
           type: string
+        protocol_version:
+          type: string
+          description: >-
+            The protocol version (this document's info.version): the major is
+            the /v1 path, the minor is bumped on every addition, the patch on
+            a documentation-only change. Independent of server_version.
         capabilities:
           type: array
           items:
@@ -1858,7 +1864,7 @@ components:
         2026-10-25 section 4). Members above the probe tier are absent, never
         null, below their tier. An unreachable store is a 503 problem with
         code unavailable, never a document.
-      required: [status, tier, version, now]
+      required: [status, tier, version, protocol_version, now]
       properties:
         status:
           type: string
@@ -1868,6 +1874,12 @@ components:
           enum: [probe, identity, admin]
         version:
           type: string
+        protocol_version:
+          type: string
+          description: >-
+            The protocol version (this document's info.version): the major is
+            the /v1 path, the minor is bumped on every addition, the patch on
+            a documentation-only change. Independent of version.
         now:
           type: integer
           format: int64

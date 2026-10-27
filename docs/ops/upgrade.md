@@ -4,6 +4,7 @@
 
 - `agentbus2 version` prints the binary's version (`2.0.0-dev` for a plain `go build`, `dev` for an image built by `make docker-image`).
 - `GET /v1/discover` reports it as `server_version`.
+- `GET /v1/discover` and `GET /v1/health` report `protocol_version`, the wire protocol, independent of the build version.
 - For the Docker image the tag is the version: build with `--build-arg VERSION=<v>` and tag the image `agentbus2:<v>` (see `deploy.md`).
 
 ## What happens to the database at start (Decision 34)
