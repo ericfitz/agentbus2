@@ -374,5 +374,5 @@ internal/` then prints nothing).
 ## Protocol versioning addendum (Eric's decision 2026-10-26)
 
 - `info.version` of `api/openapi.yaml` is the protocol version, decoupled from the build version, and its first stamped value is `1.0.0` (Eric's decision 2026-10-26 (4)). The major is the `/v1` path, the minor is bumped for each addition, the patch for a documentation-only change. `internal/version.Protocol` equals it, pinned by `TestProtocolMatchesOpenAPI`; the two change together.
-- `GET /v1/discover` and `GET /v1/health` (probe tier) carry `protocol_version`, required in both schemas, beside the build `version`. The remote client maps a response that lacks it (a server of an earlier draft) to `""` without an error.
+- `GET /v1/discover` and `GET /v1/health` (probe tier) carry `protocol_version`, required in both schemas, beside the build `version`. The remote client maps a health response that lacks it (a server of an earlier draft) to `""` without an error.
 - No new capability string: Decision 43's "additions get a capability" is superseded for additions. The existing `long_poll`, `semantic_search` and `health` stay, and a minor bump replaces the pending `channel_capabilities` name. Channel `capabilities` (a field of `Channel` and `ChannelInfo`, not a discovery capability) is part of `1.0.0`.

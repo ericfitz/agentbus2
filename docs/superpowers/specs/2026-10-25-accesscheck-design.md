@@ -237,8 +237,8 @@ Listed so the gate of section 3.7 is scoped on purpose, not by omission:
   3.10); `Unsubscribe` and `FilterReceive` on a channel (the scope gate
   alone: Decision 95's unsubscribe and the `receive` channel filter, Eric's
   decision 2026-10-26 (2)); `TakeName` on a `ChannelName` or a `ScopeName`
-  (the scope-prefix name rules of section 4.2, Eric's decision 2026-10-26
-  (3)); `Deliver` on a channel (`Read`, minus memory channels for an agent
+  (the scope-prefix name rules of section 4.2: the rule is Eric's decision
+  2026-10-26 (3); the action, object names and Reason are an agent choice); `Deliver` on a channel (`Read`, minus memory channels for an agent
   principal: decision 20, moved in by Eric's answer to question 4; used by
   Subscribe, Receive, Peek, Watch and so the Stop hook and `wait`);
   `Post` on a channel for the Slack bridge (`Write` held by a human,
@@ -314,8 +314,8 @@ scope-prefixed names of section 4.2.
 | Channel | Admin | that union holds `admin`, or `p.Admin` (the implicit `admins` entry; ADR 0008 decision 1 as amended by Eric's answer to question 6: there is no implicit creator entry any more) |
 | Channel | List | `p.Admin`, or any stored row for `p.Name`, `everyone`, `humans` if `p.Kind == human`, or `admins` if `p.Admin` (Eric's visibility decision 1 as amended by question 6 and by his decision 2026-10-26 (1): creator-ship lists nothing). This replaced the interim clause (every channel for an unscoped principal, Decision 94, superseded). Denial: `forbidden`, Reason `no_permission`, `%s holds no ACL entry on channel %q` (an agent choice; the set form drops the channel) |
 | Channel | Unsubscribe, FilterReceive | the scope gate alone: no stored row is needed (Decision 95; Eric's decision 2026-10-26 (2)), so a reader whose rows were revoked can still leave and still name the channel in a `receive` filter |
-| ChannelName | TakeName | a scoped principal's channel is named `<scope>-<rest>`; a name starting `<s>-` for a scope `s` of any state belongs to `s` (section 4.2); `validation`, Reason `name_prefix` (Eric's decision 2026-10-26 (3); issue #18) |
-| ScopeName | TakeName | the new scope's `<name>-` prefix nests with no existing scope's, and no channel of another or no scope is named `<name>-*`; `conflict`, Reason `name_prefix` (Eric's decision 2026-10-26 (3); issue #18) |
+| ChannelName | TakeName | a scoped principal's channel is named `<scope>-<rest>`; a name starting `<s>-` for a scope `s` of any state belongs to `s` (section 4.2); `validation`, Reason `name_prefix` (the rule is Eric's decision 2026-10-26 (3), issue #18; the action, object names and Reason are an agent choice) |
+| ScopeName | TakeName | the new scope's `<name>-` prefix nests with no existing scope's, and no channel of another or no scope is named `<name>-*`; `conflict`, Reason `name_prefix` (the rule is Eric's decision 2026-10-26 (3), issue #18; the action, object names and Reason are an agent choice) |
 | Channel | Deliver | Channel/Read, and not (`p.Kind == agent` and `channel.kind == memory`) (decision 20 moved in by Eric's answer to question 4; Reason `memory_channel`, code `validation`, today's text) |
 | Channel | Post (bridge) | `p.Kind == human` and Channel/Write (ADR 0009 decision 11; Reasons `not_human`, `no_write`) |
 | ACLChange | ReplaceACL | Channel/Admin on the channel, and, when `p.Kind == agent` and not `p.Admin`, no protected entry of the stored ACL loses a permission in the proposed ACL (section 4.6: a protected entry names a human, an administrator, `admins`, `humans` or `everyone`; a loss is a missing entry or a smaller permission set, compared per name over the union of duplicate entries); the denial is `forbidden`, Reason `protected_entry`, text `an agent cannot remove %s from ACL entry %q: humans and administrators keep their access` (`%s` the permissions lost, comma-separated; `%q` the entry's name). A human, or an administrator, with `Admin` on the channel replaces anything. |
@@ -776,7 +776,7 @@ by `rg -n -i '\bforce\b|forced|ownerGuard' internal api docs` (excluding
   body; `internal/bus/remote/tasks.go:57-58`; `internal/server/tasks.go:107`;
   `make generate` after the edit. **Protocol change**: a request member is
   removed. Under Eric's protocol-versioning decision a removal is
-  major-shaped, but `info.version` is `2.0.0-dev` and no release has
+  major-shaped, but `info.version` is `2.0.0-dev` (superseded: `1.0.0` from 2026-10-26) and no release has
   shipped, so it lands without a bump and is listed in the version's
   changelog; a server receiving `force` from an older client answers
   `validation` (HTTP 400), because `TaskPatch` sets

@@ -98,6 +98,6 @@ Recorded in ADR 0011; the changes to this record:
 - Every channel gets the `reply_to` same-channel check, a visible change for agents that replied across channels.
 - The empty-channel reaper now ignores subscriptions held by `slack-bridge` or by identities without a live or resumable session.
 - Registration has two modes, `open` and `enrollment`.
-- `ListChannels` reports a channel whose bridge is `live` with the `bridged` capability (Eric's decisions 2026-10-25 and 2026-10-26; ADR 0008 "Channel visibility"); its named identities and the administrators are the only identities that list it.
+- `ListChannels` reports a channel whose bridge is `live` with the `bridged` capability (Eric's decisions 2026-10-25 and 2026-10-26; ADR 0008 "Channel visibility"); it is listed to the identities and groups its ACL names and to administrators (on a bridged channel a group row may hold only `admin`; the `slack-bridge` identity also holds a row).
 - Operators run one more moving part (a Slack app with two tokens). A bridge failure never loses a bus message, because the bridge reads from its own acked mark; the worst case is one duplicate Slack post after a crash between a post and its map row.
 - Memory and task channels, membership changes after creation and per-message Slack edits stay out of scope for now.
