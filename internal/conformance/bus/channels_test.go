@@ -186,6 +186,9 @@ func TestChannelListFiltersByEntry(t *testing.T) {
 		must(t, err)
 		var names []string
 		for _, c := range cs {
+			if c.Capabilities == nil || len(c.Capabilities) != 0 {
+				t.Errorf("%s capabilities = %#v, want empty non-nil", c.Name, c.Capabilities)
+			}
 			names = append(names, c.Name)
 		}
 		if !sort.StringsAreSorted(names) {
@@ -535,6 +538,68 @@ func TestAgentCannotRemoveHumanOrAdminAccess(t *testing.T) {
 		// No stored ACL to lose from at creation (spec 4.6).
 		if _, err := pat.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "d", ACL: []ab2bus.ACLEntry{self}}); err != nil {
 			t.Fatalf("CreateChannel with an explicit private ACL: %v", err)
+		}
+	})
+}
+
+// TestChannelListCapabilities: a channel lists "bridged" exactly while its
+// bridge is live; a creating bridge, an archived one and no bridge all list
+// the empty (non-nil) set, on every engine and transport.
+func TestChannelListCapabilities(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		h.rtScope("job1")
+		root := h.admin("root")
+		pat := h.as("pat")
+		live := h.rtChannel("job1", "job1-live", ab2store.KindOrdinary)
+		h.rtBridge(live, "job1", "C1")
+		creating := h.rtChannel("job1", "job1-creating", ab2store.KindOrdinary)
+		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+			_, err := tx.CreateBridge(ctx, ab2store.Bridge{ChannelID: creating.ID, ChannelName: creating.Name, Scope: "job1", SlackName: "ab-job1-creating", CreatedAt: 5})
+			return err
+		})
+		archived := h.rtChannel("job1", "job1-archived", ab2store.KindOrdinary)
+		h.rtArchiveBridge(h.rtBridge(archived, "job1", "C2").ID)
+		h.rtChannel("job1", "job1-none", ab2store.KindOrdinary)
+
+		bridged := []ab2bus.ChannelCapability{ab2bus.ChannelBridged}
+		none := []ab2bus.ChannelCapability{}
+		want := map[string][]ab2bus.ChannelCapability{"job1-live": bridged, "job1-creating": none, "job1-archived": none, "job1-none": none}
+		check := func(who string, cs []ab2bus.Channel) {
+			t.Helper()
+			seen := 0
+			for _, c := range cs {
+				w, ok := want[c.Name]
+				if !ok {
+					continue
+				}
+				seen++
+				if !reflect.DeepEqual(c.Capabilities, w) {
+					t.Errorf("%s: %s capabilities = %#v, want %#v", who, c.Name, c.Capabilities, w)
+				}
+				if c.Has(ab2bus.ChannelBridged) != (c.Name == "job1-live") {
+					t.Errorf("%s: %s Has(bridged) = %v", who, c.Name, c.Has(ab2bus.ChannelBridged))
+				}
+			}
+			if seen != len(want) {
+				t.Errorf("%s saw %d of %d channels", who, seen, len(want))
+			}
+		}
+		cs, err := pat.ListChannels(ctx)
+		must(t, err)
+		check("ListChannels", cs)
+		st, err := root.Status(ctx)
+		must(t, err)
+		var infos []ab2bus.Channel
+		for _, c := range st.Channels {
+			infos = append(infos, c.Channel)
+		}
+		check("Status", infos)
+		fresh, err := pat.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "fresh"})
+		must(t, err)
+		if !reflect.DeepEqual(fresh.Capabilities, none) {
+			t.Errorf("CreateChannel capabilities = %#v, want empty non-nil", fresh.Capabilities)
 		}
 	})
 }

@@ -26,15 +26,35 @@ type ACLEntry struct {
 	Permissions []Permission
 }
 
-// Channel is what every identity may see of a channel: name and kind only,
-// no creator and no counts (Decision 94).
+// ChannelCapability is a trait of a channel. A value present in
+// Channel.Capabilities means the trait applies; clients ignore values they do
+// not know.
+type ChannelCapability string
+
+// ChannelBridged is present exactly while the channel's Slack bridge is live.
+const ChannelBridged ChannelCapability = "bridged"
+
+// Channel is what a caller sees of a channel it may list (a stored ACL entry,
+// or the administrator flag): name, kind and capabilities, no creator and no
+// counts. Capabilities is never nil on the Bus.
 type Channel struct {
-	Name string
-	Kind Kind
+	Name         string
+	Kind         Kind
+	Capabilities []ChannelCapability
+}
+
+// Has reports whether the channel carries the capability.
+func (c Channel) Has(capability ChannelCapability) bool {
+	for _, have := range c.Capabilities {
+		if have == capability {
+			return true
+		}
+	}
+	return false
 }
 
 // ChannelInfo is the creator's view on CreateChannel and the administrator's
-// on Status; ListChannels never returns it (Decision 94).
+// on Status; ListChannels never returns it.
 type ChannelInfo struct {
 	Channel
 	Creator   string

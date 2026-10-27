@@ -2,6 +2,7 @@ package bus
 
 import (
 	"context"
+	"reflect"
 	"testing"
 	"time"
 
@@ -52,10 +53,10 @@ func TestAdminStatusNeedsAdmin(t *testing.T) {
 			t.Errorf("root session missing")
 		}
 		wantCh := []ab2bus.ChannelInfo{
-			{Channel: ab2bus.Channel{Name: "alpha", Kind: ab2bus.KindOrdinary}, Creator: "root", CreatedAt: h.core.NowMs()},
-			{Channel: ab2bus.Channel{Name: "beta", Kind: ab2bus.KindTasks}, Creator: "pat", CreatedAt: h.core.NowMs()},
+			{Channel: ab2bus.Channel{Name: "alpha", Kind: ab2bus.KindOrdinary, Capabilities: []ab2bus.ChannelCapability{}}, Creator: "root", CreatedAt: h.core.NowMs()},
+			{Channel: ab2bus.Channel{Name: "beta", Kind: ab2bus.KindTasks, Capabilities: []ab2bus.ChannelCapability{}}, Creator: "pat", CreatedAt: h.core.NowMs()},
 		}
-		if len(st.Channels) != 2 || st.Channels[0] != wantCh[0] || st.Channels[1] != wantCh[1] {
+		if len(st.Channels) != 2 || !reflect.DeepEqual(st.Channels, wantCh) {
 			t.Errorf("channels = %+v, want %+v", st.Channels, wantCh)
 		}
 		if len(st.Notices) != 1 || st.Notices[0] != (ab2bus.Notice{Kind: "capacity", Message: "disk nearly full", SetAt: 42}) {

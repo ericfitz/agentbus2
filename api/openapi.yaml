@@ -238,7 +238,7 @@ paths:
       tags: [channels]
       responses:
         "200":
-          description: Channels visible to the caller.
+          description: Channels the caller holds an ACL entry on; a server administrator sees every channel.
           content:
             application/json:
               schema:
@@ -1453,22 +1453,32 @@ components:
             $ref: "#/components/schemas/SessionInfo"
     Channel:
       type: object
-      required: [name, kind]
+      required: [name, kind, capabilities]
       properties:
         name:
           type: string
         kind:
           type: string
           enum: [ordinary, memory, tasks]
+        capabilities:
+          type: array
+          items:
+            type: string
+          description: "Traits of the channel; a value present means the trait applies. Known: bridged (a live Slack bridge). Clients ignore values they do not know."
     ChannelInfo:
       type: object
-      required: [name, kind, creator, created_at]
+      required: [name, kind, creator, created_at, capabilities]
       properties:
         name:
           type: string
         kind:
           type: string
           enum: [ordinary, memory, tasks]
+        capabilities:
+          type: array
+          items:
+            type: string
+          description: "Traits of the channel; a value present means the trait applies. Known: bridged (a live Slack bridge). Clients ignore values they do not know."
         creator:
           type: string
         scope:

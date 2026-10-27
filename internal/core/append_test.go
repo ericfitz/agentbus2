@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -369,7 +370,7 @@ func TestConversions(t *testing.T) {
 		t.Errorf("ACLToBus = %+v", back)
 	}
 	ch := store.Channel{Name: "c", Kind: store.KindMemory, Creator: "pat", CreatedAt: 5}
-	if got := ChannelToBus(ch); got != (bus.Channel{Name: "c", Kind: bus.KindMemory}) {
+	if got := ChannelToBus(ch); !reflect.DeepEqual(got, bus.Channel{Name: "c", Kind: bus.KindMemory, Capabilities: []bus.ChannelCapability{}}) {
 		t.Errorf("ChannelToBus = %+v", got)
 	}
 	if got := ChannelInfoToBus(ch); got.Creator != "pat" || got.CreatedAt != 5 || got.Name != "c" {

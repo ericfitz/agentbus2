@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"reflect"
@@ -335,4 +336,71 @@ func TestUnsubscribeTagsCommaIsOnePattern(t *testing.T) {
 	if p := readProblem(t, resp); resp.StatusCode != 400 || p.Code != gen.ProblemCode("validation") {
 		t.Fatalf("no pattern: %d %+v", resp.StatusCode, p)
 	}
+}
+
+// TestChannelCapabilitiesOnTheWire: every response that carries a channel
+// has "capabilities":[] (never null, never absent), and the list is filtered
+// by ACL entry.
+func TestChannelCapabilitiesOnTheWire(t *testing.T) {
+	e := newEnv(t, envOptions{})
+	e.identity("pat", false)
+	e.identity("kim", false)
+	e.identity("root", true)
+	resp := e.raw("pat", jsonPost(t, "/v1/channels", `{"name":"open"}`))
+	if resp.StatusCode != 201 {
+		t.Fatalf("create open: %d", resp.StatusCode)
+	}
+	created := decodeChannels(t, resp, false)
+	resp = e.raw("pat", jsonPost(t, "/v1/channels", `{"name":"private","acl":[{"identity":"pat","permissions":["read","write","admin"]}]}`))
+	if resp.StatusCode != 201 {
+		t.Fatalf("create private: %d", resp.StatusCode)
+	}
+	created = append(created, decodeChannels(t, resp, false)...)
+	list := decodeChannels(t, e.raw("pat", newReq(t, "GET", "/v1/channels", nil)), true)
+	status := decodeChannels(t, e.raw("root", newReq(t, "GET", "/v1/admin/status", nil)), false)
+	for name, cs := range map[string][]map[string]json.RawMessage{"create": created, "list": list, "status": status} {
+		if len(cs) == 0 {
+			t.Fatalf("%s carries no channel", name)
+		}
+		for _, c := range cs {
+			if got := string(c["capabilities"]); got != "[]" {
+				t.Errorf("%s: capabilities = %q, want []", name, got)
+			}
+		}
+	}
+	other := decodeChannels(t, e.raw("kim", newReq(t, "GET", "/v1/channels", nil)), true)
+	for _, c := range other {
+		if string(c["name"]) == `"private"` {
+			t.Errorf("kim lists private: %s", c["name"])
+		}
+	}
+}
+
+// decodeChannels reads a channel object, an array of them (array) or the
+// channels of an admin status document.
+func decodeChannels(t *testing.T, resp *http.Response, array bool) []map[string]json.RawMessage {
+	t.Helper()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if array {
+		var out []map[string]json.RawMessage
+		if err := json.Unmarshal(body, &out); err != nil {
+			t.Fatalf("decode list %s: %v", body, err)
+		}
+		return out
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(body, &obj); err != nil {
+		t.Fatalf("decode %s: %v", body, err)
+	}
+	if raw, ok := obj["channels"]; ok {
+		var out []map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &out); err != nil {
+			t.Fatalf("decode channels %s: %v", raw, err)
+		}
+		return out
+	}
+	return []map[string]json.RawMessage{obj}
 }

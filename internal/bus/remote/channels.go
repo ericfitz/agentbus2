@@ -23,7 +23,7 @@ func (b *Bus) ListChannels(ctx context.Context) ([]ab2bus.Channel, error) {
 	}
 	out := make([]ab2bus.Channel, len(*r.JSON200))
 	for i, c := range *r.JSON200 {
-		out[i] = ab2bus.Channel{Name: c.Name, Kind: fromGenKind(c.Kind)}
+		out[i] = ab2bus.Channel{Name: c.Name, Kind: fromGenKind(c.Kind), Capabilities: fromGenCapabilities(c.Capabilities)}
 	}
 	return out, nil
 }
@@ -57,9 +57,19 @@ func (b *Bus) CreateChannel(ctx context.Context, in ab2bus.CreateChannelInput) (
 	return fromGenChannelInfo(*r.JSON201), nil
 }
 
+// fromGenCapabilities copies the strings unfiltered; an absent array (nil)
+// is the empty set, never an error.
+func fromGenCapabilities(in []string) []ab2bus.ChannelCapability {
+	out := make([]ab2bus.ChannelCapability, len(in))
+	for i, c := range in {
+		out[i] = ab2bus.ChannelCapability(c)
+	}
+	return out
+}
+
 func fromGenChannelInfo(c gen.ChannelInfo) ab2bus.ChannelInfo {
 	return ab2bus.ChannelInfo{
-		Channel: ab2bus.Channel{Name: c.Name, Kind: ab2bus.Kind(c.Kind)},
+		Channel: ab2bus.Channel{Name: c.Name, Kind: ab2bus.Kind(c.Kind), Capabilities: fromGenCapabilities(c.Capabilities)},
 		Creator: c.Creator, Scope: deref(c.Scope), CreatedAt: c.CreatedAt,
 	}
 }

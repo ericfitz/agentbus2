@@ -45,6 +45,17 @@ func channelInfoToGen(c bus.ChannelInfo) gen.ChannelInfo {
 	if c.Scope != "" {
 		out.Scope = &c.Scope
 	}
+	out.Capabilities = capabilityStrings(c.Capabilities)
+	return out
+}
+
+// capabilityStrings copies the capabilities as strings; never nil, because a
+// nil slice would marshal as null.
+func capabilityStrings(in []bus.ChannelCapability) []string {
+	out := make([]string, len(in))
+	for i, c := range in {
+		out[i] = string(c)
+	}
 	return out
 }
 
@@ -55,7 +66,7 @@ func (a *api) ListChannels(ctx context.Context, _ gen.ListChannelsRequestObject)
 	}
 	out := make(gen.ListChannels200JSONResponse, len(chs))
 	for i, c := range chs {
-		out[i] = gen.Channel{Name: c.Name, Kind: gen.ChannelKind(c.Kind)}
+		out[i] = gen.Channel{Name: c.Name, Kind: gen.ChannelKind(c.Kind), Capabilities: capabilityStrings(c.Capabilities)}
 	}
 	return out, nil
 }

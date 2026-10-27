@@ -110,9 +110,11 @@ func ACLToBus(in []store.ACLEntry) []bus.ACLEntry {
 	return out
 }
 
-// ChannelToBus is the name and kind every identity may see (Decision 94).
+// ChannelToBus is the name and kind a caller that may list the channel sees
+// (a stored ACL entry, or the administrator flag), with an empty capability
+// set; List and Status set the capabilities from the bridge state.
 func ChannelToBus(c store.Channel) bus.Channel {
-	return bus.Channel{Name: c.Name, Kind: KindToBus(c.Kind)}
+	return bus.Channel{Name: c.Name, Kind: KindToBus(c.Kind), Capabilities: []bus.ChannelCapability{}}
 }
 
 // ChannelInfoToBus adds the creator and creation time, for CreateChannel and

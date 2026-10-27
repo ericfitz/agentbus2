@@ -43,8 +43,14 @@ func (s Service) Status(ctx context.Context, identity string) (bus.Status, error
 		if err != nil {
 			return err
 		}
+		bridges, err := bridgesByChannel(ctx, tx)
+		if err != nil {
+			return err
+		}
 		for _, c := range chs {
-			st.Channels = append(st.Channels, core.ChannelInfoToBus(c))
+			info := core.ChannelInfoToBus(c)
+			info.Capabilities = capabilitiesOf(bridges, c.ID)
+			st.Channels = append(st.Channels, info)
 		}
 		for _, kind := range []string{noticeCapacity, noticeEmbedding} {
 			n, ok, err := tx.Notice(ctx, kind)

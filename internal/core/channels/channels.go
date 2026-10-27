@@ -35,9 +35,15 @@ func (s Service) List(ctx context.Context, identity string) ([]bus.Channel, erro
 		if err != nil {
 			return err
 		}
+		bridges, err := bridgesByChannel(ctx, tx)
+		if err != nil {
+			return err
+		}
 		for _, c := range chs {
 			if visible[c.ID] {
-				out = append(out, core.ChannelToBus(c))
+				bc := core.ChannelToBus(c)
+				bc.Capabilities = capabilitiesOf(bridges, c.ID)
+				out = append(out, bc)
 			}
 		}
 		return nil
@@ -143,11 +149,36 @@ func (s Service) visibleACL(ctx context.Context, tx store.Tx, p access.Principal
 	return nil
 }
 
+// bridgesByChannel loads every bridge row keyed by channel id (a channel has
+// at most one).
+func bridgesByChannel(ctx context.Context, tx store.Tx) (map[int64]store.Bridge, error) {
+	bs, err := tx.ListBridges(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[int64]store.Bridge, len(bs))
+	for _, b := range bs {
+		out[b.ChannelID] = b
+	}
+	return out, nil
+}
+
+// capabilitiesOf is the channel's capability set: "bridged" exactly while its
+// bridge state is live (a creating or archived bridge adds nothing), else the
+// empty non-nil set.
+func capabilitiesOf(bridges map[int64]store.Bridge, channelID int64) []bus.ChannelCapability {
+	if b, ok := bridges[channelID]; ok && b.State == store.BridgeLive {
+		return []bus.ChannelCapability{bus.ChannelBridged}
+	}
+	return []bus.ChannelCapability{}
+}
+
 // liveBridge reports whether the channel has a bridge in state creating or
 // live (Decision 12, spec 6.1b): such a bridge pins the channel's ACL, name
 // and existence. An archived bridge or none leaves the ordinary rules. The
 // guard is a rule here, not in the Store, so the bridge's own transactions
-// are unaffected.
+// are unaffected. This pin rule (creating or live) is deliberately wider than
+// the "bridged" capability, which is present only while the bridge is live.
 func liveBridge(ctx context.Context, tx store.Tx, channelID int64) (bool, error) {
 	b, err := tx.BridgeByChannel(ctx, channelID)
 	if errors.Is(err, store.ErrNotFound) {

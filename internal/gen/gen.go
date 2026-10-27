@@ -541,8 +541,10 @@ type BridgeNotInvited struct {
 
 // Channel defines model for Channel.
 type Channel struct {
-	Kind ChannelKind `json:"kind"`
-	Name string      `json:"name"`
+	// Capabilities Traits of the channel; a value present means the trait applies. Known: bridged (a live Slack bridge). Clients ignore values they do not know.
+	Capabilities []string    `json:"capabilities"`
+	Kind         ChannelKind `json:"kind"`
+	Name         string      `json:"name"`
 }
 
 // ChannelKind defines model for Channel.Kind.
@@ -550,11 +552,13 @@ type ChannelKind string
 
 // ChannelInfo defines model for ChannelInfo.
 type ChannelInfo struct {
-	CreatedAt int64           `json:"created_at"`
-	Creator   string          `json:"creator"`
-	Kind      ChannelInfoKind `json:"kind"`
-	Name      string          `json:"name"`
-	Scope     *string         `json:"scope,omitempty"`
+	// Capabilities Traits of the channel; a value present means the trait applies. Known: bridged (a live Slack bridge). Clients ignore values they do not know.
+	Capabilities []string        `json:"capabilities"`
+	CreatedAt    int64           `json:"created_at"`
+	Creator      string          `json:"creator"`
+	Kind         ChannelInfoKind `json:"kind"`
+	Name         string          `json:"name"`
+	Scope        *string         `json:"scope,omitempty"`
 }
 
 // ChannelInfoKind defines model for ChannelInfo.Kind.
