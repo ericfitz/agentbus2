@@ -1,3 +1,5 @@
+> Superseded by 2026-10-26-channel-visibility.md.
+
 # Channel Visibility Implementation Plan (Eric's decisions of 2026-10-25)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
