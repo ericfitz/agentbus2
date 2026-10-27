@@ -44,8 +44,8 @@ func (s Service) unavailable(err error) error {
 	return &bus.Error{Code: bus.CodeUnavailable, Retryable: true, Message: "store unreachable"}
 }
 
-// Health builds the document for identity; "" is the probe tier. serverVersion is
-// the server's version string, passed in so the caller owns where it comes
+// Health builds the document for identity; "" is the probe tier. serverVersion
+// is the server's version string, passed in so the caller owns where it comes
 // from. A store that does not answer is an unavailable error, never a
 // document (spec section 3.1, agent decision 3).
 func (s Service) Health(ctx context.Context, identity, serverVersion string) (bus.Health, error) {

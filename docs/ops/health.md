@@ -28,7 +28,7 @@ A plain proxy (any health check that accepts a 2xx) points at `/v1/health`; a 50
 
 | Caller | Sees |
 | --- | --- |
-| No `Authorization` header | the probe tier: `status`, `tier` (`probe`), `version`, `now` |
+| No `Authorization` header | the probe tier: `status`, `tier` (`probe`), `version`, `protocol_version`, `now` |
 | A valid bearer for a registered identity | the identity tier (`tier` `identity`): the probe tier plus `started_at`, `store` and `embeddings` (state, backlog, rejected) |
 | A valid bearer for an administrator | the admin tier (`tier` `admin`): everything, including the embedding model and last error, `storage`, `notices` and `maintenance` |
 | A bearer the server rejects | 401 `unauthenticated`, no document |
