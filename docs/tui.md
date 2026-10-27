@@ -194,11 +194,12 @@ A value is one of the sixteen ANSI color names (`black`, `red`, `green`, `yellow
 
 ### Icons
 
-`icons` picks the set the TUI draws for channels, senders, task status and markers. `emoji` needs no font setup. `nerdfont` uses Nerd Font glyphs. `custom` is `emoji` overridden by `icon_map`; `icon_map` also applies over `nerdfont`. An icon name that `icon_map` does not set keeps its base glyph. An unknown `icons` value, an unknown `icon_map` name or an empty value prints one line on stderr and falls back to the base set for that icon.
+`icons` picks the set the TUI draws for channels, senders, task status and markers. `emoji` needs no font setup. `nerdfont` uses Nerd Font glyphs. `custom` is `emoji` overridden by `icon_map`; `icon_map` also applies over `nerdfont`. A channel with the `bridged` capability carries the `bridged` (link) icon wherever its kind icon is drawn: the rail, the header and stream labels, the compose prompt and search hits (an ordinary channel draws `chat`; task-list and memory channels keep their own icons). An icon name that `icon_map` does not set keeps its base glyph. An unknown `icons` value, an unknown `icon_map` name or an empty value prints one line on stderr and falls back to the base set for that icon.
 
 | Icon name | Used for | `nerdfont` codepoint |
 | --- | --- | --- |
 | `chat` | ordinary channels | U+F27A |
+| `bridged` | channels with the `bridged` capability | U+F198 |
 | `memory` | memory channels | U+F0C7 |
 | `tasks` | task-list channels | U+F0AE |
 | `agent` | other agent senders and sessions | U+EE0D |

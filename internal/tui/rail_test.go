@@ -931,3 +931,41 @@ func TestCollapseNotPersisted(t *testing.T) {
 		t.Fatalf("a new Model must start expanded with no heading: collapsed=%v headSel=%d", m.collapsed, m.headSel)
 	}
 }
+
+// A channel with the bridged capability carries the link icon wherever its
+// kind icon is drawn; an unknown capability draws the plain chat icon.
+func TestBridgedChannelIcon(t *testing.T) {
+	f := newFixture(t)
+	f.m.setChannels([]bus.Channel{
+		{Name: "job1-chat", Kind: bus.KindOrdinary, Capabilities: []bus.ChannelCapability{bus.ChannelBridged}},
+		{Name: "odd", Kind: bus.KindOrdinary, Capabilities: []bus.ChannelCapability{"future"}},
+	}, nil, "oldest")
+	rail := ansi.Strip(f.m.renderRails())
+	if !strings.Contains(rail, iconBridged+"job1-chat") || !strings.Contains(rail, iconChat+"odd") {
+		t.Fatalf("rail:\n%s", rail)
+	}
+	if got := ansi.Strip(f.m.channelLabel("job1-chat")); !strings.HasPrefix(got, iconBridged) {
+		t.Fatalf("label %q", got)
+	}
+	if got := ansi.Strip(f.m.channelLabel("odd")); !strings.HasPrefix(got, iconChat) {
+		t.Fatalf("label %q", got)
+	}
+	f.moveTo(t, "job1-chat")
+	if got := ansi.Strip(f.m.renderCompose()); !strings.HasPrefix(got, iconBridged+"job1-chat") {
+		t.Fatalf("compose %q", got)
+	}
+	hit := func(ch string) bus.SearchHit {
+		return bus.SearchHit{Message: bus.Message{Channel: ch, Seq: 1, Content: "x"}}
+	}
+	f.m.search.hits = []bus.SearchHit{hit("job1-chat"), hit("odd")}
+	rows := strings.Split(ansi.Strip(f.m.viewSearch()), "\n")
+	var got []string
+	for _, r := range rows {
+		if strings.Contains(r, "#1") {
+			got = append(got, r)
+		}
+	}
+	if len(got) != 2 || !strings.Contains(got[0], iconBridged+"job1-chat") || !strings.Contains(got[1], iconChat+"odd") {
+		t.Fatalf("search rows %q", got)
+	}
+}

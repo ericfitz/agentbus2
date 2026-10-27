@@ -59,20 +59,40 @@ func (m Model) senderIcon(own bool) string {
 // channelLabel is a message's recipient: the full channel name with its kind
 // icon in chanStyle's color. A channel not (yet) in the rail is drawn as chat.
 func (m Model) channelLabel(name string) string {
-	ch := bus.Channel{Name: name, Kind: bus.KindOrdinary}
+	ch := m.channelOf(name)
+	return m.chanStyle(ch).Render(channelIcon(ch) + name)
+}
+
+// channelOf is the rail's channel of that name; one the rail does not list
+// is an ordinary channel with no capabilities (its kind from the kinds the
+// model already knows).
+func (m Model) channelOf(name string) bus.Channel {
 	for _, c := range m.channels {
 		if c.Name == name {
-			ch = c
+			return c
 		}
 	}
-	icon := iconChat
-	switch ch.Kind {
-	case bus.KindTasks:
-		icon = iconTasks
-	case bus.KindMemory:
-		icon = iconMem
+	kind := bus.KindOrdinary
+	if k, ok := m.kinds[name]; ok && k != "" {
+		kind = k
 	}
-	return m.chanStyle(ch).Render(icon + name)
+	return bus.Channel{Name: name, Kind: kind}
+}
+
+// channelIcon is the one mark for a channel wherever its kind icon is drawn:
+// tasks, memory, the link for a bridged channel, else chat. An unknown
+// capability draws as chat.
+func channelIcon(c bus.Channel) string {
+	switch c.Kind {
+	case bus.KindTasks:
+		return iconTasks
+	case bus.KindMemory:
+		return iconMem
+	}
+	if c.Has(bus.ChannelBridged) {
+		return iconBridged
+	}
+	return iconChat
 }
 
 // tagChips renders tags as " tag " chips on the tag color, one space apart.
@@ -540,17 +560,14 @@ func (m Model) renderRails() string {
 	}
 
 	// chanRow draws the channel at index i of m.channels: its kind icon, full
-	// name, unread count and markers. A channel the identity may not read is
-	// drawn dim and marked, never retried (Decision 94).
+	// name, unread count and markers. A channel whose subscribe answered
+	// forbidden (the administrator listing a channel it holds no read entry
+	// on, a holder of a write-only or admin-only entry, or a reader whose
+	// entry was just revoked and not yet dropped from the list) is drawn dim
+	// and marked, never retried.
 	chanRow := func(i int) string {
 		c := m.channels[i]
-		mark := iconChat
-		switch channelSection(c) {
-		case secTasks:
-			mark = iconTasks
-		case secMemories:
-			mark = iconMem
-		}
+		mark := channelIcon(c)
 		if m.c.noAccess(c.Name) {
 			return dim.Render(mark + c.Name + " (no access)")
 		}
@@ -781,15 +798,10 @@ func (m Model) renderCompose() string {
 	case isTagPane(ch.Name):
 		label = m.tagChips(tagPaneSet(ch.Name))
 	default:
-		mark := iconChat
-		switch ch.Kind {
-		case bus.KindTasks:
-			mark = iconTasks
-		case bus.KindMemory:
-			mark = iconMem
+		if ch.Kind == bus.KindMemory {
 			hint = th.Style(th.Dim).Render("  ⏎ new memory")
 		}
-		label = m.chanStyle(*ch).Render(mark + ch.Name)
+		label = m.chanStyle(*ch).Render(channelIcon(*ch) + ch.Name)
 	}
 	prompt := label + th.Style(th.Dim).Render(" › ")
 	if m.mode != modeInsert {

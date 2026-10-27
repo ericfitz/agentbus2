@@ -190,7 +190,7 @@ func TestEmptyChannelShowsHint(t *testing.T) {
 	if !strings.Contains(v, "no messages yet in dev") {
 		t.Fatalf("view:\n%s", v)
 	}
-	// The header counts what is loaded, not a server-side total (Decision 94).
+	// The header counts what is loaded, not a server-side total.
 	if h := ansi.Strip(f.m.renderHeader()); !strings.Contains(h, "dev · 0 unread · 0 loaded") {
 		t.Fatalf("header %q", h)
 	}

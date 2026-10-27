@@ -128,13 +128,8 @@ func (m Model) viewSearch() string {
 	start, end := window(m.search.cursor, len(hits), visible)
 	for i := start; i < end; i++ {
 		hit := hits[i]
-		mark := "  "
-		switch m.kind(hit.Channel) {
-		case bus.KindTasks:
-			mark = th.Style(th.Tasks).Render(iconTasks)
-		case bus.KindMemory:
-			mark = th.Style(th.Mem).Render(iconMem)
-		}
+		hc := m.channelOf(hit.Channel)
+		mark := m.chanStyle(hc).Render(channelIcon(hc))
 		rev := ""
 		if hit.Revision != nil {
 			rev = " r" + itoa(*hit.Revision)

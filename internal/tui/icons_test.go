@@ -196,3 +196,25 @@ func TestLoadIconsForAppleTerminal(t *testing.T) {
 		t.Fatalf("nerdfont must not take the pad: agent %q, task_in_progress %q, warn %q", iconAgent, taskInProgress, warn.String())
 	}
 }
+
+// The bridged icon: the link symbol in the emoji set, fa-slack in Nerd Font
+// mode, overridable through icon_map, and untouched by the Terminal.app pad.
+func TestBridgedIconGlyphs(t *testing.T) {
+	t.Cleanup(func() { setIcons(emojiIcons) })
+	if !strings.HasPrefix(emojiIcons["bridged"], "\U0001F517") {
+		t.Fatalf("emoji bridged = %q, want U+1F517 first", emojiIcons["bridged"])
+	}
+	if nerdIcons["bridged"] != "" {
+		t.Fatalf("nerd bridged = %q, want U+F198", nerdIcons["bridged"])
+	}
+	var warn bytes.Buffer
+	LoadIconsFor(Settings{IconMap: map[string]string{"bridged": "L"}}, nil, &warn)
+	if iconBridged != "L  " || warn.Len() != 0 {
+		t.Fatalf("icon_map: bridged %q, warn %q", iconBridged, warn.String())
+	}
+	apple := []string{"TERM_PROGRAM=Apple_Terminal"}
+	LoadIconsFor(Settings{}, apple, &warn)
+	if iconBridged != emojiIcons["bridged"] {
+		t.Fatalf("Terminal.app: bridged %q, want %q", iconBridged, emojiIcons["bridged"])
+	}
+}

@@ -33,7 +33,7 @@ func TestHOpensHealthWithLines(t *testing.T) {
 		"sessions 2 live · channels 3 (1 memory, 0 tasks)",
 		"  sam ",
 		"receive long-poll connected · last batch",
-		"server ok · agentbus2 v" + version.Version + " · sqlite schema ",
+		"server ok · agentbus2 v" + version.Version + " · protocol " + version.Protocol + " · sqlite schema ",
 		" · embeddings off",
 		"admin no (status and storage are administrator views)",
 		"theme · default",

@@ -210,6 +210,9 @@ func (m Model) serverLine(p func(string, ...any), dim, ok, warn lipgloss.Style) 
 		status = warn.Render(string(h.Status))
 	}
 	p("%s %s · agentbus2 v%s", dim.Render("server"), status, h.Version)
+	if h.ProtocolVersion != "" {
+		p(" · protocol %s", h.ProtocolVersion)
+	}
 	if h.Store != nil {
 		p(" · %s schema %d", h.Store.Engine, h.Store.SchemaVersion)
 	}

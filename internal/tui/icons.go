@@ -13,14 +13,15 @@ import (
 // even when its monospace font has its own glyph at that codepoint. These
 // are vars, not consts: LoadIcons overwrites them per Settings.Icons.
 var (
-	iconChat  = "\U0001F4AC️ " // speech balloon
-	iconMem   = "\U0001F4BE️ " // floppy disk
-	iconAgent = gearIcon       // gear; Terminal.app gets appleTerminalIcons' variant
-	iconUser  = "\U0001F9D1️ " // adult
-	iconIdle  = "\U0001F4A4️ " // sleeping sign
-	iconTasks = "\U0001F4CB️ " // clipboard; Wide like chat and memory, so no CSI trick
-	iconArrow = " → "          // rightwards arrow; ambiguous width, 1 column in Western setups
-	iconError = "✗ "           // ballot X, the toast and overlay-footer error prefix
+	iconChat    = "\U0001F4AC️ " // speech balloon
+	iconMem     = "\U0001F4BE️ " // floppy disk
+	iconAgent   = gearIcon       // gear; Terminal.app gets appleTerminalIcons' variant
+	iconUser    = "\U0001F9D1️ " // adult
+	iconIdle    = "\U0001F4A4️ " // sleeping sign
+	iconBridged = "\U0001F517️ " // link symbol; Emoji_Presentation=Yes, so no appleTerminalIcons variant
+	iconTasks   = "\U0001F4CB️ " // clipboard; Wide like chat and memory, so no CSI trick
+	iconArrow   = " → "          // rightwards arrow; ambiguous width, 1 column in Western setups
+	iconError   = "✗ "           // ballot X, the toast and overlay-footer error prefix
 )
 
 // Task status marks. The stopwatch U+23F1 is text-presentation by default
@@ -83,7 +84,7 @@ var (
 // iconVars maps each icon name an icon_map may use to the variable it sets.
 var iconVars = map[string]*string{
 	"chat": &iconChat, "memory": &iconMem, "agent": &iconAgent, "user": &iconUser,
-	"idle": &iconIdle, "tasks": &iconTasks, "arrow": &iconArrow, "error": &iconError,
+	"idle": &iconIdle, "bridged": &iconBridged, "tasks": &iconTasks, "arrow": &iconArrow, "error": &iconError,
 	"task_pending": &taskPending, "task_in_progress": &taskInProgress, "task_completed": &taskCompleted,
 	"collapsed": &markSel, "expanded": &markOpen,
 }
@@ -107,6 +108,7 @@ var nerdIcons = map[string]string{
 	"tasks":            "\uf0ae",     // fa-list-check (nf fa-tasks, its FA5 name)
 	"agent":            "\uee0d",     // fa-robot
 	"user":             "\uf007",     // fa-user (solid; no regular user in Nerd Fonts)
+	"bridged":          "\uf198",     // fa-slack
 	"idle":             "\U000f04b2", // md-sleep "zZ"; fa-face-sleeping is Pro-only
 	"task_pending":     "\uf096",     // fa-square regular (nf fa-square_o)
 	"task_in_progress": "\uf152",     // fa-square-caret-right regular (nf fa-toggle_right)
