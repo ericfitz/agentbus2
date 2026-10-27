@@ -631,6 +631,12 @@ func TestACLToolsRoundTrip(t *testing.T) {
 	if _, err := sam.Bus.History(ctx, bus.HistoryInput{Channel: "private"}); bus.CodeOf(err) == "" {
 		t.Fatalf("sam read a channel whose ACL names only pat (err %v)", err)
 	}
+	// sam is not named in private's ACL, so it does not list it.
+	for _, c := range mustListNames(t, sam) {
+		if c == "private" {
+			t.Errorf("sam lists private without an ACL entry")
+		}
+	}
 	got := r.must(t, "get_acl", map[string]any{"name": "private"})
 	entries := arr(got, "entries")
 	if len(entries) != 1 || str(entries[0].(map[string]any), "identity") != "pat" {
@@ -661,6 +667,12 @@ func TestACLToolsRoundTrip(t *testing.T) {
 	}
 	if !names["private2"] || names["private"] || !names["general"] {
 		t.Errorf("list_channels: %v", names)
+	}
+	for _, c := range arr(list, "channels") {
+		caps, ok := c.(map[string]any)["capabilities"].([]any)
+		if !ok || len(caps) != 0 {
+			t.Errorf("list_channels entry %v: capabilities = %#v, want []", c, c.(map[string]any)["capabilities"])
+		}
 	}
 	r.must(t, "delete_channel", map[string]any{"name": "private2"})
 }
@@ -794,4 +806,17 @@ func TestHistoryToolThread(t *testing.T) {
 	if len(ms) != 2 || str(ms[0].(map[string]any), "content") != "root" || str(ms[1].(map[string]any), "content") != "reply" {
 		t.Fatalf("history thread = %v; want root and reply only", hist)
 	}
+}
+
+func mustListNames(t *testing.T, c *client.Conn) []string {
+	t.Helper()
+	cs, err := c.Bus.ListChannels(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := make([]string, 0, len(cs))
+	for _, ch := range cs {
+		out = append(out, ch.Name)
+	}
+	return out
 }

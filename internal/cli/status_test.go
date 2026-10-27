@@ -10,6 +10,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentbus2/internal/store"
 )
 
 func TestStatusReport(t *testing.T) {
@@ -54,6 +55,50 @@ func TestStatusReport(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("admin report lacks %q:\n%s", want, out)
 		}
+	}
+}
+
+func TestStatusMarksBridged(t *testing.T) {
+	e := newTestEnv(t)
+	ctx := context.Background()
+	pat := e.conn(t, "pat")
+	err := pat.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		if err := tx.CreateScope(ctx, "job1", 1); err != nil {
+			return err
+		}
+		seq, err := tx.MaxSeq(ctx)
+		if err != nil {
+			return err
+		}
+		ch, err := tx.CreateChannel(ctx, store.ChannelCreate{
+			Name: "job1-chat", Kind: store.KindOrdinary, Creator: "pat", Scope: "job1",
+			ACL:        []store.ACLEntry{{Identity: "everyone", Permissions: []store.Permission{store.PermRead, store.PermWrite}}},
+			CreatedSeq: seq, CreatedAt: 2,
+		})
+		if err != nil {
+			return err
+		}
+		b, err := tx.CreateBridge(ctx, store.Bridge{ChannelID: ch.ID, ChannelName: ch.Name, Scope: "job1", SlackName: "ab-job1-chat", CreatedAt: 3})
+		if err != nil {
+			return err
+		}
+		if err := tx.SetBridgeSlackChannel(ctx, b.ID, "G1"); err != nil {
+			return err
+		}
+		return tx.SetBridgeLive(ctx, b.ID)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out, errb bytes.Buffer
+	if code := RunStatus(ctx, []string{"-identity", "pat"}, e.Environ, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("status: %d %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "\n  job1-chat [ordinary] bridged\n") {
+		t.Errorf("report lacks the bridged row:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "general [ordinary] bridged") {
+		t.Errorf("an unbridged channel is marked bridged:\n%s", out.String())
 	}
 }
 

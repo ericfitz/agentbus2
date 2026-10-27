@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentbus2/internal/version"
 )
 
 func TestHealthTool(t *testing.T) {
@@ -15,6 +16,9 @@ func TestHealthTool(t *testing.T) {
 	got := r.must(t, "health", nil)
 	if got["status"] != "ok" || got["tier"] != "identity" {
 		t.Fatalf("identity tier: %v", got)
+	}
+	if got["protocol_version"] != version.Protocol {
+		t.Errorf("protocol_version = %v, want %q", got["protocol_version"], version.Protocol)
 	}
 	if st, _ := got["store"].(map[string]any); st["engine"] != "sqlite" {
 		t.Errorf("store = %v", got["store"])

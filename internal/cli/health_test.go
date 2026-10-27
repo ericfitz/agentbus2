@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentbus2/internal/version"
 )
 
 func runHealth(t *testing.T, e *testEnv, args ...string) (int, string, string) {
@@ -32,6 +33,9 @@ func TestHealthPrintsDocument(t *testing.T) {
 	store, _ := m["store"].(map[string]any)
 	if m["tier"] != "identity" || m["status"] != "ok" || store["engine"] != "sqlite" {
 		t.Fatalf("document = %s", out)
+	}
+	if m["protocol_version"] != version.Protocol {
+		t.Fatalf("protocol_version = %v, want %q", m["protocol_version"], version.Protocol)
 	}
 	if _, ok := m["maintenance"]; ok {
 		t.Fatalf("a non-administrator got maintenance: %s", out)

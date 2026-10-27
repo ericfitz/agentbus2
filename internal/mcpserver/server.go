@@ -162,15 +162,27 @@ func (s *server) do(f func(b bus.Bus) (any, error)) (*mcp.CallToolResult, any, e
 // ---- result shapes: snake_case, arrays never null ----
 
 type channelOut struct {
-	Name string `json:"name"`
-	Kind string `json:"kind"`
+	Name         string   `json:"name"`
+	Kind         string   `json:"kind"`
+	Capabilities []string `json:"capabilities"`
 }
 
 type channelInfoOut struct {
-	Name      string `json:"name"`
-	Kind      string `json:"kind"`
-	Creator   string `json:"creator"`
-	CreatedAt int64  `json:"created_at"`
+	Name         string   `json:"name"`
+	Kind         string   `json:"kind"`
+	Creator      string   `json:"creator"`
+	CreatedAt    int64    `json:"created_at"`
+	Capabilities []string `json:"capabilities"`
+}
+
+// capabilityStrings copies a channel's capabilities as strings, unfiltered
+// (a value this build does not know passes through), `[]` when there are none.
+func capabilityStrings(cs []bus.ChannelCapability) []string {
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, string(c))
+	}
+	return out
 }
 
 type aclEntryOut struct {
@@ -229,16 +241,17 @@ type registerOut struct {
 }
 
 type healthOut struct {
-	Status      string                `json:"status"`
-	Tier        string                `json:"tier"`
-	Version     string                `json:"version"`
-	Now         int64                 `json:"now"`
-	StartedAt   *int64                `json:"started_at,omitempty"`
-	Store       *healthStoreOut       `json:"store,omitempty"`
-	Embeddings  *healthEmbeddingsOut  `json:"embeddings,omitempty"`
-	Storage     *usageOut             `json:"storage,omitempty"`
-	Notices     *[]noticeOut          `json:"notices,omitempty"`
-	Maintenance *healthMaintenanceOut `json:"maintenance,omitempty"`
+	Status          string                `json:"status"`
+	Tier            string                `json:"tier"`
+	Version         string                `json:"version"`
+	ProtocolVersion string                `json:"protocol_version"`
+	Now             int64                 `json:"now"`
+	StartedAt       *int64                `json:"started_at,omitempty"`
+	Store           *healthStoreOut       `json:"store,omitempty"`
+	Embeddings      *healthEmbeddingsOut  `json:"embeddings,omitempty"`
+	Storage         *usageOut             `json:"storage,omitempty"`
+	Notices         *[]noticeOut          `json:"notices,omitempty"`
+	Maintenance     *healthMaintenanceOut `json:"maintenance,omitempty"`
 }
 
 type healthStoreOut struct {
@@ -293,7 +306,7 @@ func HealthJSON(h bus.Health) any { return healthToOut(h) }
 // tier (notices, jobs) are present and empty, never null; below it they are
 // absent (Notices is a pointer so an empty slice is not dropped by omitempty).
 func healthToOut(h bus.Health) healthOut {
-	o := healthOut{Status: string(h.Status), Tier: string(h.Tier), Version: h.Version, Now: h.Now}
+	o := healthOut{Status: string(h.Status), Tier: string(h.Tier), Version: h.Version, ProtocolVersion: h.ProtocolVersion, Now: h.Now}
 	if h.StartedAt != 0 {
 		o.StartedAt = &h.StartedAt
 	}
@@ -460,10 +473,10 @@ func (s *server) addTools(srv *mcp.Server) {
 				if err != nil {
 					return nil, err
 				}
-				return channelInfoOut{Name: ci.Name, Kind: string(ci.Kind), Creator: ci.Creator, CreatedAt: ci.CreatedAt}, nil
+				return channelInfoOut{Name: ci.Name, Kind: string(ci.Kind), Creator: ci.Creator, CreatedAt: ci.CreatedAt, Capabilities: capabilityStrings(ci.Capabilities)}, nil
 			})
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "list_channels", Description: "Agentbus2: list the channels with their kind."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "list_channels", Description: "Agentbus2: list the channels you hold an access entry on, with their kind and capabilities (bridged: people follow the channel from Slack and replies land in its thread; ignore capability values you do not know). A server administrator sees every channel."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in optSessionIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) {
 				cs, err := b.ListChannels(ctx)
@@ -472,7 +485,7 @@ func (s *server) addTools(srv *mcp.Server) {
 				}
 				out := make([]channelOut, 0, len(cs))
 				for _, c := range cs {
-					out = append(out, channelOut{Name: c.Name, Kind: string(c.Kind)})
+					out = append(out, channelOut{Name: c.Name, Kind: string(c.Kind), Capabilities: capabilityStrings(c.Capabilities)})
 				}
 				return map[string]any{"channels": out}, nil
 			})

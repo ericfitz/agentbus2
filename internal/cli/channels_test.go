@@ -5,9 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 )
+
+var capsEmpty = regexp.MustCompile(`"capabilities":\s*\[\]`)
 
 func TestChannelsLifecycle(t *testing.T) {
 	e := newTestEnv(t)
@@ -41,6 +44,12 @@ func TestChannelsLifecycle(t *testing.T) {
 
 	if _, has := names()["general"]; !has {
 		t.Fatalf("list lacks general: %v", names())
+	}
+	if out := ok("list"); !capsEmpty.MatchString(out) || strings.Contains(out, "null") {
+		t.Fatalf("list lacks capabilities []: %s", out)
+	}
+	if out := ok("create", "capcheck"); !capsEmpty.MatchString(out) {
+		t.Fatalf("create lacks capabilities []: %s", out)
 	}
 	ok("create", "dev")
 	ok("create", "-kind", "memory", "notes")
@@ -134,9 +143,10 @@ func TestChannelsLifecycle(t *testing.T) {
 	if _, has := names()["notes"]; has {
 		t.Fatal("notes survived y")
 	}
-	// A channel that does not exist is not_found before any prompt.
-	if code, _, er := run("y\n", "delete", "nosuch"); code != 1 || !strings.Contains(er, "not_found") {
-		t.Fatalf("missing channel: %d %q", code, er)
+	// A channel the list lacks (missing, or one the caller holds no entry on)
+	// still prompts, without a kind; the Bus answers not_found after the y.
+	if code, out, er := run("y\n", "delete", "nosuch"); code != 1 || !strings.Contains(er, "not_found") || !strings.Contains(out, `Channel "nosuch" and everything`) {
+		t.Fatalf("missing channel: %d out %q err %q", code, out, er)
 	}
 	// A retried keyed delete replays: the channel is gone, so the pre-check
 	// leaves the answer to the bus, which replays the first result.

@@ -76,11 +76,14 @@ func RunStatus(ctx context.Context, args []string, environ []string, stdin io.Re
 		}
 	}
 	for _, ch := range chans {
+		row := fmt.Sprintf("  %s [%s]", ch.Name, ch.Kind)
 		if cr, ok := creators[ch.Name]; ok {
-			p("  %s [%s] created by %s\n", ch.Name, ch.Kind, cr)
-		} else {
-			p("  %s [%s]\n", ch.Name, ch.Kind)
+			row += " created by " + cr
 		}
+		if ch.Has(bus.ChannelBridged) {
+			row += " bridged"
+		}
+		p("%s\n", row)
 	}
 	if serr == nil {
 		for _, nt := range st.Notices {

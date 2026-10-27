@@ -12,8 +12,9 @@ import (
 )
 
 type opChannelOut struct {
-	Name string `json:"name"`
-	Kind string `json:"kind"`
+	Name         string   `json:"name"`
+	Kind         string   `json:"kind"`
+	Capabilities []string `json:"capabilities"`
 }
 
 type opChannelInfoOut struct {
@@ -22,6 +23,17 @@ type opChannelInfoOut struct {
 	Creator   string `json:"creator"`
 	Scope     string `json:"scope,omitempty"`
 	CreatedAt int64  `json:"created_at"`
+
+	Capabilities []string `json:"capabilities"`
+}
+
+// opCapabilities copies capabilities as strings, unfiltered, `[]` when none.
+func opCapabilities(cs []bus.ChannelCapability) []string {
+	out := make([]string, 0, len(cs))
+	for _, c := range cs {
+		out = append(out, string(c))
+	}
+	return out
 }
 
 type opACLOut struct {
@@ -61,7 +73,7 @@ func runChannelsList(ctx context.Context, args []string, environ []string, _ io.
 	}
 	out := make([]opChannelOut, 0, len(cs))
 	for _, ch := range cs {
-		out = append(out, opChannelOut{Name: ch.Name, Kind: string(ch.Kind)})
+		out = append(out, opChannelOut{Name: ch.Name, Kind: string(ch.Kind), Capabilities: opCapabilities(ch.Capabilities)})
 	}
 	return opPrint(stdout, stderr, out)
 }
@@ -93,12 +105,14 @@ func runChannelsCreate(ctx context.Context, args []string, environ []string, _ i
 	if err != nil {
 		return fail(stderr, err)
 	}
-	return opPrint(stdout, stderr, opChannelInfoOut{Name: info.Name, Kind: string(info.Kind), Creator: info.Creator, Scope: info.Scope, CreatedAt: info.CreatedAt})
+	return opPrint(stdout, stderr, opChannelInfoOut{Name: info.Name, Kind: string(info.Kind), Creator: info.Creator, Scope: info.Scope, CreatedAt: info.CreatedAt, Capabilities: opCapabilities(info.Capabilities)})
 }
 
 // runChannelsDelete keeps the y/N prompt and -y of v1 internal/cli/delete.go.
-// The Bus shows an ordinary identity only a channel's name and kind, so the
-// prompt names the channel and its kind, not a message count.
+// The list holds only the channels the caller has an access entry on, so a
+// name it lacks (missing, or one the caller holds no entry on) still prompts,
+// without a kind, and the Bus answers after the confirmation. The prompt names
+// the channel and its kind when known, not a message count.
 func runChannelsDelete(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	c := newOpCmd("channels delete", stderr)
 	yes := c.fs.Bool("y", false, "delete without asking")
@@ -129,8 +143,6 @@ func runChannelsDelete(ctx context.Context, args []string, environ []string, std
 			// A retry of a keyed delete that already happened: nothing is
 			// left to confirm, and the bus replays the first result (or
 			// answers not_found when the key was never used).
-		case kind == "":
-			return fail(stderr, &bus.Error{Code: bus.CodeNotFound, Message: fmt.Sprintf("channel %q does not exist", name)})
 		default:
 			if code := confirmDelete(name, kind, stdin, stdout, stderr); code != 0 {
 				return code
@@ -146,7 +158,11 @@ func runChannelsDelete(ctx context.Context, args []string, environ []string, std
 // confirmDelete asks the y/N question of v1 internal/cli/delete.go; anything
 // but y or yes cancels (exit 1).
 func confirmDelete(name, kind string, stdin io.Reader, stdout, stderr io.Writer) int {
-	if _, err := fmt.Fprintf(stdout, "Channel %q (%s) and everything in it will be deleted.\nDeleting it PERMANENTLY destroys its messages. There is no undo.\nDelete channel %q? [y/N] ", name, kind, name); err != nil {
+	subject := fmt.Sprintf("Channel %q (%s)", name, kind)
+	if kind == "" {
+		subject = fmt.Sprintf("Channel %q", name)
+	}
+	if _, err := fmt.Fprintf(stdout, "%s and everything in it will be deleted.\nDeleting it PERMANENTLY destroys its messages. There is no undo.\nDelete channel %q? [y/N] ", subject, name); err != nil {
 		return fail(stderr, err)
 	}
 	line, readErr := bufio.NewReader(stdin).ReadString('\n')
