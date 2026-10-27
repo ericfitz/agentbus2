@@ -204,7 +204,7 @@ func (f *fakeTerm) csi(seq string, p *ansi.Parser) {
 	switch cmd.Final() {
 	case 'H', 'f':
 		f.y, f.x = clampY(param(0, 1)-1), clampX(param(1, 1)-1)
-	case 'G':
+	case 'G', '`': // CHA, and HPA, which a renderer picks for some TERMs (linux)
 		f.x = clampX(param(0, 1) - 1)
 	case 'd':
 		f.y = clampY(param(0, 1) - 1)

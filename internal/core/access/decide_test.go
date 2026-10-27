@@ -314,6 +314,8 @@ func TestDecideTakeName(t *testing.T) {
 		{"prefix in use", root, scopeNameFacts{Name: "job2", Channels: []store.Channel{{Name: "job2-old"}}}, bus.CodeConflict, ReasonNamePrefix, `scope "job2": the name prefix "job2"- is in use by channel "job2-old"`},
 		{"prefix used by own scope", root, scopeNameFacts{Name: "job2", Channels: []store.Channel{{Name: "job2-old", Scope: "job2"}}}, "", "", ""},
 		{"short name no match", root, scopeNameFacts{Name: "jo", Channels: []store.Channel{{Name: "job2-old"}}}, "", "", ""},
+		{"scope name, not an administrator", pat, scopeNameFacts{Name: "free"}, bus.CodeForbidden, ReasonNotAdmin, "administrator privilege required"},
+		{"scope name, scoped agent", coder, scopeNameFacts{Name: "free"}, bus.CodeForbidden, ReasonNotAdmin, "administrator privilege required"},
 	}
 	for _, c := range cases {
 		d := decide(c.p, c.f, TakeName)

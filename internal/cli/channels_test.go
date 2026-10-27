@@ -48,10 +48,9 @@ func TestChannelsLifecycle(t *testing.T) {
 	if out := ok("list"); !capsEmpty.MatchString(out) || strings.Contains(out, "null") {
 		t.Fatalf("list lacks capabilities []: %s", out)
 	}
-	if out := ok("create", "capcheck"); !capsEmpty.MatchString(out) {
+	if out := ok("create", "dev"); !capsEmpty.MatchString(out) {
 		t.Fatalf("create lacks capabilities []: %s", out)
 	}
-	ok("create", "dev")
 	ok("create", "-kind", "memory", "notes")
 	if m := names(); m["dev"] != "ordinary" || m["notes"] != "memory" {
 		t.Fatalf("after create: %v", m)

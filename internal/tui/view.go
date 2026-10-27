@@ -64,19 +64,14 @@ func (m Model) channelLabel(name string) string {
 }
 
 // channelOf is the rail's channel of that name; one the rail does not list
-// is an ordinary channel with no capabilities (its kind from the kinds the
-// model already knows).
+// is an ordinary channel with no capabilities.
 func (m Model) channelOf(name string) bus.Channel {
 	for _, c := range m.channels {
 		if c.Name == name {
 			return c
 		}
 	}
-	kind := bus.KindOrdinary
-	if k, ok := m.kinds[name]; ok && k != "" {
-		kind = k
-	}
-	return bus.Channel{Name: name, Kind: kind}
+	return bus.Channel{Name: name, Kind: bus.KindOrdinary, Capabilities: []bus.ChannelCapability{}}
 }
 
 // channelIcon is the one mark for a channel wherever its kind icon is drawn:

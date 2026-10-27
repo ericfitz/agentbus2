@@ -100,6 +100,17 @@ func TestStatusMarksBridged(t *testing.T) {
 	if strings.Contains(out.String(), "general [ordinary] bridged") {
 		t.Errorf("an unbridged channel is marked bridged:\n%s", out.String())
 	}
+	// The administrator's row carries the creator and then the mark.
+	if err := (identities.Service{Core: pat.Core}).MakeAdmin(ctx, "pat", true); err != nil {
+		t.Fatal(err)
+	}
+	out.Reset()
+	if code := RunStatus(ctx, []string{"-identity", "pat"}, e.Environ, strings.NewReader(""), &out, &errb); code != 0 {
+		t.Fatalf("status as an administrator: %d %q", code, errb.String())
+	}
+	if !strings.Contains(out.String(), "\n  job1-chat [ordinary] created by pat bridged\n") {
+		t.Errorf("the administrator's report lacks the creator and the mark:\n%s", out.String())
+	}
 }
 
 func TestStatusRejectsBadInput(t *testing.T) {

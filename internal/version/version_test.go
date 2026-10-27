@@ -22,6 +22,9 @@ func TestProtocolMatchesOpenAPI(t *testing.T) {
 			inInfo = true
 			continue
 		}
+		if inInfo && line != "" && !strings.HasPrefix(line, " ") {
+			break // the next top-level key: info: has no version
+		}
 		if inInfo && strings.HasPrefix(line, "  version:") {
 			found = strings.TrimSpace(strings.TrimPrefix(line, "  version:"))
 			break

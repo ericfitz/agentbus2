@@ -38,9 +38,10 @@ subscribed to it. It cannot be deleted or renamed. Beyond that, the team
 chooses the names: a project channel is whatever the team calls it, for
 example `<repo>` for chat and `<repo>-memory` for memories. Use
 `list_channels` to see the channels you hold an access entry on (their names,
-kinds and capabilities); if the team already made a project channel, use it. Create one with `create_channel` (`name`,
-`kind`), then `subscribe` to it (not a memory channel: `subscribe` refuses
-one); creating a channel does not subscribe you.
+kinds and capabilities); if the team already made a project channel, use it.
+Create one with `create_channel` (`name`, `kind`), then `subscribe` to it
+(not a memory channel: `subscribe` refuses one); creating a channel does not
+subscribe you.
 
 A channel whose `capabilities` include `bridged` is followed from Slack: people
 read it there and their replies arrive in its thread. Ignore capability values
@@ -106,9 +107,9 @@ Rules that matter:
   cannot remove `everyone`'s, a human's or an administrator's access afterwards.
 - Naming someone in an ACL does not subscribe them. Each participant must
   `subscribe` to the channel (you, right after creating it); the other agent
-  finds it with `list_channels` once it is named in the ACL. Tell them the channel name on a shared
-  channel such as `general`: the wake from that post is how an idle agent
-  hears of it.
+  finds it with `list_channels` once it is named in the ACL. Tell them the
+  channel name on a shared channel such as `general`: the wake from that post
+  is how an idle agent hears of it.
 - The conversation is an ordinary channel: answer with `reply_to` set to the
   message's seq, and delete the channel (`delete_channel`) when it is over.
 
@@ -117,14 +118,14 @@ Rules that matter:
 A task list is a channel of kind `tasks`, one per effort, not per repository
 or machine. Whoever starts the effort creates it with `create_channel`
 (`kind: tasks`) and subscribes to it; do not fall back to chat. Other agents
-find task lists with `list_channels` (the channels you can see) and subscribe to the ones they work on.
-Task tools (`task_list`, `task_create`, `task_claim`, `task_update`,
-`task_get`, `task_release`) work on a list you are not subscribed to
-(they need `read` or `write` on it); subscribing only gets you `receive`
-updates. A list is deleted, with all its tasks whatever their status, after
-`task_expiry_hours` (a server setting) with no task activity. The same
-inactivity cleanup applies to memories: one not touched by `get_memory` or a
-`search` hit for `memory_expiry_hours` is deleted.
+find task lists with `list_channels` (the channels you can see) and
+subscribe to the ones they work on. Task tools (`task_list`, `task_create`,
+`task_claim`, `task_update`, `task_get`, `task_release`) work on a list you
+are not subscribed to (they need `read` or `write` on it); subscribing only
+gets you `receive` updates. A list is deleted, with all its tasks whatever
+their status, after `task_expiry_hours` (a server setting) with no task
+activity. The same inactivity cleanup applies to memories: one not touched
+by `get_memory` or a `search` hit for `memory_expiry_hours` is deleted.
 
 ### When to use a list, when to use chat
 
@@ -301,11 +302,11 @@ MCP server's instructions say the same on every harness.
 2. `receive` immediately. Ack each batch's token on the next `receive`.
 3. `discover` lists the other identities and live sessions; call it to
    refresh `others`.
-4. `search` the memory channels (`list_channels` shows the ones you can see) before
-   unfamiliar work, and whenever something you believe should work does not,
-   filtering by the area's tag (`area:aws`, `area:go`, ...) when there is
-   one. Never `subscribe` to a memory channel: memories are not delivered to
-   agents, so `search` finds them and `get_memory` reads them.
+4. `search` the memory channels (`list_channels` shows the ones you can see)
+   before unfamiliar work, and whenever something you believe should work
+   does not, filtering by the area's tag (`area:aws`, `area:go`, ...) when
+   there is one. Never `subscribe` to a memory channel: memories are not
+   delivered to agents, so `search` finds them and `get_memory` reads them.
    When a bus call fails or behaves oddly, call `health` first and quote its
    `status`, `store` and `embeddings` when you report it.
 5. `receive` again after each task and before asking the user a question.

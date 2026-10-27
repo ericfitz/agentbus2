@@ -167,16 +167,17 @@ func TestChannelListFiltersByEntry(t *testing.T) {
 		h.channel("writeonly", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: "kim", Permissions: perms(ab2store.PermWrite)}})
 		h.channel("mine", ab2store.KindOrdinary, "kim", []ab2store.ACLEntry{})
 		h.channel("humansonly", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: ab2store.Humans, Permissions: perms(ab2store.PermRead)}})
+		h.channel("adminsonly", ab2store.KindOrdinary, "", []ab2store.ACLEntry{{Identity: ab2store.Admins, Permissions: perms(ab2store.PermRead)}})
 		o, m := ab2bus.KindOrdinary, ab2bus.KindMemory
 		for _, c := range []struct {
 			who  string
 			b    ab2bus.Bus
 			want map[string]ab2bus.Kind
 		}{
-			{"kim", h.as("kim"), map[string]ab2bus.Kind{"adminonly": o, "alpha": o, "writeonly": o}}, // mine: a creator without a row lists nothing
+			{"kim", h.as("kim"), map[string]ab2bus.Kind{"adminonly": o, "alpha": o, "writeonly": o}}, // mine: a creator without a row lists nothing; adminsonly: the admins row names no agent that is not an administrator
 			{"pat", h.as("pat"), map[string]ab2bus.Kind{"alpha": o, "secret": m}},
 			{"hal", hal, map[string]ab2bus.Kind{"alpha": o, "humansonly": o}},
-			{"root", h.admin("root"), map[string]ab2bus.Kind{"adminonly": o, "alpha": o, "humansonly": o, "mine": o, "secret": m, "writeonly": o}},
+			{"root", h.admin("root"), map[string]ab2bus.Kind{"adminonly": o, "adminsonly": o, "alpha": o, "humansonly": o, "mine": o, "secret": m, "writeonly": o}},
 		} {
 			if got := channelNames(t, c.b); !reflect.DeepEqual(got, c.want) {
 				t.Errorf("%s lists %v, want %v", c.who, got, c.want)

@@ -504,7 +504,8 @@ func TestUnsubscribeNeedsNoRow(t *testing.T) {
 
 // TestReceiveFilterNeedsNoRow: naming a channel in a receive filter needs no
 // ACL row (the FilterReceive action is the scope gate alone): the call returns
-// no error and no messages.
+// no error, and the message pending on the channel stays undelivered because
+// the caller no longer holds read.
 func TestReceiveFilterNeedsNoRow(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
@@ -520,11 +521,18 @@ func TestReceiveFilterNeedsNoRow(t *testing.T) {
 			if _, err := c.who.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: c.ch}); err != nil {
 				t.Fatal(err)
 			}
-			if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: c.ch}); err != nil {
-				t.Fatal(err)
-			}
 			s, err := c.who.Open(ctx, ab2bus.OpenSessionInput{})
 			if err != nil {
+				t.Fatal(err)
+			}
+			if err := c.who.Subscribe(ctx, ab2bus.SubscribeInput{Channel: c.ch}); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := root.Send(ctx, ab2bus.SendInput{Channel: c.ch, Content: "pending"}); err != nil {
+				t.Fatal(err)
+			}
+			// Revoke every row: nothing names the receiver.
+			if err := root.SetACL(ctx, ab2bus.SetACLInput{Channel: c.ch}); err != nil {
 				t.Fatal(err)
 			}
 			got, err := c.who.Receive(ctx, ab2bus.ReceiveInput{Session: s.ID, Channels: []string{c.ch}})

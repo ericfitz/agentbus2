@@ -959,13 +959,15 @@ func TestBridgedChannelIcon(t *testing.T) {
 	}
 	f.m.search.hits = []bus.SearchHit{hit("job1-chat"), hit("odd")}
 	rows := strings.Split(ansi.Strip(f.m.viewSearch()), "\n")
-	var got []string
-	for _, r := range rows {
-		if strings.Contains(r, "#1") {
-			got = append(got, r)
+	for _, want := range []struct{ ch, icon string }{{"job1-chat", iconBridged}, {"odd", iconChat}} {
+		var got []string
+		for _, r := range rows {
+			if strings.Contains(r, want.ch+" #1") {
+				got = append(got, r)
+			}
 		}
-	}
-	if len(got) != 2 || !strings.Contains(got[0], iconBridged+"job1-chat") || !strings.Contains(got[1], iconChat+"odd") {
-		t.Fatalf("search rows %q", got)
+		if len(got) != 1 || !strings.Contains(got[0], want.icon+want.ch+" #1") {
+			t.Fatalf("search rows for %s: %q in\n%s", want.ch, got, strings.Join(rows, "\n"))
+		}
 	}
 }

@@ -117,7 +117,10 @@ func inScope(p Principal, f facts) bool {
 	case serverFacts:
 		return true // Administer is refused by its own clause for a scoped principal
 	case channelNameFacts, scopeNameFacts:
-		return true // the scoped principal is handled by the name rule; ScopeName callers hold Administer first
+		// Not reached: decideChannelName applies the scoped principal's rule
+		// itself and decideScopeName admits administrators only (never
+		// scoped). The case keeps the switch total.
+		return true
 	}
 	return false
 }
@@ -164,7 +167,7 @@ func decide(p Principal, f facts, a Action) Decision {
 	case channelNameFacts:
 		return decideChannelName(p, f, a)
 	case scopeNameFacts:
-		return decideScopeName(f, a)
+		return decideScopeName(p, f, a)
 	case sessionFacts:
 		if a != Use {
 			return undefined(f, a)
@@ -207,11 +210,15 @@ func decideChannelName(p Principal, f channelNameFacts, a Action) Decision {
 
 // decideScopeName is the scope-name rule (spec 4.2): two scopes whose prefixes
 // nest would make the longer one unusable, and the prefix <name>- must not
-// already name a channel of another scope or of none. The caller holds
-// Administer first.
-func decideScopeName(f scopeNameFacts, a Action) Decision {
+// already name a channel of another scope or of none. Only an administrator
+// names a scope; the caller also holds Administer first, so this refusal is
+// the same answer one step later.
+func decideScopeName(p Principal, f scopeNameFacts, a Action) Decision {
 	if a != TakeName {
 		return undefined(f, a)
+	}
+	if !actsAsAdmin(p) {
+		return deny(bus.CodeForbidden, ReasonNotAdmin, "administrator privilege required")
 	}
 	for _, sc := range f.Scopes {
 		if strings.HasPrefix(sc.Name+"-", f.Name+"-") || strings.HasPrefix(f.Name+"-", sc.Name+"-") {
