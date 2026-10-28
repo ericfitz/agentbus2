@@ -213,18 +213,17 @@ func (f *fakeKMS) total() int {
 }
 
 // gate records the call and applies a configured hang or failure.
-func (f *fakeKMS) gate(ctx context.Context, method string) error {
+func (f *fakeKMS) gate(_ context.Context, method string) error {
 	f.mu.Lock()
 	f.calls = append(f.calls, method)
 	hang := f.hangOps[method]
 	ferr := f.failOps[method]
 	f.mu.Unlock()
 	if hang {
-		select {
-		case <-ctx.Done():
-			return status.FromContextError(ctx.Err()).Err()
-		case <-f.release:
-		}
+		// Only the client's deadline may end a hung call: the server's copy
+		// arrives as a rounded grpc-timeout and can expire first, answering
+		// DeadlineExceeded while the client's context is still live.
+		<-f.release
 	}
 	return ferr
 }
