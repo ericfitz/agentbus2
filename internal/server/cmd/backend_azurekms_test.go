@@ -3,6 +3,7 @@
 package cmd
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -16,6 +17,7 @@ import (
 // Credentials: New validates the URI only.
 func TestAzurekmsBackendIsRegistered(t *testing.T) {
 	const good = "azurekms://kv-test.vault.azure.net/signing-key"
+	t.Setenv("AZURE_TOKEN_CREDENTIALS", "prod")
 	p, err := openKeyProvider(config.Config{SigningKeyURI: good})
 	if err != nil {
 		t.Fatal(err)
@@ -28,6 +30,12 @@ func TestAzurekmsBackendIsRegistered(t *testing.T) {
 	_, err = openKeyProvider(config.Config{SigningKeyURI: "azurekms://us3r:t0ken@kv-test.vault.azure.net/signing-key"})
 	if err == nil || strings.Contains(err.Error(), "t0ken") || strings.Contains(err.Error(), "us3r") {
 		t.Fatalf("a malformed azurekms URI: err %v", err)
+	}
+	// An unset credential selector is a configuration error here, so the
+	// server exits 2 (not ErrUnavailable, which exits 1).
+	t.Setenv("AZURE_TOKEN_CREDENTIALS", "")
+	if _, err = openKeyProvider(config.Config{SigningKeyURI: good}); err == nil || errors.Is(err, keyprovider.ErrUnavailable) {
+		t.Fatalf("an unset AZURE_TOKEN_CREDENTIALS: err %v", err)
 	}
 	for _, scheme := range keyprovider.Schemes() {
 		if scheme == "azurekms" {

@@ -560,6 +560,7 @@ func TestSignVerifiesAsJWS(t *testing.T) {
 	}
 }
 
+// open note: signing-keys 3 (reversible): the alternative is to sign through azkeys directly, not through sigstore's signer.
 func TestSignThroughSeam(t *testing.T) {
 	f := newFakeVault(t)
 	f.addKey()
@@ -960,6 +961,7 @@ func TestNewRefusesURI(t *testing.T) {
 		" azurekms://" + vaultHost + "/" + keyName,
 		"AZUREKMS://" + vaultHost + "/" + keyName,
 		"azurekms://" + vaultHost + "/" + keyName + "\n",
+		"azurekms://de1.vault.microsoftazure.de/k", // Azure Germany is retired
 	}
 	for _, u := range bad {
 		p, err := New(u)
@@ -1103,5 +1105,74 @@ func TestCloudFollowsAZUREENVIRONMENT(t *testing.T) {
 		if got := cloudFor(env).ActiveDirectoryAuthorityHost; got != want {
 			t.Errorf("%q: authority %q, want %q", env, got, want)
 		}
+	}
+}
+
+// New fails closed when AZURE_TOKEN_CREDENTIALS is unset or empty: the chain
+// would otherwise fall back to az, azd and pwsh on the server's PATH.
+func TestNewRequiresTokenCredentials(t *testing.T) {
+	for name, set := range map[string]func(t *testing.T){
+		"unset": func(t *testing.T) {
+			t.Setenv("AZURE_TOKEN_CREDENTIALS", "x")
+			_ = os.Unsetenv("AZURE_TOKEN_CREDENTIALS")
+		},
+		"empty": func(t *testing.T) { t.Setenv("AZURE_TOKEN_CREDENTIALS", "") },
+	} {
+		t.Run(name, func(t *testing.T) {
+			set(t)
+			p, err := New(keyURI)
+			if err == nil || p != nil {
+				t.Fatalf("New = %v, %v; want a refusal", p, err)
+			}
+			for _, w := range []string{"AZURE_TOKEN_CREDENTIALS", "prod", "dev"} {
+				if !strings.Contains(err.Error(), w) {
+					t.Errorf("error %q does not name %q", err, w)
+				}
+			}
+			if errors.Is(err, keyprovider.ErrUnavailable) {
+				t.Error("a configuration error must not be ErrUnavailable (exit 1)")
+			}
+		})
+	}
+	t.Run("set", func(t *testing.T) {
+		t.Setenv("AZURE_TOKEN_CREDENTIALS", "prod")
+		if _, err := New(keyURI); err != nil {
+			t.Fatal(err)
+		}
+	})
+}
+
+// The real chain refuses an unset variable too, as the second guard.
+func TestDefaultCredentialRequiresTokenCredentials(t *testing.T) {
+	t.Setenv("AZURE_TOKEN_CREDENTIALS", "x")
+	_ = os.Unsetenv("AZURE_TOKEN_CREDENTIALS")
+	if _, err := defaultCredential(context.Background()); err == nil {
+		t.Fatal("the default chain was built with AZURE_TOKEN_CREDENTIALS unset")
+	}
+}
+
+func TestNextAcceptsECHSM(t *testing.T) {
+	f := newFakeVault(t)
+	priv := p256()
+	f.add(priv, ver1).jwk = func(kid string) map[string]any {
+		j := ecJWK(kid, &priv.PublicKey, "P-256", []string{"sign"})
+		j["kty"] = "EC-HSM"
+		return j
+	}
+	k := mustNext(t, f.provider(t, keyURI))
+	if !priv.PublicKey.Equal(k.Public) {
+		t.Fatal("wrong public key")
+	}
+}
+
+func TestRecorderSeenSkipsDuplicates(t *testing.T) {
+	r := &recorder{TokenCredential: &fakeCred{token: bearer}}
+	for range 3 {
+		if _, err := r.GetToken(context.Background(), policy.TokenRequestOptions{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if len(r.seen) != 1 {
+		t.Fatalf("seen %v, want one entry", r.seen)
 	}
 }

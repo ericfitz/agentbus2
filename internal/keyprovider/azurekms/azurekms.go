@@ -31,6 +31,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -56,7 +57,7 @@ const scheme = Name + "://"
 // Vault or managed HSM name (3 to 24 letters, digits and hyphens under a known
 // suffix), so no user info, port, address or other host is accepted, and the
 // version must be the 32 lowercase hex digits Key Vault assigns.
-var refRE = regexp.MustCompile(`^azurekms://([A-Za-z0-9][A-Za-z0-9-]{1,22}[A-Za-z0-9]\.(?:vault\.azure\.net|vault\.azure\.cn|vault\.usgovcloudapi\.net|vault\.microsoftazure\.de|managedhsm\.azure\.net|managedhsm\.azure\.cn|managedhsm\.usgovcloudapi\.net))/([A-Za-z0-9][A-Za-z0-9-]{0,126})(?:/([0-9a-f]{32}))?$`)
+var refRE = regexp.MustCompile(`^azurekms://([A-Za-z0-9][A-Za-z0-9-]{1,22}[A-Za-z0-9]\.(?:vault\.azure\.net|vault\.azure\.cn|vault\.usgovcloudapi\.net|managedhsm\.azure\.net|managedhsm\.azure\.cn|managedhsm\.usgovcloudapi\.net))/([A-Za-z0-9][A-Za-z0-9-]{0,126})(?:/([0-9a-f]{32}))?$`)
 
 var versionRE = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
@@ -105,6 +106,8 @@ func cloudFor(env string) cloud.Configuration {
 func defaultCredential(context.Context) (azcore.TokenCredential, error) {
 	return azidentity.NewDefaultAzureCredential(&azidentity.DefaultAzureCredentialOptions{
 		ClientOptions: azcore.ClientOptions{Cloud: cloudFor(os.Getenv("AZURE_ENVIRONMENT"))},
+		// Second guard: New already refuses an unset AZURE_TOKEN_CREDENTIALS.
+		RequireAzureTokenCredentials: true,
 	})
 }
 
@@ -120,7 +123,9 @@ func (r *recorder) GetToken(ctx context.Context, opts policy.TokenRequestOptions
 	t, err := r.TokenCredential.GetToken(ctx, opts)
 	if err == nil && t.Token != "" {
 		r.mu.Lock()
-		r.seen = append(r.seen, t.Token)
+		if !slices.Contains(r.seen, t.Token) {
+			r.seen = append(r.seen, t.Token)
+		}
 		r.mu.Unlock()
 	}
 	return t, err
@@ -160,6 +165,14 @@ var _ keyprovider.Provider = (*Provider)(nil)
 // New validates uri and returns a provider. It reads no credentials and makes
 // no network call.
 func New(uri string) (keyprovider.Provider, error) {
+	if _, err := newProvider(uri, connector{}); err != nil {
+		return nil, err // the URI first, so a bad one is named before the environment
+	}
+	// Fail closed: with the variable unset the default chain would run az, azd
+	// and pwsh from the server's PATH and use any sign-in the account holds.
+	if os.Getenv("AZURE_TOKEN_CREDENTIALS") == "" {
+		return nil, errors.New("azurekms: AZURE_TOKEN_CREDENTIALS must be set to \"prod\" (environment, workload identity, managed identity), \"dev\" (the Azure CLI credentials) or the name of one credential (EnvironmentCredential, WorkloadIdentityCredential, ManagedIdentityCredential, AzureCLICredential, AzureDeveloperCLICredential, AzurePowerShellCredential)")
+	}
 	p, err := newProvider(uri, defaultConnector())
 	if err != nil {
 		return nil, err // never a typed nil inside the interface
