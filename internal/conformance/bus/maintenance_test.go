@@ -2,6 +2,7 @@ package bus
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"strconv"
@@ -595,6 +596,128 @@ func TestMaintenanceBudgetEviction(t *testing.T) {
 		}
 		if n := runJobOn(h, m, "budget eviction"); n != 0 {
 			t.Fatalf("second run evicted %d", n)
+		}
+	})
+}
+
+// The Postgres budget is the logical measure, so bloat the sweep cannot
+// vacuum away neither empties the bus nor makes the sweep run away (Eric,
+// 2026-10-27, issue #7): with autovacuum off, deleted rows keep their disk
+// until a vacuum, and the enforced measure must not follow the disk.
+func TestMaintenanceBudgetEvictionUnderBloat(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		if e.Name != "postgres" {
+			return // the physical-bloat case exists on Postgres only
+		}
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		db, err := sql.Open(h.e.Driver, h.dsn)
+		if err != nil {
+			t.Fatalf("sql.Open: %v", err)
+		}
+		defer func() { _ = db.Close() }()
+		if _, err := db.ExecContext(ctx, "ALTER TABLE messages SET (autovacuum_enabled = false, toast.autovacuum_enabled = false)"); err != nil {
+			t.Fatalf("disable autovacuum: %v", err)
+		}
+		dev := h.channel("dev", ab2store.KindOrdinary, "pat", nil)
+		mem := h.channel("mem", ab2store.KindMemory, "pat", nil)
+		body := strings.Repeat("x", 1024)
+		var lastSeq int64
+		for range 2500 {
+			lastSeq = h.append(dev, "pat", "", body)
+		}
+		var memSeqs []int64
+		for i := range 5 {
+			memSeqs = append(memSeqs, h.append(mem, "pat", "", "memory "+strconv.Itoa(i)))
+		}
+		h.clock.Advance(2 * time.Hour)
+		usage := func() ab2store.Usage {
+			t.Helper()
+			u, err := h.raw.Usage(ctx)
+			if err != nil {
+				t.Fatalf("Usage: %v", err)
+			}
+			return u
+		}
+		u0 := usage()
+		p0, l0 := u0.DiskBytes, u0.Bytes
+		m := maint(h)
+		m.BudgetOverride = l0 / 2
+		target := m.BudgetOverride - m.BudgetOverride*int64(h.cfg.CleanupFreePercent)/100
+
+		deleted := runJobOn(h, m, "budget eviction")
+		if deleted <= 1000 || deleted >= 2500 {
+			t.Fatalf("evicted %d, want more than one chunk and not all", deleted)
+		}
+		u1 := usage()
+		if u1.Bytes > target {
+			t.Fatalf("logical usage %d above target %d", u1.Bytes, target)
+		}
+		if u1.DiskBytes < p0 {
+			t.Fatalf("disk bytes fell %d -> %d with autovacuum off", p0, u1.DiskBytes)
+		}
+		n, first, last := ordinaryRows(h, dev)
+		if n != 2500-deleted || n == 0 || last != lastSeq || last-first+1 != int64(n) {
+			t.Fatalf("survivors n=%d first=%d last=%d lastSeq=%d deleted=%d: want the newest contiguous range", n, first, last, lastSeq, deleted)
+		}
+		if got := h.channelRow(dev).EvictedBeforeSeq; got != first {
+			t.Fatalf("EvictedBeforeSeq = %d, want %d", got, first)
+		}
+		if live := h.liveSeqs(memSeqs...); !sameSeqs(live, memSeqs...) {
+			t.Fatalf("live memories = %v, want %v", live, memSeqs)
+		}
+
+		// The runaway regression: bloat keeps the disk high, and a physical
+		// measure would keep deleting.
+		for i := range 3 {
+			if n := runJobOn(h, m, "budget eviction"); n != 0 {
+				t.Fatalf("run %d after the sweep evicted %d, want 0", i+2, n)
+			}
+		}
+
+		if _, err := db.ExecContext(ctx, "VACUUM messages"); err != nil {
+			t.Fatalf("VACUUM: %v", err)
+		}
+		if n := runJobOn(h, m, "budget eviction"); n != 0 {
+			t.Fatalf("run after VACUUM evicted %d, want 0", n)
+		}
+		u2 := usage()
+		if u2.Bytes != u1.Bytes {
+			t.Fatalf("logical usage moved %d -> %d across VACUUM", u1.Bytes, u2.Bytes)
+		}
+		if u2.DiskBytes < u1.DiskBytes {
+			t.Fatalf("disk bytes fell %d -> %d across VACUUM", u1.DiskBytes, u2.DiskBytes)
+		}
+
+		// Ticks across five intervals delete nothing more.
+		for range 5 {
+			h.clock.Advance(time.Duration(h.cfg.MaintenanceIntervalSeconds) * time.Second)
+			m.Tick(ctx)
+		}
+		if n2, _, _ := ordinaryRows(h, dev); n2 != n {
+			t.Fatalf("ticks changed the survivors %d -> %d", n, n2)
+		}
+
+		// Disk far above the budget with the logical measure inside it: no
+		// eviction, no notice, and the usage reports the ratio on a normal tier.
+		cur := usage()
+		if cur.DiskBytes <= cur.Bytes+1 {
+			t.Fatalf("disk %d not above logical %d", cur.DiskBytes, cur.Bytes)
+		}
+		m.BudgetOverride = cur.Bytes + 1
+		if n := runJobOn(h, m, "budget eviction"); n != 0 {
+			t.Fatalf("evicted %d with the logical measure inside the budget", n)
+		}
+		runJobOn(h, m, "capacity notices")
+		if nt, ok := capacityNotice(h); ok {
+			t.Fatalf("capacity notice set under bloat alone: %+v", nt)
+		}
+		got, err := h.admin("root").(ab2bus.Admin).Usage(ctx)
+		if err != nil {
+			t.Fatalf("Usage: %v", err)
+		}
+		if got.DiskRatio <= 1 || got.Tier != ab2bus.PressureNormal {
+			t.Fatalf("DiskRatio = %v, Tier = %q; want a ratio above 1 on the normal tier", got.DiskRatio, got.Tier)
 		}
 	})
 }

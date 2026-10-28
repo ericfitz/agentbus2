@@ -970,6 +970,30 @@ block_access_rule_sites_fires() {
 	revert
 }
 
+# --- 30. postgres-budget-physical-measure ---------------------------------------------
+# The Postgres budget is the logical sum, not the disk size. A physical measure
+# under bloat (autovacuum off, rows deleted but not vacuumed) never falls below
+# the budget, so the sweep would empty the bus. The regression test must fail.
+block_postgres_budget_physical_measure() {
+	mutate_block postgres-budget-physical-measure internal/store/postgres/space.go \
+		'return store.Usage{Bytes: logical, DiskBytes: disk, Logical: true}, nil' \
+		'_ = logical; return store.Usage{Bytes: disk, DiskBytes: disk, Logical: true}, nil' \
+		TestMaintenanceBudgetEvictionUnderBloat \
+		'--- FAIL: TestMaintenanceBudgetEvictionUnderBloat/postgres'
+}
+
+# --- 31. eviction-message-floor-removed ------------------------------------------------
+# The floors hold under any pressure: without the one-hour message floor the
+# budget sweep deletes a burst younger than an hour, on both engines.
+block_eviction_message_floor_removed() {
+	mutate_block eviction-message-floor-removed internal/core/budget.go \
+		'		MessageBefore:      now - MessageFloorHours*msPerHour,' \
+		'		MessageBefore:      now + 1,' \
+		TestMaintenanceEvictionFloors \
+		'--- FAIL: TestMaintenanceEvictionFloors/sqlite' \
+		'--- FAIL: TestMaintenanceEvictionFloors/postgres'
+}
+
 block_skip_in_wiring
 block_unit_leak
 block_gen_edited
@@ -999,6 +1023,8 @@ block_tui_hint_mutation
 block_slackbridge_overlap_row
 block_slackbridge_catchup_before_drain
 block_access_rule_sites_fires
+block_postgres_budget_physical_measure
+block_eviction_message_floor_removed
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"
