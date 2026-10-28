@@ -138,7 +138,7 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 	if err != nil {
 		return fail(1, "signing key: %v", err)
 	}
-	issuer, err := token.NewIssuer(issuerURL, key, time.Duration(cfg.TokenLifetimeSeconds)*time.Second, c.Now)
+	issuer, err := token.NewIssuer(ctx, issuerURL, token.StaticKeys(key), time.Duration(cfg.TokenLifetimeSeconds)*time.Second, c.Now)
 	if err != nil {
 		return fail(2, "issuer: %v", err)
 	}

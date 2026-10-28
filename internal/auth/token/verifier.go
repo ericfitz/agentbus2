@@ -39,7 +39,7 @@ type Verifier struct {
 
 // Verify returns the identity of a valid own bearer. An iss that is empty or
 // not the own issuer's is ErrUnknownIssuer.
-func (v Verifier) Verify(_ context.Context, raw string) (string, error) {
+func (v Verifier) Verify(ctx context.Context, raw string) (string, error) {
 	iss, err := IssuerOf(raw)
 	if err != nil {
 		return "", err
@@ -51,5 +51,5 @@ func (v Verifier) Verify(_ context.Context, raw string) (string, error) {
 	if v.Now != nil {
 		now = v.Now
 	}
-	return v.Own.Verify(raw, now())
+	return v.Own.Verify(ctx, raw, now())
 }

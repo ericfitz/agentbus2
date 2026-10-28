@@ -7,13 +7,14 @@
 package token
 
 import (
-	"crypto"
+	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-jose/go-jose/v4"
@@ -59,20 +60,33 @@ func invalidCause(what string, cause error) error {
 	return fmt.Errorf("%w: %s: %w", ErrInvalid, what, cause)
 }
 
-// Issuer mints and verifies the server's own bearers with one signing key.
-type Issuer struct {
-	url      string
-	key      crypto.Signer
-	kid      string
-	alg      keys.Algorithm
-	lifetime time.Duration
-	now      func() time.Time
-	signer   jose.Signer
+// keyLoad is one key-set load that other callers may wait on.
+type keyLoad struct {
+	done chan struct{}
+	err  error
 }
 
-// NewIssuer builds an issuer. issuerURL is absolute http(s) with no trailing
-// slash, path, query or fragment; lifetime is positive.
-func NewIssuer(issuerURL string, key crypto.Signer, lifetime time.Duration, now func() time.Time) (*Issuer, error) {
+// Issuer mints and verifies the server's own bearers over a key set that a
+// KeySource supplies: it signs with the active key and verifies by kid.
+type Issuer struct {
+	url      string
+	src      KeySource
+	lifetime time.Duration
+	now      func() time.Time
+
+	mu         sync.Mutex
+	set        KeySet
+	byKID      map[string]Key
+	loadedAt   time.Time
+	stale      bool      // Invalidate was called: the next access reloads
+	lastForced time.Time // the last reload forced by an unknown kid
+	inflight   *keyLoad  // the load in progress, if any
+}
+
+// NewIssuer builds an issuer and loads its key set once. issuerURL is absolute
+// http(s) with no trailing slash, path, query or fragment; lifetime is
+// positive. It fails when the load fails or the set is invalid.
+func NewIssuer(ctx context.Context, issuerURL string, src KeySource, lifetime time.Duration, now func() time.Time) (*Issuer, error) {
 	u, err := url.Parse(issuerURL)
 	if err != nil {
 		return nil, fmt.Errorf("token: issuer URL: %w", err)
@@ -86,8 +100,8 @@ func NewIssuer(issuerURL string, key crypto.Signer, lifetime time.Duration, now 
 		strings.ContainsAny(issuerURL, "?#") || strings.HasSuffix(issuerURL, "/"):
 		return nil, fmt.Errorf("token: issuer URL %q must have no path, query or fragment", issuerURL)
 	}
-	if key == nil {
-		return nil, errors.New("token: signing key is required")
+	if src == nil {
+		return nil, errors.New("token: key source is required")
 	}
 	if lifetime <= 0 {
 		return nil, errors.New("token: lifetime must be positive")
@@ -95,34 +109,137 @@ func NewIssuer(issuerURL string, key crypto.Signer, lifetime time.Duration, now 
 	if now == nil {
 		return nil, errors.New("token: clock is required")
 	}
-	alg, err := keys.AlgorithmOf(key.Public())
+	i := &Issuer{url: issuerURL, src: src, lifetime: lifetime, now: now}
+	set, err := i.fetch(ctx)
 	if err != nil {
 		return nil, err
 	}
-	kid, err := keys.KID(key.Public())
+	i.install(set)
+	return i, nil
+}
+
+// fetch loads and validates a key set.
+func (i *Issuer) fetch(ctx context.Context) (KeySet, error) {
+	set, err := i.src.LoadKeys(ctx)
 	if err != nil {
-		return nil, err
+		return KeySet{}, fmt.Errorf("token: load keys: %w", err)
 	}
-	ja := jose.EdDSA
-	if alg == keys.ES256 {
-		ja = jose.ES256
+	if err := set.validate(); err != nil {
+		return KeySet{}, err
 	}
-	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: ja, Key: cryptosigner.Opaque(key)},
-		(&jose.SignerOptions{}).WithType("at+jwt").WithHeader("kid", kid))
-	if err != nil {
-		return nil, fmt.Errorf("token: signer: %w", err)
+	return set, nil
+}
+
+// install caches set. The caller holds mu, or owns i exclusively.
+func (i *Issuer) install(set KeySet) {
+	i.set = set
+	i.byKID = make(map[string]Key, len(set.Keys))
+	for _, k := range set.Keys {
+		i.byKID[k.KID] = k
 	}
-	return &Issuer{url: issuerURL, key: key, kid: kid, alg: alg, lifetime: lifetime, now: now, signer: signer}, nil
+	i.loadedAt = i.now()
+	i.stale = false
+}
+
+// startLoad registers a load; the caller holds mu and has seen no inflight.
+func (i *Issuer) startLoad() *keyLoad {
+	f := &keyLoad{done: make(chan struct{})}
+	i.inflight = f
+	return f
+}
+
+// runLoad loads under a context that outlives the caller's cancellation
+// (other callers wait on the result), then publishes the outcome. On failure
+// the cached set stays and the next periodic reload is a full interval away.
+func (i *Issuer) runLoad(ctx context.Context, f *keyLoad) {
+	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), SignTimeout)
+	defer cancel()
+	set, err := i.fetch(lctx)
+	i.mu.Lock()
+	if err == nil {
+		i.install(set)
+	} else {
+		i.loadedAt = i.now()
+		i.stale = false
+	}
+	i.inflight = nil
+	i.mu.Unlock()
+	f.err = err
+	close(f.done)
+}
+
+// current returns the cached set, first reloading it when it is stale or older
+// than ReloadInterval. One caller reloads; the others keep using the cached
+// set meanwhile. A failed reload keeps the cached set.
+func (i *Issuer) current(ctx context.Context) (KeySet, map[string]Key) {
+	i.mu.Lock()
+	if i.inflight == nil && (i.stale || i.now().Sub(i.loadedAt) >= ReloadInterval) {
+		f := i.startLoad()
+		i.mu.Unlock()
+		i.runLoad(ctx, f)
+		i.mu.Lock()
+	}
+	set, by := i.set, i.byKID
+	i.mu.Unlock()
+	return set, by
+}
+
+// lookup finds a key by kid. A kid the cached set lacks forces a reload, shared
+// by every caller that asks while it runs and allowed at most once per
+// UnknownKeyReloadInterval.
+func (i *Issuer) lookup(ctx context.Context, kid string) (Key, bool) {
+	_, by := i.current(ctx)
+	if k, ok := by[kid]; ok {
+		return k, true
+	}
+	i.mu.Lock()
+	f := i.inflight
+	switch {
+	case f != nil:
+		i.mu.Unlock()
+	case !i.lastForced.IsZero() && i.now().Sub(i.lastForced) < UnknownKeyReloadInterval:
+		i.mu.Unlock()
+		return Key{}, false
+	default:
+		i.lastForced = i.now()
+		f = i.startLoad()
+		i.mu.Unlock()
+		i.runLoad(ctx, f)
+	}
+	select {
+	case <-f.done:
+	case <-ctx.Done():
+		return Key{}, false
+	}
+	i.mu.Lock()
+	k, ok := i.byKID[kid]
+	i.mu.Unlock()
+	return k, ok
+}
+
+// Invalidate makes the next access reload the key set.
+func (i *Issuer) Invalidate() {
+	i.mu.Lock()
+	i.stale = true
+	i.mu.Unlock()
 }
 
 // URL is the issuer identifier (the iss claim).
 func (i *Issuer) URL() string { return i.url }
 
-// KID is the thumbprint of the signing key.
-func (i *Issuer) KID() string { return i.kid }
+// KID is the thumbprint of the active key of the cached set.
+func (i *Issuer) KID() string {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.set.Active.KID
+}
 
-// Algorithm is the signing algorithm.
-func (i *Issuer) Algorithm() keys.Algorithm { return i.alg }
+// Algorithm is the algorithm of the active key of the cached set.
+func (i *Issuer) Algorithm() keys.Algorithm {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	return i.set.Active.Algorithm
+}
 
 // TokenEndpoint is the token endpoint URL, which a client assertion may still
 // name as its audience (RFC 7523bis prefers the issuer URL).
@@ -131,7 +248,7 @@ func (i *Issuer) TokenEndpoint() string { return i.url + "/v1/auth/token" }
 // MetadataURI is where the RFC 8414 authorization server metadata is served.
 func (i *Issuer) MetadataURI() string { return i.url + "/.well-known/oauth-authorization-server" }
 
-// JWKSURI is where the public key is served.
+// JWKSURI is where the public keys are served.
 func (i *Issuer) JWKSURI() string { return i.url + "/v1/auth/jwks" }
 
 // Lifetime is the bearer lifetime.
@@ -155,7 +272,7 @@ type MintInput struct {
 
 // Mint issues an RFC 9068 access token: typ at+jwt, iss = aud = URL,
 // sub = identity, client_id, jti, iat, exp and the agentbus2_kind claim.
-func (i *Issuer) Mint(in MintInput) (string, time.Time, error) {
+func (i *Issuer) Mint(ctx context.Context, in MintInput) (string, time.Time, error) {
 	if in.Identity == "" {
 		return "", time.Time{}, errors.New("token: identity is required")
 	}
@@ -172,6 +289,21 @@ func (i *Issuer) Mint(in MintInput) (string, time.Time, error) {
 	clientID := in.ClientID
 	if clientID == "" {
 		clientID = in.Identity
+	}
+	set, _ := i.current(ctx)
+	if set.Signer == nil {
+		return "", time.Time{}, fmt.Errorf("%w: no usable key", ErrSignerUnavailable)
+	}
+	ja := jose.EdDSA
+	if set.Active.Algorithm == keys.ES256 {
+		ja = jose.ES256
+	}
+	sctx, cancel := context.WithTimeout(ctx, SignTimeout)
+	defer cancel()
+	signer, err := jose.NewSigner(jose.SigningKey{Algorithm: ja, Key: cryptosigner.Opaque(ctxSigner{sctx, set.Signer})},
+		(&jose.SignerOptions{}).WithType("at+jwt").WithHeader("kid", set.Active.KID))
+	if err != nil {
+		return "", time.Time{}, fmt.Errorf("%w: %w", ErrSignerUnavailable, err)
 	}
 	var rnd [16]byte
 	if _, err := rand.Read(rnd[:]); err != nil {
@@ -191,15 +323,15 @@ func (i *Issuer) Mint(in MintInput) (string, time.Time, error) {
 		ClientID string `json:"client_id"`
 		Kind     string `json:"agentbus2_kind"`
 	}{clientID, in.Kind}
-	raw, err := jwt.Signed(i.signer).Claims(c).Claims(extra).Serialize()
+	raw, err := jwt.Signed(signer).Claims(c).Claims(extra).Serialize()
 	if err != nil {
-		return "", time.Time{}, fmt.Errorf("token: sign: %w", err)
+		return "", time.Time{}, fmt.Errorf("%w: sign: %w", ErrSignerUnavailable, err)
 	}
 	return raw, exp, nil
 }
 
 // Verify checks a bearer minted by this issuer and returns its identity.
-func (i *Issuer) Verify(raw string, now time.Time) (string, error) {
+func (i *Issuer) Verify(ctx context.Context, raw string, now time.Time) (string, error) {
 	if strings.Count(raw, ".") != 2 {
 		return "", invalid("not a compact JWS")
 	}
@@ -210,14 +342,15 @@ func (i *Issuer) Verify(raw string, now time.Time) (string, error) {
 	if len(tok.Headers) != 1 {
 		return "", invalid("expected one signature")
 	}
-	if tok.Headers[0].KeyID != i.kid {
+	key, ok := i.lookup(ctx, tok.Headers[0].KeyID)
+	if !ok {
 		return "", ErrUnknownKey
 	}
 	if !isAccessTokenType(tok.Headers[0]) {
 		return "", invalid("typ must be at+jwt")
 	}
 	var c jwt.Claims
-	if err := tok.Claims(i.key.Public(), &c); err != nil {
+	if err := tok.Claims(key.Public, &c); err != nil {
 		return "", invalidCause("signature", err)
 	}
 	if err := c.ValidateWithLeeway(jwt.Expected{Issuer: i.url, AnyAudience: jwt.Audience{i.url}, Time: now}, Leeway); err != nil {
@@ -240,12 +373,18 @@ func isAccessTokenType(h jose.Header) bool {
 	return typ == "at+jwt" || typ == "application/at+jwt"
 }
 
-// JWKS is the public key set served at JWKSURI.
-func (i *Issuer) JWKS() jose.JSONWebKeySet {
-	j, err := keys.ToJWK(i.key.Public(), i.kid)
-	if err != nil {
-		// NewIssuer admitted the key, so this cannot happen.
-		return jose.JSONWebKeySet{}
+// JWKS is the public key set served at JWKSURI: every key of the set, in the
+// set's order.
+func (i *Issuer) JWKS(ctx context.Context) jose.JSONWebKeySet {
+	set, _ := i.current(ctx)
+	out := jose.JSONWebKeySet{Keys: make([]jose.JSONWebKey, 0, len(set.Keys))}
+	for _, k := range set.Keys {
+		j, err := keys.ToJWK(k.Public, k.KID)
+		if err != nil {
+			// validate admitted the key, so this cannot happen.
+			continue
+		}
+		out.Keys = append(out.Keys, j)
 	}
-	return jose.JSONWebKeySet{Keys: []jose.JSONWebKey{j}}
+	return out
 }

@@ -73,7 +73,7 @@ type envOptions struct {
 	embedder bool
 	auth     Authenticator // nil: InProcess{}, or Bearer when issuer is set
 
-	// issuer builds token.NewIssuer("http://inproc", <a test Ed25519 key>,
+	// issuer builds token.NewIssuer(context.Background(), "http://inproc", token.StaticKeys(<a test Ed25519 key>),
 	// time.Hour, clock.Now) and, unless auth is set, Bearer over it.
 	issuer       bool
 	registration identities.Mode
@@ -104,7 +104,7 @@ func newEnv(t *testing.T, o envOptions) *env {
 		if err != nil {
 			t.Fatalf("keys.Generate: %v", err)
 		}
-		e.issuer, err = token.NewIssuer("http://inproc", key, time.Hour, e.clock.Now)
+		e.issuer, err = token.NewIssuer(context.Background(), "http://inproc", token.StaticKeys(key), time.Hour, e.clock.Now)
 		if err != nil {
 			t.Fatalf("token.NewIssuer: %v", err)
 		}

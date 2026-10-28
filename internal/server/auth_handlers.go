@@ -106,7 +106,10 @@ func (a *api) clientCredentials(ctx context.Context, iss *token.Issuer, b *gen.T
 	if err != nil {
 		return oauthFromBus(core.FromStore(err), false)
 	}
-	raw, _, err := iss.Mint(token.MintInput{Identity: p.Identity, Kind: token.KindAgent})
+	raw, _, err := iss.Mint(ctx, token.MintInput{Identity: p.Identity, Kind: token.KindAgent})
+	if errors.Is(err, token.ErrSignerUnavailable) {
+		return oauthFail(http.StatusServiceUnavailable, "temporarily_unavailable", "the signing key is unavailable")
+	}
 	if err != nil {
 		return oauthFromBus(bus.Internal(err), false)
 	}
@@ -118,11 +121,11 @@ func (a *api) clientCredentials(ctx context.Context, iss *token.Issuer, b *gen.T
 }
 
 // Jwks serves the own issuer's public key set.
-func (a *api) Jwks(context.Context, gen.JwksRequestObject) (gen.JwksResponseObject, error) {
+func (a *api) Jwks(ctx context.Context, _ gen.JwksRequestObject) (gen.JwksResponseObject, error) {
 	if a.opts.Issuer == nil {
 		return nil, issuerUnavailable()
 	}
-	set := a.opts.Issuer.JWKS()
+	set := a.opts.Issuer.JWKS(ctx)
 	out := gen.JWKS{Keys: make([]gen.JWK, 0, len(set.Keys))}
 	for _, k := range set.Keys {
 		b, err := k.MarshalJSON()

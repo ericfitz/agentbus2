@@ -200,7 +200,7 @@ func TestBothModes(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			iss, err := token.NewIssuer(url, key, time.Hour, time.Now)
+			iss, err := token.NewIssuer(context.Background(), url, token.StaticKeys(key), time.Hour, time.Now)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -208,7 +208,7 @@ func TestBothModes(t *testing.T) {
 			srv.Config.Handler = h
 			srv.Start()
 			t.Cleanup(srv.Close)
-			tok, _, err := iss.Mint(token.MintInput{Identity: "pat", Kind: token.KindAgent})
+			tok, _, err := iss.Mint(context.Background(), token.MintInput{Identity: "pat", Kind: token.KindAgent})
 			if err != nil {
 				t.Fatal(err)
 			}

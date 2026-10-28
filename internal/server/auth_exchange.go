@@ -126,7 +126,10 @@ func (a *api) tokenExchange(ctx context.Context, b *gen.TokenFormdataRequestBody
 	if clientID == "" {
 		clientID = fed.Subject
 	}
-	raw, exp, err := iss.Mint(token.MintInput{Identity: res.Identity, Kind: token.KindHuman, ClientID: clientID, Lifetime: ext.EffectiveHumanLifetime()})
+	raw, exp, err := iss.Mint(ctx, token.MintInput{Identity: res.Identity, Kind: token.KindHuman, ClientID: clientID, Lifetime: ext.EffectiveHumanLifetime()})
+	if errors.Is(err, token.ErrSignerUnavailable) {
+		return a.refuseExchange(ext.Name, oauthFail(http.StatusServiceUnavailable, "temporarily_unavailable", "the signing key is unavailable"), "mint failed: signing key unavailable", res.Identity)
+	}
 	if err != nil {
 		return a.refuseExchange(ext.Name, oauthFromBus(bus.Internal(err), true), "mint failed", res.Identity)
 	}

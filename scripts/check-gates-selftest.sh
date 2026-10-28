@@ -451,7 +451,7 @@ mutate_auth_block() {
 # sends something whose signature matters (the no-token subtest sends nothing).
 block_bearer_signature_ignored() {
 	mutate_auth_block bearer-signature-ignored internal/auth/token/issuer.go \
-		'if err := tok.Claims(i.key.Public(), &c); err != nil {' \
+		'if err := tok.Claims(key.Public, &c); err != nil {' \
 		'if err := tok.UnsafeClaimsWithoutVerification(&c); err != nil {' \
 		TestAuthEndToEnd/sqlite/forged-bearer-refused
 }

@@ -178,7 +178,7 @@ func TestAuthEndToEnd(t *testing.T) {
 		// http://0.0.0.0:<port>: the issuer is a configured string, not the
 		// request host (choice 7).
 		base := "http://127.0.0.1:" + port
-		issuer, err := token.NewIssuer(issuerURL, serverKey, time.Hour, time.Now)
+		issuer, err := token.NewIssuer(context.Background(), issuerURL, token.StaticKeys(serverKey), time.Hour, time.Now)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -416,11 +416,11 @@ func TestAuthEndToEnd(t *testing.T) {
 
 		// (10) A stale bearer is replaced on the token endpoint, refused elsewhere.
 		t.Run("stale-bearer-on-token-endpoint", func(t *testing.T) {
-			past, err := token.NewIssuer(issuerURL, serverKey, time.Hour, func() time.Time { return time.Now().Add(-2 * time.Hour) })
+			past, err := token.NewIssuer(context.Background(), issuerURL, token.StaticKeys(serverKey), time.Hour, func() time.Time { return time.Now().Add(-2 * time.Hour) })
 			if err != nil {
 				t.Fatal(err)
 			}
-			expired, _, err := past.Mint(token.MintInput{Identity: "root", Kind: token.KindAgent})
+			expired, _, err := past.Mint(context.Background(), token.MintInput{Identity: "root", Kind: token.KindAgent})
 			if err != nil {
 				t.Fatal(err)
 			}

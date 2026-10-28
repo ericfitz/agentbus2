@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -327,18 +328,18 @@ func TestBearerRefusals(t *testing.T) {
 	e.mustRegister("pat", key)
 
 	// A second issuer with the same URL and another key.
-	other, err := token.NewIssuer("http://inproc", genKey(t, keys.EdDSA), time.Hour, e.clock.Now)
+	other, err := token.NewIssuer(context.Background(), "http://inproc", token.StaticKeys(genKey(t, keys.EdDSA)), time.Hour, e.clock.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	forged, _, err := other.Mint(token.MintInput{Identity: "pat", Kind: token.KindAgent})
+	forged, _, err := other.Mint(context.Background(), token.MintInput{Identity: "pat", Kind: token.KindAgent})
 	if err != nil {
 		t.Fatal(err)
 	}
 	wantAuthProblem(t, e.do("GET", "/v1/channels", "", "Bearer "+forged, ""), 401, "unauthenticated", "unknown key")
 
 	// The authenticator attaches; the core judges registration.
-	ghost, _, err := e.issuer.Mint(token.MintInput{Identity: "ghost", Kind: token.KindAgent})
+	ghost, _, err := e.issuer.Mint(context.Background(), token.MintInput{Identity: "ghost", Kind: token.KindAgent})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -860,5 +861,70 @@ func TestTokenRepeatedAndEmptyParams(t *testing.T) {
 	v.Set("scope", "")
 	if resp := post(v); resp.StatusCode != 200 {
 		t.Fatalf("empty client_id: %d %s", resp.StatusCode, readBody(t, resp))
+	}
+}
+
+// failingKeys is a KeySource whose signer errs (or, with none set, is absent).
+type failingKeys struct {
+	key    crypto.Signer
+	noSign bool
+}
+
+type errSigner struct{ crypto.Signer }
+
+func (errSigner) SignContext(context.Context, []byte, crypto.SignerOpts) ([]byte, error) {
+	return nil, errors.New("kms down")
+}
+
+func (f failingKeys) LoadKeys(ctx context.Context) (token.KeySet, error) {
+	set, err := token.StaticKeys(f.key).LoadKeys(ctx)
+	if err != nil {
+		return set, err
+	}
+	if f.noSign {
+		set.Signer = nil
+	} else {
+		set.Signer = errSigner{f.key}
+	}
+	return set, nil
+}
+
+// TestSignerUnavailableIs503 (signing-keys Task 2): when the issuer cannot
+// sign, the agent token endpoint and the exchange answer 503
+// temporarily_unavailable, and a bearer minted earlier still authenticates.
+func TestSignerUnavailableIs503(t *testing.T) {
+	const want = "the signing key is unavailable"
+	for _, noSign := range []bool{false, true} {
+		name := "signer errs"
+		if noSign {
+			name = "no signer"
+		}
+		t.Run(name, func(t *testing.T) {
+			break_ := func(e *env) {
+				broken, err := token.NewIssuer(context.Background(), "http://inproc",
+					failingKeys{key: genKey(t, keys.EdDSA), noSign: noSign}, time.Hour, e.clock.Now)
+				if err != nil {
+					t.Fatal(err)
+				}
+				e.opts.Issuer = broken
+				e.once = sync.Once{} // rebuild the handler over the broken issuer
+			}
+			e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
+			key := genKey(t, keys.EdDSA)
+			e.mustRegister("pat", key)
+			bearer := e.token("pat", key)
+			break_(e)
+			wantOAuthError(t, e.exchange(e.assertionFor("pat", key, "http://inproc/v1/auth/token", 0), ""), 503, "temporarily_unavailable", want, "")
+			if resp := e.do("GET", "/v1/channels", "", "Bearer "+bearer, ""); resp.StatusCode != 200 {
+				t.Errorf("earlier bearer: %d %s", resp.StatusCode, readBody(t, resp))
+			}
+
+			f := newFedEnv(t, 0, nil)
+			break_(f.env)
+			status, body, m := f.post(exchangeForm(f.prov.Mint(map[string]any{"sub": "g-1", "email": corpEric}), nil))
+			if status != 503 || m["error"] != "temporarily_unavailable" || m["error_description"] != want {
+				t.Errorf("exchange = %d %s", status, body)
+			}
+		})
 	}
 }

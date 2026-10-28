@@ -627,11 +627,11 @@ func TestSection24Sequence(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			iss, err := token.NewIssuer(issuerURL, key, time.Hour, time.Now)
+			iss, err := token.NewIssuer(context.Background(), issuerURL, token.StaticKeys(key), time.Hour, time.Now)
 			if err != nil {
 				t.Fatal(err)
 			}
-			forged, _, err := iss.Mint(token.MintInput{Identity: "pat", Kind: token.KindAgent})
+			forged, _, err := iss.Mint(context.Background(), token.MintInput{Identity: "pat", Kind: token.KindAgent})
 			if err != nil {
 				t.Fatal(err)
 			}
