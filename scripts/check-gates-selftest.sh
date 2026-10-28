@@ -452,7 +452,7 @@ mutate_auth_block() {
 block_bearer_signature_ignored() {
 	mutate_auth_block bearer-signature-ignored internal/auth/token/issuer.go \
 		'if err := tok.Claims(key.Public, &c); err != nil {' \
-		'if err := tok.UnsafeClaimsWithoutVerification(&c); err != nil {' \
+		'if err := tok.UnsafeClaimsWithoutVerification(&c); err != nil || key.KID == "" {' \
 		TestAuthEndToEnd/sqlite/forged-bearer-refused
 }
 
