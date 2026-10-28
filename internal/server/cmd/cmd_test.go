@@ -28,6 +28,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/bus/remote"
 	"github.com/ericfitz/agentbus2/internal/core/notify/pgnotify"
 	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentbus2/internal/keyprovider"
 	"github.com/ericfitz/agentbus2/internal/server"
 	"github.com/ericfitz/agentbus2/internal/server/config"
 )
@@ -566,6 +567,36 @@ func TestSigningKeyAfterFailedStart(t *testing.T) {
 	}
 	if got := jwksKIDs(t, r.base()); len(got) != 1 || got[0] != r.kid {
 		t.Fatalf("jwks kids %v", got)
+	}
+}
+
+// A database whose active key is a store row and a configuration naming an
+// external key stop the start (exit 1) with the rotate instruction, and the
+// row is left alone.
+func TestSigningKeyProviderMismatchRefusesStart(t *testing.T) {
+	keyBackends["awskms"] = func(string) (keyprovider.Provider, error) { return stubProvider{}, nil }
+	t.Cleanup(func() { delete(keyBackends, "awskms") })
+	path := filepath.Join(t.TempDir(), "ab2.db")
+	args := []string{"-listen", "127.0.0.1:0", "-sqlite", path}
+	first := runServer(t, args...)
+	kid := first.kid
+	if got := first.stop(); got != 0 {
+		t.Fatalf("exit %d", got)
+	}
+	code, _, errs := runOnce(nil, append(args, "-set", "signing_key_uri=awskms://k")...)
+	if code != 1 || !strings.Contains(errs, "signing key: ") || !strings.Contains(errs, "configured provider is awskms") ||
+		!strings.Contains(errs, "signing-key rotate") {
+		t.Fatalf("mismatch: exit %d, stderr %q", code, errs)
+	}
+	again := runServer(t, args...)
+	defer again.stop()
+	if again.kid != kid {
+		t.Fatalf("kid changed from %s to %s", kid, again.kid)
+	}
+	// A scheme without a backend in this build is a configuration error (2).
+	code, _, errs = runOnce(nil, append(args, "-set", "signing_key_uri=gcpkms://k")...)
+	if code != 2 || !strings.Contains(errs, "the gcpkms backend is not in this build") {
+		t.Fatalf("no backend: exit %d, stderr %q", code, errs)
 	}
 }
 

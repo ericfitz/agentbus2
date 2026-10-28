@@ -44,10 +44,13 @@ func Run(ctx context.Context, args []string, environ []string, stdout, stderr io
 //
 // State (Definition of Done D): the signing key set is loaded from, or its
 // first key created in, the Store (signingkeys.Service.EnsureActive). A second
-// start loads the active row and prints nothing; two starts at once end with one row and one of
-// them prints "generated signing key"; a start that fails afterwards leaves
-// the committed row for the next start; a corrupt row stops the start (exit
-// 1) and is never overwritten.
+// start loads the active row and prints nothing; two starts at once end with
+// one row and one of them prints "generated signing key" (or "adopted signing
+// key" for an external provider); a start that fails afterwards leaves the
+// committed row for the next start; a corrupt row stops the start (exit 1)
+// and is never overwritten; an active row of another provider than the
+// configured one stops the start (exit 1, the message names the rotate
+// command) and is never changed.
 func run(ctx context.Context, args []string, environ []string, stdout, stderr io.Writer, serve func(context.Context, Config) error) int {
 	if len(args) > 0 && args[0] == "admin" {
 		return RunAdmin(ctx, args[1:], environ, stdout, stderr)
@@ -135,18 +138,28 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 	if err != nil {
 		return fail(1, "%v", err)
 	}
-	keysSvc := signingkeys.Service{Core: c, Provider: keyprovider.StoreProvider{}, Settings: signingkeys.DefaultSettings()}
-	_, created, err := keysSvc.EnsureActive(ctx)
+	provider, err := openKeyProvider(cfg)
+	if err != nil {
+		return fail(2, "%v", err)
+	}
+	keysSvc := &signingkeys.Service{Core: c, Provider: provider, Settings: signingSettings(cfg)}
+	active, created, err := keysSvc.EnsureActive(ctx)
 	if err != nil {
 		return fail(1, "signing key: %v", err)
 	}
-	issuer, err := token.NewIssuer(ctx, issuerURL, signingkeys.NewKeyring(keysSvc), time.Duration(cfg.TokenLifetimeSeconds)*time.Second, c.Now)
+	issuer, err := token.NewIssuer(ctx, issuerURL, signingkeys.NewKeyring(*keysSvc), time.Duration(cfg.TokenLifetimeSeconds)*time.Second, c.Now)
 	if err != nil {
 		return fail(2, "issuer: %v", err)
 	}
+	// Serve's maintenance jobs rotate through this Service, so a rotation
+	// reloads this process's issuer at once.
 	keysSvc.OnChange = issuer.Invalidate
 	if created {
-		_, _ = fmt.Fprintf(stdout, "generated signing key %s\n", issuer.KID())
+		if provider.Name() == keyprovider.NameStore {
+			_, _ = fmt.Fprintf(stdout, "generated signing key %s\n", active.KID)
+		} else {
+			_, _ = fmt.Fprintf(stdout, "adopted signing key %s (%s %s)\n", active.KID, provider.Name(), cfg.SigningKeyURI)
+		}
 	}
 
 	ext := externalIssuers(cfg)
@@ -177,6 +190,7 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		Logger:       logger,
 		Registration: mode,
 		Issuer:       issuer,
+		SigningKeys:  keysSvc,
 		External:     ext,
 		Embedder:     embedder,
 		Slack:        slackClient,

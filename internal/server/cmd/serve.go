@@ -17,6 +17,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/maintenance"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
+	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
 	"github.com/ericfitz/agentbus2/internal/server"
 	"github.com/ericfitz/agentbus2/internal/slackapi"
 	"github.com/ericfitz/agentbus2/internal/slackbridge"
@@ -46,7 +47,10 @@ type Config struct {
 	Registration identities.Mode
 	Issuer       *token.Issuer     // nil: local mode, the token endpoint answers 503
 	External     []*token.External // configured external issuers (Decision 57)
-	Embedder     core.Embedder     // nil: text search only; embed.Install when set
+	// SigningKeys runs the signing key rotation and removal maintenance jobs;
+	// nil: they are off.
+	SigningKeys *signingkeys.Service
+	Embedder    core.Embedder // nil: text search only; embed.Install when set
 
 	// Slack is the Slack Web API and Socket Mode client; nil: the Slack bridge
 	// is off and bridge calls answer forbidden. SlackCfg configures the bridge
@@ -143,6 +147,7 @@ func Serve(ctx context.Context, c Config) error {
 	var wg sync.WaitGroup
 	defer func() { stopMaint(); wg.Wait() }()
 	m := maintenance.New(cr)
+	m.SigningKeys = c.SigningKeys
 	if br != nil {
 		m.Archiver = br
 		// The runner competes for the slack-bridge lock beside maintenance and

@@ -10,8 +10,15 @@ import (
 	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/keyprovider"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
+
+// MaxTokenLifetimeSeconds is the ceiling of token_lifetime_seconds and of an
+// issuer's human_token_lifetime_seconds. A retiring signing key stays
+// published this long after it stopped signing (signingkeys.MaxBearerLifetime
+// equals it; the config tests pin that).
+const MaxTokenLifetimeSeconds = 86400
 
 // Issuer is one external token issuer (Decision 57, spec 5.1): a corporate
 // identity provider whose tokens are exchanged for own bearers.
@@ -46,6 +53,12 @@ type Config struct {
 	TokenLifetimeSeconds int      `json:"token_lifetime_seconds"`
 	JWKSRefreshSeconds   int      `json:"jwks_refresh_seconds"`
 	Issuers              []Issuer `json:"issuers"`
+
+	// The signing key set (issues #6 and #8). An empty SigningKeyURI keeps the
+	// key in the database; otherwise it names an external key.
+	SigningKeyURI                     string `json:"signing_key_uri"`
+	SigningKeyRotationHours           int    `json:"signing_key_rotation_hours"`
+	SigningKeyRotationCooldownSeconds int    `json:"signing_key_rotation_cooldown_seconds"`
 
 	DefaultACL      []ACLEntry `json:"default_acl"`
 	ChannelCreation string     `json:"channel_creation"`
@@ -93,9 +106,13 @@ func Default() Config {
 	return Config{
 		TokenLifetimeSeconds: 3600,
 		JWKSRefreshSeconds:   300,
-		DefaultACL:           shippedDefault(),
-		ChannelCreation:      d.ChannelCreation,
-		LogLevel:             "info",
+
+		SigningKeyRotationHours:           720,
+		SigningKeyRotationCooldownSeconds: 3600,
+
+		DefaultACL:      shippedDefault(),
+		ChannelCreation: d.ChannelCreation,
+		LogLevel:        "info",
 
 		SlackArchiveAfterDoneHours: 168,
 		SlackMaxMessageChars:       3000,
@@ -198,8 +215,17 @@ func (c Config) Validate() error {
 			return fmt.Errorf("issuer must be an absolute http or https URL without path, query, fragment or trailing slash, got %q", c.Issuer)
 		}
 	}
-	if c.TokenLifetimeSeconds < 1 || c.TokenLifetimeSeconds > 86400 {
-		return fmt.Errorf("token_lifetime_seconds must be between 1 and 86400, got %d", c.TokenLifetimeSeconds)
+	if c.TokenLifetimeSeconds < 1 || c.TokenLifetimeSeconds > MaxTokenLifetimeSeconds {
+		return fmt.Errorf("token_lifetime_seconds must be between 1 and %d, got %d", MaxTokenLifetimeSeconds, c.TokenLifetimeSeconds)
+	}
+	if _, err := keyprovider.SchemeOf(c.SigningKeyURI); err != nil {
+		return fmt.Errorf("signing_key_uri: %w", err)
+	}
+	if h := c.SigningKeyRotationHours; h != 0 && (h < 48 || h > 8760) {
+		return fmt.Errorf("signing_key_rotation_hours must be 0 (no scheduled rotation) or between 48 and 8760, got %d", h)
+	}
+	if c.SigningKeyRotationCooldownSeconds < 1 || c.SigningKeyRotationCooldownSeconds > 86400 {
+		return fmt.Errorf("signing_key_rotation_cooldown_seconds must be between 1 and 86400, got %d", c.SigningKeyRotationCooldownSeconds)
 	}
 	if c.JWKSRefreshSeconds < 10 || c.JWKSRefreshSeconds > 86400 {
 		return fmt.Errorf("jwks_refresh_seconds must be between 10 and 86400, got %d", c.JWKSRefreshSeconds)
@@ -314,8 +340,8 @@ func validateIssuer(is Issuer) error {
 			return fmt.Errorf("algorithm %q is not one of EdDSA, ES256, RS256", a)
 		}
 	}
-	if is.HumanTokenLifetimeSeconds < 0 || is.HumanTokenLifetimeSeconds > 86400 {
-		return fmt.Errorf("human_token_lifetime_seconds must be 0 (the default, 900) or between 1 and 86400, got %d", is.HumanTokenLifetimeSeconds)
+	if is.HumanTokenLifetimeSeconds < 0 || is.HumanTokenLifetimeSeconds > MaxTokenLifetimeSeconds {
+		return fmt.Errorf("human_token_lifetime_seconds must be 0 (the default, 900) or between 1 and %d, got %d", MaxTokenLifetimeSeconds, is.HumanTokenLifetimeSeconds)
 	}
 	return nil
 }

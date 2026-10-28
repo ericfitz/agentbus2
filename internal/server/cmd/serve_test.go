@@ -9,6 +9,7 @@ import (
 	"net"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -17,6 +18,8 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/maintenance"
+	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
+	"github.com/ericfitz/agentbus2/internal/keyprovider"
 	"github.com/ericfitz/agentbus2/internal/slackapi"
 	"github.com/ericfitz/agentbus2/internal/slackapi/slackfake"
 	"github.com/ericfitz/agentbus2/internal/slackbridge"
@@ -512,4 +515,51 @@ func TestServeSlackBridge(t *testing.T) {
 			t.Fatalf("Serve: %v", err)
 		}
 	})
+}
+
+// Serve gives maintenance the signing key service only when the caller passes
+// one: a server runs the rotation and removal jobs, local mode does not.
+func TestServeSigningKeyJobs(t *testing.T) {
+	names := func(withKeys bool) []string {
+		st := openSQLite(t, filepath.Join(t.TempDir(), "ab2.db"))
+		cfg := oneSecond()
+		c := Config{Store: st, Cfg: cfg}
+		if withKeys {
+			cr, err := core.New(st, *cfg, core.Options{Now: time.Now})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.SigningKeys = &signingkeys.Service{Core: cr, Provider: keyprovider.StoreProvider{}, Settings: signingkeys.DefaultSettings()}
+		}
+		got := make(chan []string, 1)
+		c.OnTick = func(ran bool, report []maintenance.JobResult) {
+			if !ran {
+				return
+			}
+			var n []string
+			for _, r := range report {
+				n = append(n, r.Name)
+			}
+			select {
+			case got <- n:
+			default:
+			}
+		}
+		_, stop := startServe(t, c)
+		defer func() { _ = stop() }()
+		select {
+		case n := <-got:
+			return n
+		case <-time.After(5 * time.Second):
+			t.Fatal("no maintenance tick")
+			return nil
+		}
+	}
+	with, without := names(true), names(false)
+	if !slices.Contains(with, "signing key rotation") || !slices.Contains(with, "signing key removal") {
+		t.Errorf("jobs with the service: %v", with)
+	}
+	if slices.Contains(without, "signing key rotation") || slices.Contains(without, "signing key removal") || len(with) != len(without)+2 {
+		t.Errorf("jobs without it: %v (with: %d)", without, len(with))
+	}
 }

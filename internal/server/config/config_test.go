@@ -5,8 +5,10 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -258,6 +260,101 @@ func TestSlackSettings(t *testing.T) {
 			t.Errorf("%s: %v", tc.name, err)
 		case tc.want != "" && (err == nil || !strings.Contains(err.Error(), tc.want)):
 			t.Errorf("%s: err = %v, want %q", tc.name, err, tc.want)
+		}
+	}
+}
+
+// open note: signing-keys 6
+func TestSigningKeyDefaults(t *testing.T) {
+	d := Default()
+	if d.SigningKeyURI != "" || d.SigningKeyRotationHours != 720 || d.SigningKeyRotationCooldownSeconds != 3600 {
+		t.Errorf("signing key defaults: %q %d %d", d.SigningKeyURI, d.SigningKeyRotationHours, d.SigningKeyRotationCooldownSeconds)
+	}
+	if err := valid().Validate(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestSigningKeyURIValidation(t *testing.T) {
+	for _, uri := range []string{"", "awskms://x", "gcpkms://x", "azurekms://x", "hashivault://x"} {
+		c := valid()
+		c.SigningKeyURI = uri
+		if err := c.Validate(); err != nil {
+			t.Errorf("signing_key_uri %q: %v", uri, err)
+		}
+	}
+	for _, uri := range []string{"gcs://x", "awskms", "AWSKMS://x", "awskms://", "://x"} {
+		c := valid()
+		c.SigningKeyURI = uri
+		err := c.Validate()
+		if err == nil || !strings.Contains(err.Error(), "signing_key_uri") {
+			t.Errorf("signing_key_uri %q: err %v, want a signing_key_uri refusal", uri, err)
+			continue
+		}
+		if uri != "awskms://" {
+			for _, s := range []string{"awskms", "gcpkms", "azurekms", "hashivault"} {
+				if !strings.Contains(err.Error(), s) {
+					t.Errorf("signing_key_uri %q: %q does not name %s", uri, err, s)
+				}
+			}
+		}
+	}
+}
+
+func TestSigningKeyRotationBounds(t *testing.T) {
+	for _, h := range []int{0, 48, 720, 8760} {
+		c := valid()
+		c.SigningKeyRotationHours = h
+		if err := c.Validate(); err != nil {
+			t.Errorf("signing_key_rotation_hours %d: %v", h, err)
+		}
+	}
+	for _, h := range []int{1, 47, 8761, -1} {
+		c := valid()
+		c.SigningKeyRotationHours = h
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "signing_key_rotation_hours") {
+			t.Errorf("signing_key_rotation_hours %d: err %v", h, err)
+		}
+	}
+	for _, s := range []int{1, 3600, 86400} {
+		c := valid()
+		c.SigningKeyRotationCooldownSeconds = s
+		if err := c.Validate(); err != nil {
+			t.Errorf("signing_key_rotation_cooldown_seconds %d: %v", s, err)
+		}
+	}
+	for _, s := range []int{0, -1, 86401} {
+		c := valid()
+		c.SigningKeyRotationCooldownSeconds = s
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "signing_key_rotation_cooldown_seconds") {
+			t.Errorf("signing_key_rotation_cooldown_seconds %d: err %v", s, err)
+		}
+	}
+}
+
+// The removal time of a retiring key assumes no bearer lives longer than
+// MaxBearerLifetime, so it must be the upper bound both lifetimes validate to.
+func TestMaxBearerLifetimeIsTheCeiling(t *testing.T) {
+	if got := time.Duration(MaxTokenLifetimeSeconds) * time.Second; got != signingkeys.MaxBearerLifetime {
+		t.Fatalf("MaxTokenLifetimeSeconds is %v, signingkeys.MaxBearerLifetime %v", got, signingkeys.MaxBearerLifetime)
+	}
+	c := valid()
+	c.TokenLifetimeSeconds = MaxTokenLifetimeSeconds + 1
+	if err := c.Validate(); err == nil {
+		t.Error("token_lifetime_seconds above the ceiling was accepted")
+	}
+	c = valid()
+	c.TokenLifetimeSeconds = MaxTokenLifetimeSeconds
+	if err := c.Validate(); err != nil {
+		t.Error(err)
+	}
+	for _, v := range []int{MaxTokenLifetimeSeconds, MaxTokenLifetimeSeconds + 1} {
+		c = valid()
+		c.Issuers = []Issuer{goodIssuer()}
+		c.Issuers[0].HumanTokenLifetimeSeconds = v
+		err := c.Validate()
+		if (v > MaxTokenLifetimeSeconds) != (err != nil) {
+			t.Errorf("human_token_lifetime_seconds %d: err %v", v, err)
 		}
 	}
 }
