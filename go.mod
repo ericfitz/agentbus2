@@ -10,7 +10,7 @@ require (
 	charm.land/bubbles/v2 v2.2.1
 	charm.land/bubbletea/v2 v2.0.10
 	charm.land/lipgloss/v2 v2.0.6
-	cloud.google.com/go/auth v0.24.1-0.20261001053825-dbc26066f70a
+	cloud.google.com/go/auth v0.24.1
 	cloud.google.com/go/compute/metadata v0.10.0
 	cloud.google.com/go/kms v1.33.0
 	github.com/aws/aws-sdk-go-v2 v1.47.3

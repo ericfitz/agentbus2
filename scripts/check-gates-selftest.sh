@@ -443,6 +443,9 @@ block_m7_deps_rule_fires() {
 	m7_probe "$label" internal/oidctest/probe_m7_gcp.go cloud.google.com/go/kms/apiv1/kmspb "deps_violation=$m/internal/oidctest imports cloud.google.com/go/kms" gcpkms-importers
 	m7_probe "$label" internal/oidctest/probe_m7_gcp.go cloud.google.com/go/auth/credentials "deps_violation=$m/internal/oidctest imports cloud.google.com/go/auth" gcpkms-importers
 	m7_probe "$label" internal/oidctest/probe_m7_gcp_tagged.go google.golang.org/grpc/status "deps_violation=$m/internal/oidctest imports google.golang.org/grpc" gcpkms-importers "" gcpkms
+	m7_probe "$label" internal/oidctest/probe_m7_gcp.go cloud.google.com/go/compute/metadata "deps_violation=$m/internal/oidctest imports cloud.google.com/go/compute/metadata" gcpkms-importers
+	m7_probe "$label" internal/oidctest/probe_m7_gcp.go google.golang.org/api/option "deps_violation=$m/internal/oidctest imports google.golang.org/api" gcpkms-importers
+	m7_probe "$label" internal/oidctest/probe_m7_gcp.go google.golang.org/protobuf/types/known/wrapperspb "deps_violation=$m/internal/oidctest imports google.golang.org/protobuf" gcpkms-importers
 	printf 'package notify\n\nimport _ "%s"\n' "$m/internal/no/such/package" >"$wt/internal/core/notify/probe_m7.go"
 	bash "$wt/scripts/m7-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 2 ]; then

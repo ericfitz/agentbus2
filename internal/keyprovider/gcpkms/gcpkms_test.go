@@ -97,6 +97,11 @@ type fakeKMS struct {
 	wrongKey crypto.Signer
 	// noSigCRC leaves SignatureCrc32C unset (sigstore dereferences it).
 	noSigCRC bool
+	// answerProject, when set, replaces the project segment of every version
+	// name the fake answers with (Cloud KMS may answer with the project number).
+	answerProject string
+	// rename answers a version with a name of its own (by version number).
+	rename map[int]string
 
 	srv  *grpc.Server
 	addr string
@@ -256,8 +261,16 @@ func (f *fakeKMS) GetCryptoKey(ctx context.Context, req *kmspb.GetCryptoKeyReque
 	return &kmspb.CryptoKey{Name: parent, Purpose: k.purpose}, nil
 }
 
-func versionProto(parent string, id int, v *fver) *kmspb.CryptoKeyVersion {
-	return &kmspb.CryptoKeyVersion{Name: parent + "/cryptoKeyVersions/" + strconv.Itoa(id), State: v.state, Algorithm: v.alg}
+func (f *fakeKMS) versionProto(parent string, id int, v *fver) *kmspb.CryptoKeyVersion {
+	name := parent + "/cryptoKeyVersions/" + strconv.Itoa(id)
+	if f.answerProject != "" {
+		_, rest, _ := strings.Cut(name, "/locations/")
+		name = "projects/" + f.answerProject + "/locations/" + rest
+	}
+	if n, ok := f.rename[id]; ok {
+		name = n
+	}
+	return &kmspb.CryptoKeyVersion{Name: name, State: v.state, Algorithm: v.alg}
 }
 
 func (f *fakeKMS) GetCryptoKeyVersion(ctx context.Context, req *kmspb.GetCryptoKeyVersionRequest) (*kmspb.CryptoKeyVersion, error) {
@@ -273,7 +286,7 @@ func (f *fakeKMS) GetCryptoKeyVersion(ctx context.Context, req *kmspb.GetCryptoK
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return versionProto(parent, id, v), nil
+	return f.versionProto(parent, id, v), nil
 }
 
 // ListCryptoKeyVersions answers two versions a page, newest name first in
@@ -302,7 +315,7 @@ func (f *fakeKMS) ListCryptoKeyVersions(ctx context.Context, req *kmspb.ListCryp
 	end := min(start+2, len(ids))
 	resp := &kmspb.ListCryptoKeyVersionsResponse{TotalSize: int32(len(ids))}
 	for _, id := range ids[start:end] {
-		resp.CryptoKeyVersions = append(resp.CryptoKeyVersions, versionProto(parent, id, k.versions[id]))
+		resp.CryptoKeyVersions = append(resp.CryptoKeyVersions, f.versionProto(parent, id, k.versions[id]))
 	}
 	f.mu.Unlock()
 	if end < len(ids) {
@@ -1240,6 +1253,45 @@ func TestConcurrentSigns(t *testing.T) {
 	for err := range errs {
 		if err != nil {
 			t.Error(err)
+		}
+	}
+}
+
+func TestNextAcceptsTheProjectNumber(t *testing.T) {
+	for _, pinned := range []string{"", "/cryptoKeyVersions/1"} {
+		f := newFakeKMS(t)
+		f.addKey(t)
+		f.answerProject = "123456789012"
+		k := mustNext(t, f.provider(t, keyURI+pinned))
+		// The pin is the requested path plus the number, not the service's name.
+		if k.Ref != keyURI+"/cryptoKeyVersions/1" {
+			t.Fatalf("pin %q: Ref = %q", pinned, k.Ref)
+		}
+		if f.count("GetPublicKey") != 1 {
+			t.Fatalf("GetPublicKey calls = %d", f.count("GetPublicKey"))
+		}
+	}
+}
+
+func TestNextRefusesOddVersionNames(t *testing.T) {
+	other := strings.Replace(keyPath, "/cryptoKeys/", "/cryptoKeys/x", 1)
+	otherRing := strings.Replace(keyPath, "/keyRings/", "/keyRings/x", 1)
+	cases := map[string]string{
+		"non-numeric":        keyPath + "/cryptoKeyVersions/abc",
+		"zero":               keyPath + "/cryptoKeyVersions/0",
+		"non-canonical":      keyPath + "/cryptoKeyVersions/07",
+		"another crypto key": other + "/cryptoKeyVersions/1",
+		"another key ring":   otherRing + "/cryptoKeyVersions/1",
+		"no project":         "locations" + strings.SplitN(keyPath, "/locations", 2)[1] + "/cryptoKeyVersions/1",
+	}
+	for name, answer := range cases {
+		for _, pinned := range []string{"", "/cryptoKeyVersions/1"} {
+			t.Run(name+pinned, func(t *testing.T) {
+				f := newFakeKMS(t)
+				f.addKey(t)
+				f.rename = map[int]string{1: answer}
+				expectRefusal(t, f.provider(t, keyURI+pinned), "")
+			})
 		}
 	}
 }

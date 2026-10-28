@@ -213,14 +213,17 @@ func (p *Provider) Next(ctx context.Context) (keyprovider.Key, error) {
 	if key.GetPurpose() != kmspb.CryptoKey_ASYMMETRIC_SIGN {
 		return keyprovider.Key{}, fmt.Errorf("gcpkms: %s: the key purpose is %s; it must be ASYMMETRIC_SIGN", p.label, key.GetPurpose())
 	}
-	kv, err := p.resolve(ctx, c, fail, secrets)
+	kv, id, err := p.resolve(ctx, c, fail, secrets)
 	if err != nil {
 		return keyprovider.Key{}, err
 	}
+	// The pinned name is the requested path plus the version number, never the
+	// service's spelling of it (which may carry the project number).
+	pinned := p.keyName + "/cryptoKeyVersions/" + strconv.FormatUint(id, 10)
 	if kv.GetAlgorithm() != kmspb.CryptoKeyVersion_EC_SIGN_P256_SHA256 {
 		return keyprovider.Key{}, fmt.Errorf("gcpkms: %s: the version's algorithm is %s; only EC_SIGN_P256_SHA256 (ECDSA P-256, ES256) is supported", p.label, kv.GetAlgorithm())
 	}
-	pk, err := c.GetPublicKey(ctx, &kmspb.GetPublicKeyRequest{Name: kv.GetName()})
+	pk, err := c.GetPublicKey(ctx, &kmspb.GetPublicKeyRequest{Name: pinned})
 	if err != nil {
 		return keyprovider.Key{}, fail("reading the public key", err, secrets)
 	}
@@ -238,29 +241,33 @@ func (p *Provider) Next(ctx context.Context) (keyprovider.Key, error) {
 	if err != nil {
 		return keyprovider.Key{}, fmt.Errorf("gcpkms: %s: parsing the public key: %w", p.label, err)
 	}
-	k, err := keyprovider.ExternalKey(pub, scheme+kv.GetName())
+	k, err := keyprovider.ExternalKey(pub, scheme+pinned)
 	if err != nil {
 		return keyprovider.Key{}, fmt.Errorf("gcpkms: %s: %w", p.label, err)
 	}
 	return k, nil
 }
 
-// resolve returns the version Next pins: the URI's, which must be ENABLED, or
-// the ENABLED one with the highest number.
-func (p *Provider) resolve(ctx context.Context, c *kms.KeyManagementClient, fail func(string, error, []string) error, secrets []string) (*kmspb.CryptoKeyVersion, error) {
+// resolve returns the version Next pins (the URI's, which must be ENABLED, or
+// the ENABLED one with the highest number) and its number. A returned name is
+// checked from its "locations/" segment on: Cloud KMS may spell the project as
+// its number where the request used the ID, and the call is already scoped to
+// the requested key.
+func (p *Provider) resolve(ctx context.Context, c *kms.KeyManagementClient, fail func(string, error, []string) error, secrets []string) (*kmspb.CryptoKeyVersion, uint64, error) {
 	prefix := p.keyName + "/cryptoKeyVersions/"
 	if p.version != "" {
 		kv, err := c.GetCryptoKeyVersion(ctx, &kmspb.GetCryptoKeyVersionRequest{Name: prefix + p.version})
 		if err != nil {
-			return nil, fail("reading the key version", err, secrets)
+			return nil, 0, fail("reading the key version", err, secrets)
 		}
-		if kv.GetName() != prefix+p.version {
-			return nil, fmt.Errorf("gcpkms: %s: Cloud KMS answered for another key version", p.label)
+		id, err := versionID(kv.GetName(), prefix)
+		if err != nil || strconv.FormatUint(id, 10) != p.version {
+			return nil, 0, fmt.Errorf("gcpkms: %s: Cloud KMS answered for another key version", p.label)
 		}
 		if kv.GetState() != kmspb.CryptoKeyVersion_ENABLED {
-			return nil, fmt.Errorf("gcpkms: %s: version %s is %s, not ENABLED", p.label, p.version, kv.GetState())
+			return nil, 0, fmt.Errorf("gcpkms: %s: version %s is %s, not ENABLED", p.label, p.version, kv.GetState())
 		}
-		return kv, nil
+		return kv, id, nil
 	}
 	// The service's own ordering is by name, which sorts "9" after "10": read
 	// every ENABLED version and take the highest number.
@@ -273,29 +280,36 @@ func (p *Provider) resolve(ctx context.Context, c *kms.KeyManagementClient, fail
 			break
 		}
 		if err != nil {
-			return nil, fail("listing the key versions", err, secrets)
+			return nil, 0, fail("listing the key versions", err, secrets)
 		}
 		if kv.GetState() != kmspb.CryptoKeyVersion_ENABLED {
 			continue
 		}
 		id, err := versionID(kv.GetName(), prefix)
 		if err != nil {
-			return nil, fmt.Errorf("gcpkms: %s: %w", p.label, err)
+			return nil, 0, fmt.Errorf("gcpkms: %s: %w", p.label, err)
 		}
 		if best == nil || id > bestID {
 			best, bestID = kv, id
 		}
 	}
 	if best == nil {
-		return nil, fmt.Errorf("gcpkms: %s: the key has no ENABLED version", p.label)
+		return nil, 0, fmt.Errorf("gcpkms: %s: the key has no ENABLED version", p.label)
 	}
-	return best, nil
+	return best, bestID, nil
 }
 
-// versionID is the number at the end of a version name under prefix.
+// tail is name from its "locations/" segment on, without the project.
+func tail(name string) string {
+	_, rest, _ := strings.Cut(name, "/locations/")
+	return rest
+}
+
+// versionID is the number at the end of a version name of the key whose
+// requested name prefix is given; the project segment is not compared.
 func versionID(name, prefix string) (uint64, error) {
-	rest, ok := strings.CutPrefix(name, prefix)
-	if !ok {
+	rest, ok := strings.CutPrefix(tail(name), tail(prefix))
+	if !ok || !strings.HasPrefix(name, "projects/") {
 		return 0, errors.New("the answer is a version of another key")
 	}
 	id, err := strconv.ParseUint(rest, 10, 63)
