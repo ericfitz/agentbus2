@@ -434,10 +434,22 @@ func (c *Core) noteFailure(ctx context.Context, class string) {
 	err := c.Store.Tx(nctx, func(ctx context.Context, tx store.Tx) error {
 		return tx.SetNotice(ctx, store.Notice{Kind: NoticeInspection, Message: msg, SetAt: now.UnixMilli()})
 	})
-	if err != nil {
-		c.inspectMu.Lock()
+	// A success may have run entirely between the state change above and this
+	// commit, found no notice and set the state ok. Re-assert failing now that
+	// the write is done, and bump the generation so any success still in
+	// flight does not undo it; the next success then goes through the clearing
+	// path. This holds whether or not the write succeeded (a clear after a
+	// failed write is harmless).
+	c.inspectMu.Lock()
+	c.inspectState = inspectFailing
+	c.failGen++
+	if err == nil {
+		c.noticeSetAt = now
+	} else {
 		c.noticeSetAt = prev
-		c.inspectMu.Unlock()
+	}
+	c.inspectMu.Unlock()
+	if err != nil {
 		c.Log.Warn("write inspection notice not written", "error", err.Error())
 	}
 }

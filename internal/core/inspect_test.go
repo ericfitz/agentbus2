@@ -670,11 +670,19 @@ func TestInspectClassNormalized(t *testing.T) {
 // hookStore runs after once, after the next Tx returns.
 type hookStore struct {
 	store.Store
-	mu    sync.Mutex
-	after func()
+	mu     sync.Mutex
+	before func()
+	after  func()
 }
 
 func (s *hookStore) Tx(ctx context.Context, fn func(context.Context, store.Tx) error) error {
+	s.mu.Lock()
+	b := s.before
+	s.before = nil
+	s.mu.Unlock()
+	if b != nil {
+		b()
+	}
 	err := s.Store.Tx(ctx, fn)
 	s.mu.Lock()
 	h := s.after
@@ -704,5 +712,33 @@ func TestInspectionFailureDuringSuccessClear(t *testing.T) {
 	c.inspectMu.Unlock()
 	if st == inspectOK {
 		t.Fatal("state is ok while the notice is set")
+	}
+}
+
+// TestInspectionSuccessDuringFailureWrite: a success that runs entirely
+// between a failure's state change and its SetNotice commit must not leave the
+// state ok with the notice set.
+func TestInspectionSuccessDuringFailureWrite(t *testing.T) {
+	in := &stubInspector{reply: replyWith(`{"verdict":"allow"}`)}
+	c, clk, _ := newInspectCore(t, nil, in)
+	hs := &hookStore{Store: c.Store}
+	c.Store = hs
+	ctx := context.Background()
+	hs.before = func() { c.noteSuccess(ctx) } // unknown state, no notice yet: sets ok
+	c.noteFailure(ctx, FailTransport)
+	if _, ok := inspectionNotice(t, c); !ok {
+		t.Fatal("the failure did not set the notice")
+	}
+	c.inspectMu.Lock()
+	st := c.inspectState
+	c.inspectMu.Unlock()
+	if st != inspectFailing {
+		t.Fatalf("state = %v with the notice set, want failing", st)
+	}
+	// The next success, once the notice is old enough, clears it.
+	clk.advance(2 * noticeResetAge)
+	c.noteSuccess(ctx)
+	if _, ok := inspectionNotice(t, c); ok {
+		t.Fatal("the next success did not clear the notice")
 	}
 }
