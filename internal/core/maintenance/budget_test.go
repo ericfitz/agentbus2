@@ -449,3 +449,73 @@ func TestCapacityTexts(t *testing.T) {
 		t.Error("zero bytes must give ratio 0, not a division by zero")
 	}
 }
+
+// Idle task lists honor the allowance: it ends after the first of several
+// lists, so one tick deletes one list, and the next tick the next.
+func TestEvictionIdleListsHonorAllowance(t *testing.T) {
+	f := newBfx(t, nil)
+	f.svc.BudgetOverride = 4096
+	f.measure(4097) // allowance 1025
+	for _, name := range []string{"a", "b", "c"} {
+		ch := f.channel(name, store.KindTasks, 200)
+		f.item(ch, int64(len(name))+int64(name[0]), 2048, 169*hour)
+	}
+	for i, want := range []int{1, 2, 3} {
+		if n := f.run("budget eviction"); n != 1 {
+			t.Fatalf("run %d deleted %d lists, want 1", i+1, n)
+		}
+		if got := 3 - f.count("channels", "kind = 'tasks'"); got != want {
+			t.Fatalf("run %d: %d lists gone, want %d", i+1, got, want)
+		}
+	}
+}
+
+// Definition of Done D: a sweep stopped after its first chunk keeps that
+// chunk, with its evicted_before_seq, and a later run continues.
+func TestEvictionStoppedSweepKeepsChunks(t *testing.T) {
+	f := newBfx(t, nil)
+	f.svc.BudgetOverride = 4096
+	dev := f.channel("dev", store.KindOrdinary, 10)
+	var seqs []int64
+	for range 2500 {
+		seqs = append(seqs, f.msg(dev, 10, 2*hour))
+	}
+	calls := 0
+	f.svc.usage = func(context.Context) (store.Usage, error) {
+		calls++
+		// Reads: the start, then one before each chunk. The five earlier steps
+		// find nothing (one read each), so read 7 precedes the first ordinary
+		// chunk, during which the deadline passes.
+		if calls == 7 {
+			f.clk.advance(time.Minute)
+		}
+		return store.Usage{Bytes: 1 << 30, DiskBytes: 1 << 30}, nil
+	}
+	ctx := context.WithValue(context.Background(), deadlineKey{}, f.now()+1000)
+	n, err := f.svc.evictToBudget(ctx, f.now())
+	if err != nil || n != cleanupChunk {
+		t.Fatalf("stopped sweep deleted %d, %v; want exactly one chunk", n, err)
+	}
+	evicted := func() int64 {
+		var ch store.Channel
+		f.mustTx(func(ctx context.Context, tx store.Tx) error {
+			var e error
+			ch, e = tx.Channel(ctx, dev.ID)
+			return e
+		})
+		return ch.EvictedBeforeSeq
+	}
+	if got, want := f.count("messages", ""), 1500; got != want {
+		t.Fatalf("%d messages remain, want %d", got, want)
+	}
+	if got, want := evicted(), seqs[cleanupChunk-1]+1; got != want {
+		t.Fatalf("EvictedBeforeSeq = %d, want %d", got, want)
+	}
+	f.measure(1 << 30)
+	if n := f.run("budget eviction"); n != 1500 {
+		t.Fatalf("later run deleted %d, want 1500", n)
+	}
+	if got, want := evicted(), seqs[len(seqs)-1]+1; got != want {
+		t.Fatalf("EvictedBeforeSeq = %d, want %d", got, want)
+	}
+}

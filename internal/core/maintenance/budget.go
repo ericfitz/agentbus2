@@ -103,6 +103,7 @@ func (s Service) evictToBudget(ctx context.Context, now int64) (int, error) {
 	if u0.Bytes > budget {
 		allowance := u0.Bytes - target
 		var deleted int64
+		remaining := func() int64 { return allowance - deleted }
 		cut := core.EvictionCutoffs(s.Cfg, now)
 		steps := []sweepStep{
 			{"orphaned bridge messages", s.orphanChunk},
@@ -110,16 +111,18 @@ func (s Service) evictToBudget(ctx context.Context, now int64) (int, error) {
 				return s.expiredTombstoneChunk(ctx, cut.TombstoneBefore)
 			}},
 			{"expired enrollment tokens", func(ctx context.Context) (int, int64, error) { return s.expiredTokenChunk(ctx, now) }},
-			{"idle task lists", func(ctx context.Context) (int, int64, error) { return s.idleTaskChannelChunk(ctx, cut.IdleBefore) }},
+			{"idle task lists", func(ctx context.Context) (int, int64, error) {
+				return s.idleTaskChannelChunk(ctx, cut.IdleBefore, remaining())
+			}},
 			{"idle memories", func(ctx context.Context) (int, int64, error) { return s.idleMemoryChunk(ctx, cut.IdleBefore) }},
 			{"ordinary messages", func(ctx context.Context) (int, int64, error) {
 				return s.deleteOrdinaryChunk(ctx, cut.MessageBefore)
 			}},
 		}
 		perStep := make([]any, 0, 2*len(steps))
-	sweep:
 		for _, st := range steps {
 			stepRows := 0
+			reached := false
 			for deleted < allowance && !s.pastDeadline(ctx) {
 				if !u0.Logical {
 					if err := s.Store.Reclaim(ctx); err != nil {
@@ -130,7 +133,8 @@ func (s Service) evictToBudget(ctx context.Context, now int64) (int, error) {
 						return total, err
 					}
 					if u.Bytes <= target {
-						break sweep
+						reached = true
+						break
 					}
 				}
 				rows, bytes, err := st.run(ctx)
@@ -145,6 +149,9 @@ func (s Service) evictToBudget(ctx context.Context, now int64) (int, error) {
 				}
 			}
 			perStep = append(perStep, st.name, stepRows)
+			if reached {
+				break
+			}
 		}
 		if final, err = s.measure(ctx); err != nil {
 			return total, err
@@ -232,7 +239,9 @@ func (s Service) expiredTokenChunk(ctx context.Context, now int64) (n int, bytes
 }
 
 // idleTaskChannelChunk deletes up to idleTaskChunk task lists with no activity
-// since idleBefore, each in a transaction of its own: ChannelBytes, then the
+// since idleBefore, and stops once the counted bytes reach remaining (the
+// sweep's allowance left; each list is atomic, so the overshoot is at most one
+// list), each in a transaction of its own: ChannelBytes, then the
 // conditional delete, which re-checks idleness, so a write landing after the
 // listing keeps its list. A false result counts nothing; ErrNotFound (a list
 // deleted since the listing) counts nothing and the chunk goes on.
@@ -244,7 +253,7 @@ func (s Service) expiredTokenChunk(ctx context.Context, now int64) (n int, bytes
 // Cost: the listing evaluates each task list's latest activity, which scans
 // all of its messages, so one listing costs O(messages of all task lists).
 // It runs once per chunk and only above the budget, never on the age path.
-func (s Service) idleTaskChannelChunk(ctx context.Context, idleBefore int64) (n int, bytes int64, err error) {
+func (s Service) idleTaskChannelChunk(ctx context.Context, idleBefore, remaining int64) (n int, bytes int64, err error) {
 	var cands []store.Channel
 	if err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		var e error
@@ -283,6 +292,9 @@ func (s Service) idleTaskChannelChunk(ctx context.Context, idleBefore int64) (n 
 			n++
 			bytes += b
 			s.Log.Info("idle task list evicted", "channel", ch.Name)
+			if bytes >= remaining {
+				break
+			}
 		}
 	}
 	return n, bytes, nil

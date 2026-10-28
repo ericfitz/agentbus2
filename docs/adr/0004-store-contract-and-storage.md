@@ -627,9 +627,10 @@ agent choices follow the list.
 - `evictable` is always true (neither engine allows a zero budget); the member
   stays and means a budget is enforced.
 - Chunk sizes: ordinary messages, tombstones, tokens and bridge rows 1000 per
-  transaction; 16 idle task lists, each in a transaction of its own (a list
-  cascades to its tasks); 100 idle memories. The allowance is overshot by at
-  most one chunk.
+  transaction; idle task lists one transaction each (a list cascades to its
+  tasks; the chunk stops once the counted bytes reach the allowance left, so
+  the overshoot is at most one list); 100 idle memories. The allowance is
+  overshot by at most one chunk.
 
 ### What this supersedes
 
