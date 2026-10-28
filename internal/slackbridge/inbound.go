@@ -392,7 +392,7 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 			in.ReplyTo = &replyTo
 		}
 		var gone bool
-		_, err := (messaging.Service{Core: s.core}).SendWith(ctx, identity, in, func(ctx context.Context, tx store.Tx, seq int64) error {
+		_, err := (messaging.Service{Core: s.core}).SendWith(ctx, identity, in, messaging.SendOptions{Hook: func(ctx context.Context, tx store.Tx, seq int64) error {
 			gone = false
 			bind, err := s.trust(ctx, tx, b, identity, su)
 			if errors.Is(err, errBridgeGone) {
@@ -423,7 +423,7 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 				root = m.TS
 			}
 			return tx.PutBridgeMessage(ctx, store.BridgeMessage{BridgeID: b.ID, Seq: seq, SlackTS: m.TS, RootTS: root, CreatedAt: s.core.NowMs()})
-		})
+		}})
 		if gone {
 			return errBridgeGone
 		}

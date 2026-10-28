@@ -148,11 +148,12 @@ type harness struct {
 
 // harnessOptions selects a harness's variants.
 type harnessOptions struct {
-	cfg      *core.Config  // nil: core.Defaults()
-	polling  time.Duration // >0: notify.NewPolling(polling)
-	embedder bool          // a fakeEmbedder, with cfg.EmbeddingModel "fake"
-	fault    *pgconn.PgError
-	logger   *slog.Logger // nil: the core discards its log
+	cfg       *core.Config  // nil: core.Defaults()
+	polling   time.Duration // >0: notify.NewPolling(polling)
+	embedder  bool          // a fakeEmbedder, with cfg.EmbeddingModel "fake"
+	fault     *pgconn.PgError
+	logger    *slog.Logger   // nil: the core discards its log
+	inspector core.Inspector // nil: no write inspection
 }
 
 // newHarness opens a fresh database and builds a Core over it, with the
@@ -183,7 +184,7 @@ func (h *harness) build(s ab2store.Store, o harnessOptions) {
 	} else {
 		h.notifier = notify.NewMemory()
 	}
-	opts := core.Options{Now: h.clock.Now, Notifier: h.notifier, Logger: o.logger}
+	opts := core.Options{Now: h.clock.Now, Notifier: h.notifier, Logger: o.logger, Inspector: o.inspector}
 	if o.embedder {
 		h.embedder = &fakeEmbedder{}
 		h.cfg.EmbeddingModel = h.embedder.Model()

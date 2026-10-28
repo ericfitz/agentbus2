@@ -100,6 +100,13 @@ func (c *Core) Append(ctx context.Context, tx store.Tx, in AppendInput) (int64, 
 	return seq, &id, nil
 }
 
+// CheckReplyTo applies the reply_to rules without keeping the thread root, so
+// a write path can refuse a bad reply_to before inspection.
+func (c *Core) CheckReplyTo(ctx context.Context, tx store.Tx, channelID, parent int64) error {
+	_, err := c.resolveReplyTo(ctx, tx, channelID, parent)
+	return err
+}
+
 // resolveReplyTo applies the reply_to rules, in order: the parent exists
 // (not_found), it is in channelID (validation; on memory and task channels
 // this is the whole memory-record rule), and on a channel whose bridge is live

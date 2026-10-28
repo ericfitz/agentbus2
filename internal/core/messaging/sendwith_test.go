@@ -56,7 +56,7 @@ func TestSendWithHookRollsBack(t *testing.T) {
 	before := maxSeq(t, st)
 
 	boom := errors.New("hook failed")
-	_, err := svc.SendWith(ctx, "pat", bus.SendInput{Channel: "chat", Content: "hi"}, func(context.Context, store.Tx, int64) error { return boom })
+	_, err := svc.SendWith(ctx, "pat", bus.SendInput{Channel: "chat", Content: "hi"}, SendOptions{Hook: func(context.Context, store.Tx, int64) error { return boom }})
 	if err == nil {
 		t.Fatal("SendWith with a failing hook succeeded")
 	}
@@ -65,9 +65,9 @@ func TestSendWithHookRollsBack(t *testing.T) {
 	}
 
 	// A *bus.Error from the hook keeps its code.
-	_, err = svc.SendWith(ctx, "pat", bus.SendInput{Channel: "chat", Content: "hi"}, func(context.Context, store.Tx, int64) error {
+	_, err = svc.SendWith(ctx, "pat", bus.SendInput{Channel: "chat", Content: "hi"}, SendOptions{Hook: func(context.Context, store.Tx, int64) error {
 		return core.E(bus.CodeConflict, "nope")
-	})
+	}})
 	if bus.CodeOf(err) != bus.CodeConflict {
 		t.Fatalf("hook conflict = %v", err)
 	}
@@ -77,14 +77,14 @@ func TestSendWithHookRollsBack(t *testing.T) {
 
 	// A passing hook sees the seq of the appended message, in its transaction.
 	var seen int64
-	res, err := svc.SendWith(ctx, "pat", bus.SendInput{Channel: "chat", Content: "hi"}, func(ctx context.Context, tx store.Tx, seq int64) error {
+	res, err := svc.SendWith(ctx, "pat", bus.SendInput{Channel: "chat", Content: "hi"}, SendOptions{Hook: func(ctx context.Context, tx store.Tx, seq int64) error {
 		seen = seq
 		m, err := tx.Message(ctx, seq)
 		if err != nil || m.Content != "hi" {
 			return errors.New("the appended message is not visible to the hook")
 		}
 		return nil
-	})
+	}})
 	if err != nil || res.Seq != seen || res.Seq != before+1 {
 		t.Fatalf("SendWith = %+v, %v (hook saw %d, before %d)", res, err, seen, before)
 	}
@@ -93,5 +93,18 @@ func TestSendWithHookRollsBack(t *testing.T) {
 	res2, err := svc.Send(ctx, "pat", bus.SendInput{Channel: "chat", Content: "again"})
 	if err != nil || res2.Seq != res.Seq+1 {
 		t.Fatalf("Send = %+v, %v", res2, err)
+	}
+}
+
+func TestSendWithUnknownSource(t *testing.T) {
+	ctx := context.Background()
+	svc, st := newSendSvc(t)
+	before := maxSeq(t, st)
+	_, err := svc.SendWith(ctx, "pat", bus.SendInput{Channel: "chat", Content: "hi"}, SendOptions{Source: "carrier-pigeon"})
+	if bus.CodeOf(err) != bus.CodeInternal {
+		t.Fatalf("unknown source = %v, want internal", err)
+	}
+	if got := maxSeq(t, st); got != before {
+		t.Fatalf("MaxSeq = %d after an unknown source, want %d", got, before)
 	}
 }
