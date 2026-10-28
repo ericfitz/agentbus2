@@ -4,6 +4,7 @@ package cmd
 
 import (
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -47,5 +48,20 @@ func TestAzurekmsBackendIsRegistered(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), want) {
 			t.Errorf("%s: err %v, want %q", scheme, err, want)
 		}
+	}
+}
+
+// An azurekms URI with AZURE_TOKEN_CREDENTIALS unset is a configuration error
+// for the start and for rotate: exit 2.
+func TestAzurekmsUnsetCredentialSelectorExits2(t *testing.T) {
+	t.Setenv("AZURE_TOKEN_CREDENTIALS", "")
+	const uri = "signing_key_uri=azurekms://kv-test.vault.azure.net/signing-key"
+	db := filepath.Join(t.TempDir(), "ab2.db")
+	if code, _, stderr := runOnce(nil, "-listen", "127.0.0.1:0", "-sqlite", db, "-set", uri); code != 2 || !strings.Contains(stderr, "AZURE_TOKEN_CREDENTIALS") {
+		t.Fatalf("start: exit %d, stderr %q; want 2", code, stderr)
+	}
+	e := newAdminEnv(t)
+	if code, _, errOut := e.run("-set", uri, "signing-key", "rotate"); code != 2 || !strings.Contains(errOut, "AZURE_TOKEN_CREDENTIALS") {
+		t.Fatalf("rotate: exit %d, stderr %q; want 2", code, errOut)
 	}
 }

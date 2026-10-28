@@ -121,15 +121,25 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 		return 1
 	}
 	env := hostEnv{
-		Svc:          identities.Service{Core: c},
-		Keys:         signingkeys.Service{Core: c, Settings: signingSettings(cfg)},
-		OpenProvider: func() (keyprovider.Provider, error) { return openKeyProvider(cfg) },
+		Svc:  identities.Service{Core: c},
+		Keys: signingkeys.Service{Core: c, Settings: signingSettings(cfg)},
+		OpenProvider: func() (keyprovider.Provider, error) {
+			p, err := openKeyProvider(cfg)
+			if err != nil && !errors.Is(err, keyprovider.ErrUnavailable) {
+				return nil, &configError{err} // as at the start: a configuration error is exit 2
+			}
+			return p, err
+		},
 	}
 	for _, is := range cfg.Issuers {
 		env.Issuers = append(env.Issuers, is.Name)
 	}
 	if err := run(ctx, env, stdout); err != nil {
 		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin %s: %v\n", sub, err)
+		var ce *configError
+		if errors.As(err, &ce) {
+			return 2
+		}
 		return 1
 	}
 	return 0

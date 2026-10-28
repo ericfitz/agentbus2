@@ -172,3 +172,34 @@ func setBackend(t *testing.T, scheme string, open func(string) (keyprovider.Prov
 		}
 	})
 }
+
+// Rotate opens the provider like the start does: a configuration error is exit
+// 2, a provider that reports the service down stays exit 1.
+func TestAdminRotateExitCodesForProviderFailures(t *testing.T) {
+	rotate := func(t *testing.T, uri string) (int, string) {
+		t.Helper()
+		e := newAdminEnv(t)
+		code, _, errOut := e.run("-set", "signing_key_uri="+uri, "signing-key", "rotate")
+		return code, errOut
+	}
+	t.Run("a backend not in this build", func(t *testing.T) {
+		setBackend(t, "awskms", nil)
+		if code, errOut := rotate(t, "awskms://alias/agentbus2"); code != 2 || !strings.Contains(errOut, "not in this build") {
+			t.Fatalf("exit %d, stderr %q; want 2", code, errOut)
+		}
+	})
+	t.Run("a malformed URI", func(t *testing.T) {
+		setBackend(t, "awskms", func(string) (keyprovider.Provider, error) { return nil, errors.New("bad key URI") })
+		if code, errOut := rotate(t, "awskms://alias/agentbus2"); code != 2 || !strings.Contains(errOut, "bad key URI") {
+			t.Fatalf("exit %d, stderr %q; want 2", code, errOut)
+		}
+	})
+	t.Run("the service is unreachable", func(t *testing.T) {
+		setBackend(t, "awskms", func(string) (keyprovider.Provider, error) {
+			return nil, fmt.Errorf("dial: %w", keyprovider.ErrUnavailable)
+		})
+		if code, errOut := rotate(t, "awskms://alias/agentbus2"); code != 1 {
+			t.Fatalf("exit %d, stderr %q; want 1", code, errOut)
+		}
+	})
+}
