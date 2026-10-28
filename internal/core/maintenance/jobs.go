@@ -145,9 +145,13 @@ func (s Service) tombstonePurge(ctx context.Context, now int64) (int, error) {
 	return s.loopChunks(ctx, func() (n int, err error) {
 		err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 			n = 0
-			seqs, err := tx.ExpiredTombstones(ctx, before, cleanupChunk)
-			if err != nil || len(seqs) == 0 {
+			refs, err := tx.ExpiredTombstones(ctx, before, cleanupChunk)
+			if err != nil || len(refs) == 0 {
 				return err
+			}
+			seqs := make([]int64, len(refs))
+			for i, r := range refs {
+				seqs[i] = r.Seq
 			}
 			if err := tx.DeleteMessages(ctx, seqs); err != nil {
 				return err

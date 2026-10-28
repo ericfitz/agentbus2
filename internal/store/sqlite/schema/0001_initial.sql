@@ -45,7 +45,9 @@ CREATE TABLE channels (
   created_seq INTEGER NOT NULL,
   evicted_before_seq INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
-  scope TEXT NULL REFERENCES scopes(name)
+  last_read_at INTEGER NOT NULL DEFAULT 0,
+  scope TEXT NULL REFERENCES scopes(name),
+  size_bytes INTEGER GENERATED ALWAYS AS (32 + length(CAST(name AS BLOB)) + length(CAST(kind AS BLOB)) + length(CAST(creator AS BLOB)) + coalesce(length(CAST(scope AS BLOB)), 0)) VIRTUAL
 );
 CREATE TABLE channel_acl (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -54,6 +56,7 @@ CREATE TABLE channel_acl (
   can_read INTEGER NOT NULL CHECK (can_read IN (0, 1)),
   can_write INTEGER NOT NULL CHECK (can_write IN (0, 1)),
   can_admin INTEGER NOT NULL CHECK (can_admin IN (0, 1)),
+  size_bytes INTEGER GENERATED ALWAYS AS (32 + length(CAST(identity AS BLOB))) VIRTUAL,
   CHECK (can_read = 1 OR can_write = 1 OR can_admin = 1)
 );
 CREATE INDEX channels_scope ON channels (scope);
@@ -64,6 +67,7 @@ CREATE TABLE subscriptions (
   channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
   acked_seq INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL,
+  size_bytes INTEGER GENERATED ALWAYS AS (32 + length(CAST(identity AS BLOB))) VIRTUAL,
   PRIMARY KEY (identity, channel_id)
 );
 CREATE TABLE tag_subscriptions (
@@ -102,6 +106,7 @@ CREATE TABLE session_cursors (
   channel_id INTEGER NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
   cursor_seq INTEGER NOT NULL,
   pending_end_seq INTEGER NOT NULL DEFAULT 0,
+  size_bytes INTEGER GENERATED ALWAYS AS (32 + length(CAST(session_id AS BLOB))) VIRTUAL,
   PRIMARY KEY (session_id, channel_id)
 );
 CREATE TABLE messages (
@@ -119,7 +124,8 @@ CREATE TABLE messages (
   revision INTEGER NULL,
   tombstone INTEGER NOT NULL DEFAULT 0 CHECK (tombstone IN (0, 1)),
   tombstone_at INTEGER NULL,
-  sender_kind TEXT NOT NULL DEFAULT 'agent' CHECK (sender_kind IN ('agent', 'human'))
+  sender_kind TEXT NOT NULL DEFAULT 'agent' CHECK (sender_kind IN ('agent', 'human')),
+  size_bytes INTEGER GENERATED ALWAYS AS (32 + length(CAST(sender AS BLOB)) + length(CAST(session_id AS BLOB)) + length(CAST(type AS BLOB)) + length(CAST(subject AS BLOB)) + length(CAST(content AS BLOB)) + coalesce(length(CAST(metadata AS BLOB)), 0) + length(CAST(sender_kind AS BLOB))) VIRTUAL
 );
 CREATE INDEX messages_channel_seq ON messages(channel_id, seq);
 CREATE INDEX messages_memory ON messages(memory_id, tombstone);
@@ -135,22 +141,25 @@ END;
 CREATE TABLE message_tags (
   seq INTEGER NOT NULL REFERENCES messages(seq) ON DELETE CASCADE,
   tag TEXT NOT NULL,
+  size_bytes INTEGER GENERATED ALWAYS AS (32 + length(CAST(tag AS BLOB))) VIRTUAL,
   PRIMARY KEY (seq, tag)
 );
 CREATE INDEX message_tags_tag_seq ON message_tags(tag, seq);
 CREATE TABLE embeddings (
   seq INTEGER PRIMARY KEY REFERENCES messages(seq) ON DELETE CASCADE,
   model TEXT NOT NULL,
-  vector BLOB NOT NULL
+  vector BLOB NOT NULL,
+  size_bytes INTEGER GENERATED ALWAYS AS (32 + length(CAST(model AS BLOB)) + length(CAST(vector AS BLOB))) VIRTUAL
 );
 CREATE TABLE embed_failures (
   seq INTEGER NOT NULL REFERENCES messages(seq) ON DELETE CASCADE,
   model TEXT NOT NULL,
   error TEXT NOT NULL,
   failed_at INTEGER NOT NULL,
+  size_bytes INTEGER GENERATED ALWAYS AS (32 + length(CAST(model AS BLOB)) + length(CAST(error AS BLOB))) VIRTUAL,
   PRIMARY KEY (seq, model)
 );
-CREATE TABLE memory_access (memory_id INTEGER PRIMARY KEY, accessed_at INTEGER NOT NULL);
+CREATE TABLE memory_access (memory_id INTEGER PRIMARY KEY, accessed_at INTEGER NOT NULL, size_bytes INTEGER GENERATED ALWAYS AS (32) VIRTUAL);
 CREATE TABLE receipts (
   identity TEXT NOT NULL,
   key TEXT NOT NULL,
@@ -166,7 +175,8 @@ CREATE TABLE enrollment_tokens (
   identity TEXT NOT NULL DEFAULT '',
   expires_at INTEGER NOT NULL,
   uses_left INTEGER NOT NULL CHECK (uses_left >= 0),
-  created_at INTEGER NOT NULL
+  created_at INTEGER NOT NULL,
+  size_bytes INTEGER GENERATED ALWAYS AS (32 + length(CAST(id AS BLOB)) + length(CAST(token_hash AS BLOB)) + length(CAST(identity AS BLOB))) VIRTUAL
 );
 CREATE TABLE signing_keys (
   kid TEXT PRIMARY KEY,
@@ -235,6 +245,7 @@ CREATE TABLE bridge_messages (
   slack_ts TEXT NOT NULL,
   root_ts TEXT NOT NULL,
   created_at INTEGER NOT NULL,
+  size_bytes INTEGER GENERATED ALWAYS AS (32 + length(CAST(slack_ts AS BLOB)) + length(CAST(root_ts AS BLOB))) VIRTUAL,
   PRIMARY KEY (bridge_id, seq),
   UNIQUE (bridge_id, slack_ts)
 );

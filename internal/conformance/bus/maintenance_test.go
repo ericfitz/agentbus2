@@ -140,7 +140,7 @@ func TestMaintenanceTombstonePurge(t *testing.T) {
 		if n := h.runJob("tombstone purge"); n != 1 {
 			t.Fatalf("purged %d, want 1", n)
 		}
-		var left []int64
+		var left []ab2store.SeqChannel
 		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
 			var err error
 			left, err = tx.ExpiredTombstones(ctx, h.core.NowMs()+1, 10)

@@ -36,8 +36,14 @@ type NewMessage struct {
 	Tags                   []string
 }
 
-// SeqChannel names a message by seq and channel.
-type SeqChannel struct{ Seq, ChannelID int64 }
+// RowOverheadBytes is the fixed per-row cost added to the counted columns of
+// every size_bytes formula (the eviction budget's measure of a row).
+const RowOverheadBytes = 32
+
+// SeqChannel names a message by seq and channel. Bytes is what deleting the
+// message frees: its row plus its message_tags, embeddings and embed_failures
+// rows (the size_bytes sums).
+type SeqChannel struct{ Seq, ChannelID, Bytes int64 }
 
 // Embedding is a stored vector for a live memory (Decision 51).
 type Embedding struct {
@@ -98,10 +104,12 @@ type Messages interface {
 	// TombstoneMessage returns false when already tombstoned or missing.
 	TombstoneMessage(ctx context.Context, seq, at int64) (bool, error)
 	DeleteMessages(ctx context.Context, seqs []int64) error
-	// ExpiredTombstones: tombstone and tombstone_at < before.
-	ExpiredTombstones(ctx context.Context, before int64, limit int) ([]int64, error)
+	// ExpiredTombstones: tombstone and tombstone_at < before, ascending seq,
+	// with Bytes as OrdinaryMessagesBefore.
+	ExpiredTombstones(ctx context.Context, before int64, limit int) ([]SeqChannel, error)
 	// OrdinaryMessagesBefore: memory_id IS NULL and created_at < createdBefore,
-	// ascending seq (v1 deleteOrdinaryChunk).
+	// ascending seq (v1 deleteOrdinaryChunk), with Bytes (the row plus its
+	// tag, embedding and embed-failure rows).
 	OrdinaryMessagesBefore(ctx context.Context, createdBefore int64, limit int) ([]SeqChannel, error)
 	// UnembeddedMemories: v1 unembeddedFrom: live memories on channels of kind
 	// <> 'tasks' with no embedding and no failure for model. ErrInvalid on a

@@ -56,6 +56,7 @@ type Tx interface {
 	Messages
 	Memories
 	Tasks
+	Eviction
 	EnrollmentTokens
 	Scopes
 	Bridges

@@ -27,13 +27,14 @@ type channelRow struct {
 	CreatedSeq       int64  `db:"created_seq"`
 	EvictedBeforeSeq int64  `db:"evicted_before_seq"`
 	CreatedAt        int64  `db:"created_at"`
+	LastReadAt       int64  `db:"last_read_at"`
 }
 
-const channelCols = "id, name, kind, creator, COALESCE(scope, '') AS scope, created_seq, evicted_before_seq, created_at"
+const channelCols = "id, name, kind, creator, COALESCE(scope, '') AS scope, created_seq, evicted_before_seq, created_at, last_read_at"
 
 func (r channelRow) channel() store.Channel {
 	return store.Channel{ID: r.ID, Name: r.Name, Kind: store.Kind(r.Kind), Creator: r.Creator, Scope: r.Scope,
-		CreatedSeq: r.CreatedSeq, EvictedBeforeSeq: r.EvictedBeforeSeq, CreatedAt: r.CreatedAt}
+		CreatedSeq: r.CreatedSeq, EvictedBeforeSeq: r.EvictedBeforeSeq, CreatedAt: r.CreatedAt, LastReadAt: r.LastReadAt}
 }
 
 func channelsOf(rows []channelRow) []store.Channel {
@@ -225,6 +226,12 @@ func (t *tx) DeleteChannelIfEmpty(ctx context.Context, id, createdBefore, resuma
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
+}
+
+// TouchChannelRead: see store.Channels.
+func (t *tx) TouchChannelRead(ctx context.Context, id, at int64) error {
+	_, err := t.execW(ctx, "UPDATE channels SET last_read_at = ? WHERE id = ? AND last_read_at < ?", at, id, at)
+	return err
 }
 
 // SetEvictedBefore sets the mark to max(current, seq) with a CASE (no scalar

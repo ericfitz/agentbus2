@@ -20,6 +20,7 @@ type Channel struct {
 	Creator                                 string
 	Scope                                   string // "" when unscoped
 	CreatedSeq, EvictedBeforeSeq, CreatedAt int64
+	LastReadAt                              int64 // the latest TouchChannelRead; 0 when never read
 }
 
 // ChannelCreate is the input of CreateChannel. ACL nil means "without an
@@ -68,6 +69,9 @@ type Channels interface {
 	// it did. A channel that is gone, not ordinary, too young, or no longer
 	// empty is left alone and is not an error. Cascades like DeleteChannel.
 	DeleteChannelIfEmpty(ctx context.Context, id, createdBefore, resumableAfter int64) (bool, error)
+	// TouchChannelRead sets last_read_at to at when at is greater; a channel
+	// that is gone or already read later changes nothing and is not an error.
+	TouchChannelRead(ctx context.Context, id, at int64) error
 	// SetEvictedBefore sets the mark to max(current, seq).
 	SetEvictedBefore(ctx context.Context, id int64, seq int64) error
 	ACL(ctx context.Context, id int64) ([]ACLEntry, error) // insertion order

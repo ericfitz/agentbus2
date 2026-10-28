@@ -45,7 +45,9 @@ CREATE TABLE channels (
   created_seq BIGINT NOT NULL,
   evicted_before_seq BIGINT NOT NULL DEFAULT 0,
   created_at BIGINT NOT NULL,
-  scope TEXT NULL REFERENCES scopes(name)
+  last_read_at BIGINT NOT NULL DEFAULT 0,
+  scope TEXT NULL REFERENCES scopes(name),
+  size_bytes BIGINT GENERATED ALWAYS AS (32 + octet_length(name) + octet_length(kind) + octet_length(creator) + coalesce(octet_length(scope), 0)) STORED
 );
 CREATE TABLE channel_acl (
   id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -54,6 +56,7 @@ CREATE TABLE channel_acl (
   can_read BOOLEAN NOT NULL,
   can_write BOOLEAN NOT NULL,
   can_admin BOOLEAN NOT NULL,
+  size_bytes BIGINT GENERATED ALWAYS AS (32 + octet_length(identity)) STORED,
   CHECK (can_read OR can_write OR can_admin)
 );
 CREATE INDEX channels_scope ON channels (scope);
@@ -64,6 +67,7 @@ CREATE TABLE subscriptions (
   channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
   acked_seq BIGINT NOT NULL DEFAULT 0,
   created_at BIGINT NOT NULL,
+  size_bytes BIGINT GENERATED ALWAYS AS (32 + octet_length(identity)) STORED,
   PRIMARY KEY (identity, channel_id)
 );
 CREATE TABLE tag_subscriptions (
@@ -102,6 +106,7 @@ CREATE TABLE session_cursors (
   channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
   cursor_seq BIGINT NOT NULL,
   pending_end_seq BIGINT NOT NULL DEFAULT 0,
+  size_bytes BIGINT GENERATED ALWAYS AS (32 + octet_length(session_id)) STORED,
   PRIMARY KEY (session_id, channel_id)
 );
 CREATE TABLE messages (
@@ -121,33 +126,39 @@ CREATE TABLE messages (
   tombstone_at BIGINT NULL,
   fts_subject tsvector GENERATED ALWAYS AS (to_tsvector('simple', regexp_replace(subject, '[^[:alnum:]]+', ' ', 'g'))) STORED,
   fts_content tsvector GENERATED ALWAYS AS (to_tsvector('simple', regexp_replace(content, '[^[:alnum:]]+', ' ', 'g'))) STORED,
-  sender_kind TEXT NOT NULL DEFAULT 'agent' CHECK (sender_kind IN ('agent', 'human'))
+  sender_kind TEXT NOT NULL DEFAULT 'agent' CHECK (sender_kind IN ('agent', 'human')),
+  size_bytes BIGINT GENERATED ALWAYS AS (32 + octet_length(sender) + octet_length(session_id) + octet_length(type) + octet_length(subject) + octet_length(content) + coalesce(octet_length(metadata), 0) + octet_length(sender_kind)) STORED
 );
 CREATE INDEX messages_channel_seq ON messages(channel_id, seq);
 CREATE INDEX messages_memory ON messages(memory_id, tombstone);
 CREATE INDEX messages_tombstone_at ON messages(tombstone_at);
 CREATE INDEX messages_created_at ON messages(created_at);
+-- size_bytes is STORED because Postgres 18 makes an unqualified generated column VIRTUAL, which cannot be indexed.
+CREATE INDEX messages_size ON messages (seq) INCLUDE (size_bytes);
 CREATE INDEX messages_fts_subject ON messages USING GIN (fts_subject);
 CREATE INDEX messages_fts_content ON messages USING GIN (fts_content);
 CREATE TABLE message_tags (
   seq BIGINT NOT NULL REFERENCES messages(seq) ON DELETE CASCADE,
   tag TEXT COLLATE "C" NOT NULL,
+  size_bytes BIGINT GENERATED ALWAYS AS (32 + octet_length(tag)) STORED,
   PRIMARY KEY (seq, tag)
 );
 CREATE INDEX message_tags_tag_seq ON message_tags(tag, seq);
 CREATE TABLE embeddings (
   seq BIGINT PRIMARY KEY REFERENCES messages(seq) ON DELETE CASCADE,
   model TEXT NOT NULL,
-  vector BYTEA NOT NULL
+  vector BYTEA NOT NULL,
+  size_bytes BIGINT GENERATED ALWAYS AS (32 + octet_length(model) + octet_length(vector)) STORED
 );
 CREATE TABLE embed_failures (
   seq BIGINT NOT NULL REFERENCES messages(seq) ON DELETE CASCADE,
   model TEXT NOT NULL,
   error TEXT NOT NULL,
   failed_at BIGINT NOT NULL,
+  size_bytes BIGINT GENERATED ALWAYS AS (32 + octet_length(model) + octet_length(error)) STORED,
   PRIMARY KEY (seq, model)
 );
-CREATE TABLE memory_access (memory_id BIGINT PRIMARY KEY, accessed_at BIGINT NOT NULL);
+CREATE TABLE memory_access (memory_id BIGINT PRIMARY KEY, accessed_at BIGINT NOT NULL, size_bytes BIGINT GENERATED ALWAYS AS (32) STORED);
 CREATE TABLE receipts (
   identity TEXT NOT NULL,
   key TEXT NOT NULL,
@@ -163,7 +174,8 @@ CREATE TABLE enrollment_tokens (
   identity TEXT NOT NULL DEFAULT '',
   expires_at BIGINT NOT NULL,
   uses_left INTEGER NOT NULL CHECK (uses_left >= 0),
-  created_at BIGINT NOT NULL
+  created_at BIGINT NOT NULL,
+  size_bytes BIGINT GENERATED ALWAYS AS (32 + octet_length(id) + octet_length(token_hash) + octet_length(identity)) STORED
 );
 CREATE TABLE signing_keys (
   kid TEXT PRIMARY KEY,
@@ -232,6 +244,7 @@ CREATE TABLE bridge_messages (
   slack_ts TEXT NOT NULL,
   root_ts TEXT NOT NULL,
   created_at BIGINT NOT NULL,
+  size_bytes BIGINT GENERATED ALWAYS AS (32 + octet_length(slack_ts) + octet_length(root_ts)) STORED,
   PRIMARY KEY (bridge_id, seq),
   UNIQUE (bridge_id, slack_ts)
 );

@@ -401,29 +401,31 @@ func (t *tx) DeleteMessages(ctx context.Context, seqs []int64) error {
 	return nil
 }
 
-func (t *tx) ExpiredTombstones(ctx context.Context, before int64, limit int) ([]int64, error) {
-	if err := checkLimit(limit); err != nil {
-		return nil, err
-	}
-	out := []int64{}
-	err := t.sel(ctx, &out, "SELECT seq FROM messages WHERE tombstone = TRUE AND tombstone_at < ? ORDER BY seq LIMIT ?", before, limit)
-	return out, err
+func (t *tx) ExpiredTombstones(ctx context.Context, before int64, limit int) ([]store.SeqChannel, error) {
+	return t.sizedMessages(ctx, "m.tombstone = TRUE AND m.tombstone_at < ?", before, limit)
 }
 
 func (t *tx) OrdinaryMessagesBefore(ctx context.Context, createdBefore int64, limit int) ([]store.SeqChannel, error) {
+	return t.sizedMessages(ctx, "m.memory_id IS NULL AND m.created_at < ?", createdBefore, limit)
+}
+
+// sizedMessages lists the messages matching cond (one ? bound to arg) by
+// ascending seq with their Bytes (messageBytesExpr).
+func (t *tx) sizedMessages(ctx context.Context, cond string, arg int64, limit int) ([]store.SeqChannel, error) {
 	if err := checkLimit(limit); err != nil {
 		return nil, err
 	}
 	var rows []struct {
 		Seq       int64 `db:"seq"`
 		ChannelID int64 `db:"channel_id"`
+		Bytes     int64 `db:"bytes"`
 	}
-	if err := t.sel(ctx, &rows, "SELECT seq, channel_id FROM messages WHERE memory_id IS NULL AND created_at < ? ORDER BY seq LIMIT ?", createdBefore, limit); err != nil {
+	if err := t.sel(ctx, &rows, "SELECT m.seq, m.channel_id, "+messageBytesExpr+" AS bytes FROM messages m WHERE "+cond+" ORDER BY m.seq LIMIT ?", arg, limit); err != nil {
 		return nil, err
 	}
 	out := make([]store.SeqChannel, len(rows))
 	for i, r := range rows {
-		out[i] = store.SeqChannel{Seq: r.Seq, ChannelID: r.ChannelID}
+		out[i] = store.SeqChannel{Seq: r.Seq, ChannelID: r.ChannelID, Bytes: r.Bytes}
 	}
 	return out, nil
 }

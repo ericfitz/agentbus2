@@ -259,11 +259,11 @@ func TestMessageExpiredTombstones(t *testing.T) {
 		})
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 			got, err := tx.ExpiredTombstones(ctx, 300, 10)
-			if err != nil || !reflect.DeepEqual(got, []int64{1, 2}) {
+			if err != nil || !reflect.DeepEqual(seqsOf(got), []int64{1, 2}) {
 				t.Errorf("ExpiredTombstones(300) = %v, %v; want [1 2]", got, err)
 			}
 			got, err = tx.ExpiredTombstones(ctx, 1000, 2)
-			if err != nil || !reflect.DeepEqual(got, []int64{1, 2}) {
+			if err != nil || !reflect.DeepEqual(seqsOf(got), []int64{1, 2}) {
 				t.Errorf("ExpiredTombstones(limit 2) = %v, %v; want [1 2]", got, err)
 			}
 			return nil
@@ -283,7 +283,7 @@ func TestMessageOrdinaryBefore(t *testing.T) {
 		mustAppend(t, s, ab2store.NewMessage{ChannelID: a.ID, Sender: "p", Content: "m", CreatedAt: 200})                                 // 4
 		mustRead(t, s, func(ctx context.Context, tx ab2store.Tx) error {
 			got, err := tx.OrdinaryMessagesBefore(ctx, 200, 10)
-			want := []ab2store.SeqChannel{{Seq: 1, ChannelID: a.ID}, {Seq: 3, ChannelID: b.ID}}
+			want := []ab2store.SeqChannel{{Seq: 1, ChannelID: a.ID, Bytes: 32 + 1 + 1 + 5}, {Seq: 3, ChannelID: b.ID, Bytes: 32 + 1 + 1 + 5}} // sender "p", content "m", sender_kind "agent"; the other columns are empty
 			if err != nil || !reflect.DeepEqual(got, want) {
 				t.Errorf("OrdinaryMessagesBefore = %v, %v; want %v", got, err, want)
 			}
@@ -397,4 +397,13 @@ func TestAppendSenderKind(t *testing.T) {
 			return nil
 		})
 	})
+}
+
+// seqsOf lists the seqs of refs.
+func seqsOf(refs []ab2store.SeqChannel) []int64 {
+	out := make([]int64, len(refs))
+	for i, r := range refs {
+		out[i] = r.Seq
+	}
+	return out
 }
