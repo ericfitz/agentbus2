@@ -2,10 +2,10 @@
 
 ## What to back up
 
-- The database. It holds all data and the server's signing key (the `signing_keys` row, in clear).
+- The database. It holds all data and the server's signing keys (the `signing_keys` rows, in clear for the Store-row provider).
 - The configuration file, if you use one, and the values of any `AGENTBUS2_SERVER_*` variables.
 
-A backup contains the signing key in clear, so it is protected like the database itself (see `deploy.md`): whoever can read it can mint a token for any identity.
+A backup contains the signing keys in clear, so it is protected like the database itself (see `deploy.md`): whoever can read it can mint a token for any identity.
 
 ## SQLite
 
@@ -33,11 +33,12 @@ pg_dump --schema=public "$DSN" > agentbus2.sql
 3. Restore the configuration file.
 4. Start the servers.
 
-Do not start a server on the empty database before the restore: it would create a signing key and the schema first.
+Do not start a server on the empty database before the restore: it would create a signing key and the schema first, and the restored key set would then not match it.
 
 ## What a restore loses
 
 - Everything written after the backup.
 - Sessions opened after the backup are gone. The sessions in the backup have lapsed by the time of the restore; each can be resumed for `session_retention_hours` (default 72) after its lease ended.
 - Client assertions that were presented between the backup and the restore are accepted once more, because the restored replay record does not have them. That window is bounded by the assertion lifetime (at most 5 minutes) plus 60 seconds of leeway after each assertion's expiry.
-- Nothing else: tokens already issued verify against the restored signing key and stay valid until they expire.
+- Signing keys rotated after the backup: a restore trusts only the keys in the backup. A bearer signed by a newer key is refused as an unknown key; the client re-mints on the 401.
+- Nothing else: tokens signed by a key in the backup verify against the restored key set and stay valid until they expire.

@@ -26,8 +26,10 @@ import (
 	"github.com/ericfitz/agentbus2/internal/bus/remote"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
 	"github.com/ericfitz/agentbus2/internal/dbtest"
 	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentbus2/internal/keyprovider"
 	"github.com/ericfitz/agentbus2/internal/server/cmd"
 )
 
@@ -101,9 +103,14 @@ func TestAuthEndToEnd(t *testing.T) {
 			t.Fatal(err)
 		}
 		svc := identities.Service{Core: c}
-		serverKey, _, created, err := svc.LoadOrCreateSigningKey(ctx)
+		keysSvc := signingkeys.Service{Core: c, Provider: keyprovider.StoreProvider{}, Settings: signingkeys.DefaultSettings()}
+		activeRow, created, err := keysSvc.EnsureActive(ctx)
 		if err != nil || !created {
-			t.Fatalf("LoadOrCreateSigningKey = created %v, %v", created, err)
+			t.Fatalf("EnsureActive = created %v, %v", created, err)
+		}
+		serverKey, _, err := keys.ParsePrivatePEM([]byte(activeRow.PrivateKeyPEM))
+		if err != nil {
+			t.Fatal(err)
 		}
 		serverKID, err := keys.KID(serverKey.Public())
 		if err != nil {

@@ -64,6 +64,7 @@ func invalidCause(what string, cause error) error {
 type keyLoad struct {
 	done chan struct{}
 	err  error
+	gen  uint64 // Issuer.invalidations when the load started
 }
 
 // Issuer mints and verifies the server's own bearers over a key set that a
@@ -74,13 +75,14 @@ type Issuer struct {
 	lifetime time.Duration
 	now      func() time.Time
 
-	mu         sync.Mutex
-	set        KeySet
-	byKID      map[string]Key
-	loadedAt   time.Time
-	stale      bool      // Invalidate was called: the next access reloads
-	lastForced time.Time // the last reload forced by an unknown kid
-	inflight   *keyLoad  // the load in progress, if any
+	mu            sync.Mutex
+	set           KeySet
+	byKID         map[string]Key
+	loadedAt      time.Time
+	stale         bool      // Invalidate was called: the next access reloads
+	invalidations uint64    // Invalidate calls so far; a load clears stale only if none ran during it
+	lastForced    time.Time // the last reload forced by an unknown kid
+	inflight      *keyLoad  // the load in progress, if any
 }
 
 // NewIssuer builds an issuer and loads its key set once. issuerURL is absolute
@@ -138,12 +140,11 @@ func (i *Issuer) install(set KeySet) {
 		i.byKID[k.KID] = k
 	}
 	i.loadedAt = i.now()
-	i.stale = false
 }
 
 // startLoad registers a load; the caller holds mu and has seen no inflight.
 func (i *Issuer) startLoad() *keyLoad {
-	f := &keyLoad{done: make(chan struct{})}
+	f := &keyLoad{done: make(chan struct{}), gen: i.invalidations}
 	i.inflight = f
 	return f
 }
@@ -160,6 +161,10 @@ func (i *Issuer) runLoad(ctx context.Context, f *keyLoad) {
 		i.install(set)
 	} else {
 		i.loadedAt = i.now()
+	}
+	// An Invalidate that ran while this load was in flight may have missed
+	// the rows it read, so the next access reloads.
+	if i.invalidations == f.gen {
 		i.stale = false
 	}
 	i.inflight = nil
@@ -221,6 +226,7 @@ func (i *Issuer) lookup(ctx context.Context, kid string) (Key, bool) {
 func (i *Issuer) Invalidate() {
 	i.mu.Lock()
 	i.stale = true
+	i.invalidations++
 	i.mu.Unlock()
 }
 

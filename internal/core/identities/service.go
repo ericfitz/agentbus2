@@ -1,7 +1,6 @@
 // Package identities holds the rules of registration, enrollment tokens, the
-// administrator flag, credential reset, the scoped data reset and the
-// server's signing key (Decisions 20, 58, 59, 72, 73, 77, 92 and Eric's Gate
-// 0 decisions of 2026-10-21). One rule set serves the HTTP handlers and the
+// administrator flag, credential reset and the scoped data reset (Decisions 20,
+// 58, 59, 72, 73, 77, 92 and Eric's Gate 0 decisions of 2026-10-21). One rule set serves the HTTP handlers and the
 // host commands.
 package identities
 

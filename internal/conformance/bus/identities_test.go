@@ -40,64 +40,6 @@ func coreOver(t *testing.T, h *harness) identities.Service {
 	return identities.Service{Core: c}
 }
 
-func TestIdentitiesSigningKeyConcurrent(t *testing.T) {
-	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		h := newHarness(t, e, harnessOptions{})
-		const n = 8
-		svcs := make([]identities.Service, n)
-		svcs[0] = identities.Service{Core: h.core}
-		for i := 1; i < n; i++ {
-			svcs[i] = coreOver(t, h)
-		}
-		type out struct {
-			pub     crypto.PublicKey
-			created bool
-			err     error
-		}
-		outs := make([]out, n)
-		var wg sync.WaitGroup
-		for i := range svcs {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				k, _, created, err := svcs[i].LoadOrCreateSigningKey(context.Background())
-				if err == nil {
-					outs[i] = out{k.Public(), created, nil}
-				} else {
-					outs[i].err = err
-				}
-			}()
-		}
-		wg.Wait()
-		created := 0
-		var first string
-		for i, o := range outs {
-			if o.err != nil {
-				t.Fatalf("call %d: %v", i, o.err)
-			}
-			kid, _ := keys.KID(o.pub)
-			if first == "" {
-				first = kid
-			} else if kid != first {
-				t.Fatalf("call %d returned another key", i)
-			}
-			if o.created {
-				created++
-			}
-		}
-		if created != 1 {
-			t.Fatalf("created = %d, want 1", created)
-		}
-		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
-			rows, err := tx.ListSigningKeys(ctx)
-			if err == nil && (len(rows) != 1 || rows[0].KID != first) {
-				t.Errorf("stored rows %+v, returned %s", rows, first)
-			}
-			return err
-		})
-	})
-}
-
 func TestIdentitiesRegisterConcurrent(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})

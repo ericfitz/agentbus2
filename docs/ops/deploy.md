@@ -37,13 +37,13 @@ A container listens on `0.0.0.0`, which is not local, so registration defaults t
 
 `docker stop` waits 10 seconds by default before killing; pass `--time 60` (compose: `stop_grace_period: 60s`) to leave the full drain.
 
-### The signing key
+### The signing keys
 
-The server signs its bearer tokens with a key that it creates at first start and stores in the database (the `signing_keys` row), in clear. A second start loads it; two servers starting together on a fresh database end with one key. Consequently:
+The server signs its bearer tokens with a key set kept in the database (the `signing_keys` rows): one active key that signs and any number of retiring keys that stay published so bearers they signed keep verifying. The first start creates the active key through the Store-row provider and stores it in clear; a second start loads it; two servers starting together on a fresh database end with one key. Each bearer carries the `kid` of the key that signed it, and `/v1/auth/jwks` lists every key of the set. A retiring key's `remove_after` time is set to the longest bearer lifetime (86400 s) plus the issuer's 30 s reload interval and 60 s of leeway after it stopped signing; nothing removes retiring keys yet. Every replica reads the set from the database and reloads it at least every 30 s, so a rotation reaches all of them without a restart. Consequently:
 
 - read access to the database is equivalent to the administrator flag: anyone who can read it can mint a token for any identity. Protect the database, its backups and its volume like a private key;
-- there is no key file and no signing-key setting;
-- rotating the key is not implemented (issue 6), nor is storing it in a KMS or vault (issue 8).
+- there is no key file and no signing-key setting yet;
+- a replica whose provider differs from the active key's cannot sign: it logs a warning and signs with the newest retiring key it can use, or refuses to mint (`temporarily_unavailable`) when none remains, while verification keeps working.
 
 ## 3. Postgres and two replicas
 

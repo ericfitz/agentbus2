@@ -21,6 +21,8 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/core/notify/pgnotify"
+	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
+	"github.com/ericfitz/agentbus2/internal/keyprovider"
 	"github.com/ericfitz/agentbus2/internal/server"
 	"github.com/ericfitz/agentbus2/internal/server/config"
 	"github.com/ericfitz/agentbus2/internal/slackapi"
@@ -40,9 +42,9 @@ func Run(ctx context.Context, args []string, environ []string, stdout, stderr io
 // run is Run with the serving function injected, so a test can look at the
 // Config the flags produce without serving.
 //
-// State (Definition of Done D): the signing key is loaded from, or created in,
-// the Store (identities.Service.LoadOrCreateSigningKey). A second start loads
-// the row and prints nothing; two starts at once end with one row and one of
+// State (Definition of Done D): the signing key set is loaded from, or its
+// first key created in, the Store (signingkeys.Service.EnsureActive). A second
+// start loads the active row and prints nothing; two starts at once end with one row and one of
 // them prints "generated signing key"; a start that fails afterwards leaves
 // the committed row for the next start; a corrupt row stops the start (exit
 // 1) and is never overwritten.
@@ -133,15 +135,16 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 	if err != nil {
 		return fail(1, "%v", err)
 	}
-	svc := identities.Service{Core: c}
-	key, _, created, err := svc.LoadOrCreateSigningKey(ctx)
+	keysSvc := signingkeys.Service{Core: c, Provider: keyprovider.StoreProvider{}, Settings: signingkeys.DefaultSettings()}
+	_, created, err := keysSvc.EnsureActive(ctx)
 	if err != nil {
 		return fail(1, "signing key: %v", err)
 	}
-	issuer, err := token.NewIssuer(ctx, issuerURL, token.StaticKeys(key), time.Duration(cfg.TokenLifetimeSeconds)*time.Second, c.Now)
+	issuer, err := token.NewIssuer(ctx, issuerURL, signingkeys.NewKeyring(keysSvc), time.Duration(cfg.TokenLifetimeSeconds)*time.Second, c.Now)
 	if err != nil {
 		return fail(2, "issuer: %v", err)
 	}
+	keysSvc.OnChange = issuer.Invalidate
 	if created {
 		_, _ = fmt.Fprintf(stdout, "generated signing key %s\n", issuer.KID())
 	}

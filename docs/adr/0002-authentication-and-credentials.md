@@ -197,9 +197,9 @@ addendum restates the item with its test when it lands.
 - **Milestone 5 item 2.** The server's token signing key is a Store row,
   created at startup when absent, so replicas share it without a volume;
   stored as plaintext PEM, so database read access is equivalent to admin
-  and the deployment docs say so. Rotation (including rotate now) is issue
-  #6; a KMS or vault key provider is issue #8. There is no
-  `signing_key_file` setting.
+  and the deployment docs say so. There is no `signing_key_file` setting.
+  Superseded in part by Eric's decisions of 2026-10-27 (issues #6 and #8):
+  the singleton row became a key set (item 6 below).
 - **Milestone 5 items 3, 4 and 6.** As planned: a configured `issuer` URL
   whose default is the bound address; `reset-credential` leaves minted
   tokens valid until `exp`; `register` takes no `Idempotency-Key` (spec 3.4
@@ -277,11 +277,20 @@ the choice numbers below are its.
    `exp` = `iat` + `token_lifetime_seconds` (default 3600), `kid` must be
    the issuer's, 60 s leeway on every time claim. A token for a name with no
    row verifies, then fails `not_registered` (403) in the core.
-6. **Signing key.** One Store row (`signing_keys`, a singleton), created at
-   the first start when absent, as plaintext PKCS#8 PEM (Decision (Eric,
-   2026-10-21), Milestone 5 item 2). Consequence: read access to the
-   database is equivalent to the admin flag. Rotation is issue #6, a key
-   provider issue #8. There is no `signing_key_file` setting.
+6. **Signing keys.** A key set in the Store (`signing_keys`): at most one
+   `active` row signs and any number of `retiring` rows stay published for
+   verification; each carries a `remove_after`, which is the retirement time plus
+   the issuer's reload interval, the longest bearer lifetime (86400 s) and
+   the leeway. The first start creates the active `store` row, as plaintext
+   PKCS#8 PEM (Decision (Eric, 2026-10-21), Milestone 5 item 2), so read
+   access to the database is equivalent to the admin flag for a `store` key.
+   (Eric, 2026-10-27, superseding the singleton of 2026-10-21): a rotation
+   retires the active key and inserts a new one, refused inside a cooldown
+   unless it revokes the previous key (deletes it); the key comes from a
+   provider port (`internal/keyprovider`), whose Store-row provider is the
+   only one built in. The issuer signs with the active key, stamps its `kid`
+   and verifies a bearer by `kid` against the whole set; the JWKS lists every
+   key. There is no `signing_key_file` setting.
 7. **One canonical issuer URL.** The `issuer` setting, defaulting to
    `http://<bound address>`. A request whose `Host` differs still
    authenticates: the issuer is a configured string. A `unix:` listener
@@ -479,10 +488,12 @@ the choice numbers below are its.
   is `enrollment` (Decision 72).
 - **Replicas share the issuer and the signing key.** Every replica must be
   configured with the same `issuer`, because a bearer carries `iss` and
-  `aud` equal to it. The signing key is the `signing_keys` row of the shared
+  `aud` equal to it. The signing keys are the `signing_keys` rows of the shared
   database (Milestone 5 item 2, as decided: database read access equals the
   admin flag), so every replica reports the same `kid` with nothing to
-  configure; whichever replica starts first creates it. Encoded in
+  configure; whichever replica starts first creates the first key, and a
+  rotation by any replica reaches the others when their issuers next reload
+  the set (at most 30 s). Encoded in
   `TestReplicasWake/shared-key-and-issuer` and the check that exactly one
   replica prints `generated signing key`.
 

@@ -426,3 +426,74 @@ func TestMintES256DER(t *testing.T) {
 		t.Fatalf("claims: %+v %v", c, err)
 	}
 }
+
+// gatedSource blocks its next load (after reading the set) until released.
+type gatedSource struct {
+	*fakeSource
+	gate    chan struct{} // non-nil: the next load announces itself on entered, then waits for it to close
+	entered chan struct{}
+}
+
+func (g *gatedSource) LoadKeys(ctx context.Context) (KeySet, error) {
+	g.mu.Lock()
+	gate, entered := g.gate, g.entered
+	g.gate = nil
+	g.mu.Unlock()
+	set, err := g.fakeSource.LoadKeys(ctx)
+	if gate != nil {
+		entered <- struct{}{}
+		<-gate
+	}
+	return set, err
+}
+
+// TestIssuerInvalidateDuringLoad: an Invalidate that runs while a load is in
+// flight is not lost when that load finishes, whether it succeeds or fails:
+// the next access reloads instead of serving the possibly older set.
+func TestIssuerInvalidateDuringLoad(t *testing.T) {
+	for _, fail := range []bool{false, true} {
+		name := "load succeeds"
+		if fail {
+			name = "load fails"
+		}
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			clk := &clock{t: t0}
+			s1, k1 := ksKey(t, keys.EdDSA)
+			s2, k2 := ksKey(t, keys.EdDSA)
+			base := &fakeSource{}
+			base.put(setOf(s1, k1), nil)
+			src := &gatedSource{fakeSource: base, entered: make(chan struct{})}
+			i := ksIssuer(t, src, clk)
+
+			gate := make(chan struct{})
+			src.mu.Lock()
+			src.gate = gate
+			src.mu.Unlock()
+			i.Invalidate()
+			done := make(chan struct{})
+			go func() { defer close(done); i.JWKS(ctx) }()
+			<-src.entered // the load has read the old rows
+			if fail {
+				base.put(KeySet{}, errors.New("db down"))
+			} else {
+				base.put(setOf(s2, k2), nil) // what the Invalidate announced
+			}
+			i.Invalidate()
+			close(gate)
+			<-done
+			loads := base.count()
+			base.put(setOf(s2, k2), nil)
+			if got := kidsOf(i.JWKS(ctx)); len(got) != 1 || got[0] != k2.KID {
+				t.Fatalf("jwks after the in-flight load = %v, want the new key %s", got, k2.KID)
+			}
+			if base.count() != loads+1 {
+				t.Fatalf("loads = %d, want %d: the Invalidate during the load was lost", base.count(), loads+1)
+			}
+			i.JWKS(ctx)
+			if base.count() != loads+1 {
+				t.Fatal("a further access reloaded again")
+			}
+		})
+	}
+}

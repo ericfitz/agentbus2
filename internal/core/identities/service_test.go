@@ -1,7 +1,6 @@
 package identities
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -18,6 +17,8 @@ import (
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
+	"github.com/ericfitz/agentbus2/internal/keyprovider"
 	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/store/sqlite"
 )
@@ -561,7 +562,8 @@ func fixture(t *testing.T, s Service) {
 		t.Fatal(err)
 	}
 	newToken(t, s, TokenInput{})
-	if _, _, _, err := s.LoadOrCreateSigningKey(ctx); err != nil {
+	sk := signingkeys.Service{Core: s.Core, Provider: keyprovider.StoreProvider{}, Settings: signingkeys.DefaultSettings()}
+	if _, _, err := sk.EnsureActive(ctx); err != nil {
 		t.Fatal(err)
 	}
 	err := s.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {
@@ -839,112 +841,6 @@ func TestEnrollmentTokenLifecycle(t *testing.T) {
 	wantCode(t, err, bus.CodeValidation)
 }
 
-// testSigningRow is an active store-provider row with a placeholder public
-// key; the loader checks the PEM, not the public key column.
-func testSigningRow(kid, alg, pem string) store.SigningKey {
-	return store.SigningKey{
-		KID: kid, State: store.SigningKeyActive, Provider: store.SigningProviderStore,
-		Algorithm: alg, PublicKey: []byte{1}, PrivateKeyPEM: pem, CreatedAt: startMs,
-	}
-}
-
-func TestSigningKeyLifecycle(t *testing.T) {
-	ctx := context.Background()
-	s, _ := newSvc(t, nil)
-	k1, alg, created, err := s.LoadOrCreateSigningKey(ctx)
-	if err != nil || !created || alg != keys.EdDSA {
-		t.Fatalf("first = %v, %v, %v", alg, created, err)
-	}
-	var rows []store.SigningKey
-	tx(t, s, func(ctx context.Context, tx store.Tx) error { var e error; rows, e = tx.ListSigningKeys(ctx); return e })
-	if len(rows) != 1 || rows[0].State != store.SigningKeyActive || rows[0].Provider != store.SigningProviderStore {
-		t.Fatalf("rows = %+v, want one active store row", rows)
-	}
-	row := rows[0]
-	if pub, _ := keys.MarshalPublic(k1.Public()); !bytes.Equal(row.PublicKey, pub) {
-		t.Fatal("row public key differs")
-	}
-	if kid, _ := keys.KID(k1.Public()); row.KID != kid {
-		t.Fatal("row KID differs")
-	}
-	if _, _, err := keys.ParsePrivatePEM([]byte(row.PrivateKeyPEM)); err != nil {
-		t.Fatal(err)
-	}
-	k2, alg, created, err := s.LoadOrCreateSigningKey(ctx)
-	if err != nil || created || alg != keys.EdDSA {
-		t.Fatalf("second = %v, %v, %v", alg, created, err)
-	}
-	if kid1, _ := keys.KID(k1.Public()); true {
-		if kid2, _ := keys.KID(k2.Public()); kid1 != kid2 {
-			t.Fatal("a different key on the second call")
-		}
-	}
-
-	// a corrupt row is reported and left alone
-	s2, _ := newSvc(t, nil)
-	if err := s2.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-		return tx.PutSigningKey(ctx, testSigningRow("kid1", "EdDSA", "garbage"))
-	}); err != nil {
-		t.Fatal(err)
-	}
-	_, _, _, err = s2.LoadOrCreateSigningKey(ctx)
-	wantCode(t, err, bus.CodeInternal)
-	wantDetail(t, err, `"kid1"`)
-	tx(t, s2, func(ctx context.Context, tx store.Tx) error {
-		r, err := tx.ListSigningKeys(ctx)
-		if err != nil || len(r) != 1 || r[0].PrivateKeyPEM != "garbage" {
-			t.Fatalf("rows = %+v, %v", r, err)
-		}
-		return nil
-	})
-
-	// a PEM that parses but whose KID differs
-	s3, _ := newSvc(t, nil)
-	other, _ := keys.Generate(keys.EdDSA)
-	pem, _ := keys.EncodePrivatePEM(other)
-	tx(t, s3, func(ctx context.Context, tx store.Tx) error {
-		return tx.PutSigningKey(ctx, testSigningRow("wrong", "EdDSA", string(pem)))
-	})
-	_, _, _, err = s3.LoadOrCreateSigningKey(ctx)
-	wantCode(t, err, bus.CodeInternal)
-
-	// a PEM whose KID matches but whose algorithm differs from the column
-	// (an ES256 key stored under EdDSA; the Store refuses any other value)
-	es, _ := keys.Generate(keys.ES256)
-	esPEM, _ := keys.EncodePrivatePEM(es)
-	esKID, _ := keys.KID(es.Public())
-	for _, colAlg := range []string{"EdDSA"} {
-		s4, _ := newSvc(t, nil)
-		tx(t, s4, func(ctx context.Context, tx store.Tx) error {
-			return tx.PutSigningKey(ctx, testSigningRow(esKID, colAlg, string(esPEM)))
-		})
-		signer, _, _, err := s4.LoadOrCreateSigningKey(ctx)
-		if signer != nil {
-			t.Errorf("algorithm column %q: a signer for a mismatched row", colAlg)
-		}
-		wantCode(t, err, bus.CodeInternal)
-		wantDetail(t, err, esKID)
-	}
-}
-
-// A set with no active row (only retiring rows) gets a new active key; the
-// retiring rows are left alone.
-func TestSigningKeyRetiringOnlyCreatesActive(t *testing.T) {
-	ctx := context.Background()
-	s, _ := newSvc(t, nil)
-	old := testSigningRow("old", "EdDSA", "x")
-	old.State, old.RetiredAt, old.RemoveAfter = store.SigningKeyRetiring, startMs, startMs+10
-	tx(t, s, func(ctx context.Context, tx store.Tx) error { return tx.PutSigningKey(ctx, old) })
-	if _, _, created, err := s.LoadOrCreateSigningKey(ctx); err != nil || !created {
-		t.Fatalf("created = %v, %v", created, err)
-	}
-	var rows []store.SigningKey
-	tx(t, s, func(ctx context.Context, tx store.Tx) error { var e error; rows, e = tx.ListSigningKeys(ctx); return e })
-	if len(rows) != 2 || rows[0].State != store.SigningKeyActive || rows[1].KID != "old" {
-		t.Fatalf("rows = %+v, want the new active row then old", rows)
-	}
-}
-
 func TestEnrollmentTokenExpiresResolution(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newSvc(t, nil)
@@ -1213,57 +1109,6 @@ func TestCreateIdentityRerunsAfterConflict(t *testing.T) {
 		}
 		if _, found := identityRow(t, winner, name); found {
 			t.Fatal("a faulted attempt left an identity row")
-		}
-	})
-}
-
-func TestLoadOrCreateSigningKeyRerunsAfterConflict(t *testing.T) {
-	ctx := context.Background()
-
-	t.Run("a second replica loads the winner's key", func(t *testing.T) {
-		loser, winner, cs := newConflictSvc(t)
-		var winnerKID string
-		cs.arm(0, 1, func() {
-			signer, _, created, err := winner.LoadOrCreateSigningKey(ctx)
-			if err != nil || !created {
-				t.Errorf("the winner's LoadOrCreateSigningKey = %v, %v", created, err)
-				return
-			}
-			winnerKID = kidOf(t, signer.Public())
-		})
-		signer, alg, created, err := loser.LoadOrCreateSigningKey(ctx)
-		if err != nil || created || alg != keys.EdDSA {
-			t.Fatalf("LoadOrCreateSigningKey = %v, %v, %v, want a load of the winner's key", alg, created, err)
-		}
-		if got := kidOf(t, signer.Public()); got != winnerKID || winnerKID == "" {
-			t.Fatalf("kid = %q, want the winner's %q", got, winnerKID)
-		}
-		if got := cs.txCalls(); got != 2 {
-			t.Fatalf("%d transactions, want 2 (the conflicted attempt and the rerun)", got)
-		}
-	})
-
-	t.Run("the rerun is bounded at one", func(t *testing.T) {
-		loser, winner, cs := newConflictSvc(t)
-		cs.arm(0, -1, nil)
-		signer, _, created, err := loser.LoadOrCreateSigningKey(ctx)
-		wantCode(t, err, bus.CodeConflict)
-		wantDetail(t, err, "injected by the test")
-		if signer != nil || created {
-			t.Fatalf("signer %v, created %v with an error", signer, created)
-		}
-		if got := cs.txCalls(); got != 2 {
-			t.Fatalf("%d transactions, want 2", got)
-		}
-		err = winner.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
-			rows, err := tx.ListSigningKeys(ctx)
-			if err == nil && len(rows) != 0 {
-				err = fmt.Errorf("%d rows", len(rows))
-			}
-			return err
-		})
-		if err != nil {
-			t.Fatalf("a faulted attempt left a signing key row: %v", err)
 		}
 	})
 }
