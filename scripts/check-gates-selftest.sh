@@ -975,6 +975,7 @@ block_access_rule_sites_fires() {
 # under bloat (autovacuum off, rows deleted but not vacuumed) never falls below
 # the budget, so the sweep would empty the bus. The regression test must fail.
 block_postgres_budget_physical_measure() {
+	# `_ = logical;` keeps the mutated file compiling (logical would be unused).
 	mutate_block postgres-budget-physical-measure internal/store/postgres/space.go \
 		'return store.Usage{Bytes: logical, DiskBytes: disk, Logical: true}, nil' \
 		'_ = logical; return store.Usage{Bytes: disk, DiskBytes: disk, Logical: true}, nil' \
@@ -986,6 +987,7 @@ block_postgres_budget_physical_measure() {
 # The floors hold under any pressure: without the one-hour message floor the
 # budget sweep deletes a burst younger than an hour, on both engines.
 block_eviction_message_floor_removed() {
+	# `now + 1` because the cutoff compare is strict: the cutoff must exceed now for a message created at now to be deleted.
 	mutate_block eviction-message-floor-removed internal/core/budget.go \
 		'		MessageBefore:      now - MessageFloorHours*msPerHour,' \
 		'		MessageBefore:      now + 1,' \

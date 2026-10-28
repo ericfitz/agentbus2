@@ -62,7 +62,7 @@ What replicas must share:
 
 - the database: it holds the data, the signing key and the single-use record of client assertions, so a token endpoint on any replica refuses an assertion another replica accepted;
 - `issuer`: the one setting that must be identical;
-- `postgres_budget_mib` and `idle_window_hours`, which should be equal on every replica: the replica that holds the maintenance lock runs the budget backstop with its own values, so a replica with a smaller budget would delete what the others keep (`configuration.md`, "Retention and the budget backstop");
+- `postgres_budget_mib`, `idle_window_hours` and `cleanup_free_percent`, which must be equal on every replica: the replica that holds the maintenance lock runs the budget backstop with its own values, so a replica with a smaller budget would delete what the others keep, and every replica reports the tier from its own `cleanup_free_percent` (`configuration.md`, "Retention and the budget backstop");
 - the Slack bridge settings, when it is used: the files named by `slack_app_token_file` and `slack_bot_token_file` must exist on every replica (any replica may serve a `bridges` call or archive a bridge), and `slack_archive_after_done_hours` and `slack_max_message_chars` should match. One replica at a time runs the Socket Mode connection, under the `slack-bridge` lock; if its host vanishes without closing the database connection, Postgres can keep that lock (and a `bridges create` lock) until the server notices the dead connection, so the TCP keepalive settings below bound the wait. See [slack-bridge.md](slack-bridge.md).
 
 They need no session affinity: any replica serves any request.

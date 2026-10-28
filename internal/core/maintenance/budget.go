@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
@@ -61,7 +62,10 @@ func (s Service) budget() (bytes int64, setting string, err error) {
 // bounded batch and reports the rows and the bytes it deleted.
 type sweepStep struct {
 	name string
-	run  func(ctx context.Context) (rows int, bytes int64, err error)
+	// cutoff is the time (Unix ms) the step deletes before; 0 for a step with
+	// no age cutoff. The sweep log records it.
+	cutoff int64
+	run    func(ctx context.Context) (rows int, bytes int64, err error)
 }
 
 // evictToBudget is the budget backstop on both engines (Eric's decisions
@@ -106,16 +110,18 @@ func (s Service) evictToBudget(ctx context.Context, now int64) (int, error) {
 		remaining := func() int64 { return allowance - deleted }
 		cut := core.EvictionCutoffs(s.Cfg, now)
 		steps := []sweepStep{
-			{"orphaned bridge messages", s.orphanChunk},
-			{"expired tombstones", func(ctx context.Context) (int, int64, error) {
+			{"orphaned bridge messages", 0, s.orphanChunk},
+			{"expired tombstones", cut.TombstoneBefore, func(ctx context.Context) (int, int64, error) {
 				return s.expiredTombstoneChunk(ctx, cut.TombstoneBefore)
 			}},
-			{"expired enrollment tokens", func(ctx context.Context) (int, int64, error) { return s.expiredTokenChunk(ctx, now) }},
-			{"idle task lists", func(ctx context.Context) (int, int64, error) {
+			{"expired enrollment tokens", now, func(ctx context.Context) (int, int64, error) { return s.expiredTokenChunk(ctx, now) }},
+			{"idle task lists", cut.IdleBefore, func(ctx context.Context) (int, int64, error) {
 				return s.idleTaskChannelChunk(ctx, cut.IdleBefore, remaining())
 			}},
-			{"idle memories", func(ctx context.Context) (int, int64, error) { return s.idleMemoryChunk(ctx, cut.IdleBefore) }},
-			{"ordinary messages", func(ctx context.Context) (int, int64, error) {
+			{"idle memories", cut.IdleBefore, func(ctx context.Context) (int, int64, error) {
+				return s.idleMemoryChunk(ctx, cut.IdleBefore, remaining())
+			}},
+			{"ordinary messages", cut.MessageBefore, func(ctx context.Context) (int, int64, error) {
 				return s.deleteOrdinaryChunk(ctx, cut.MessageBefore)
 			}},
 		}
@@ -149,6 +155,9 @@ func (s Service) evictToBudget(ctx context.Context, now int64) (int, error) {
 				}
 			}
 			perStep = append(perStep, st.name, stepRows)
+			if st.cutoff != 0 {
+				perStep = append(perStep, st.name+" cutoff", time.UnixMilli(st.cutoff).UTC().Format(time.RFC3339))
+			}
 			if reached {
 				break
 			}
@@ -302,11 +311,13 @@ func (s Service) idleTaskChannelChunk(ctx context.Context, idleBefore, remaining
 
 // idleMemoryChunk purges up to idleMemoryChunk memories with no activity
 // since idleBefore (a new revision or a read), every revision and the access
-// row, in one transaction. A memory is deleted outright, not tombstoned.
+// row, in one transaction, and stops once the counted bytes reach remaining
+// (the sweep's allowance left; each memory is atomic, so the overshoot is at
+// most one memory). A memory is deleted outright, not tombstoned.
 //
 // open note: postgres-budget 2: a MemoryExpiryHours of 0 does not exempt
 // memories here.
-func (s Service) idleMemoryChunk(ctx context.Context, idleBefore int64) (n int, bytes int64, err error) {
+func (s Service) idleMemoryChunk(ctx context.Context, idleBefore, remaining int64) (n int, bytes int64, err error) {
 	err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		n, bytes = 0, 0
 		mems, err := tx.IdleMemories(ctx, idleBefore, idleMemoryChunk)
@@ -314,13 +325,18 @@ func (s Service) idleMemoryChunk(ctx context.Context, idleBefore int64) (n int, 
 			return err
 		}
 		var b int64
+		purged := 0
 		for _, m := range mems {
 			if err := tx.PurgeMemory(ctx, m.MemoryID); err != nil {
 				return err
 			}
 			b += m.Bytes
+			purged++
+			if b >= remaining {
+				break
+			}
 		}
-		n, bytes = len(mems), b
+		n, bytes = purged, b
 		return nil
 	})
 	return n, bytes, err

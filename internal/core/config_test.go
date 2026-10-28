@@ -46,7 +46,7 @@ func TestConfigBounds(t *testing.T) {
 		{"result_default_kib", 1, 4096, func(c *Config, v int) { c.ResultDefaultKiB = v }},
 		{"sqlite_budget_mib", 64, 1048576, func(c *Config, v int) { c.SQLiteBudgetMiB = v }},
 		{"postgres_budget_mib", 64, 1048576, func(c *Config, v int) { c.PostgresBudgetMiB = v }},
-		{"idle_window_hours", 24, 8760, func(c *Config, v int) { c.IdleWindowHours = v }},
+		{"idle_window_hours", TombstoneFloorHours, 8760, func(c *Config, v int) { c.IdleWindowHours = v }},
 		{"cleanup_free_percent", 5, 90, func(c *Config, v int) { c.CleanupFreePercent = v }},
 		{"empty_channel_reap_hours", 1, 8760, func(c *Config, v int) { c.EmptyChannelReapHours = v }},
 		{"scope_idle_hours", 1, 8760, func(c *Config, v int) { c.ScopeIdleHours = v }},

@@ -617,20 +617,32 @@ agent choices follow the list.
   failure logged and not returned. `receive`, `history` and `search` do not
   count. Marker on `markRead`.
 - The row overhead constant 32; generated `tsvector` columns are not counted.
-- `idle_window_hours` bounds 24 to 8760: with the one-hour read marker a
-  shorter window would be decided by the marker's lag.
+- `idle_window_hours` bounds 72 to 8760 (final review fix): deleting an idle
+  memory or task list deletes its tombstoned revisions, which are about as old
+  as the idle window, so a window under the 72-hour tombstone floor would
+  break Eric's decision 4. The lower bound is the constant
+  `TombstoneFloorHours`. (This also keeps the one-hour read marker's lag out
+  of the decision.)
 - The sub-order within a step: tombstones before tokens, task lists before
   memories.
-- The two notice texts name the engine's setting, the measure, the disk size
-  and the ratio, and avoid the words the agent-text check rejects (`dm/`,
-  `-filter`, `@<`, `memory/`, `tasks/`, `general/`).
+- The two notice texts name the engine's setting, the disk size and the
+  ratio. The over-budget text also gives the measure (`u.Bytes`); the exhausted
+  text gives the budget and the disk size, not the measure. Both avoid the
+  words the agent-text check rejects (`dm/`, `-filter`, `@<`, `memory/`,
+  `tasks/`, `general/`).
+- The sweep log (spec 4.2 option B, "the effective age it reached for each
+  type") records the cutoff each step used, in RFC 3339, beside its row count.
+  It does not log the oldest surviving `created_at`: no store query for it
+  exists and the brief ruled out adding one.
 - `evictable` is always true (neither engine allows a zero budget); the member
   stays and means a budget is enforced.
 - Chunk sizes: ordinary messages, tombstones, tokens and bridge rows 1000 per
   transaction; idle task lists one transaction each (a list cascades to its
   tasks; the chunk stops once the counted bytes reach the allowance left, so
-  the overshoot is at most one list); 100 idle memories. The allowance is
-  overshot by at most one chunk.
+  the overshoot is at most one list); up to 100 idle memories per transaction,
+  stopping once the counted bytes reach the allowance left (the overshoot is
+  at most one memory with its revisions). The allowance is overshot by at
+  most one chunk.
 
 ### What this supersedes
 

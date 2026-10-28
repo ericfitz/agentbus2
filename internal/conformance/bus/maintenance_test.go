@@ -825,6 +825,58 @@ func TestMaintenanceEvictionFloors(t *testing.T) {
 	})
 }
 
+// Final review fix 1: the smallest idle_window_hours the settings accept must
+// not let the idle purge (step 3) delete a tombstone younger than the 72-hour
+// floor. A purged memory takes its tombstoned revisions with it, and a
+// tombstone is about as old as the memory is idle, so a window under the
+// floor would breach decision 4.
+func TestMaintenanceIdlePurgeKeepsTombstoneFloor(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		cfg := core.Defaults()
+		cfg.TombstoneMinHours = 100 // so "tombstone purge" would not take it
+		window := 0
+		for w := 1; w <= 8760; w++ {
+			cfg.IdleWindowHours = w
+			if cfg.Validate() == nil {
+				window = w
+				break
+			}
+		}
+		if window == 0 {
+			t.Fatal("no idle_window_hours is accepted")
+		}
+		h := newHarness(t, e, harnessOptions{cfg: &cfg})
+		mem := h.channel("mem", ab2store.KindMemory, "pat", nil)
+		id := h.append(mem, "pat", "", "first")
+		c := "second"
+		if _, err := h.as("pat").Edit(context.Background(), ab2bus.EditMemoryInput{ID: id, Content: &c}); err != nil {
+			t.Fatalf("Edit: %v", err)
+		}
+		tombstones := func() int {
+			n := 0
+			h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+				refs, err := tx.ExpiredTombstones(ctx, 1<<62, 1<<30)
+				n = len(refs)
+				return err
+			})
+			return n
+		}
+		if tombstones() != 1 {
+			t.Fatalf("%d tombstones after one edit, want 1", tombstones())
+		}
+		m := maint(h)
+		m.BudgetOverride = tinyBudget
+		// The memory has just become idle: its tombstone is window hours and a
+		// minute old.
+		age := time.Duration(window)*time.Hour + time.Minute
+		h.clock.Advance(age)
+		runJobOn(h, m, "budget eviction")
+		if age < core.TombstoneFloorHours*time.Hour && tombstones() != 1 {
+			t.Fatalf("a %v-old tombstone was deleted under pressure with idle_window_hours=%d (floor %d h)", age, window, core.TombstoneFloorHours)
+		}
+	})
+}
+
 func TestMaintenanceLockExclusiveAcrossCores(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		ctx := context.Background()

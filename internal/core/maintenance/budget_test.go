@@ -470,6 +470,26 @@ func TestEvictionIdleListsHonorAllowance(t *testing.T) {
 	}
 }
 
+// Idle memories honor the allowance too: with three idle memories and an
+// allowance of one, each tick purges one memory (the overshoot is one memory).
+func TestEvictionIdleMemoriesHonorAllowance(t *testing.T) {
+	f := newBfx(t, nil)
+	f.svc.BudgetOverride = 4096
+	f.measure(4097) // allowance 1025
+	mem := f.channel("mem", store.KindMemory, 200)
+	for id := int64(1); id <= 3; id++ {
+		f.item(mem, id, 2048, 169*hour)
+	}
+	for i, want := range []int{1, 2, 3} {
+		if n := f.run("budget eviction"); n != 1 {
+			t.Fatalf("run %d purged %d memories, want 1", i+1, n)
+		}
+		if got := 3 - f.count("messages", "memory_id IS NOT NULL"); got != want {
+			t.Fatalf("run %d: %d memories gone, want %d", i+1, got, want)
+		}
+	}
+}
+
 // Definition of Done D: a sweep stopped after its first chunk keeps that
 // chunk, with its evicted_before_seq, and a later run continues.
 func TestEvictionStoppedSweepKeepsChunks(t *testing.T) {

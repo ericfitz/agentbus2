@@ -141,7 +141,7 @@ func (c Config) Validate() error {
 		{"result_default_kib", c.ResultDefaultKiB, 1, 4096},
 		{"sqlite_budget_mib", c.SQLiteBudgetMiB, 64, 1048576},
 		{"postgres_budget_mib", c.PostgresBudgetMiB, 64, 1048576},
-		{"idle_window_hours", c.IdleWindowHours, 24, 8760},
+		{"idle_window_hours", c.IdleWindowHours, TombstoneFloorHours, 8760},
 		{"cleanup_free_percent", c.CleanupFreePercent, 5, 90},
 		{"empty_channel_reap_hours", c.EmptyChannelReapHours, 1, 8760},
 		{"scope_idle_hours", c.ScopeIdleHours, 1, 8760},
