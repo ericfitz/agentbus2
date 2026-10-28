@@ -101,7 +101,7 @@ func (p *Provider) kmsClient(ctx context.Context) (*kms.Client, error) {
 	}
 	cfg, err := config.LoadDefaultConfig(ctx, p.opts...)
 	if err != nil {
-		return nil, fmt.Errorf("awskms: loading AWS config: %w", err)
+		return nil, err // Next adds the "awskms: loading AWS config" prefix
 	}
 	var fns []func(*kms.Options)
 	if p.endpoint != "" {
