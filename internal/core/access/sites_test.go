@@ -106,7 +106,7 @@ var ruleAllowed = map[string]map[string]int{
 	// Converters, state and ACL shape.
 	"internal/core/convert.go KindFromBus":            {"MemoryKind": 2},               // converter
 	"internal/core/messaging/send.go SendWith":        {"MemoryKind": 1},               // embed-after-commit for a memory: state
-	"internal/core/memories/memories.go Edit":         {"MemoryKind": 1},               // the revision message's own kind: state
+	"internal/core/memories/memories.go planEdit":     {"MemoryKind": 1},               // the revision message's own kind: state
 	"internal/core/rules/trim.go EnvelopeUpperBound":  {"IdentityKind": 1},             // the longest sender kind, for a size bound
 	"internal/core/tasks/reclaim.go reclaimAbandoned": {"IdentityKind": 1, "Owner": 1}, // the reclaim revision's sender kind, and the owner it clears: state
 	"internal/slackbridge/create.go notice":           {"IdentityKind": 1},             // the bridge notice's sender kind: state
