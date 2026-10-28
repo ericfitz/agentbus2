@@ -297,7 +297,8 @@ the markers are removed as the decisions land.
    (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`, Milestone 3
    item 3 and Milestone 7 item 2): Milestone 7 adds `Store.Usage` and the
    two jobs, which act on SQLite only (where `Usage.Evictable` is true);
-   Postgres eviction is issue #7. Test until then:
+   Postgres eviction is issue #7 (superseded by the Postgres budget
+   addendum below: the jobs run on both engines). Test until then:
    `TestMaintenanceRunJobRejectsUnknown`, which asserts both names are
    `validation` and loses its `pending Eric: Milestone 3 item 3` marker in
    Milestone 7.
@@ -402,7 +403,9 @@ rest are choices of the plan, not new design decisions.
   payload degrades to `Hint{}` with a log line. `NOTIFY` runs inside the
   append transaction, so a rolled-back attempt drops its own. Hints only:
   every consumer re-checks the store.
-- **Choice 4, usage and reclaim.** `store.Usage{Bytes, Evictable}`. SQLite
+- **Choice 4, usage and reclaim.** *Superseded by the Postgres budget
+  addendum (`Usage` is `{Bytes, DiskBytes, Logical}`; Postgres reports the
+  logical sum of the rows' `size_bytes`).* `store.Usage{Bytes, Evictable}`. SQLite
   reports `(page_count - freelist_count) * page_size` and is `Evictable`;
   Postgres reports the sum of `pg_total_relation_size` over the plain
   relations of `current_schema()` and is not `Evictable`, because relation
@@ -411,7 +414,9 @@ rest are choices of the plan, not new design decisions.
   no-op on Postgres. `sqlite.Open` converts a file to `auto_vacuum =
   INCREMENTAL` once, with a `VACUUM` after the schema exists (a second open
   finds the mode set and does nothing).
-- **Choice 5, the two jobs.** "budget eviction" and "capacity notices" run
+- **Choice 5, the two jobs.** *Superseded by the Postgres budget addendum
+  (the `Evictable` gate is gone; the sweep has four steps, floors and an
+  allowance).* "budget eviction" and "capacity notices" run
   after "empty channels" and before "embeddings". Eviction sweeps only when
   usage exceeds `sqlite_budget_mib`, then down to the budget minus
   `cleanup_free_percent`, deleting the oldest ordinary messages, then calls
@@ -434,7 +439,8 @@ rest are choices of the plan, not new design decisions.
   `409 replaced` within the reconnect bound. Encoded in
   `TestPgnotifyHintOnWatchRegistration` and the
   `watch-replaced-across-servers` leaf of `TestReplicasWake`.
-- **Item 2 (Gate 0), as decided.** Budget eviction and capacity notices act
+- **Item 2 (Gate 0), as decided.** *Superseded by the Postgres budget
+  addendum.* Budget eviction and capacity notices act
   only where `Usage.Evictable` (SQLite); on Postgres `Usage` is reported to
   the admin operation and the notice is never set; the setting keeps the name
   `sqlite_budget_mib`. Postgres eviction is issue #7. Encoded in
@@ -446,6 +452,7 @@ rest are choices of the plan, not new design decisions.
 - **Milestone 3 item 3, closed as Eric decided.** The deferred maintenance
   deliverables (budget eviction, capacity notices, the usage number) landed
   in Milestone 7 for SQLite only.
+  Superseded by the Postgres budget addendum: they run on both engines.
 
 ## Health addendum (2026-10-25; agent proposal, ratified by Eric 2026-10-25)
 
@@ -500,6 +507,136 @@ rest are choices of the plan, not new design decisions.
   both engines (SQLite: `sqlite_master` text with whitespace removed, plus
   the column, foreign key and index pragmas; Postgres: `information_schema`
   columns, constraints, indexes, triggers and functions) and matched.
+
+## Postgres budget addendum (Eric's decisions 2026-10-27, issue #7)
+
+The budget backstop and the capacity notices run on both engines. Each entry
+labeled "Eric's decision 2026-10-27" was made by Eric (design brief
+`docs/superpowers/specs/2026-10-27-postgres-budget-design.md`, section 5); the
+agent choices follow the list.
+
+### Eric's decisions
+
+1. **Eric's decision 2026-10-27 (option B, oldest-first backstop after the age
+   jobs, tiers by outcome).** Under pressure the bus deletes more than the age
+   jobs do, in the order of decision 2, and the pressure tier follows what is
+   still eligible.
+2. **Eric's decision 2026-10-27 (the eviction order).** (1) Useless data:
+   `bridge_messages` rows whose message is gone. (2) Expired data: tombstones
+   past their floor, then `enrollment_tokens` past `expires_at`. (3) Idle data:
+   idle task lists and idle memories. (4) Ordinary messages, oldest first. An
+   active task list is never deleted.
+3. **Eric's decision 2026-10-27 (types with no age policy).** Expired enrollment
+   tokens and orphaned bridge rows belong to the backstop (steps 2 and 1). The
+   registry, bridge and identity rows stay outside it.
+4. **Eric's decision 2026-10-27 (floors).** An ordinary message younger than
+   1 hour and a tombstone younger than 72 hours are never deleted, even under
+   pressure. This changes SQLite: a burst younger than one hour is no longer
+   evicted.
+5. **Eric's decision 2026-10-27 (A, one code path).** SQLite and Postgres run
+   the same job; only the measure differs by engine.
+6. **Eric's decision 2026-10-27 (A, hysteresis and the per-tick bound).** A
+   sweep starts only above the budget, stops at the target (the budget less
+   `cleanup_free_percent`) and deletes at most the allowance, the start usage
+   less the target.
+7. **Eric's decision 2026-10-27 (B, notices and health).** Health and the log
+   report every tier; the capacity notice is set only when a sweep ends over the
+   budget, in one of two texts.
+8. **Eric's decision 2026-10-27 (A, the setting).** `postgres_budget_mib`
+   beside `sqlite_budget_mib`; each engine reads its own.
+9. **Eric's decision 2026-10-27 (A, the default).** 2048 MiB, on by default,
+   bounds 64 to 1048576 (as `sqlite_budget_mib`).
+10. **Eric's decision 2026-10-27 (A, extended).** The logical measure is kept
+    on demand as `sum(size_bytes)`, over every table eviction can delete from.
+11. **Eric's decision 2026-10-27 (what the measure counts).** Every table that
+    eviction can delete from, directly or by cascade.
+12. **Eric's decision 2026-10-27 (A, the wire).** The usage operation, health
+    and every client carry `disk_bytes`, `disk_ratio` and `tier`; `evictable`
+    is redefined (see the agent choices). The protocol stays 1.0.0.
+13. **Eric's decision 2026-10-27 (A).** No extension detail in reports.
+14. **Eric's decision 2026-10-27 (A).** `Reclaim` stays a no-op on Postgres.
+15. **Eric's decision 2026-10-27 (A, replica skew).** Budgets must be equal on
+    every replica; the operations documents say so.
+16. **Eric's decision 2026-10-27 (A, bloat tests).** Tests assert bloat through
+    the measures only.
+17. **Eric's decision 2026-10-27 (logical enforcement, physical reported).**
+    Eviction is enforced on the logical measure; usage, health and the notices
+    report the physical size and the physical-to-logical ratio.
+18. **Eric's decision 2026-10-27 (privileges).** Plain table ownership; no
+    extension or extra privilege for eviction.
+19. **Eric's decision 2026-10-27 (retention model).** Age first, size as a
+    backstop.
+20. **Eric's decision 2026-10-27 (idle).** `idle_window_hours` (default 168).
+    Activity is a new message, a task change or a read. An idle memory is
+    deleted outright, with every revision and its `memory_access` row.
+
+### What the code does
+
+- `Store.Usage` returns `Usage{Bytes, DiskBytes, Logical}`. `Bytes` is the
+  enforced measure (SQLite: used file bytes; Postgres: the sum of `size_bytes`
+  over `sqlstore.MeasuredTables`, with the Postgres index `messages_size`);
+  `DiskBytes` the physical size; `Logical` is true where `Bytes` is not the file
+  (Postgres). A row's `size_bytes` is `store.RowOverheadBytes` (32) plus the
+  byte length of its counted columns.
+- `Tx` gains the `Eviction` aggregate (`internal/store/eviction.go`): the
+  listings of each step, each with the bytes its delete frees (cascades
+  included), the conditional deletes, and `EvictionLeft`.
+- `core.Budget`, `core.TargetBytes` and `core.EvictionCutoffs` give the budget
+  of the engine, the target and the four cutoffs; `rules.StorageTier` gives the
+  tier from the usage and what is left to evict.
+- "budget eviction" (`internal/core/maintenance/budget.go`) starts above the
+  budget and runs the six chunk functions in the order above (step 2 is
+  tombstones, then tokens; step 3 is task lists, then memories) while the
+  counted bytes deleted are below the allowance and the tick's deadline has not
+  passed. Where the measure is not logical (SQLite) it also reclaims and
+  re-reads usage before each chunk and stops at the target. A sweep that
+  deleted rows and did not lower usage logs a warning. "capacity notices"
+  reads the sweep's final usage from the same tick (or measures, when run
+  alone), clears the notice at or below the budget, and above it sets the
+  exhausted text when nothing is eligible and the over-budget text otherwise.
+- State (Definition of Done D): a second run at or below the budget deletes
+  nothing; overlapping runs are serialized by the `maintenance` lock, and a
+  failover overlap is bounded by two allowances with the floors holding; a sweep
+  killed midway leaves committed chunks, each with its `evicted_before_seq`,
+  and no tier or counter state to repair.
+
+### Agent choices (not Eric's; each is one constant or one line)
+
+- **Open note postgres-budget 1: soft and hard tiers.** Above the budget the
+  tier is a fact of what is still eligible: `soft` while step 1 or 2 has an
+  eligible row, `hard` when only step 3 or 4 has one, `exhausted` when none has;
+  `normal` at or below the target, `approaching` above it and at or below the
+  budget. No tier is stored, so every replica computes the same value.
+  Marker on `rules.StorageTier`.
+- **Open note postgres-budget 2: a zero expiry does not exempt.** A
+  `memory_expiry_hours` or `task_expiry_hours` of 0 disables the age rule, not
+  step 3. Markers in `idleTaskChannelChunk`, `idleMemoryChunk` and
+  `TestEvictionIgnoresZeroExpiry`.
+- **Open note postgres-budget 3: recording a read.** `channels.last_read_at`,
+  set by `task_get` and `task_list` at most once an hour, conditionally, its
+  failure logged and not returned. `receive`, `history` and `search` do not
+  count. Marker on `markRead`.
+- The row overhead constant 32; generated `tsvector` columns are not counted.
+- `idle_window_hours` bounds 24 to 8760: with the one-hour read marker a
+  shorter window would be decided by the marker's lag.
+- The sub-order within a step: tombstones before tokens, task lists before
+  memories.
+- The two notice texts name the engine's setting, the measure, the disk size
+  and the ratio, and avoid the words the agent-text check rejects (`dm/`,
+  `-filter`, `@<`, `memory/`, `tasks/`, `general/`).
+- `evictable` is always true (neither engine allows a zero budget); the member
+  stays and means a budget is enforced.
+- Chunk sizes: ordinary messages, tombstones, tokens and bridge rows 1000 per
+  transaction; 16 idle task lists, each in a transaction of its own (a list
+  cascades to its tasks); 100 idle memories. The allowance is overshot by at
+  most one chunk.
+
+### What this supersedes
+
+Milestone 7 choice 4's Postgres half (Postgres is not `Evictable`; its usage
+is `pg_total_relation_size`), choice 5's `Evictable` gate, and Gate 0 item 2
+and Milestone 3 item 3 (SQLite only). `docs/superpowers/specs/2026-10-21-gate-0-decisions.md`
+and the master spec carry a pointer here.
 
 ## Access facts, not rules (2026-10-25)
 

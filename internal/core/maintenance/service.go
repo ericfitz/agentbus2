@@ -12,6 +12,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core/scopes"
 	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
 	"github.com/ericfitz/agentbus2/internal/core/tasks"
+	"github.com/ericfitz/agentbus2/internal/store"
 )
 
 const (
@@ -28,8 +29,8 @@ const (
 type Service struct {
 	*core.Core
 	Tasks tasks.Service
-	// BudgetOverride is the SQLite budget in bytes; tests only. 0 means
-	// Cfg.SQLiteBudgetMiB << 20.
+	// BudgetOverride is the budget in bytes; tests only. 0 means the engine's
+	// setting (core.Budget); the setting name stays the engine's.
 	BudgetOverride int64
 	// Archiver archives the Slack channel of a bridge the scope retirement
 	// job retires; nil means the bridge is off (spec 4.3).
@@ -37,6 +38,9 @@ type Service struct {
 	// SigningKeys runs the signing key rotation and removal jobs; nil means
 	// they are off (a process that does not serve the token endpoint).
 	SigningKeys *signingkeys.Service
+
+	// usage replaces Store.Usage; tests only (a fixed or counting measure).
+	usage func(ctx context.Context) (store.Usage, error)
 
 	// jobs replaces Jobs() when non-nil (tests drive Tick with fakes).
 	jobs []Job
@@ -144,6 +148,8 @@ func (s Service) Tick(ctx context.Context) (ran bool, report []JobResult) {
 		return false, nil
 	}
 	dctx := context.WithValue(ctx, deadlineKey{}, now+interval/2)
+	// The budget sweep leaves its final usage here for "capacity notices".
+	dctx = context.WithValue(dctx, outcomeKey{}, &sweepOutcome{})
 	for _, j := range s.Jobs() {
 		if s.pastDeadline(dctx) {
 			s.Log.Info("maintenance deadline reached", "at", j.Name)

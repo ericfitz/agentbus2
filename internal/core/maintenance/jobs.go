@@ -102,16 +102,21 @@ func (s Service) receipts(ctx context.Context, now int64) (int, error) {
 // highest deleted seq plus one (v1 deleteOrdinaryChunk).
 func (s Service) messageRetention(ctx context.Context, now int64) (int, error) {
 	cutoff := now - int64(s.Cfg.MessageRetentionHours)*hourMs
-	return s.loopChunks(ctx, func() (int, error) { return s.deleteOrdinaryChunk(ctx, cutoff) })
+	return s.loopChunks(ctx, func() (int, error) {
+		n, _, err := s.deleteOrdinaryChunk(ctx, cutoff)
+		return n, err
+	})
 }
 
 // deleteOrdinaryChunk deletes one chunk of ordinary messages created before
 // createdBefore, oldest first, in one transaction, and raises each affected
 // channel's evicted-before mark to the highest deleted seq plus one (v1
-// deleteOrdinaryChunk).
-func (s Service) deleteOrdinaryChunk(ctx context.Context, createdBefore int64) (n int, err error) {
+// deleteOrdinaryChunk). bytes is what the rows freed, tags, embeddings and
+// failure rows included.
+func (s Service) deleteOrdinaryChunk(ctx context.Context, createdBefore int64) (n int, bytes int64, err error) {
 	err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-		n = 0
+		n, bytes = 0, 0
+		var b int64
 		rows, err := tx.OrdinaryMessagesBefore(ctx, createdBefore, cleanupChunk)
 		if err != nil {
 			return err
@@ -123,6 +128,7 @@ func (s Service) deleteOrdinaryChunk(ctx context.Context, createdBefore int64) (
 		maxByChannel := map[int64]int64{}
 		for i, r := range rows {
 			seqs[i] = r.Seq
+			b += r.Bytes
 			maxByChannel[r.ChannelID] = max(maxByChannel[r.ChannelID], r.Seq)
 		}
 		if err := tx.DeleteMessages(ctx, seqs); err != nil {
@@ -133,32 +139,17 @@ func (s Service) deleteOrdinaryChunk(ctx context.Context, createdBefore int64) (
 				return err
 			}
 		}
-		n = len(rows)
+		n, bytes = len(rows), b
 		return nil
 	})
-	return n, err
+	return n, bytes, err
 }
 
 // tombstonePurge deletes tombstones older than TombstoneMinHours.
 func (s Service) tombstonePurge(ctx context.Context, now int64) (int, error) {
 	before := now - int64(s.Cfg.TombstoneMinHours)*hourMs
-	return s.loopChunks(ctx, func() (n int, err error) {
-		err = s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-			n = 0
-			refs, err := tx.ExpiredTombstones(ctx, before, cleanupChunk)
-			if err != nil || len(refs) == 0 {
-				return err
-			}
-			seqs := make([]int64, len(refs))
-			for i, r := range refs {
-				seqs[i] = r.Seq
-			}
-			if err := tx.DeleteMessages(ctx, seqs); err != nil {
-				return err
-			}
-			n = len(seqs)
-			return nil
-		})
+	return s.loopChunks(ctx, func() (int, error) {
+		n, _, err := s.expiredTombstoneChunk(ctx, before)
 		return n, err
 	})
 }

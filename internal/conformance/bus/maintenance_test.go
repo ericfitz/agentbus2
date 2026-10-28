@@ -495,8 +495,35 @@ func runJobOn(h *harness, m maintenance.Service, name string) int {
 	return n
 }
 
-// Gate 0 item 2, Decision (Eric, 2026-10-21): eviction acts only where usage
-// is evictable (SQLite).
+// tinyBudget is a budget (bytes) every engine's measure exceeds with a handful
+// of rows: the logical measure of Postgres is a few hundred bytes for them,
+// the SQLite file is hundreds of KiB.
+const tinyBudget = 64
+
+func budgetSetting(e dbtest.Engine) string {
+	if e.Name == "postgres" {
+		return "postgres_budget_mib"
+	}
+	return "sqlite_budget_mib"
+}
+
+// ordinaryBytes maps the seq of every ordinary message to the bytes deleting
+// it frees.
+func ordinaryBytes(h *harness) map[int64]int64 {
+	h.t.Helper()
+	out := map[int64]int64{}
+	h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+		rows, err := tx.OrdinaryMessagesBefore(ctx, 1<<62, 1<<30)
+		for _, r := range rows {
+			out[r.Seq] = r.Bytes
+		}
+		return err
+	})
+	return out
+}
+
+// The budget backstop runs on both engines (Eric, 2026-10-27, issue #7): the
+// age jobs come first; above the budget it deletes down to the target.
 func TestMaintenanceBudgetEviction(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
@@ -511,22 +538,11 @@ func TestMaintenanceBudgetEviction(t *testing.T) {
 		for i := range 5 {
 			memSeqs = append(memSeqs, h.append(mem, "pat", "", "memory "+strconv.Itoa(i)))
 		}
+		// Past the message floor and inside the idle window: the messages are
+		// eligible and the memories are active.
+		h.clock.Advance(2 * time.Hour)
 		peak := usageBytes(h)
 		m := maint(h)
-
-		if e.Name == "postgres" {
-			m.BudgetOverride = peak / 2
-			if n := runJobOn(h, m, "budget eviction"); n != 0 {
-				t.Fatalf("postgres: evicted %d, want 0", n)
-			}
-			if n, _, _ := ordinaryRows(h, dev); n != 2500 {
-				t.Fatalf("postgres: %d rows remain, want 2500", n)
-			}
-			if _, ok := capacityNotice(h); ok {
-				t.Fatal("postgres: a capacity notice was set")
-			}
-			return
-		}
 
 		// Hysteresis: at or below the budget but above the target, nothing goes.
 		m.BudgetOverride = peak + peak/8
@@ -542,14 +558,16 @@ func TestMaintenanceBudgetEviction(t *testing.T) {
 		}
 
 		// Sweep.
+		perMsg := ordinaryBytes(h)
 		m.BudgetOverride = peak / 2
 		target := m.BudgetOverride - m.BudgetOverride*int64(h.cfg.CleanupFreePercent)/100
 		deleted := runJobOn(h, m, "budget eviction")
 		if deleted <= 1000 || deleted >= 2500 {
 			t.Fatalf("evicted %d, want more than one chunk and not all", deleted)
 		}
-		if u := usageBytes(h); u > target {
-			t.Fatalf("usage %d above target %d", u, target)
+		after := usageBytes(h)
+		if after > target {
+			t.Fatalf("usage %d above target %d", after, target)
 		}
 		n, first, last := ordinaryRows(h, dev)
 		if n != 2500-deleted || n == 0 || last != lastSeq || last-first+1 != int64(n) {
@@ -561,14 +579,28 @@ func TestMaintenanceBudgetEviction(t *testing.T) {
 		if live := h.liveSeqs(memSeqs...); !sameSeqs(live, memSeqs...) {
 			t.Fatalf("live memories = %v, want %v", live, memSeqs)
 		}
+		if e.Name == "postgres" {
+			// The measure is the counted bytes: it falls by exactly the bytes
+			// of the messages that are gone.
+			left := ordinaryBytes(h)
+			var gone int64
+			for seq, b := range perMsg {
+				if _, ok := left[seq]; !ok {
+					gone += b
+				}
+			}
+			if after != peak-gone {
+				t.Fatalf("postgres: usage %d, want %d - %d = %d", after, peak, gone, peak-gone)
+			}
+		}
 		if n := runJobOn(h, m, "budget eviction"); n != 0 {
 			t.Fatalf("second run evicted %d", n)
 		}
 	})
 }
 
-// Gate 0 item 3, Decision (Eric, 2026-10-21): the notice is set where usage is
-// evictable and never blocks a Send.
+// The notice is set on both engines, is one of two texts and never blocks a
+// Send; health reports degraded.
 func TestMaintenanceCapacityNotice(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
@@ -578,20 +610,19 @@ func TestMaintenanceCapacityNotice(t *testing.T) {
 			h.append(mem, "pat", "", "memory "+strconv.Itoa(i))
 		}
 		m := maint(h)
-		m.BudgetOverride = 4 << 10
+		m.BudgetOverride = tinyBudget
 		if n := runJobOn(h, m, "budget eviction"); n != 0 {
 			t.Fatalf("evicted %d with nothing evictable", n)
 		}
-		if n := runJobOn(h, m, "capacity notices"); (n == 1) != (e.Name == "sqlite") {
+		if n := runJobOn(h, m, "capacity notices"); n != 1 {
 			t.Fatalf("capacity notices returned %d on %s", n, e.Name)
 		}
 		n, ok := capacityNotice(h)
-		if e.Name == "postgres" {
-			if ok {
-				t.Fatal("postgres: a capacity notice was set")
-			}
-		} else if !ok || !strings.Contains(n.Message, "sqlite_budget_mib=0 ") || n.SetAt != h.core.NowMs() {
+		if !ok || !strings.Contains(n.Message, "capacity exhausted: ") || !strings.Contains(n.Message, budgetSetting(e)+"=0 MiB") || n.SetAt != h.core.NowMs() {
 			t.Fatalf("notice = %+v, %v", n, ok)
+		}
+		if got := mustHealth(t, h.admin("root")).Status; got != ab2bus.HealthDegraded {
+			t.Fatalf("health = %q under a capacity notice, want degraded", got)
 		}
 		if _, err := newBus(h, "pat").Send(context.Background(), ab2bus.SendInput{Channel: dev.Name, Content: "still works"}); err != nil {
 			t.Fatalf("Send under a capacity notice: %v", err)
@@ -600,6 +631,73 @@ func TestMaintenanceCapacityNotice(t *testing.T) {
 		runJobOn(h, m, "capacity notices")
 		if _, ok := capacityNotice(h); ok {
 			t.Fatal("notice not cleared under a large budget")
+		}
+
+		// An ordinary message past the floor is evictable: the other text.
+		h.clock.Advance(2 * time.Hour)
+		m.BudgetOverride = tinyBudget
+		if n := runJobOn(h, m, "capacity notices"); n != 1 {
+			t.Fatalf("capacity notices returned %d", n)
+		}
+		if n, ok := capacityNotice(h); !ok || !strings.HasPrefix(n.Message, "agentbus2 storage is over budget: ") {
+			t.Fatalf("notice = %+v, %v", n, ok)
+		}
+	})
+}
+
+// The floors hold under any pressure (Eric, 2026-10-27, decision 4): an
+// ordinary message younger than 1 hour and a tombstone younger than 72 hours.
+func TestMaintenanceEvictionFloors(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		dev := h.channel("dev", ab2store.KindOrdinary, "pat", nil)
+		for range 50 {
+			h.append(dev, "pat", "", "young")
+		}
+		m := maint(h)
+		m.BudgetOverride = tinyBudget
+		if n := runJobOn(h, m, "budget eviction"); n != 0 {
+			t.Fatalf("deleted %d messages younger than 1 hour", n)
+		}
+		h.clock.Advance(61 * time.Minute)
+		if n := runJobOn(h, m, "budget eviction"); n != 50 {
+			t.Fatalf("deleted %d, want all 50", n)
+		}
+	})
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		cfg := core.Defaults()
+		cfg.TombstoneMinHours = 100 // so "tombstone purge" would not take it
+		h := newHarness(t, e, harnessOptions{cfg: &cfg})
+		mem := h.channel("mem", ab2store.KindMemory, "pat", nil)
+		id := h.append(mem, "pat", "", "first")
+		c := "second"
+		if _, err := h.as("pat").Edit(context.Background(), ab2bus.EditMemoryInput{ID: id, Content: &c}); err != nil {
+			t.Fatalf("Edit: %v", err)
+		}
+		tombstones := func() int {
+			n := 0
+			h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+				refs, err := tx.ExpiredTombstones(ctx, 1<<62, 1<<30)
+				n = len(refs)
+				return err
+			})
+			return n
+		}
+		if tombstones() != 1 {
+			t.Fatalf("%d tombstones after one edit, want 1", tombstones())
+		}
+		m := maint(h)
+		m.BudgetOverride = tinyBudget
+		h.clock.Advance(71 * time.Hour)
+		if n := runJobOn(h, m, "budget eviction"); n != 0 || tombstones() != 1 {
+			t.Fatalf("71 h: deleted %d, %d tombstones; the floor is 72 h", n, tombstones())
+		}
+		h.clock.Advance(time.Hour + time.Minute)
+		if n := runJobOn(h, m, "budget eviction"); n != 1 || tombstones() != 0 {
+			t.Fatalf("72 h 1 min: deleted %d, %d tombstones; want the tombstone gone", n, tombstones())
+		}
+		if revs := h.taskRevisions(id); len(revs) != 1 || revs[0].Tombstone {
+			t.Fatalf("revisions left = %+v, want the one live revision", revs)
 		}
 	})
 }

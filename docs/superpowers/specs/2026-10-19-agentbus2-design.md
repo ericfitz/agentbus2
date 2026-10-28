@@ -769,9 +769,7 @@ Jobs ported from v1 `maintenance.go`: message retention, tombstone and
 memory expiry, task expiry and abandoned-task reclaim, stale-channel
 expiry, budget eviction, capacity notices, embedding batches. Decision
 (Eric, 2026-10-21; `docs/superpowers/specs/2026-10-21-gate-0-decisions.md`):
-budget eviction and capacity notices are Milestone 7 and act on SQLite
-only (Postgres eviction is issue #7; Milestone 3 item 3, Milestone 7 item
-2); empty-channel reaping (v1 `reapEmptyChannels`) is ported as a job
+budget eviction and capacity notices are Milestone 7 and, since Eric's decisions of 2026-10-27 (issue #7), run on both engines as a backstop after the age jobs (ADR 0004, Postgres budget addendum; Milestone 3 item 3, Milestone 7 item 2 superseded); empty-channel reaping (v1 `reapEmptyChannels`) is ported as a job
 that deletes an ordinary channel, never `general` or a task list, with no
 messages and no subscriptions at all, created more than N hours ago, N a
 new setting with default 24 (Milestone 3 item 8); and the expiry of the

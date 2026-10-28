@@ -131,6 +131,7 @@ updated to cite this file.
 1. `RegisterWatch` sends a `pg_notify` control hint: as planned (A).
 2. Budget eviction and capacity notices on SQLite only: as planned (A);
    Postgres eviction is issue #7.
+   Superseded 2026-10-27 by ADR 0004's Postgres budget addendum (issue #7).
 3. Tick-only eviction; writes are never refused: as planned (A).
 4. **Changed** (B): the assertion `jti` replay set is a shared Store table,
    consulted and written in the token transaction, so an assertion is

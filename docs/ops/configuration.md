@@ -85,10 +85,10 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | `receive_default_count` | `AGENTBUS2_SERVER_RECEIVE_DEFAULT_COUNT` | int | `100` | 1 to 1000, and at most `receive_max_count`. |
 | `receive_max_count` | `AGENTBUS2_SERVER_RECEIVE_MAX_COUNT` | int | `1000` | 1 to 10000. |
 | `result_default_kib` | `AGENTBUS2_SERVER_RESULT_DEFAULT_KIB` | int | `64` | 1 to 4096. Default size cap of a history or task result. |
-| `sqlite_budget_mib` | `AGENTBUS2_SERVER_SQLITE_BUDGET_MIB` | int | `2048` | 64 to 1048576. SQLite file size above which the oldest ordinary messages are evicted. Enforced on SQLite only; on Postgres it is accepted and has no effect. |
+| `sqlite_budget_mib` | `AGENTBUS2_SERVER_SQLITE_BUDGET_MIB` | int | `2048` | 64 to 1048576. Used file bytes of the SQLite database above which the budget backstop deletes (see "Retention and the budget backstop" below). Enforced on SQLite; `postgres_budget_mib` is its counterpart on Postgres, and the setting of the other engine is accepted and has no effect. |
 | `postgres_budget_mib` | `AGENTBUS2_SERVER_POSTGRES_BUDGET_MIB` | int | `2048` | 64 to 1048576. Logical size (the bytes of every row eviction can delete, with a fixed per-row overhead) above which the budget backstop deletes, on Postgres. Disk use is a multiple of it; `GET /v1/health` reports the ratio. |
 | `idle_window_hours` | `AGENTBUS2_SERVER_IDLE_WINDOW_HOURS` | int | `168` | 24 to 8760. Under space pressure, a task list or memory with no new message, task change or read for this long may be deleted. |
-| `cleanup_free_percent` | `AGENTBUS2_SERVER_CLEANUP_FREE_PERCENT` | int | `25` | 5 to 90. How far below `sqlite_budget_mib` an eviction sweep goes. |
+| `cleanup_free_percent` | `AGENTBUS2_SERVER_CLEANUP_FREE_PERCENT` | int | `25` | 5 to 90. How far below the engine's budget (`sqlite_budget_mib` or `postgres_budget_mib`) an eviction sweep goes. |
 | `embedding_endpoint` | `AGENTBUS2_SERVER_EMBEDDING_ENDPOINT` | string | `(unset)` | Absolute URL of an embeddings API. When set, `embedding_model` is required. |
 | `embedding_model` | `AGENTBUS2_SERVER_EMBEDDING_MODEL` | string | `(unset)` | Model name sent to the endpoint. |
 | `embedding_api_key_file` | `AGENTBUS2_SERVER_EMBEDDING_API_KEY_FILE` | string | `(unset)` | File holding the API key. At most one of this and `embedding_api_key_env`. |
@@ -99,6 +99,18 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | `slack_archive_after_done_hours` | `AGENTBUS2_SERVER_SLACK_ARCHIVE_AFTER_DONE_HOURS` | int | `168` | 1 to 8760. How long after its scope is marked done a bridged Slack channel is archived (earlier when no human remains in it). |
 | `slack_max_message_chars` | `AGENTBUS2_SERVER_SLACK_MAX_MESSAGE_CHARS` | int | `3000` | 200 to 3000 (3000 is Slack's limit for a section's text). A longer bus message is cut and ends with a note pointing to agentbus2. |
 | `log_level` | `AGENTBUS2_SERVER_LOG_LEVEL` | string | `"info"` | `debug`, `info`, `warn` or `error`. Logs are text on stderr. |
+
+### Retention and the budget backstop
+
+Age comes first: the age settings above (`message_retention_hours`, `tombstone_min_hours`, `task_expiry_hours`, `memory_expiry_hours`, `empty_channel_reap_hours` and the rest) delete rows on a schedule, on both engines. The budget is the backstop for what they leave. The maintenance jobs "budget eviction" and "capacity notices" run on both engines, with the budget of the engine in use (`sqlite_budget_mib` or `postgres_budget_mib`).
+
+- **When.** A sweep starts only when the measure is above the budget and deletes down to the target, the budget less `cleanup_free_percent`. A run at or below the budget deletes nothing. The measure is the used bytes of the file on SQLite and, on Postgres, the logical sum of the rows eviction can delete (each row's counted bytes plus a fixed overhead), so dead tuples and free space do not count and do not trigger a sweep.
+- **How much.** One tick deletes at most the allowance, the measure at the start of the tick less the target, counted in the bytes of the rows it deletes (with their tags, embeddings and cascaded rows), and stops earlier when the tick's time is spent. A measure that does not fall at once therefore cannot empty the bus.
+- **Order.** (1) bridge map rows whose message is gone; (2) tombstones past their floor, then expired enrollment tokens; (3) task lists, then memories, with no activity for `idle_window_hours` (a new message, a task change, or a read; a memory is deleted with all its revisions); (4) ordinary messages, oldest first. A step is used up before the next starts.
+- **Floors.** Even under pressure an ordinary message younger than 1 hour and a tombstone younger than 72 hours are never deleted, and a task list or memory with activity inside `idle_window_hours` is never deleted. A bus filled by these stays over budget: the notice then says capacity is exhausted. Setting `task_expiry_hours` or `memory_expiry_hours` to 0 turns off that age rule only; the backstop still deletes an idle list or memory.
+- **Never deleted.** Active task lists, sessions, receipts, assertion rows, identities and keys, ACLs and subscriptions (except an idle list's own), scopes, bridges, retired identities and notices.
+- **Writes are never refused.** Over the budget, sends continue; health reports `degraded` and the capacity notice reaches agents through `status` and `receive`. The notice is set only when a sweep ends over the budget, in one of two texts: "storage is over budget" while something is still eligible, "capacity exhausted" when nothing is.
+- **Replicas.** The budget and `idle_window_hours` must be equal on every replica; the replica holding the maintenance lock decides.
 
 ### Defaults of the two lists
 
