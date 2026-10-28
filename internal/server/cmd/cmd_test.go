@@ -430,8 +430,8 @@ func TestRunRefusesEveryProtectedOperation(t *testing.T) {
 			}
 		}
 	}
-	if protected != 44 || open != 8 || protected+open != 52 {
-		t.Fatalf("operations: %d protected, %d open; want 44 and 8", protected, open)
+	if protected != 46 || open != 8 || protected+open != 54 {
+		t.Fatalf("operations: %d protected, %d open; want 46 and 8", protected, open)
 	}
 }
 

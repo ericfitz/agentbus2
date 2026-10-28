@@ -46,6 +46,11 @@ type Admin interface {
 	ListBridges(ctx context.Context) ([]Bridge, error)
 	GetBridge(ctx context.Context, channel string) (Bridge, error)
 	RemoveBridge(ctx context.Context, in RemoveBridgeInput) error
+	// The signing key operations answer unavailable (not retryable) with
+	// SigningKeysNotConfigured where the server has no signing keys (local
+	// mode has none). Both are administrator only.
+	ListSigningKeys(ctx context.Context) ([]SigningKey, error)
+	RotateSigningKey(ctx context.Context, in RotateSigningKeyInput) (SigningKeyRotation, error)
 }
 
 // ResetScope selects what Reset removes (Milestone 5 choice 12).

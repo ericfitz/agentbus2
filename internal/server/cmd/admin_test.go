@@ -596,8 +596,8 @@ func TestAdminSigningKeyCooldownSetting(t *testing.T) {
 func TestAdminSigningKeyUnknownBackend(t *testing.T) {
 	e := newAdminEnv(t)
 	code, _, errOut := e.run("-set", "signing_key_uri=awskms:///alias/x", "signing-key", "rotate")
-	if code == 0 || errOut == "" {
-		t.Fatalf("code %d stderr %q, want a refusal", code, errOut)
+	if code != 1 || !strings.Contains(errOut, "signing_key_uri: the awskms backend is not in this build") {
+		t.Fatalf("code %d stderr %q, want exit 1 and the awskms backend text", code, errOut)
 	}
 	// list needs no provider, so it works whatever the URI names.
 	if code, _, errOut := e.run("-set", "signing_key_uri=awskms:///alias/x", "signing-key", "list"); code != 0 {

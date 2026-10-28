@@ -46,6 +46,9 @@ type Options struct {
 	// Bridges serves the bridge operations (Slack bridge spec 6.1a). nil:
 	// every one answers unavailable (not retryable) with bus.BridgeNotConfigured.
 	Bridges Bridges
+	// SigningKeys serves the signing key operations (issue #6). nil: every
+	// one answers unavailable (not retryable) with bus.SigningKeysNotConfigured.
+	SigningKeys SigningKeys
 }
 
 var (

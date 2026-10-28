@@ -5,8 +5,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"io"
 	"log/slog"
 	"net"
+	"net/http"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -15,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/maintenance"
@@ -561,5 +564,50 @@ func TestServeSigningKeyJobs(t *testing.T) {
 	}
 	if slices.Contains(without, "signing key rotation") || slices.Contains(without, "signing key removal") || len(with) != len(without)+2 {
 		t.Errorf("jobs without it: %v (with: %d)", without, len(with))
+	}
+}
+
+// Serve wires the admin API's signing key operations only when the caller
+// passes a key service: without one they answer unavailable (a typed-nil
+// interface would panic instead), with one an administrator lists the key set.
+func TestServeSigningKeysAdminAPI(t *testing.T) {
+	get := func(t *testing.T, c Config) (int, string) {
+		t.Helper()
+		db := filepath.Join(t.TempDir(), "ab2.db")
+		seedIdentities(t, db, "root")
+		st := openSQLite(t, db)
+		if err := st.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error { return tx.SetAdmin(ctx, "root", true) }); err != nil {
+			t.Fatal(err)
+		}
+		c.Store, c.Auth = st, headerAuth{}
+		if c.SigningKeys != nil {
+			cr, err := core.New(st, core.Defaults(), core.Options{Now: time.Now})
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.SigningKeys = &signingkeys.Service{Core: cr, Provider: keyprovider.StoreProvider{}, Settings: signingkeys.DefaultSettings()}
+			if _, _, err := c.SigningKeys.EnsureActive(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		addr, _ := startServe(t, c)
+		req, err := http.NewRequest(http.MethodGet, "http://"+addr+"/v1/admin/signing-keys", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		req.Header.Set(identityHeader, "root")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		b, _ := io.ReadAll(resp.Body)
+		return resp.StatusCode, string(b)
+	}
+	if st, body := get(t, Config{}); st != 503 || !strings.Contains(body, `"code":"unavailable"`) || !strings.Contains(body, bus.SigningKeysNotConfigured) {
+		t.Errorf("without a service: %d %s", st, body)
+	}
+	if st, body := get(t, Config{SigningKeys: &signingkeys.Service{}}); st != 200 || !strings.Contains(body, `"state":"active"`) {
+		t.Errorf("with a service: %d %s", st, body)
 	}
 }

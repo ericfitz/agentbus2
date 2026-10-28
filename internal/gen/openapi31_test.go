@@ -134,6 +134,8 @@ func TestOperationTable(t *testing.T) {
 		"listBridges":                 "GET /v1/admin/bridges",
 		"getBridge":                   "GET /v1/admin/bridges/{channel}",
 		"removeBridge":                "DELETE /v1/admin/bridges/{channel}",
+		"listSigningKeys":             "GET /v1/admin/signing-keys",
+		"rotateSigningKey":            "POST /v1/admin/signing-keys/rotate",
 		"authorizationServerMetadata": "GET /.well-known/oauth-authorization-server",
 		"health":                      "GET /v1/health",
 	}
@@ -170,8 +172,8 @@ func TestOperationTable(t *testing.T) {
 			t.Errorf("unexpected operation %s", id)
 		}
 	}
-	if open != 8 || protected != 44 {
-		t.Fatalf("security: %d open, %d protected; want 8 and 44", open, protected)
+	if open != 8 || protected != 46 {
+		t.Fatalf("security: %d open, %d protected; want 8 and 46", open, protected)
 	}
 }
 
@@ -213,7 +215,7 @@ func (s *stub) Register(_ context.Context, _ gen.RegisterRequestObject) (gen.Reg
 	s.mu.Lock()
 	s.called++
 	s.mu.Unlock()
-	return gen.Register201JSONResponse{Identity: "pat", Kid: "k", Algorithm: gen.EdDSA, Created: true}, nil
+	return gen.Register201JSONResponse{Identity: "pat", Kid: "k", Algorithm: gen.RegistrationAlgorithmEdDSA, Created: true}, nil
 }
 
 func (s *stub) AdminReset(_ context.Context, _ gen.AdminResetRequestObject) (gen.AdminResetResponseObject, error) {

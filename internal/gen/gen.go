@@ -327,16 +327,16 @@ func (e ProblemCode) Valid() bool {
 
 // Defines values for RegistrationAlgorithm.
 const (
-	ES256 RegistrationAlgorithm = "ES256"
-	EdDSA RegistrationAlgorithm = "EdDSA"
+	RegistrationAlgorithmES256 RegistrationAlgorithm = "ES256"
+	RegistrationAlgorithmEdDSA RegistrationAlgorithm = "EdDSA"
 )
 
 // Valid indicates whether the value is a known member of the RegistrationAlgorithm enum.
 func (e RegistrationAlgorithm) Valid() bool {
 	switch e {
-	case ES256:
+	case RegistrationAlgorithmES256:
 		return true
-	case EdDSA:
+	case RegistrationAlgorithmEdDSA:
 		return true
 	default:
 		return false
@@ -400,6 +400,69 @@ func (e ScopeState) Valid() bool {
 	case Open:
 		return true
 	case Retired:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SigningKeyAlgorithm.
+const (
+	SigningKeyAlgorithmES256 SigningKeyAlgorithm = "ES256"
+	SigningKeyAlgorithmEdDSA SigningKeyAlgorithm = "EdDSA"
+)
+
+// Valid indicates whether the value is a known member of the SigningKeyAlgorithm enum.
+func (e SigningKeyAlgorithm) Valid() bool {
+	switch e {
+	case SigningKeyAlgorithmES256:
+		return true
+	case SigningKeyAlgorithmEdDSA:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SigningKeyProvider.
+const (
+	Awskms     SigningKeyProvider = "awskms"
+	Azurekms   SigningKeyProvider = "azurekms"
+	Gcpkms     SigningKeyProvider = "gcpkms"
+	Hashivault SigningKeyProvider = "hashivault"
+	Store      SigningKeyProvider = "store"
+)
+
+// Valid indicates whether the value is a known member of the SigningKeyProvider enum.
+func (e SigningKeyProvider) Valid() bool {
+	switch e {
+	case Awskms:
+		return true
+	case Azurekms:
+		return true
+	case Gcpkms:
+		return true
+	case Hashivault:
+		return true
+	case Store:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for SigningKeyState.
+const (
+	Active   SigningKeyState = "active"
+	Retiring SigningKeyState = "retiring"
+)
+
+// Valid indicates whether the value is a known member of the SigningKeyState enum.
+func (e SigningKeyState) Valid() bool {
+	switch e {
+	case Active:
+		return true
+	case Retiring:
 		return true
 	default:
 		return false
@@ -958,6 +1021,51 @@ type SessionInfo struct {
 	OpenedAt    int64  `json:"opened_at"`
 }
 
+// SigningKey defines model for SigningKey.
+type SigningKey struct {
+	Algorithm SigningKeyAlgorithm `json:"algorithm"`
+	CreatedAt int64               `json:"created_at"`
+
+	// Kid The RFC 7638 thumbprint of the public key.
+	Kid      string             `json:"kid"`
+	Provider SigningKeyProvider `json:"provider"`
+
+	// ProviderRef The key URI inside an external provider; empty for the store provider.
+	ProviderRef string `json:"provider_ref"`
+
+	// RemoveAfter Unix milliseconds, the earliest removal of a retiring key; 0 while the key is active.
+	RemoveAfter int64 `json:"remove_after"`
+
+	// RetiredAt Unix milliseconds; 0 while the key is active.
+	RetiredAt int64           `json:"retired_at"`
+	State     SigningKeyState `json:"state"`
+}
+
+// SigningKeyAlgorithm defines model for SigningKey.Algorithm.
+type SigningKeyAlgorithm string
+
+// SigningKeyProvider defines model for SigningKey.Provider.
+type SigningKeyProvider string
+
+// SigningKeyState defines model for SigningKey.State.
+type SigningKeyState string
+
+// SigningKeyList defines model for SigningKeyList.
+type SigningKeyList struct {
+	Keys []SigningKey `json:"keys"`
+}
+
+// SigningKeyRotation defines model for SigningKeyRotation.
+type SigningKeyRotation struct {
+	Active SigningKey `json:"active"`
+
+	// Previous The key that was active before the rotation, as the rotation left it (retiring, with its retirement times), or, when revoked is true, the deleted key as it was. Absent when the set had none.
+	Previous *SigningKey `json:"previous,omitempty"`
+
+	// Revoked True when previous was deleted instead of retired.
+	Revoked bool `json:"revoked"`
+}
+
 // Status defines model for Status.
 type Status struct {
 	Channels              []ChannelInfo `json:"channels"`
@@ -1134,6 +1242,14 @@ type CreateScopeParams struct {
 
 // DoneScopeParams defines parameters for DoneScope.
 type DoneScopeParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
+// RotateSigningKeyParams defines parameters for RotateSigningKey.
+type RotateSigningKeyParams struct {
+	RevokePrevious *bool `form:"revoke_previous,omitempty" json:"revoke_previous,omitempty"`
+
 	// IdempotencyKey Absent or empty means no receipt (Decision 66).
 	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
 }
@@ -1495,6 +1611,16 @@ type ClientInterface interface {
 	// DoneScope performs a POST /v1/admin/scopes/{scope}/done (the `DoneScope` operationId) request.
 	// Takes a body of the `application/json` content type.
 	DoneScope(ctx context.Context, scope ScopeParam, params *DoneScopeParams, body DoneScopeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// ListSigningKeys performs a GET /v1/admin/signing-keys (the `ListSigningKeys` operationId) request.
+	//
+	// The server's token signing key set, the active key first. Public facts only: a private key is never part of the answer. Administrator only. Local mode and a server without a key service answer 503 unavailable.
+	ListSigningKeys(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// RotateSigningKey performs a POST /v1/admin/signing-keys/rotate (the `RotateSigningKey` operationId) request.
+	//
+	// Asks the configured key provider for the next key and makes it the active key. The previous active key keeps verifying until its removal time (state retiring), or is deleted at once with revoke_previous, which also skips the rotation cooldown. Inside the cooldown a plain rotation answers 409 conflict. Administrator only.
+	RotateSigningKey(ctx context.Context, params *RotateSigningKeyParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// AdminStatus performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
 	AdminStatus(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1958,6 +2084,36 @@ func (c *Client) DoneScopeWithBody(ctx context.Context, scope ScopeParam, params
 // Takes a body of the `application/json` content type.
 func (c *Client) DoneScope(ctx context.Context, scope ScopeParam, params *DoneScopeParams, body DoneScopeJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDoneScopeRequest(c.Server, scope, params, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// ListSigningKeys performs a GET /v1/admin/signing-keys (the `ListSigningKeys` operationId) request.
+//
+// The server's token signing key set, the active key first. Public facts only: a private key is never part of the answer. Administrator only. Local mode and a server without a key service answer 503 unavailable.
+func (c *Client) ListSigningKeys(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListSigningKeysRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// RotateSigningKey performs a POST /v1/admin/signing-keys/rotate (the `RotateSigningKey` operationId) request.
+//
+// Asks the configured key provider for the next key and makes it the active key. The previous active key keeps verifying until its removal time (state retiring), or is deleted at once with revoke_previous, which also skips the rotation cooldown. Inside the cooldown a plain rotation answers 409 conflict. Administrator only.
+func (c *Client) RotateSigningKey(ctx context.Context, params *RotateSigningKeyParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewRotateSigningKeyRequest(c.Server, params)
 	if err != nil {
 		return nil, err
 	}
@@ -3259,6 +3415,102 @@ func NewDoneScopeRequestWithBody(server string, scope ScopeParam, params *DoneSc
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
+
+	return req, nil
+}
+
+// NewListSigningKeysRequest constructs an http.Request for the ListSigningKeys method
+func NewListSigningKeysRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/signing-keys")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewRotateSigningKeyRequest constructs an http.Request for the RotateSigningKey method
+func NewRotateSigningKeyRequest(server string, params *RotateSigningKeyParams) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/admin/signing-keys/rotate")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.RevokePrevious != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "revoke_previous", *params.RevokePrevious, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
 
 	if params != nil {
 
@@ -5359,6 +5611,20 @@ type ClientWithResponsesInterface interface {
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	DoneScopeWithResponse(ctx context.Context, scope ScopeParam, params *DoneScopeParams, body DoneScopeJSONRequestBody, reqEditors ...RequestEditorFn) (*DoneScopeResponse, error)
 
+	// ListSigningKeysWithResponse performs a GET /v1/admin/signing-keys (the `ListSigningKeys` operationId) request.
+	//
+	// The server's token signing key set, the active key first. Public facts only: a private key is never part of the answer. Administrator only. Local mode and a server without a key service answer 503 unavailable.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListSigningKeysWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSigningKeysResponse, error)
+
+	// RotateSigningKeyWithResponse performs a POST /v1/admin/signing-keys/rotate (the `RotateSigningKey` operationId) request.
+	//
+	// Asks the configured key provider for the next key and makes it the active key. The previous active key keeps verifying until its removal time (state retiring), or is deleted at once with revoke_previous, which also skips the rotation cooldown. Inside the cooldown a plain rotation answers 409 conflict. Administrator only.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	RotateSigningKeyWithResponse(ctx context.Context, params *RotateSigningKeyParams, reqEditors ...RequestEditorFn) (*RotateSigningKeyResponse, error)
+
 	// AdminStatusWithResponse performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -6327,6 +6593,102 @@ func (r DoneScopeResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r DoneScopeResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type ListSigningKeysResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SigningKeyList
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListSigningKeysResponse) GetJSON200() *SigningKeyList {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListSigningKeysResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListSigningKeysResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListSigningKeysResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListSigningKeysResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListSigningKeysResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type RotateSigningKeyResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *SigningKeyRotation
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r RotateSigningKeyResponse) GetJSON200() *SigningKeyRotation {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r RotateSigningKeyResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r RotateSigningKeyResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r RotateSigningKeyResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r RotateSigningKeyResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r RotateSigningKeyResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -8302,6 +8664,32 @@ func (c *ClientWithResponses) DoneScopeWithResponse(ctx context.Context, scope S
 	return ParseDoneScopeResponse(rsp)
 }
 
+// ListSigningKeysWithResponse performs a GET /v1/admin/signing-keys (the `ListSigningKeys` operationId) request.
+//
+// The server's token signing key set, the active key first. Public facts only: a private key is never part of the answer. Administrator only. Local mode and a server without a key service answer 503 unavailable.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListSigningKeysWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListSigningKeysResponse, error) {
+	rsp, err := c.ListSigningKeys(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListSigningKeysResponse(rsp)
+}
+
+// RotateSigningKeyWithResponse performs a POST /v1/admin/signing-keys/rotate (the `RotateSigningKey` operationId) request.
+//
+// Asks the configured key provider for the next key and makes it the active key. The previous active key keeps verifying until its removal time (state retiring), or is deleted at once with revoke_previous, which also skips the rotation cooldown. Inside the cooldown a plain rotation answers 409 conflict. Administrator only.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) RotateSigningKeyWithResponse(ctx context.Context, params *RotateSigningKeyParams, reqEditors ...RequestEditorFn) (*RotateSigningKeyResponse, error) {
+	rsp, err := c.RotateSigningKey(ctx, params, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseRotateSigningKeyResponse(rsp)
+}
+
 // AdminStatusWithResponse performs a GET /v1/admin/status (the `AdminStatus` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -9345,6 +9733,72 @@ func ParseDoneScopeResponse(rsp *http.Response) (*DoneScopeResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest Scope
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseListSigningKeysResponse parses an HTTP response from a ListSigningKeysWithResponse call
+func ParseListSigningKeysResponse(rsp *http.Response) (*ListSigningKeysResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListSigningKeysResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SigningKeyList
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseRotateSigningKeyResponse parses an HTTP response from a RotateSigningKeyWithResponse call
+func ParseRotateSigningKeyResponse(rsp *http.Response) (*RotateSigningKeyResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &RotateSigningKeyResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest SigningKeyRotation
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -10626,6 +11080,12 @@ type ServerInterface interface {
 	// (POST /v1/admin/scopes/{scope}/done)
 	DoneScope(w http.ResponseWriter, r *http.Request, scope ScopeParam, params DoneScopeParams)
 
+	// (GET /v1/admin/signing-keys)
+	ListSigningKeys(w http.ResponseWriter, r *http.Request)
+
+	// (POST /v1/admin/signing-keys/rotate)
+	RotateSigningKey(w http.ResponseWriter, r *http.Request, params RotateSigningKeyParams)
+
 	// (GET /v1/admin/status)
 	AdminStatus(w http.ResponseWriter, r *http.Request)
 
@@ -11150,6 +11610,74 @@ func (siw *ServerInterfaceWrapper) DoneScope(w http.ResponseWriter, r *http.Requ
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.DoneScope(w, r, scope, params)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListSigningKeys operation middleware
+func (siw *ServerInterfaceWrapper) ListSigningKeys(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListSigningKeys(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// RotateSigningKey operation middleware
+func (siw *ServerInterfaceWrapper) RotateSigningKey(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params RotateSigningKeyParams
+
+	// ------------- Optional query parameter "revoke_previous" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "revoke_previous", r.URL.Query(), &params.RevokePrevious, runtime.BindQueryParameterOptions{Type: "boolean", Format: ""})
+	if err != nil {
+		var requiredError *runtime.RequiredParameterError
+		if errors.As(err, &requiredError) {
+			siw.ErrorHandlerFunc(w, r, &RequiredParamError{ParamName: "revoke_previous"})
+		} else {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "revoke_previous", Err: err})
+		}
+		return
+	}
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.RotateSigningKey(w, r, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -12800,6 +13328,8 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/auth/register", wrapper.Register)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/reset", wrapper.AdminReset)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/identities/{identity}/reset-credential", wrapper.ResetCredential)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/signing-keys", wrapper.ListSigningKeys)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/signing-keys/rotate", wrapper.RotateSigningKey)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/identities/by-email", wrapper.CreateIdentityByEmail)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/admin/identities", wrapper.CreateAgentIdentity)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/admin/scopes", wrapper.ListScopes)
@@ -13380,6 +13910,83 @@ type DoneScopedefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response DoneScopedefaultApplicationProblemPlusJSONResponse) VisitDoneScopeResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSigningKeysRequestObject struct {
+}
+
+type ListSigningKeysResponseObject interface {
+	VisitListSigningKeysResponse(w http.ResponseWriter) error
+}
+
+type ListSigningKeys200JSONResponse SigningKeyList
+
+func (response ListSigningKeys200JSONResponse) VisitListSigningKeysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListSigningKeysdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListSigningKeysdefaultApplicationProblemPlusJSONResponse) VisitListSigningKeysResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateSigningKeyRequestObject struct {
+	Params RotateSigningKeyParams
+}
+
+type RotateSigningKeyResponseObject interface {
+	VisitRotateSigningKeyResponse(w http.ResponseWriter) error
+}
+
+type RotateSigningKey200JSONResponse SigningKeyRotation
+
+func (response RotateSigningKey200JSONResponse) VisitRotateSigningKeyResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type RotateSigningKeydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response RotateSigningKeydefaultApplicationProblemPlusJSONResponse) VisitRotateSigningKeyResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -14909,6 +15516,12 @@ type StrictServerInterface interface {
 	// (POST /v1/admin/scopes/{scope}/done)
 	DoneScope(ctx context.Context, request DoneScopeRequestObject) (DoneScopeResponseObject, error)
 
+	// (GET /v1/admin/signing-keys)
+	ListSigningKeys(ctx context.Context, request ListSigningKeysRequestObject) (ListSigningKeysResponseObject, error)
+
+	// (POST /v1/admin/signing-keys/rotate)
+	RotateSigningKey(ctx context.Context, request RotateSigningKeyRequestObject) (RotateSigningKeyResponseObject, error)
+
 	// (GET /v1/admin/status)
 	AdminStatus(ctx context.Context, request AdminStatusRequestObject) (AdminStatusResponseObject, error)
 
@@ -15466,6 +16079,56 @@ func (sh *strictHandler) DoneScope(w http.ResponseWriter, r *http.Request, scope
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(DoneScopeResponseObject); ok {
 		if err := validResponse.VisitDoneScopeResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// ListSigningKeys operation middleware
+func (sh *strictHandler) ListSigningKeys(w http.ResponseWriter, r *http.Request) {
+	var request ListSigningKeysRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListSigningKeys(ctx, request.(ListSigningKeysRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListSigningKeys")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListSigningKeysResponseObject); ok {
+		if err := validResponse.VisitListSigningKeysResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// RotateSigningKey operation middleware
+func (sh *strictHandler) RotateSigningKey(w http.ResponseWriter, r *http.Request, params RotateSigningKeyParams) {
+	var request RotateSigningKeyRequestObject
+
+	request.Params = params
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.RotateSigningKey(ctx, request.(RotateSigningKeyRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "RotateSigningKey")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(RotateSigningKeyResponseObject); ok {
+		if err := validResponse.VisitRotateSigningKeyResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

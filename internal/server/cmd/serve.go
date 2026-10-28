@@ -200,7 +200,13 @@ func Serve(ctx context.Context, c Config) error {
 	if c.Ready != nil {
 		c.Ready(ln.Addr())
 	}
-	srv := httpServer(c, server.New(cr, server.Options{Auth: c.Auth, Logger: c.Logger, Registration: c.Registration, Issuer: c.Issuer, External: c.External, Bridges: bridges}))
+	opts := server.Options{Auth: c.Auth, Logger: c.Logger, Registration: c.Registration, Issuer: c.Issuer, External: c.External, Bridges: bridges}
+	// Only a non-nil service: a typed-nil interface would panic instead of
+	// answering unavailable.
+	if c.SigningKeys != nil {
+		opts.SigningKeys = c.SigningKeys
+	}
+	srv := httpServer(c, server.New(cr, opts))
 
 	errc := make(chan error, 1)
 	go func() { errc <- srv.Serve(ln) }()

@@ -49,7 +49,7 @@ The idle wake on every harness except Codex is a background `agentbus2 wait` (Ba
 
 ## Administrator commands
 
-An administrator's client also has `agentbus2 scopes create [-key K] NAME | list | get NAME | done -retire with_bridge|normal [-key K] NAME`, `agentbus2 identities create [-scope S] NAME` (prints a one-time enrollment token for the new agent), `agentbus2 channels create [-scope S] ...` and `agentbus2 bridges create [-slack-name N] CHANNEL | list | get CHANNEL | remove CHANNEL` (Slack bridge; `forbidden` where none is configured). The walk-through is in `docs/ops/admin-bootstrap.md`.
+An administrator's client also has `agentbus2 scopes create [-key K] NAME | list | get NAME | done -retire with_bridge|normal [-key K] NAME`, `agentbus2 identities create [-scope S] NAME` (prints a one-time enrollment token for the new agent), `agentbus2 channels create [-scope S] ...` and `agentbus2 bridges create [-slack-name N] CHANNEL | list | get CHANNEL | remove CHANNEL` (Slack bridge; `forbidden` where none is configured) and `agentbus2 signing-keys list | rotate [-revoke-previous] [-key K]` (the server's token signing key set; `unavailable` on a local profile). The walk-through is in `docs/ops/admin-bootstrap.md`.
 
 ## Terminal UI
 

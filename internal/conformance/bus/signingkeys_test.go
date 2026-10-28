@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
 	"github.com/ericfitz/agentbus2/internal/dbtest"
@@ -164,5 +165,31 @@ func TestSigningKeysConcurrentRevoke(t *testing.T) {
 		if len(rows) != 1 || rows[0].State != ab2store.SigningKeyActive {
 			t.Fatalf("rows %+v, want one active row", rows)
 		}
+	})
+}
+
+// Both Bus transports of the suite answer the key operations unavailable: the
+// local Bus has no signing keys, and the in-process server of the suite is
+// built without a key service. The non-administrator check lives in
+// internal/server (TestSigningKeysForbiddenForAgent); it needs a transport
+// whose server has the service, so no TestACLMatrix row exists.
+func TestSigningKeysUnavailable(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		b := h.admin("root")
+		ctx := context.Background()
+		check := func(name string, err error) {
+			t.Helper()
+			var be *ab2bus.Error
+			if !errors.As(err, &be) || be.Code != ab2bus.CodeUnavailable || be.Retryable || be.Message != ab2bus.SigningKeysNotConfigured {
+				t.Errorf("%s: err = %v, want unavailable, not retryable, %q", name, err, ab2bus.SigningKeysNotConfigured)
+			}
+		}
+		_, err := b.ListSigningKeys(ctx)
+		check("ListSigningKeys", err)
+		_, err = b.RotateSigningKey(ctx, ab2bus.RotateSigningKeyInput{})
+		check("RotateSigningKey", err)
+		_, err = b.RotateSigningKey(ctx, ab2bus.RotateSigningKeyInput{RevokePrevious: true, IdempotencyKey: "k"})
+		check("RotateSigningKey revoking", err)
 	})
 }

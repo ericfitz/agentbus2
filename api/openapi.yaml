@@ -880,6 +880,51 @@ paths:
                 $ref: "#/components/schemas/CredentialReset"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/admin/signing-keys:
+    get:
+      operationId: listSigningKeys
+      tags: [admin]
+      description: >-
+        The server's token signing key set, the active key first. Public
+        facts only: a private key is never part of the answer. Administrator
+        only. Local mode and a server without a key service answer 503
+        unavailable.
+      responses:
+        "200":
+          description: The signing key set.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SigningKeyList"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/admin/signing-keys/rotate:
+    post:
+      operationId: rotateSigningKey
+      tags: [admin]
+      description: >-
+        Asks the configured key provider for the next key and makes it the
+        active key. The previous active key keeps verifying until its removal
+        time (state retiring), or is deleted at once with revoke_previous, which
+        also skips the rotation cooldown. Inside the cooldown a plain rotation
+        answers 409 conflict. Administrator only.
+      parameters:
+        - name: revoke_previous
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      responses:
+        "200":
+          description: The rotation.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SigningKeyRotation"
+        default:
+          $ref: "#/components/responses/Problem"
   /v1/admin/identities/by-email:
     post:
       operationId: createIdentityByEmail
@@ -2075,6 +2120,56 @@ components:
           type: string
         keys_removed:
           type: integer
+    SigningKey:
+      type: object
+      required: [kid, state, provider, provider_ref, algorithm, created_at, retired_at, remove_after]
+      properties:
+        kid:
+          type: string
+          description: The RFC 7638 thumbprint of the public key.
+        state:
+          type: string
+          enum: [active, retiring]
+        provider:
+          type: string
+          enum: [store, awskms, gcpkms, azurekms, hashivault]
+        provider_ref:
+          type: string
+          description: The key URI inside an external provider; empty for the store provider.
+        algorithm:
+          type: string
+          enum: [EdDSA, ES256]
+        created_at:
+          type: integer
+          format: int64
+        retired_at:
+          type: integer
+          format: int64
+          description: Unix milliseconds; 0 while the key is active.
+        remove_after:
+          type: integer
+          format: int64
+          description: Unix milliseconds, the earliest removal of a retiring key; 0 while the key is active.
+    SigningKeyList:
+      type: object
+      required: [keys]
+      properties:
+        keys:
+          type: array
+          items:
+            $ref: "#/components/schemas/SigningKey"
+    SigningKeyRotation:
+      type: object
+      required: [active, revoked]
+      properties:
+        active:
+          $ref: "#/components/schemas/SigningKey"
+        previous:
+          description: The key that was active before the rotation, as the rotation left it (retiring, with its retirement times), or, when revoked is true, the deleted key as it was. Absent when the set had none.
+          $ref: "#/components/schemas/SigningKey"
+        revoked:
+          type: boolean
+          description: True when previous was deleted instead of retired.
     CreateAgentIdentityRequest:
       type: object
       additionalProperties: false
