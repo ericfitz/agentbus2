@@ -73,6 +73,11 @@ func newProvider(uri string, opts ...func(*config.LoadOptions) error) (*Provider
 	if err != nil {
 		return nil, fmt.Errorf("awskms: %s: %w", describeURI(uri), err)
 	}
+	if strings.Contains(endpoint, "@") {
+		// The endpoint is host[:port]; user info would be sent to nobody and
+		// printed by nothing, so it can only be a mistake or a leaked secret.
+		return nil, errors.New("awskms: the endpoint must be host[:port] with no user info")
+	}
 	return &Provider{uri: uri, endpoint: endpoint, keyID: keyID, opts: opts}, nil
 }
 
@@ -268,11 +273,10 @@ func unavailable(err error) bool {
 	if errors.Is(err, context.DeadlineExceeded) {
 		return true
 	}
-	// A failure to obtain credentials may itself be a network error (the
-	// instance metadata service); the cause is the credentials, not KMS.
-	if strings.Contains(err.Error(), "failed to retrieve credentials") {
-		return false
-	}
+	// Credential failures need no case of their own: one caused by a network
+	// or timeout error (the instance metadata service, a token endpoint) is a
+	// net.Error or a deadline below and counts as an outage; any other (no
+	// provider, invalid or expired credentials) matches nothing and is a refusal.
 	var api smithy.APIError
 	if errors.As(err, &api) && throttleCodes[api.ErrorCode()] {
 		return true

@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -19,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 
@@ -41,6 +43,7 @@ type kmsKey struct {
 	priv  crypto.Signer
 	spec  string // KeySpec
 	state string // KeyState, "" means Enabled
+	usage string // KeyUsage, "" means SIGN_VERIFY
 }
 
 // fakeKMS is an httptest.NewTLSServer speaking AWS JSON 1.1 for DescribeKey,
@@ -190,9 +193,13 @@ func (f *fakeKMS) handle(w http.ResponseWriter, r *http.Request) {
 		if state == "" {
 			state = "Enabled"
 		}
+		usage := k.usage
+		if usage == "" {
+			usage = "SIGN_VERIFY"
+		}
 		algs := []string{"ECDSA_SHA_256"}
 		_ = json.NewEncoder(w).Encode(map[string]any{"KeyMetadata": map[string]any{
-			"Arn": arnFmt + k.id, "KeyId": k.id, "KeySpec": k.spec, "KeyUsage": "SIGN_VERIFY",
+			"Arn": arnFmt + k.id, "KeyId": k.id, "KeySpec": k.spec, "KeyUsage": usage,
 			"KeyState": state, "SigningAlgorithms": algs,
 		}})
 	case "GetPublicKey":
@@ -525,10 +532,6 @@ func TestServiceFailuresAreUnavailable(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sg, err := p.Signer(ctx, k)
-	if err != nil {
-		t.Fatal(err)
-	}
 	digest := sha256.Sum256([]byte("x"))
 
 	for name, c := range map[string]struct {
@@ -565,7 +568,6 @@ func TestServiceFailuresAreUnavailable(t *testing.T) {
 	if _, err := p.Next(ctx); err != nil {
 		t.Fatalf("recovered Next: %v", err)
 	}
-	_ = sg
 }
 
 func TestUnreachableEndpointIsUnavailable(t *testing.T) {
@@ -650,5 +652,85 @@ func TestPinnedRefMustBeAcceptedBack(t *testing.T) {
 	f.point("alias/odd", "not-a-uuid")
 	if _, err := f.provider(t, "/alias/odd").Next(context.Background()); err == nil {
 		t.Fatal("Next pinned a ref Signer cannot load")
+	}
+}
+
+type failingCreds struct{ err error }
+
+func (f failingCreds) Retrieve(context.Context) (aws.Credentials, error) {
+	return aws.Credentials{}, f.err
+}
+
+// A credential failure is classified by the type of its cause: a network or
+// timeout error reaching the credential source is the service's outage; every
+// other one (no provider, invalid or expired credentials) is a refusal.
+func TestCredentialFailuresAreClassifiedByType(t *testing.T) {
+	f := newFakeKMS(t)
+	f.addP256(t, uuid1)
+	ctx := context.Background()
+	good := f.provider(t, "/"+uuid1)
+	k, err := good.Next(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte("x"))
+	for name, c := range map[string]struct {
+		err  error
+		want bool
+	}{
+		"network error":   {&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}, true},
+		"deadline":        {context.DeadlineExceeded, true},
+		"no provider":     {errors.New("no EC2 IMDS role found"), false},
+		"invalid/expired": {errors.New("the security token included in the request is expired"), false},
+	} {
+		opts := append(f.opts(t), config.WithCredentialsProvider(failingCreds{c.err}))
+		p, err := newProvider("awskms://"+f.host()+"/"+uuid1, opts...)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, errNext := p.Next(ctx)
+		sg, err := p.Signer(ctx, k)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, errSign := sg.SignContext(ctx, digest[:], crypto.SHA256)
+		for op, e := range map[string]error{"Next": errNext, "Sign": errSign} {
+			if e == nil {
+				t.Errorf("%s %s: no error", name, op)
+				continue
+			}
+			if got := errors.Is(e, keyprovider.ErrUnavailable); got != c.want {
+				t.Errorf("%s %s: ErrUnavailable = %v, want %v (%v)", name, op, got, c.want, e)
+			}
+		}
+	}
+}
+
+func TestNewRefusesEndpointUserInfo(t *testing.T) {
+	for _, uri := range []string{
+		"awskms://user:s3cret@host:4566/alias/x",
+		"awskms://s3cret@host/alias/x",
+		"awskms://host@evil/alias/x",
+	} {
+		p, err := New(uri)
+		if err == nil || p != nil {
+			t.Errorf("New(%q) = %v, %v, want an error", uri, p, err)
+			continue
+		}
+		if strings.Contains(err.Error(), "s3cret") || strings.Contains(err.Error(), "user:") {
+			t.Errorf("New(%q) error quotes the URI: %v", uri, err)
+		}
+	}
+}
+
+func TestNextRefusesWrongKeyUsage(t *testing.T) {
+	f := newFakeKMS(t)
+	k, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	f.mu.Lock()
+	f.keys[uuid1] = &kmsKey{id: uuid1, priv: k, spec: "ECC_NIST_P256", usage: "ENCRYPT_DECRYPT"}
+	f.mu.Unlock()
+	_, err := f.provider(t, "/"+uuid1).Next(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "ENCRYPT_DECRYPT") || errors.Is(err, keyprovider.ErrUnavailable) {
+		t.Fatalf("err = %v", err)
 	}
 }
