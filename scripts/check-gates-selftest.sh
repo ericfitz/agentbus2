@@ -432,6 +432,11 @@ block_m7_deps_rule_fires() {
 	m7_probe "$label" internal/oidctest/probe_m7_aws.go github.com/sigstore/sigstore/pkg/signature/kms/aws "deps_violation=$m/internal/oidctest imports github.com/sigstore/sigstore/pkg/signature/kms/aws" awskms-importers
 	m7_probe "$label" internal/oidctest/probe_m7_aws.go github.com/aws/aws-sdk-go-v2/aws "deps_violation=$m/internal/oidctest imports github.com/aws/aws-sdk-go-v2" awskms-importers
 	m7_probe "$label" internal/oidctest/probe_m7_aws_tagged.go github.com/aws/smithy-go "deps_violation=$m/internal/oidctest imports github.com/aws/smithy-go" awskms-importers "" awskms
+	# The hashivault backend's imports: sigstore's module and the Vault API
+	# client (a subpackage of it counts) are the adapter's alone.
+	m7_probe "$label" internal/oidctest/probe_m7_hv.go github.com/sigstore/sigstore/pkg/signature/kms/hashivault "deps_violation=$m/internal/oidctest imports github.com/sigstore/sigstore/pkg/signature/kms/hashivault" hashivault-importers
+	m7_probe "$label" internal/oidctest/probe_m7_hv.go github.com/hashicorp/vault/api "deps_violation=$m/internal/oidctest imports github.com/hashicorp/vault/api" hashivault-importers
+	m7_probe "$label" internal/oidctest/probe_m7_hv_tagged.go github.com/hashicorp/vault/api/cliconfig "deps_violation=$m/internal/oidctest imports github.com/hashicorp/vault/api" hashivault-importers "" hashivault
 	printf 'package notify\n\nimport _ "%s"\n' "$m/internal/no/such/package" >"$wt/internal/core/notify/probe_m7.go"
 	bash "$wt/scripts/m7-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 2 ]; then

@@ -25,8 +25,9 @@
 # deps_violation=<package> imports <forbidden> [rule <name>] line per hit and
 # exits 1. A go list failure exits 2. <name> is the rule in the lists here
 # (store-no-core, notify-leaf, pgnotify-no-server, slackapi-allowlist,
-# slack-go-importers, awskms-importers, slackbridge-isolation, slack-consumers,
-# keyprovider-leaf, keyprovider-consumers); the self-test
+# slack-go-importers, awskms-importers, hashivault-importers,
+# slackbridge-isolation, slack-consumers, keyprovider-leaf,
+# keyprovider-consumers); the self-test
 # (scripts/check-gates-selftest.sh) requires each probe to trip exactly one.
 #
 # The Slack bridge rules (same output):
@@ -190,6 +191,10 @@ import_check() {
 	check_importers awskms-importers github.com/sigstore/sigstore/pkg/signature/kms/aws "$MOD/internal/keyprovider/awskms"
 	check_importers awskms-importers github.com/aws/aws-sdk-go-v2 "$MOD/internal/keyprovider/awskms"
 	check_importers awskms-importers github.com/aws/smithy-go "$MOD/internal/keyprovider/awskms"
+	# The hashivault backend: sigstore's module signs, and the Vault API client
+	# reads the transit key (sigstore does not expose the latest key version).
+	check_importers hashivault-importers github.com/sigstore/sigstore/pkg/signature/kms/hashivault "$MOD/internal/keyprovider/hashivault"
+	check_importers hashivault-importers github.com/hashicorp/vault/api "$MOD/internal/keyprovider/hashivault"
 	check_deps slackbridge-isolation ./internal/slackbridge internal/server internal/gen internal/slackapi/slackgo github.com/slack-go/slack
 	local p
 	for p in './internal/core/...' './internal/bus/...' ./internal/cli ./internal/mcpserver ./internal/client ./internal/server; do
