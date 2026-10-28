@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"testing"
 )
@@ -84,7 +85,7 @@ func TestConfigBounds(t *testing.T) {
 				t.Errorf("embedding_query_timeout_seconds = %v rejected: %v", ok, err)
 			}
 		}
-		for _, bad := range []float64{0.09, 120.1, 0, -1} {
+		for _, bad := range []float64{0.09, 120.1, 0, -1, math.NaN(), math.Inf(1), math.Inf(-1)} {
 			c := Defaults()
 			c.EmbeddingQueryTimeoutSeconds = bad
 			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "embedding_query_timeout_seconds") {
@@ -100,7 +101,7 @@ func TestConfigBounds(t *testing.T) {
 				t.Errorf("inspection_timeout_seconds = %v rejected: %v", ok, err)
 			}
 		}
-		for _, bad := range []float64{0.09, 60.1, 0, -1} {
+		for _, bad := range []float64{0.09, 60.1, 0, -1, math.NaN(), math.Inf(1), math.Inf(-1)} {
 			c := Defaults()
 			c.InspectionTimeoutSeconds = bad
 			want := fmt.Sprintf("inspection_timeout_seconds must be between 0.1 and 60, got %v", bad)

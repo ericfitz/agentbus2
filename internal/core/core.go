@@ -61,6 +61,7 @@ type Core struct {
 	inspectMu    sync.Mutex
 	inspectState inspectState
 	noticeSetAt  time.Time
+	failGen      uint64
 	notifyTotal  atomic.Int64
 
 	tickMu   sync.Mutex

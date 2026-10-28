@@ -1,6 +1,7 @@
 package config
 
 import (
+	"math"
 	"reflect"
 	"slices"
 	"strings"
@@ -76,6 +77,10 @@ func TestValidateRejects(t *testing.T) {
 		{"no store", func(c *Config) { c.SQLite = "" }, "exactly one of sqlite or postgres"},
 		{"postgres budget bound", func(c *Config) { c.PostgresBudgetMiB = 1 }, "postgres_budget_mib"},
 		{"inspection on failure", func(c *Config) { c.InspectionOnFailure = "maybe" }, "inspection_on_failure"},
+		{"inspection timeout NaN", func(c *Config) { c.InspectionTimeoutSeconds = math.NaN() }, "inspection_timeout_seconds"},
+		{"inspection timeout Inf", func(c *Config) { c.InspectionTimeoutSeconds = math.Inf(1) }, "inspection_timeout_seconds"},
+		{"embedding timeout NaN", func(c *Config) { c.EmbeddingQueryTimeoutSeconds = math.NaN() }, "embedding_query_timeout_seconds"},
+		{"embedding timeout -Inf", func(c *Config) { c.EmbeddingQueryTimeoutSeconds = math.Inf(-1) }, "embedding_query_timeout_seconds"},
 		{"inspection timeout", func(c *Config) { c.InspectionTimeoutSeconds = 0 }, "inspection_timeout_seconds"},
 		{"idle window bound", func(c *Config) { c.IdleWindowHours = 71 }, "idle_window_hours"},
 		{"registration", func(c *Config) { c.Registration = "tofu" }, "registration"},

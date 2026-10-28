@@ -187,6 +187,14 @@ func TestRejectsUnknownAndMalformed(t *testing.T) {
 	if err != nil || c.EmbeddingQueryTimeoutSeconds != 2.5 {
 		t.Errorf("float setting: %v %v", c.EmbeddingQueryTimeoutSeconds, err)
 	}
+	for _, name := range []string{"embedding_query_timeout_seconds", "inspection_timeout_seconds"} {
+		for _, bad := range []string{"NaN", "nan", "Inf", "+Inf", "-Inf", "infinity"} {
+			_, err = Load("", nil, Overrides{"sqlite": "x", name: bad})
+			if err == nil || !strings.Contains(err.Error(), name) {
+				t.Errorf("%s=%q: err = %v, want a refusal naming the setting", name, bad, err)
+			}
+		}
+	}
 }
 
 // TestIssuerSubjectsRefused: the subjects member is gone (Decision 10); the

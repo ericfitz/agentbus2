@@ -163,6 +163,12 @@ func TestParseVerdictRejects(t *testing.T) {
 		{"wrong member case", `{"Verdict":"allow"}`, FailMalformed},
 		{"null member", `{"verdict":"allow","notify":null}`, FailMalformed},
 		{"wrong type", `{"verdict":"allow","notify":"yes"}`, FailMalformed},
+		{"duplicate verdict", `{"verdict":"refuse","verdict":"allow"}`, FailMalformed},
+		{"duplicate code", `{"verdict":"refuse","code":"a","code":"b","reason":"y"}`, FailMalformed},
+		{"allow with empty code", `{"verdict":"allow","code":""}`, FailVerdict},
+		{"allow with empty reason", `{"verdict":"allow","reason":""}`, FailVerdict},
+		{"not an object", `"allow"`, FailMalformed},
+		{"unterminated", `{"verdict":"allow"`, FailMalformed},
 		{"no verdict", `{}`, FailVerdict},
 		{"unknown verdict", `{"verdict":"maybe"}`, FailVerdict},
 		{"redact with member", `{"verdict":"redact","redact":{}}`, FailMalformed},
@@ -643,5 +649,60 @@ func TestInspectionNoticeRateAndClear(t *testing.T) {
 	}
 	if got := setAt(); got != startMs+200_000 {
 		t.Errorf("a core in state ok touched another process's notice: SetAt = %d", got)
+	}
+}
+
+func TestInspectClassNormalized(t *testing.T) {
+	in := &stubInspector{reply: func(context.Context, InspectRequest) ([]byte, error) {
+		return nil, &InspectError{Class: "weird\nclass", Err: errors.New("x")}
+	}}
+	c, _, buf := newInspectCore(t, nil, in)
+	_, _ = c.inspect(context.Background(), "pat", testPrep())
+	lines := linesWithMsg(t, buf, "write inspection failed")
+	if len(lines) != 1 || lines[0]["class"] != FailTransport {
+		t.Fatalf("lines = %v, want class transport", lines)
+	}
+	if n, ok := inspectionNotice(t, c); !ok || !strings.Contains(n.Message, "(transport)") {
+		t.Fatalf("notice = %+v", n)
+	}
+}
+
+// hookStore runs after once, after the next Tx returns.
+type hookStore struct {
+	store.Store
+	mu    sync.Mutex
+	after func()
+}
+
+func (s *hookStore) Tx(ctx context.Context, fn func(context.Context, store.Tx) error) error {
+	err := s.Store.Tx(ctx, fn)
+	s.mu.Lock()
+	h := s.after
+	s.after = nil
+	s.mu.Unlock()
+	if h != nil {
+		h()
+	}
+	return err
+}
+
+// TestInspectionFailureDuringSuccessClear: a failure that runs between a
+// success's notice read and its state update must leave the state failing.
+func TestInspectionFailureDuringSuccessClear(t *testing.T) {
+	in := &stubInspector{reply: replyWith(`{"verdict":"allow"}`)}
+	c, _, _ := newInspectCore(t, nil, in)
+	hs := &hookStore{Store: c.Store}
+	c.Store = hs
+	ctx := context.Background()
+	hs.after = func() { c.noteFailure(ctx, FailTransport) }
+	c.noteSuccess(ctx) // state unknown, no notice: would become ok
+	if _, ok := inspectionNotice(t, c); !ok {
+		t.Fatal("the interleaved failure did not set the notice")
+	}
+	c.inspectMu.Lock()
+	st := c.inspectState
+	c.inspectMu.Unlock()
+	if st == inspectOK {
+		t.Fatal("state is ok while the notice is set")
 	}
 }

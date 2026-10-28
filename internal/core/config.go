@@ -165,10 +165,10 @@ func (c Config) Validate() error {
 	if c.ReceiveDefaultCount > c.ReceiveMaxCount {
 		return errors.New("receive_default_count must be <= receive_max_count")
 	}
-	if c.EmbeddingQueryTimeoutSeconds < 0.1 || c.EmbeddingQueryTimeoutSeconds > 120 {
+	if !(c.EmbeddingQueryTimeoutSeconds >= 0.1 && c.EmbeddingQueryTimeoutSeconds <= 120) { // written so NaN fails
 		return fmt.Errorf("embedding_query_timeout_seconds must be between 0.1 and 120, got %v", c.EmbeddingQueryTimeoutSeconds)
 	}
-	if c.InspectionTimeoutSeconds < 0.1 || c.InspectionTimeoutSeconds > 60 {
+	if !(c.InspectionTimeoutSeconds >= 0.1 && c.InspectionTimeoutSeconds <= 60) { // written so NaN fails
 		return fmt.Errorf("inspection_timeout_seconds must be between 0.1 and 60, got %v", c.InspectionTimeoutSeconds)
 	}
 	switch c.InspectionOnFailure {

@@ -79,6 +79,10 @@ const maxReasonLog = 256
 // failing, and how old it must be before a success clears it.
 const noticeResetAge = 60 * time.Second
 
+// noticeTxTimeout bounds a notice transaction, which runs without the
+// caller's cancellation.
+const noticeTxTimeout = 5 * time.Second
+
 // InspectError is an inspection failure with its class.
 type InspectError struct {
 	Class string
@@ -150,22 +154,30 @@ func ParseVerdict(raw []byte) (Verdict, error) {
 		return Verdict{}, malformed("reply is %d bytes, over the %d byte limit", len(raw), MaxVerdictBytes)
 	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
-	var members map[string]json.RawMessage
-	if err := dec.Decode(&members); err != nil {
+	if t, err := dec.Token(); err != nil {
 		return Verdict{}, malformed("reply is not a JSON object: %v", err)
-	}
-	if members == nil {
-		return Verdict{}, malformed("reply is null")
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return Verdict{}, malformed("reply has content after the JSON object")
+	} else if d, ok := t.(json.Delim); !ok || d != '{' {
+		return Verdict{}, malformed("reply is not a JSON object")
 	}
 	var v Verdict
-	for name, val := range members {
+	seen := map[string]bool{}
+	for dec.More() {
+		t, err := dec.Token()
+		if err != nil {
+			return Verdict{}, malformed("reply is not a JSON object: %v", err)
+		}
+		name, _ := t.(string)
+		if seen[name] {
+			return Verdict{}, malformed("member %q is repeated", name)
+		}
+		seen[name] = true
+		var val json.RawMessage
+		if err := dec.Decode(&val); err != nil {
+			return Verdict{}, malformed("member %q: %v", name, err)
+		}
 		if string(bytes.TrimSpace(val)) == "null" {
 			return Verdict{}, malformed("member %q is null", name)
 		}
-		var err error
 		switch name {
 		case "verdict":
 			err = json.Unmarshal(val, &v.Verdict)
@@ -182,6 +194,16 @@ func ParseVerdict(raw []byte) (Verdict, error) {
 			return Verdict{}, malformed("member %q: %v", name, err)
 		}
 	}
+	if _, err := dec.Token(); err != nil { // the closing brace
+		return Verdict{}, malformed("reply is not a JSON object: %v", err)
+	}
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return Verdict{}, malformed("reply has content after the JSON object")
+	}
+	// open note: write-inspection 7 (an allow that names code or reason, even empty, is a failure)
+	if v.Verdict == VerdictAllow && (seen["code"] || seen["reason"]) {
+		return Verdict{}, badVerdict("an allow verdict carries a code or a reason")
+	}
 	if err := v.validate(); err != nil {
 		return Verdict{}, err
 	}
@@ -191,7 +213,6 @@ func ParseVerdict(raw []byte) (Verdict, error) {
 func (v Verdict) validate() error {
 	switch v.Verdict {
 	case VerdictAllow:
-		// open note: write-inspection 7 (an allow that carries a code or a reason is a failure)
 		if v.Code != "" || v.Reason != "" {
 			return badVerdict("an allow verdict carries a code or a reason")
 		}
@@ -345,7 +366,7 @@ func (c *Core) inspect(ctx context.Context, identity string, prep Prepared) (str
 		case errors.Is(ictxErr, context.DeadlineExceeded):
 			class = FailTimeout
 		case errors.As(err, &ie):
-			class = ie.Class
+			class = normalizeClass(ie.Class)
 		}
 		c.noteFailure(ctx, class)
 		log.Warn("write inspection failed", "class", class, "on_failure", c.Cfg.InspectionOnFailure,
@@ -371,6 +392,16 @@ func (c *Core) inspect(ctx context.Context, identity string, prep Prepared) (str
 	return "", E(bus.CodeInspectionRejected, "rejected by inspection (%s): %s", v.Code, v.Reason)
 }
 
+// normalizeClass maps a class an adapter made up to transport, so a log line
+// or the notice text only ever carries a known class.
+func normalizeClass(class string) string {
+	switch class {
+	case FailTimeout, FailTransport, FailStatus, FailMalformed, FailVerdict:
+		return class
+	}
+	return FailTransport
+}
+
 // cutBytes cuts s to at most n bytes without splitting a character.
 func cutBytes(s string, n int) string {
 	if len(s) <= n {
@@ -388,6 +419,7 @@ func (c *Core) noteFailure(ctx context.Context, class string) {
 	now := c.Now()
 	c.inspectMu.Lock()
 	c.inspectState = inspectFailing
+	c.failGen++
 	if !c.noticeSetAt.IsZero() && now.Sub(c.noticeSetAt) < noticeResetAge {
 		c.inspectMu.Unlock()
 		return
@@ -397,7 +429,9 @@ func (c *Core) noteFailure(ctx context.Context, class string) {
 	c.inspectMu.Unlock()
 
 	msg := fmt.Sprintf("agentbus2 pid %d: write inspection failing (%s); inspection_on_failure=%s", os.Getpid(), class, c.Cfg.InspectionOnFailure)
-	err := c.Store.Tx(context.WithoutCancel(ctx), func(ctx context.Context, tx store.Tx) error {
+	nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), noticeTxTimeout)
+	defer cancel()
+	err := c.Store.Tx(nctx, func(ctx context.Context, tx store.Tx) error {
 		return tx.SetNotice(ctx, store.Notice{Kind: NoticeInspection, Message: msg, SetAt: now.UnixMilli()})
 	})
 	if err != nil {
@@ -416,11 +450,13 @@ func (c *Core) noteFailure(ctx context.Context, class string) {
 func (c *Core) noteSuccess(ctx context.Context) {
 	c.inspectMu.Lock()
 	ok := c.inspectState == inspectOK
+	gen := c.failGen
 	c.inspectMu.Unlock()
 	if ok {
 		return
 	}
-	ctx = context.WithoutCancel(ctx)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), noticeTxTimeout)
+	defer cancel()
 	// open note: write-inspection 4 (the unknown state is cleared by the first success)
 	var cleared bool
 	err := c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
@@ -445,8 +481,12 @@ func (c *Core) noteSuccess(ctx context.Context) {
 	}
 	if cleared {
 		c.inspectMu.Lock()
-		c.inspectState = inspectOK
-		c.noticeSetAt = time.Time{}
+		// A failure that ran meanwhile (failGen moved) may have set the notice
+		// after this read: stay failing.
+		if c.failGen == gen {
+			c.inspectState = inspectOK
+			c.noticeSetAt = time.Time{}
+		}
 		c.inspectMu.Unlock()
 	}
 }

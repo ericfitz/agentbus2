@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"reflect"
 	"slices"
@@ -135,6 +136,9 @@ func set(c *Config, name, text, source string) error {
 		x, err := strconv.ParseFloat(text, 64)
 		if err != nil {
 			return bad(err)
+		}
+		if math.IsNaN(x) || math.IsInf(x, 0) {
+			return bad(errors.New("must be a finite number"))
 		}
 		f.SetFloat(x)
 	case reflect.Bool:
