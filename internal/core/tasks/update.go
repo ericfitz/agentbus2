@@ -218,19 +218,50 @@ func (s Service) Update(ctx context.Context, identity string, p bus.TaskPatch) (
 		fx       effects
 		replayed bool
 	)
-	err := s.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {
-		out, fx, replayed = bus.TaskUpdateResult{}, effects{}, false
-		pr, err := access.Resolve(ctx, tx, identity)
-		if err != nil {
-			return err
-		}
-		replayed, err = s.WithReceipt(ctx, tx, identity, key, p, &out, func() error {
-			var err error
-			out, err = s.update(ctx, tx, identity, pr, p, &fx)
+	write := func(want string) error {
+		err := s.Store.Append(ctx, func(ctx context.Context, tx store.Tx) error {
+			out, fx, replayed = bus.TaskUpdateResult{}, effects{}, false // fn may run again (Decision 26)
+			pr, err := access.Resolve(ctx, tx, identity)
+			if err != nil {
+				return err
+			}
+			replayed, err = s.WithReceipt(ctx, tx, identity, key, p, &out, func() error {
+				var err error
+				out, err = s.update(ctx, tx, identity, pr, p, &fx, want)
+				return err
+			})
 			return err
 		})
-		return err
-	})
+		if errors.Is(err, core.ErrInspectedChanged) {
+			return err
+		}
+		return core.FromStore(err)
+	}
+	var err error
+	if !s.Inspecting() || p.Delete || (p.Subject == nil && p.Description == nil && p.Metadata == nil) {
+		err = write("")
+	} else {
+		prepare := func(ctx context.Context, tx store.Tx) (core.Prepared, error) {
+			pr, err := access.Resolve(ctx, tx, identity)
+			if err != nil {
+				return core.Prepared{}, err
+			}
+			var r bus.TaskUpdateResult
+			hit, _, err := s.CheckReceipt(ctx, tx, identity, key, p, &r)
+			if err != nil || hit {
+				return core.Prepared{}, err // a replay needs no inspection
+			}
+			pl, err := s.planUpdate(ctx, tx, identity, pr, p, true, &effects{})
+			if err != nil {
+				return core.Prepared{}, err
+			}
+			prep := taskPrepared(core.OpTaskUpdate, identity, pr, pl.ch, p.ID, pl.patched.Task, pl.size)
+			// open note: write-inspection 8 (only a changed subject, description or metadata is inspected)
+			prep.Inspect = contentChanged(pl.cur, pl.patched)
+			return prep, nil
+		}
+		err = s.RunInspected(ctx, identity, prepare, write)
+	}
 	if err != nil {
 		return bus.TaskUpdateResult{}, core.FromStore(err)
 	}
@@ -240,66 +271,110 @@ func (s Service) Update(ctx context.Context, identity string, p bus.TaskPatch) (
 	return out, nil
 }
 
-func (s Service) update(ctx context.Context, tx store.Tx, identity string, pr access.Principal, p bus.TaskPatch, fx *effects) (bus.TaskUpdateResult, error) {
+// updatePlan is what planUpdate decides. ts is nil and patched equals cur for
+// a no-op; a delete carries only ch, ts and cur.
+type updatePlan struct {
+	ch      store.Channel
+	ts      []task
+	cur     task
+	patched task
+	size    int
+}
+
+// planUpdate runs update up to the rate check. It has no side effect except
+// the reclaim and the sibling rerank of the write pass, both of which probe
+// (the read pre-pass) skips: the reclaim, and on a rank collision the patch is
+// applied again without its move fields (open note write-inspection 10). A
+// delete charges rateCheck(0) here and a no-op returns with size 0.
+// open note: write-inspection 10 (a provisional rank, no reclaim in the pre-pass)
+func (s Service) planUpdate(ctx context.Context, tx store.Tx, identity string, pr access.Principal, p bus.TaskPatch, probe bool, fx *effects) (updatePlan, error) {
 	kind := pr.Kind
 	ch, err := s.taskChannelOf(ctx, tx, pr, p.ID, access.Write)
 	if err != nil {
-		return bus.TaskUpdateResult{}, err
+		return updatePlan{}, err
 	}
-	if _, err := s.reclaimAbandoned(ctx, tx, ch, s.NowMs(), []int64{p.ID}, fx); err != nil {
-		return bus.TaskUpdateResult{}, err
+	if !probe {
+		if _, err := s.reclaimAbandoned(ctx, tx, ch, s.NowMs(), []int64{p.ID}, fx); err != nil {
+			return updatePlan{}, err
+		}
 	}
 	ts, err := loadTasks(ctx, tx, ch)
 	if err != nil {
-		return bus.TaskUpdateResult{}, err
+		return updatePlan{}, err
 	}
 	cur := taskByID(ts, p.ID)
 	if cur == nil {
-		return bus.TaskUpdateResult{}, core.E(bus.CodeNotFound, "memory %d is not a task", p.ID)
+		return updatePlan{}, core.E(bus.CodeNotFound, "memory %d is not a task", p.ID)
 	}
 	ownerKnown := s.ownerKnown(ctx, tx, pr)
 	patched, err := applyPatch(ts, *cur, p, identity, s.NowMs(), ownerKnown)
 	var rc *rankCollision
 	if errors.As(err, &rc) {
-		// Corrupt equal sibling ranks: renumber them in this transaction, then
-		// redo the patch against the reloaded list.
-		if ts, err = s.rerankSiblings(ctx, tx, ch, identity, kind, ts, rc.parent, fx); err != nil {
-			return bus.TaskUpdateResult{}, err
+		if probe {
+			q := p
+			q.Parent, q.Before, q.After = nil, 0, 0
+			patched, err = applyPatch(ts, *cur, q, identity, s.NowMs(), ownerKnown)
+		} else {
+			// Corrupt equal sibling ranks: renumber them in this transaction, then
+			// redo the patch against the reloaded list.
+			if ts, err = s.rerankSiblings(ctx, tx, ch, identity, kind, ts, rc.parent, fx); err != nil {
+				return updatePlan{}, err
+			}
+			if cur = taskByID(ts, p.ID); cur == nil {
+				return updatePlan{}, core.E(bus.CodeNotFound, "memory %d is not a task", p.ID)
+			}
+			patched, err = applyPatch(ts, *cur, p, identity, s.NowMs(), ownerKnown)
 		}
-		if cur = taskByID(ts, p.ID); cur == nil {
-			return bus.TaskUpdateResult{}, core.E(bus.CodeNotFound, "memory %d is not a task", p.ID)
-		}
-		patched, err = applyPatch(ts, *cur, p, identity, s.NowMs(), ownerKnown)
 	}
+	if err != nil {
+		return updatePlan{}, err
+	}
+	pl := updatePlan{ch: ch, ts: ts, cur: *cur, patched: patched}
+	if p.Delete {
+		if err := s.rateCheck(identity, 0, fx); err != nil {
+			return updatePlan{}, err
+		}
+		return pl, nil
+	}
+	if reflect.DeepEqual(patched, *cur) {
+		return pl, nil
+	}
+	if pl.size, err = s.envelopeSize(ch, identity, "", patched.Task); err != nil {
+		return updatePlan{}, err
+	}
+	if err := s.rateCheck(identity, pl.size, fx); err != nil {
+		return updatePlan{}, err
+	}
+	return pl, nil
+}
+
+// update plans the patch, checks the digest the inspector judged (want, "" for
+// none) and writes it.
+func (s Service) update(ctx context.Context, tx store.Tx, identity string, pr access.Principal, p bus.TaskPatch, fx *effects, want string) (bus.TaskUpdateResult, error) {
+	kind := pr.Kind
+	pl, err := s.planUpdate(ctx, tx, identity, pr, p, false, fx)
 	if err != nil {
 		return bus.TaskUpdateResult{}, err
 	}
+	if want != "" && taskPrepared(core.OpTaskUpdate, identity, pr, pl.ch, p.ID, pl.patched.Task, pl.size).Digest() != want {
+		return bus.TaskUpdateResult{}, core.ErrInspectedChanged
+	}
+	ch, cur, patched := pl.ch, pl.cur, pl.patched
 	if p.Delete {
-		if err := s.rateCheck(identity, 0, fx); err != nil {
-			return bus.TaskUpdateResult{}, err
-		}
 		if _, err := tx.TombstoneMessage(ctx, cur.seq, s.NowMs()); err != nil {
 			return bus.TaskUpdateResult{}, core.FromStore(err)
 		}
 		return bus.TaskUpdateResult{Task: cur.Task, Replaced: cur.seq, Deleted: true}, nil
 	}
-
-	if reflect.DeepEqual(patched, *cur) {
+	if reflect.DeepEqual(patched, cur) {
 		return bus.TaskUpdateResult{Task: cur.Task}, nil
-	}
-
-	size, err := s.envelopeSize(ch, identity, "", patched.Task)
-	if err != nil {
-		return bus.TaskUpdateResult{}, err
-	}
-	if err := s.rateCheck(identity, size, fx); err != nil {
-		return bus.TaskUpdateResult{}, err
 	}
 	newTask, err := s.writeRevision(ctx, tx, ch, identity, kind, patched, "", fx)
 	if err != nil {
 		return bus.TaskUpdateResult{}, err
 	}
-	if ts, err = loadTasks(ctx, tx, ch); err != nil {
+	ts, err := loadTasks(ctx, tx, ch)
+	if err != nil {
 		return bus.TaskUpdateResult{}, err
 	}
 	final := taskByID(ts, newTask.ID)
