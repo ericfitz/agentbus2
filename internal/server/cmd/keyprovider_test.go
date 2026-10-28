@@ -3,10 +3,14 @@ package cmd
 import (
 	"context"
 	"errors"
+	"fmt"
+	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/keyprovider"
+	"github.com/ericfitz/agentbus2/internal/keyprovider/kmsfake"
 	"github.com/ericfitz/agentbus2/internal/server/config"
 )
 
@@ -79,4 +83,77 @@ func (stubProvider) Next(context.Context) (keyprovider.Key, error) {
 }
 func (stubProvider) Signer(context.Context, keyprovider.Key) (keyprovider.Signer, error) {
 	return nil, errors.New("stub: no signer")
+}
+
+// useFake registers f as the awskms backend for the test.
+func useFake(t *testing.T, f *kmsfake.Fake) {
+	t.Helper()
+	keyBackends["awskms"] = func(string) (keyprovider.Provider, error) { return f, nil }
+	t.Cleanup(func() { delete(keyBackends, "awskms") })
+}
+
+// Controller ruling 2: the first-start line names the scheme and key name
+// only; the rest of the URI (a query may carry a token) never reaches the log.
+func TestStartAdoptsExternalKeyAndPrintsNoURI(t *testing.T) {
+	useFake(t, kmsfake.New("awskms"))
+	db := filepath.Join(t.TempDir(), "ab2.db")
+	args := []string{"-listen", "127.0.0.1:0", "-sqlite", db, "-set", "signing_key_uri=awskms://alias/agentbus2?token=s3cret"}
+	first := runServer(t, args...)
+	want := regexp.MustCompile(`adopted signing key ` + first.kid + ` \(awskms alias/agentbus2\)\n`)
+	if !want.MatchString(first.stdout.String()) {
+		t.Fatalf("stdout %q lacks the adopted line", first.stdout.String())
+	}
+	if out := first.stdout.String() + first.stderr.String(); strings.Contains(out, "s3cret") || strings.Contains(out, "awskms://") {
+		t.Fatalf("the key URI leaked: %q", out)
+	}
+	if first.stop() != 0 {
+		t.Fatal("first start did not exit 0")
+	}
+	// A second start loads the row: nothing adopted, same kid.
+	second := runServer(t, args...)
+	if strings.Contains(second.stdout.String(), "adopted signing key") || second.kid != first.kid {
+		t.Fatalf("second start: kid %s (want %s), stdout %q", second.kid, first.kid, second.stdout.String())
+	}
+}
+
+// Controller ruling 3: a provider runtime failure at start exits 1; a
+// configuration error exits 2.
+func TestStartExitCodesForProviderFailures(t *testing.T) {
+	uriArg := []string{"-set", "signing_key_uri=awskms://alias/agentbus2"}
+	run := func(t *testing.T) (int, string) {
+		t.Helper()
+		db := filepath.Join(t.TempDir(), "ab2.db")
+		code, _, stderr := runOnce(nil, append([]string{"-listen", "127.0.0.1:0", "-sqlite", db}, uriArg...)...)
+		return code, stderr
+	}
+	t.Run("first EnsureActive finds the service down", func(t *testing.T) {
+		f := kmsfake.New("awskms")
+		f.SetDown(true)
+		useFake(t, f)
+		if code, stderr := run(t); code != 1 || !strings.Contains(stderr, "signing key") {
+			t.Fatalf("exit %d, stderr %q; want 1", code, stderr)
+		}
+	})
+	t.Run("opening reports the service unreachable", func(t *testing.T) {
+		keyBackends["awskms"] = func(string) (keyprovider.Provider, error) {
+			return nil, fmt.Errorf("dial: %w", keyprovider.ErrUnavailable)
+		}
+		t.Cleanup(func() { delete(keyBackends, "awskms") })
+		if code, stderr := run(t); code != 1 {
+			t.Fatalf("exit %d, stderr %q; want 1", code, stderr)
+		}
+	})
+	t.Run("a malformed URI is a configuration error", func(t *testing.T) {
+		keyBackends["awskms"] = func(string) (keyprovider.Provider, error) { return nil, errors.New("bad key URI") }
+		t.Cleanup(func() { delete(keyBackends, "awskms") })
+		if code, stderr := run(t); code != 2 || !strings.Contains(stderr, "bad key URI") {
+			t.Fatalf("exit %d, stderr %q; want 2", code, stderr)
+		}
+	})
+	t.Run("a backend not in this build is a configuration error", func(t *testing.T) {
+		delete(keyBackends, "awskms")
+		if code, stderr := run(t); code != 2 || !strings.Contains(stderr, "not in this build") {
+			t.Fatalf("exit %d, stderr %q; want 2", code, stderr)
+		}
+	})
 }

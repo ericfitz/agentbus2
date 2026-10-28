@@ -142,6 +142,11 @@ func (p Prepared) KID() string { return p.key.KID }
 func (s Service) PrepareRotation(ctx context.Context) (Prepared, error) {
 	k, err := s.Provider.Next(ctx)
 	if err != nil {
+		// An outage of the key service, or a context that ended, is worth a
+		// retry; anything else is a bug or a refusal of this key.
+		if errors.Is(err, keyprovider.ErrUnavailable) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return Prepared{}, core.E(bus.CodeUnavailable, "signing key provider %s is unavailable: %v", s.Provider.Name(), err)
+		}
 		return Prepared{}, core.E(bus.CodeInternal, "signing key provider %s: %v", s.Provider.Name(), err)
 	}
 	kid, err := keys.KID(k.Public)

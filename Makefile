@@ -1,4 +1,4 @@
-.PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates check-gates-selftest verify docker-image docker-smoke vet-cross release-check release-lint release-install-check
+.PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates check-gates-selftest verify docker-image docker-smoke vet-cross release-check release-lint release-install-check vet-tags
 export CGO_ENABLED=0
 PKGS_UNIT = $$(go list ./... | grep -v '^github.com/ericfitz/agentbus2/internal/conformance')
 
@@ -41,6 +41,9 @@ vet-cross:   ## go vet for linux and windows on amd64 and arm64, and golangci-li
 	GOOS=windows GOARCH=amd64 go vet ./...
 	GOOS=windows GOARCH=arm64 go vet ./...
 	GOOS=windows golangci-lint run ./...
+	$(MAKE) vet-tags
+vet-tags:    ## go vet and go build for each external key provider build tag alone and all four together, on linux and windows
+	bash scripts/vet-tags.sh
 release-check: ## Not part of verify (its own CI job). Release tooling: check-pins, the installer, release, render and build-archive harnesses, the local dry run (test-pipeline), vet-cross. Needs bash, git, go, golangci-lint, python3, jq, shasum, OpenSSL 3, ruby, tar, zip, curl; docker on macOS
 	bash release/check-pins.sh
 	bash release/test-install.sh --self-test

@@ -23,6 +23,7 @@ jobs:
         with:
           go-version-file: go.mod
       - run: go vet ./...
+      - run: go vet -tags awskms,gcpkms,azurekms,hashivault ./...
       # The Store and Bus suites (internal/conformance) need Docker, which the
       # Windows runners lack; `make test` is not assumed on Windows.
       - name: go test (unit packages)

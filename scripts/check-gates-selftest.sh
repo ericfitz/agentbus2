@@ -337,14 +337,18 @@ block_m5_deps_rule_fires() {
 	revert
 }
 
-# m7_probe LABEL FILE IMPORT WANT RULE [PKG]: like deps_probe over the m7
+# m7_probe LABEL FILE IMPORT WANT RULE [PKG [TAG]]: like deps_probe over the m7
 # script, and every deps_violation line must carry "[rule RULE]": a probe
 # trips exactly one rule. PKG is the package clause (default: the directory's
-# name); a _test.go file is compiled by go list as a test file.
+# name); a _test.go file is compiled by go list as a test file. TAG puts a
+# "//go:build TAG" line first, so only the scan with that build tag sees it.
 m7_probe() {
-	local label="$1" file="$2" import="$3" want="$4" rule="$5" pkgname="${6:-}" log="$tmp/b22.log" rc=0 other
+	local label="$1" file="$2" import="$3" want="$4" rule="$5" pkgname="${6:-}" tag="${7:-}" log="$tmp/b22.log" rc=0 other
 	[ -n "$pkgname" ] || pkgname="$(basename "$(dirname "$file")")"
-	printf 'package %s\n\nimport _ "%s"\n' "$pkgname" "$import" >"$wt/$file"
+	{
+		[ -z "$tag" ] || printf '//go:build %s\n\n' "$tag"
+		printf 'package %s\n\nimport _ "%s"\n' "$pkgname" "$import"
+	} >"$wt/$file"
 	bash "$wt/scripts/m7-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 1 ]; then
 		problem "$label" "$file importing $import: exit $rc, expected 1: $(tail -n 3 "$log" | tr '\n' ' ')"
@@ -356,6 +360,19 @@ m7_probe() {
 	rm -f "$wt/$file"
 }
 
+# m7_stub_pkg BACKEND create|remove: a stub file that makes the package
+# internal/keyprovider/BACKEND exist (a no-op beside the real package).
+m7_stub_pkg() {
+	local dir="$wt/internal/keyprovider/$1"
+	if [ "$2" = create ]; then
+		mkdir -p "$dir"
+		printf 'package %s\n' "$1" >"$dir/probe_m7_pkg.go"
+	else
+		rm -f "$dir/probe_m7_pkg.go"
+		rmdir "$dir" 2>/dev/null || true
+	fi
+}
+
 # --- 22. m7-deps-rule-fires ------------------------------------------------------------
 # Docker-free. The Milestone 7 import rule: store never imports core, notify
 # stays a leaf (pgx/v5 is caught only by the prefix match), pgnotify never
@@ -363,7 +380,9 @@ m7_probe() {
 # imports no core, store, server or bus; slackfake may import only the standard
 # library and slackapi (the allowlist); slack-go is imported only by
 # slackapi/slackgo (the importer scan); core and the clients never import
-# slackapi or slack-go. An import go list cannot resolve must exit 2, never
+# slackapi or slack-go. The signing key provider rules: keyprovider and kmsfake
+# are allowlisted leaves, the consumers never import a backend package, and a
+# tagged file cannot hide an import (the tagged pass). An import go list cannot resolve must exit 2, never
 # pass as a package with no imports.
 block_m7_deps_rule_fires() {
 	local label=m7-deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b22z.log" rc=0
@@ -391,6 +410,23 @@ block_m7_deps_rule_fires() {
 	m7_probe "$label" internal/oidctest/probe_m7_x_test.go github.com/slack-go/slack "deps_violation=$m/internal/oidctest imports github.com/slack-go/slack" slack-go-importers oidctest_test
 	m7_probe "$label" internal/oidctest/probe_m7_windows.go github.com/slack-go/slack "deps_violation=$m/internal/oidctest imports github.com/slack-go/slack" slack-go-importers
 	m7_probe "$label" internal/oidctest/probe_m7_darwin.go github.com/slack-go/slack "deps_violation=$m/internal/oidctest imports github.com/slack-go/slack" slack-go-importers
+	# The signing key provider rules. The leaf probes import internal/oidctest
+	# (it imports nothing of this module, so no cycle). A backend package does
+	# not exist until its task, so a stub file creates it for the probe.
+	m7_probe "$label" internal/keyprovider/probe_m7.go "$m/internal/oidctest" "deps_violation=$m/internal/keyprovider imports $m/internal/oidctest" keyprovider-leaf
+	m7_probe "$label" internal/keyprovider/kmsfake/probe_m7.go "$m/internal/oidctest" "deps_violation=$m/internal/keyprovider/kmsfake imports $m/internal/oidctest" keyprovider-leaf
+	local b
+	for b in awskms gcpkms azurekms hashivault; do
+		m7_stub_pkg "$b" create
+		m7_probe "$label" internal/cli/probe_m7.go "$m/internal/keyprovider/$b" "deps_violation=$m/internal/cli imports $m/internal/keyprovider/$b" keyprovider-consumers
+		m7_stub_pkg "$b" remove
+	done
+	# A tagged file is invisible to the default scan: the tagged pass finds it,
+	# for the consumers rule and for the importer scan alike.
+	m7_stub_pkg awskms create
+	m7_probe "$label" internal/server/probe_m7_tagged.go "$m/internal/keyprovider/awskms" "deps_violation=$m/internal/server imports $m/internal/keyprovider/awskms" keyprovider-consumers "" awskms
+	m7_stub_pkg awskms remove
+	m7_probe "$label" internal/oidctest/probe_m7_tagged.go github.com/slack-go/slack "deps_violation=$m/internal/oidctest imports github.com/slack-go/slack" slack-go-importers "" gcpkms
 	printf 'package notify\n\nimport _ "%s"\n' "$m/internal/no/such/package" >"$wt/internal/core/notify/probe_m7.go"
 	bash "$wt/scripts/m7-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 2 ]; then

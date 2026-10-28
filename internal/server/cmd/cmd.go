@@ -50,7 +50,8 @@ func Run(ctx context.Context, args []string, environ []string, stdout, stderr io
 // committed row for the next start; a corrupt row stops the start (exit 1)
 // and is never overwritten; an active row of another provider than the
 // configured one stops the start (exit 1, the message names the rotate
-// command) and is never changed.
+// command) and is never changed. A key service that is down at start with no
+// active row exits 1, and the next start retries.
 func run(ctx context.Context, args []string, environ []string, stdout, stderr io.Writer, serve func(context.Context, Config) error) int {
 	if len(args) > 0 && args[0] == "admin" {
 		return RunAdmin(ctx, args[1:], environ, stdout, stderr)
@@ -140,6 +141,11 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 	}
 	provider, err := openKeyProvider(cfg)
 	if err != nil {
+		// A key service that cannot be reached is a runtime failure (1); a
+		// bad URI or a backend not in this build is a configuration error (2).
+		if errors.Is(err, keyprovider.ErrUnavailable) {
+			return fail(1, "%v", err)
+		}
 		return fail(2, "%v", err)
 	}
 	keysSvc := &signingkeys.Service{Core: c, Provider: provider, Settings: signingSettings(cfg)}
@@ -158,7 +164,7 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		if provider.Name() == keyprovider.NameStore {
 			_, _ = fmt.Fprintf(stdout, "generated signing key %s\n", active.KID)
 		} else {
-			_, _ = fmt.Fprintf(stdout, "adopted signing key %s (%s %s)\n", active.KID, provider.Name(), cfg.SigningKeyURI)
+			_, _ = fmt.Fprintf(stdout, "adopted signing key %s (%s %s)\n", active.KID, provider.Name(), keyprovider.KeyName(cfg.SigningKeyURI))
 		}
 	}
 

@@ -25,7 +25,8 @@
 # deps_violation=<package> imports <forbidden> [rule <name>] line per hit and
 # exits 1. A go list failure exits 2. <name> is the rule in the lists here
 # (store-no-core, notify-leaf, pgnotify-no-server, slackapi-allowlist,
-# slack-go-importers, slackbridge-isolation, slack-consumers); the self-test
+# slack-go-importers, slackbridge-isolation, slack-consumers, keyprovider-leaf,
+# keyprovider-consumers); the self-test
 # (scripts/check-gates-selftest.sh) requires each probe to trip exactly one.
 #
 # The Slack bridge rules (same output):
@@ -49,10 +50,32 @@
 #                                    never import internal/slackapi,
 #                                    internal/slackbridge or slackapi/slackgo
 #                                    (slack-go itself: the importer rule)
+#
+# The signing key provider rules (same output; Eric 2026-10-27, issue #8):
+#   ./internal/keyprovider           imports only itself, internal/auth/keys and
+#                                    go-jose (keys imports it; the allowlist
+#                                    is transitive)
+#   ./internal/keyprovider/kmsfake   likewise, plus internal/keyprovider
+#   ./internal/core/..., ./internal/bus/..., ./internal/cli,
+#   ./internal/mcpserver, ./internal/client, ./internal/server
+#                                    never import internal/keyprovider/awskms,
+#                                    gcpkms, azurekms or hashivault, in the
+#                                    default build or with all four tags
+# The importer scans (check_importers) also run with M7_TAGS, default
+# awskms,gcpkms,azurekms,hashivault, so a tagged file cannot hide an import.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MOD=github.com/ericfitz/agentbus2
+
+# TAGS is the build-tag set the go list calls below use ("" is the default
+# build). The external key provider backends sit behind tags, so the importer
+# scan and the keyprovider-consumers rule also run once with M7_TAGS (every
+# backend tag, as `make vet-tags` builds them together).
+M7_TAGS="${M7_TAGS:-awskms,gcpkms,azurekms,hashivault}"
+TAGS=""
+# tagflags prints the GOFLAGS value for TAGS, keeping the caller's own flags.
+tagflags() { printf '%s%s' "${GOFLAGS:+$GOFLAGS }" "${TAGS:+-tags=$TAGS}"; }
 
 # check_deps RULE PATTERN FORBIDDEN...: an entry is an in-module path (relative to
 # the module) or, when it starts with "github.com/", a third-party path; each
@@ -65,12 +88,12 @@ check_deps() {
 	local pkgs deps
 	# Explicit exits: set -e is off inside `import_check || rc=1`, and a go
 	# list failure must never read as a package with no imports.
-	pkgs="$(cd "$ROOT" && go list "$pattern")" || {
+	pkgs="$(cd "$ROOT" && GOFLAGS="$(tagflags)" go list "$pattern")" || {
 		echo "m7-exit-checks: go list $pattern failed" >&2
 		exit 2
 	}
 	for pkg in $pkgs; do
-		deps="$(cd "$ROOT" && go list -deps "$pkg")" || {
+		deps="$(cd "$ROOT" && GOFLAGS="$(tagflags)" go list -deps "$pkg")" || {
 			echo "m7-exit-checks: go list -deps $pkg failed" >&2
 			exit 2
 		}
@@ -95,12 +118,12 @@ check_allowlist() {
 	local rule="$1" pattern="$2" pkg dep a ok
 	shift 2
 	local pkgs deps
-	pkgs="$(cd "$ROOT" && go list "$pattern")" || {
+	pkgs="$(cd "$ROOT" && GOFLAGS="$(tagflags)" go list "$pattern")" || {
 		echo "m7-exit-checks: go list $pattern failed" >&2
 		exit 2
 	}
 	for pkg in $pkgs; do
-		deps="$(cd "$ROOT" && go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' "$pkg")" || {
+		deps="$(cd "$ROOT" && GOFLAGS="$(tagflags)" go list -deps -f '{{if not .Standard}}{{.ImportPath}}{{end}}' "$pkg")" || {
 			echo "m7-exit-checks: go list -deps $pkg failed" >&2
 			exit 2
 		}
@@ -121,33 +144,36 @@ check_allowlist() {
 
 # check_importers RULE IMPORT ALLOWED_PKG: only ALLOWED_PKG (a full import
 # path) may import IMPORT (or a package below it) directly; every package of
-# ./... is scanned for each of GOOS linux, darwin and windows (CGO off), and
-# for its production, test and external-test files alike. A package is
-# reported once however many GOOS values show it. Sets the global violations.
+# ./... is scanned for each of GOOS linux, darwin and windows (CGO off), for
+# the default build and again with the build tags M7_TAGS, and for its
+# production, test and external-test files alike. A package is reported once
+# however many GOOS values or tag sets show it. Sets the global violations.
 check_importers() {
-	local rule="$1" target="$2" allowed="$3" goos lines line pkg imp rest
+	local rule="$1" target="$2" allowed="$3" goos tags lines line pkg imp rest
 	local seen=" "
-	for goos in linux darwin windows; do
-		lines="$(cd "$ROOT" && GOOS="$goos" CGO_ENABLED=0 go list -f '{{.ImportPath}} {{join .Imports " "}} {{join .TestImports " "}} {{join .XTestImports " "}}' ./...)" || {
-			echo "m7-exit-checks: GOOS=$goos go list ./... failed" >&2
-			exit 2
-		}
-		while IFS= read -r line; do
-			pkg="${line%% *}"
-			rest="${line#"$pkg"}"
-			[ "$pkg" = "$allowed" ] && continue
-			case "$seen" in *" $pkg "*) continue ;; esac
-			for imp in $rest; do
-				case "$imp" in
-				"$target" | "$target"/*)
-					echo "deps_violation=$pkg imports $target [rule $rule]"
-					violations=$((violations + 1))
-					seen="$seen$pkg "
-					break
-					;;
-				esac
-			done
-		done <<<"$lines"
+	for tags in "" "$M7_TAGS"; do
+		for goos in linux darwin windows; do
+			lines="$(cd "$ROOT" && GOFLAGS="${GOFLAGS:+$GOFLAGS }${tags:+-tags=$tags}" GOOS="$goos" CGO_ENABLED=0 go list -f '{{.ImportPath}} {{join .Imports " "}} {{join .TestImports " "}} {{join .XTestImports " "}}' ./...)" || {
+				echo "m7-exit-checks: GOOS=$goos tags=$tags go list ./... failed" >&2
+				exit 2
+			}
+			while IFS= read -r line; do
+				pkg="${line%% *}"
+				rest="${line#"$pkg"}"
+				[ "$pkg" = "$allowed" ] && continue
+				case "$seen" in *" $pkg "*) continue ;; esac
+				for imp in $rest; do
+					case "$imp" in
+					"$target" | "$target"/*)
+						echo "deps_violation=$pkg imports $target [rule $rule]"
+						violations=$((violations + 1))
+						seen="$seen$pkg "
+						break
+						;;
+					esac
+				done
+			done <<<"$lines"
+		done
 	done
 }
 
@@ -163,6 +189,20 @@ import_check() {
 	for p in './internal/core/...' './internal/bus/...' ./internal/cli ./internal/mcpserver ./internal/client ./internal/server; do
 		check_deps slack-consumers "$p" internal/slackapi internal/slackbridge internal/slackapi/slackgo
 	done
+	# The keyprovider port is a leaf over internal/auth/keys (go-jose comes
+	# with it: the allowlist is transitive); the fake adds nothing; the
+	# backends and their SDKs are reached from internal/server/cmd's tagged
+	# files alone.
+	check_allowlist keyprovider-leaf ./internal/keyprovider "$MOD/internal/keyprovider" "$MOD/internal/auth/keys" github.com/go-jose/go-jose/v4
+	check_allowlist keyprovider-leaf ./internal/keyprovider/kmsfake "$MOD/internal/keyprovider" "$MOD/internal/auth/keys" github.com/go-jose/go-jose/v4
+	local tags
+	for tags in "" "$M7_TAGS"; do
+		TAGS="$tags"
+		for p in './internal/core/...' './internal/bus/...' ./internal/cli ./internal/mcpserver ./internal/client ./internal/server; do
+			check_deps keyprovider-consumers "$p" internal/keyprovider/awskms internal/keyprovider/gcpkms internal/keyprovider/azurekms internal/keyprovider/hashivault
+		done
+	done
+	TAGS=""
 	if [ "$violations" -ne 0 ]; then
 		return 1
 	fi

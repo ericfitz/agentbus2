@@ -54,6 +54,12 @@ type Provider interface {
 	Signer(ctx context.Context, k Key) (Signer, error)
 }
 
+// ErrUnavailable marks a failure of the external key service itself (it is
+// unreachable, throttling or out of time), as opposed to a refusal or a bug. A
+// provider wraps it; the signing key rules answer a retryable `unavailable`
+// for it, and the server exits 1 rather than 2 when it is found at start.
+var ErrUnavailable = errors.New("key provider unavailable")
+
 // NameStore is the Store-row provider's name.
 const NameStore = "store"
 
@@ -140,6 +146,25 @@ func SchemeOf(uri string) (string, error) {
 func schemeList() string {
 	s := Schemes()
 	return strings.Join(s[:len(s)-1], ", ") + " or " + s[len(s)-1]
+}
+
+// KeyName is the part of an external key URI that is safe to print: what
+// follows "://" without any user info, query or fragment ("" when the URI has
+// no "://"). A URI may carry credentials or a token, so logs and messages name
+// the key with this and never print the URI.
+func KeyName(uri string) string {
+	_, rest, ok := strings.Cut(uri, "://")
+	if !ok {
+		return ""
+	}
+	if i := strings.IndexAny(rest, "?#"); i >= 0 {
+		rest = rest[:i]
+	}
+	authority, _, _ := strings.Cut(rest, "/")
+	if i := strings.LastIndex(authority, "@"); i >= 0 {
+		rest = rest[i+1:]
+	}
+	return rest
 }
 
 // ExternalKey wraps the public key an external provider reports for ref. Only

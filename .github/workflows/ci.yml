@@ -80,6 +80,16 @@ jobs:
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with: { go-version-file: go.mod }
       - run: bash scripts/m9-exit-checks.sh
+  signing-key-tags: # the external key provider build tags compile, vet and test on linux and windows (not part of make verify)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with: { go-version-file: go.mod }
+      - run: make vet-tags
+      - run: go test -tags awskms,gcpkms,azurekms,hashivault ./internal/server/cmd/ ./internal/keyprovider/...
   docker-smoke: # the image builds, runs as nonroot and serves (not part of make verify)
     runs-on: ubuntu-latest
     steps:

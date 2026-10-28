@@ -8,6 +8,8 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -129,5 +131,27 @@ func TestExternalKey(t *testing.T) {
 	}
 	if _, err := ExternalKey(p256.Public(), ""); err == nil {
 		t.Error("an empty ref was accepted")
+	}
+}
+
+func TestKeyNameDropsCredentialsAndQuery(t *testing.T) {
+	for _, tc := range []struct{ in, want string }{
+		{"awskms:///alias/agentbus2", "/alias/agentbus2"},
+		{"awskms://alias/agentbus2", "alias/agentbus2"},
+		{"hashivault://transit-key?address=https://v:8200&token=s3cret", "transit-key"},
+		{"hashivault://user:pw@vault.example/key#frag", "vault.example/key"},
+		{"azurekms://v.vault.azure.net/k?x=1", "v.vault.azure.net/k"},
+		{"not-a-uri", ""},
+		{"", ""},
+	} {
+		if got := KeyName(tc.in); got != tc.want {
+			t.Errorf("KeyName(%q) = %q, want %q", tc.in, got, tc.want)
+		}
+	}
+}
+
+func TestErrUnavailableIsASentinel(t *testing.T) {
+	if !errors.Is(fmt.Errorf("x: %w", ErrUnavailable), ErrUnavailable) {
+		t.Fatal("not matchable")
 	}
 }
