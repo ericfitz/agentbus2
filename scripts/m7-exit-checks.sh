@@ -26,6 +26,7 @@
 # exits 1. A go list failure exits 2. <name> is the rule in the lists here
 # (store-no-core, notify-leaf, pgnotify-no-server, slackapi-allowlist,
 # slack-go-importers, awskms-importers, hashivault-importers, gcpkms-importers,
+# azurekms-importers,
 # slackbridge-isolation, slack-consumers, keyprovider-leaf,
 # keyprovider-consumers); the self-test
 # (scripts/check-gates-selftest.sh) requires each probe to trip exactly one.
@@ -207,6 +208,15 @@ import_check() {
 	check_importers gcpkms-importers google.golang.org/api "$MOD/internal/keyprovider/gcpkms"
 	check_importers gcpkms-importers google.golang.org/grpc "$MOD/internal/keyprovider/gcpkms"
 	check_importers gcpkms-importers google.golang.org/protobuf "$MOD/internal/keyprovider/gcpkms"
+	# The azurekms backend: sigstore's module signs; the azkeys client reads the
+	# key (sigstore does not expose the version it resolves to, and builds its
+	# own credential and client, so it cannot be pointed at a fake), azidentity
+	# types the credential failures and azcore the client's options and errors.
+	# Each is imported by the adapter alone.
+	check_importers azurekms-importers github.com/sigstore/sigstore/pkg/signature/kms/azure "$MOD/internal/keyprovider/azurekms"
+	check_importers azurekms-importers github.com/Azure/azure-sdk-for-go/sdk/azcore "$MOD/internal/keyprovider/azurekms"
+	check_importers azurekms-importers github.com/Azure/azure-sdk-for-go/sdk/azidentity "$MOD/internal/keyprovider/azurekms"
+	check_importers azurekms-importers github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys "$MOD/internal/keyprovider/azurekms"
 	check_deps slackbridge-isolation ./internal/slackbridge internal/server internal/gen internal/slackapi/slackgo github.com/slack-go/slack
 	local p
 	for p in './internal/core/...' './internal/bus/...' ./internal/cli ./internal/mcpserver ./internal/client ./internal/server; do

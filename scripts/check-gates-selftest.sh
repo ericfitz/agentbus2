@@ -446,6 +446,13 @@ block_m7_deps_rule_fires() {
 	m7_probe "$label" internal/oidctest/probe_m7_gcp.go cloud.google.com/go/compute/metadata "deps_violation=$m/internal/oidctest imports cloud.google.com/go/compute/metadata" gcpkms-importers
 	m7_probe "$label" internal/oidctest/probe_m7_gcp.go google.golang.org/api/option "deps_violation=$m/internal/oidctest imports google.golang.org/api" gcpkms-importers
 	m7_probe "$label" internal/oidctest/probe_m7_gcp.go google.golang.org/protobuf/types/known/wrapperspb "deps_violation=$m/internal/oidctest imports google.golang.org/protobuf" gcpkms-importers
+	# The azurekms backend's imports (sigstore's module, azkeys, azidentity,
+	# azcore), the adapter's alone; subpackages count, tagged files too.
+	m7_probe "$label" internal/oidctest/probe_m7_az.go github.com/sigstore/sigstore/pkg/signature/kms/azure "deps_violation=$m/internal/oidctest imports github.com/sigstore/sigstore/pkg/signature/kms/azure" azurekms-importers
+	m7_probe "$label" internal/oidctest/probe_m7_az.go github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys "deps_violation=$m/internal/oidctest imports github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azkeys" azurekms-importers
+	m7_probe "$label" internal/oidctest/probe_m7_az.go github.com/Azure/azure-sdk-for-go/sdk/azidentity "deps_violation=$m/internal/oidctest imports github.com/Azure/azure-sdk-for-go/sdk/azidentity" azurekms-importers
+	m7_probe "$label" internal/oidctest/probe_m7_az.go github.com/Azure/azure-sdk-for-go/sdk/azcore/policy "deps_violation=$m/internal/oidctest imports github.com/Azure/azure-sdk-for-go/sdk/azcore" azurekms-importers
+	m7_probe "$label" internal/oidctest/probe_m7_az_tagged.go github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud "deps_violation=$m/internal/oidctest imports github.com/Azure/azure-sdk-for-go/sdk/azcore" azurekms-importers "" azurekms
 	printf 'package notify\n\nimport _ "%s"\n' "$m/internal/no/such/package" >"$wt/internal/core/notify/probe_m7.go"
 	bash "$wt/scripts/m7-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 2 ]; then
