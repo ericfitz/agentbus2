@@ -130,17 +130,17 @@ func SchemeOf(uri string) (string, error) {
 	}
 	scheme, rest, ok := strings.Cut(uri, "://")
 	if !ok {
-		return "", fmt.Errorf("key URI %q has no scheme: use one of %s", uri, schemeList())
+		return "", fmt.Errorf("key URI has no scheme: use one of %s", schemeList())
 	}
 	for _, s := range Schemes() {
 		if scheme == s {
 			if rest == "" {
-				return "", fmt.Errorf("key URI %q names no key after %s://", uri, s)
+				return "", fmt.Errorf("key URI names no key after %s://", s)
 			}
 			return s, nil
 		}
 	}
-	return "", fmt.Errorf("key URI %q has unknown scheme %q: use one of %s", uri, scheme, schemeList())
+	return "", fmt.Errorf("key URI has unknown scheme %q: use one of %s", scheme, schemeList())
 }
 
 func schemeList() string {

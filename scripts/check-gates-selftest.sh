@@ -427,6 +427,11 @@ block_m7_deps_rule_fires() {
 	m7_probe "$label" internal/server/probe_m7_tagged.go "$m/internal/keyprovider/awskms" "deps_violation=$m/internal/server imports $m/internal/keyprovider/awskms" keyprovider-consumers "" awskms
 	m7_stub_pkg awskms remove
 	m7_probe "$label" internal/oidctest/probe_m7_tagged.go github.com/slack-go/slack "deps_violation=$m/internal/oidctest imports github.com/slack-go/slack" slack-go-importers "" gcpkms
+	# The awskms backend's SDK imports: the sigstore module, an AWS SDK package
+	# and smithy-go (the last behind the build tag) are the adapter's alone.
+	m7_probe "$label" internal/oidctest/probe_m7_aws.go github.com/sigstore/sigstore/pkg/signature/kms/aws "deps_violation=$m/internal/oidctest imports github.com/sigstore/sigstore/pkg/signature/kms/aws" awskms-importers
+	m7_probe "$label" internal/oidctest/probe_m7_aws.go github.com/aws/aws-sdk-go-v2/aws "deps_violation=$m/internal/oidctest imports github.com/aws/aws-sdk-go-v2" awskms-importers
+	m7_probe "$label" internal/oidctest/probe_m7_aws_tagged.go github.com/aws/smithy-go "deps_violation=$m/internal/oidctest imports github.com/aws/smithy-go" awskms-importers "" awskms
 	printf 'package notify\n\nimport _ "%s"\n' "$m/internal/no/such/package" >"$wt/internal/core/notify/probe_m7.go"
 	bash "$wt/scripts/m7-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 2 ]; then

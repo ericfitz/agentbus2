@@ -574,8 +574,7 @@ func TestSigningKeyAfterFailedStart(t *testing.T) {
 // external key stop the start (exit 1) with the rotate instruction, and the
 // row is left alone.
 func TestSigningKeyProviderMismatchRefusesStart(t *testing.T) {
-	keyBackends["awskms"] = func(string) (keyprovider.Provider, error) { return stubProvider{}, nil }
-	t.Cleanup(func() { delete(keyBackends, "awskms") })
+	setBackend(t, "awskms", func(string) (keyprovider.Provider, error) { return stubProvider{}, nil })
 	path := filepath.Join(t.TempDir(), "ab2.db")
 	args := []string{"-listen", "127.0.0.1:0", "-sqlite", path}
 	first := runServer(t, args...)

@@ -42,11 +42,10 @@ func TestOpenKeyProviderRefusesSchemeWithoutBackend(t *testing.T) {
 
 func TestOpenKeyProviderUsesRegisteredBackend(t *testing.T) {
 	var got string
-	keyBackends["awskms"] = func(uri string) (keyprovider.Provider, error) {
+	setBackend(t, "awskms", func(uri string) (keyprovider.Provider, error) {
 		got = uri
 		return stubProvider{}, nil
-	}
-	t.Cleanup(func() { delete(keyBackends, "awskms") })
+	})
 	p, err := openKeyProvider(config.Config{SigningKeyURI: "awskms://k"})
 	if err != nil || p.Name() != "awskms" || got != "awskms://k" {
 		t.Fatalf("provider %v, err %v, uri %q", p, err, got)
@@ -88,8 +87,7 @@ func (stubProvider) Signer(context.Context, keyprovider.Key) (keyprovider.Signer
 // useFake registers f as the awskms backend for the test.
 func useFake(t *testing.T, f *kmsfake.Fake) {
 	t.Helper()
-	keyBackends["awskms"] = func(string) (keyprovider.Provider, error) { return f, nil }
-	t.Cleanup(func() { delete(keyBackends, "awskms") })
+	setBackend(t, "awskms", func(string) (keyprovider.Provider, error) { return f, nil })
 }
 
 // Controller ruling 2: the first-start line names the scheme and key name
@@ -135,25 +133,42 @@ func TestStartExitCodesForProviderFailures(t *testing.T) {
 		}
 	})
 	t.Run("opening reports the service unreachable", func(t *testing.T) {
-		keyBackends["awskms"] = func(string) (keyprovider.Provider, error) {
+		setBackend(t, "awskms", func(string) (keyprovider.Provider, error) {
 			return nil, fmt.Errorf("dial: %w", keyprovider.ErrUnavailable)
-		}
-		t.Cleanup(func() { delete(keyBackends, "awskms") })
+		})
 		if code, stderr := run(t); code != 1 {
 			t.Fatalf("exit %d, stderr %q; want 1", code, stderr)
 		}
 	})
 	t.Run("a malformed URI is a configuration error", func(t *testing.T) {
-		keyBackends["awskms"] = func(string) (keyprovider.Provider, error) { return nil, errors.New("bad key URI") }
-		t.Cleanup(func() { delete(keyBackends, "awskms") })
+		setBackend(t, "awskms", func(string) (keyprovider.Provider, error) { return nil, errors.New("bad key URI") })
 		if code, stderr := run(t); code != 2 || !strings.Contains(stderr, "bad key URI") {
 			t.Fatalf("exit %d, stderr %q; want 2", code, stderr)
 		}
 	})
 	t.Run("a backend not in this build is a configuration error", func(t *testing.T) {
-		delete(keyBackends, "awskms")
+		setBackend(t, "awskms", nil)
 		if code, stderr := run(t); code != 2 || !strings.Contains(stderr, "not in this build") {
 			t.Fatalf("exit %d, stderr %q; want 2", code, stderr)
+		}
+	})
+}
+
+// setBackend registers open for scheme (nil removes it) and restores what was
+// there, so a tagged build's init registration survives the test.
+func setBackend(t *testing.T, scheme string, open func(string) (keyprovider.Provider, error)) {
+	t.Helper()
+	prev, had := keyBackends[scheme]
+	if open == nil {
+		delete(keyBackends, scheme)
+	} else {
+		keyBackends[scheme] = open
+	}
+	t.Cleanup(func() {
+		if had {
+			keyBackends[scheme] = prev
+		} else {
+			delete(keyBackends, scheme)
 		}
 	})
 }

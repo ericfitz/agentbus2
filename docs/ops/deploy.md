@@ -43,6 +43,7 @@ The server signs its bearer tokens with a key set kept in the database (the `sig
 
 - read access to the database is equivalent to the administrator flag: anyone who can read it can mint a token for any identity. Protect the database, its backups and its volume like a private key;
 - there is no key file. Three settings control the set (`configuration.md`): `signing_key_uri` (unset keeps the key in the database), `signing_key_rotation_hours` (default 720; 0 turns the scheduled rotation off) and `signing_key_rotation_cooldown_seconds` (default 3600);
+- an external key (AWS KMS) needs a binary built with `-tags awskms` (`signing-keys.md`); the Docker image of this repository is built without the tag, so build your own image or binary for it;
 - the server refuses to start (exit 1, `signing key: ...` naming `agentbus2 server admin signing-key rotate`) when the active key's provider is not the configured one, for example a database whose active key is a database row and a `signing_key_uri` that names an external key; the active key is never changed by a start;
 - a replica whose provider differs from the active key's cannot sign: it logs a warning and signs with the newest retiring key it can use, or refuses to mint (`temporarily_unavailable`) when none remains, while verification keeps working.
 

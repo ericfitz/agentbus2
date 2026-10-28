@@ -25,8 +25,8 @@
 # deps_violation=<package> imports <forbidden> [rule <name>] line per hit and
 # exits 1. A go list failure exits 2. <name> is the rule in the lists here
 # (store-no-core, notify-leaf, pgnotify-no-server, slackapi-allowlist,
-# slack-go-importers, slackbridge-isolation, slack-consumers, keyprovider-leaf,
-# keyprovider-consumers); the self-test
+# slack-go-importers, awskms-importers, slackbridge-isolation, slack-consumers,
+# keyprovider-leaf, keyprovider-consumers); the self-test
 # (scripts/check-gates-selftest.sh) requires each probe to trip exactly one.
 #
 # The Slack bridge rules (same output):
@@ -184,6 +184,12 @@ import_check() {
 	check_allowlist slackapi-allowlist ./internal/slackapi "$MOD/internal/slackapi"
 	check_allowlist slackapi-allowlist ./internal/slackapi/slackfake "$MOD/internal/slackapi"
 	check_importers slack-go-importers github.com/slack-go/slack "$MOD/internal/slackapi/slackgo"
+	# An external key backend and the SDKs it links are imported by its adapter
+	# package alone (the tagged file in internal/server/cmd imports the adapter,
+	# not the SDK).
+	check_importers awskms-importers github.com/sigstore/sigstore/pkg/signature/kms/aws "$MOD/internal/keyprovider/awskms"
+	check_importers awskms-importers github.com/aws/aws-sdk-go-v2 "$MOD/internal/keyprovider/awskms"
+	check_importers awskms-importers github.com/aws/smithy-go "$MOD/internal/keyprovider/awskms"
 	check_deps slackbridge-isolation ./internal/slackbridge internal/server internal/gen internal/slackapi/slackgo github.com/slack-go/slack
 	local p
 	for p in './internal/core/...' './internal/bus/...' ./internal/cli ./internal/mcpserver ./internal/client ./internal/server; do

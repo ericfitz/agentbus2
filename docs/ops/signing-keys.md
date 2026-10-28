@@ -11,7 +11,20 @@ The server signs the bearers it issues (`/v1/auth/token`, the human sign-in) wit
 | unset | Store row | In the `signing_keys` row, PKCS#8 PEM in clear, EdDSA. The server generates it. |
 | `awskms://...`, `gcpkms://...`, `azurekms://...`, `hashivault://...` | External | In the key service. The row holds the public key and the key reference (`provider_ref`); the server asks the service to sign. ECDSA P-256 (ES256) only: any other key type is refused when the URI is resolved. |
 
-A scheme whose backend is not compiled into the binary stops the start with `the <scheme> backend is not in this build (build with -tags <scheme>)` (exit 2). Each backend is behind a build tag of the same name, so the default binary links no cloud SDK. No backend is in this build yet; the sections below are added with each backend.
+A scheme whose backend is not compiled into the binary stops the start with `the <scheme> backend is not in this build (build with -tags <scheme>)` (exit 2). Each backend is behind a build tag of the same name, so the default binary links no cloud SDK. The `awskms` backend is described below; the other three have no backend in this build yet and their sections are added with each one.
+
+## awskms
+
+Build: `go build -tags awskms .` (the default binary and the release archives link no AWS SDK; the Docker image's `Dockerfile` builds with no tag at present).
+
+- Key URI: `awskms://[endpoint]/{key-id|key-ARN|alias/NAME|alias-ARN}`, for example `awskms:///alias/agentbus2` or `awskms:///arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab`. The optional `endpoint` is `host[:port]` and is always reached over https (for a VPC endpoint or a compatible service); leave it empty for the regional AWS endpoint. A URI that does not match is refused at start (exit 2).
+- The key: an AWS KMS asymmetric key with key spec `ECC_NIST_P256`, usage `SIGN_VERIFY`, state `Enabled`. Another key spec, a disabled key or another usage is refused when the URI is resolved.
+- Credentials and region come from the AWS SDK default chain (environment, shared config, container or instance role); set `AWS_REGION` or a profile region. The server stores none.
+- What the server calls: `kms:DescribeKey` and `kms:GetPublicKey` when it resolves the URI (a rotation, the first start with no row, each scheduled-rotation tick) and again, at most every five minutes, before it signs (sigstore's signer re-reads them), and `kms:Sign` per bearer. Grant exactly those three actions on the key. Nothing else: the server never creates a key or an alias and never schedules a key's deletion.
+- Pinning: `rotate` resolves the key id or alias to the key's ARN and stores `awskms://[endpoint]/<key ARN>` as the row's key reference, so a bearer is always signed by the key whose public half the row holds, even after the alias moves.
+- Rotating: create a new key and either repoint the alias (`aws kms update-alias --alias-name alias/agentbus2 --target-key-id <new key>`) or change `signing_key_uri` to the new key and restart, then run `agentbus2 server admin signing-key rotate`. The previous key stays in the set, and signable by its pinned ARN, until its `remove-after`; the operator retires it in KMS after that. Removal never deletes the external key.
+- Failures: an unreachable endpoint, a timeout, throttling or an AWS 5xx is the service's own failure: `rotate` answers `unavailable` (retryable) and the token endpoint answers 503 `temporarily_unavailable`. Bad credentials, a missing, disabled or wrong-type key and access-denied answers are not retryable; `rotate` reports the AWS message with the key name, never the URI. A first start with no row exits 1 for either kind (`signing key: ...`); a malformed URI exits 2. The SDK retries a request up to three times before giving up, and a bearer's sign call is bounded to 10 seconds.
+- Trust boundary: whoever may call `kms:Sign` on the key as the server's role can mint a bearer for any identity. Keep that permission on the server's role alone and audit it with CloudTrail.
 
 ## Trust boundary
 
@@ -20,11 +33,11 @@ A scheme whose backend is not compiled into the binary stops the start with `the
 
 ## Rotation
 
-`agentbus2 server admin signing-key rotate` (or `POST /v1/admin/signing-keys/rotate`) asks the configured provider for its next key and makes it the active key; the previous active key becomes retiring and stays published until its `remove_after` (the reload interval, the longest bearer lifetime and the verification leeway after it stopped signing). `-revoke-previous` deletes it at once instead. `signing-key list` shows every row with its `remove_after`.
+`agentbus2 server admin signing-key rotate` (or `POST /v1/admin/signing-keys/rotate`) asks the configured provider for its next key and makes it the active key; the previous active key becomes retiring and stays published until its `remove_after` (the API field; `signing-key list` prints it as `remove-after`: the reload interval, the longest bearer lifetime and the verification leeway after it stopped signing). `-revoke-previous` deletes it at once instead. `signing-key list` shows every row with its `remove-after`.
 
 - Store row: the next key is a freshly generated one. `signing_key_rotation_hours` rotates it on schedule.
 - External: the next key is the one the key URI resolves to now. The operator changes what the URI names (repoints the alias, adds a version, or points the setting at a new key and restarts), then runs `rotate`. Rotating while the URI still resolves to the active key answers a `conflict` (`the key URI resolves to the active signing key ...`) and changes nothing. While `signing_key_rotation_hours` is above 0 the `signing key rotation` job resolves the URI on every maintenance tick and adopts a repointed key within one tick; it cannot rotate the external key itself, so a key that is older than the interval and still named raises the job error shown in `health.md`. 0 turns scheduled rotation off for every provider.
-- Removing a retiring row never touches the key service. After `remove_after` the operator retires the old key there.
+- Removing a retiring row never touches the key service. After `remove-after` (shown by `signing-key list`) the operator retires the old key there.
 
 ## When the key service is down
 

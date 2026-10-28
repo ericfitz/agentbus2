@@ -104,6 +104,29 @@ func TestSchemeOf(t *testing.T) {
 	}
 }
 
+// A key URI may carry a token, so SchemeOf's errors name the scheme and never
+// the URI.
+func TestSchemeOfErrorsDoNotQuoteTheURI(t *testing.T) {
+	for _, bad := range []string{
+		"https://user:s3cret@host/key?token=s3cret",
+		"s3cret-token-without-scheme",
+		"awskms://",
+		"AWSKMS://s3cret",
+	} {
+		_, err := SchemeOf(bad)
+		if err == nil {
+			t.Errorf("SchemeOf(%q) accepted", bad)
+			continue
+		}
+		if strings.Contains(err.Error(), "s3cret") || strings.Contains(err.Error(), "host/key") {
+			t.Errorf("SchemeOf(%q) error quotes the URI: %q", bad, err)
+		}
+	}
+	if _, err := SchemeOf("https://u:p@h/k"); err == nil || !strings.Contains(err.Error(), `"https"`) {
+		t.Errorf("an unknown scheme error should name the scheme: %v", err)
+	}
+}
+
 func TestExternalKey(t *testing.T) {
 	p256, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	k, err := ExternalKey(p256.Public(), "awskms://k1")

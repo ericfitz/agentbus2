@@ -594,6 +594,7 @@ func TestAdminSigningKeyCooldownSetting(t *testing.T) {
 }
 
 func TestAdminSigningKeyUnknownBackend(t *testing.T) {
+	setBackend(t, "awskms", nil) // a build with the awskms tag registers it; this test needs it absent
 	e := newAdminEnv(t)
 	code, _, errOut := e.run("-set", "signing_key_uri=awskms:///alias/x", "signing-key", "rotate")
 	if code != 1 || !strings.Contains(errOut, "signing_key_uri: the awskms backend is not in this build") {
