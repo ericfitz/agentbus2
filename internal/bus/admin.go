@@ -36,12 +36,18 @@ func ValidPressureTier(t PressureTier) bool {
 	return false
 }
 
-// Usage is the database size, the configured SQLite budget and the capacity
-// notice. Evictable is false on Postgres, where no budget is enforced.
-// Notice is the capacity notice text when one is set.
+// Usage is the stored data's size against the budget of the store's engine,
+// and the capacity notice. Bytes is the enforced measure: used file bytes on
+// SQLite, the logical sum on Postgres. Evictable: a budget is enforced, always
+// true in this release. DiskBytes is the physical size and DiskRatio is
+// DiskBytes / Bytes (0 when Bytes is 0). Tier is how close Bytes is to the
+// budget. Notice is the capacity notice text when one is set.
 type Usage struct {
 	Bytes, BudgetBytes int64
 	Evictable          bool
+	DiskBytes          int64
+	DiskRatio          float64
+	Tier               PressureTier
 	Notice             string
 }
 

@@ -45,7 +45,7 @@ func TestHealthTiers(t *testing.T) {
 		}
 
 		a := mustHealth(t, h.admin("root"))
-		if a.Tier != ab2bus.TierAdmin || a.Storage == nil || a.Storage.Evictable != (e.Name == "sqlite") {
+		if a.Tier != ab2bus.TierAdmin || a.Storage == nil || !a.Storage.Evictable || a.Storage.Tier != ab2bus.PressureNormal {
 			t.Fatalf("admin tier: %+v", a)
 		}
 		if a.Notices == nil || len(a.Notices) != 0 {

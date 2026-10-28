@@ -11,9 +11,5 @@ func (a *api) AdminUsage(ctx context.Context, _ gen.AdminUsageRequestObject) (ge
 	if err != nil {
 		return nil, err
 	}
-	out := gen.Usage{Bytes: u.Bytes, BudgetBytes: u.BudgetBytes, Evictable: u.Evictable}
-	if u.Notice != "" {
-		out.Notice = &u.Notice
-	}
-	return gen.AdminUsage200JSONResponse(out), nil
+	return gen.AdminUsage200JSONResponse(usageToGen(u)), nil
 }

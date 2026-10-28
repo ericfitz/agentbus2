@@ -15,8 +15,8 @@ import (
 // shape of v1 internal/cli/status.go with the profile and mode in place of
 // config and data). The administrator-only lines (notices, embedding and
 // storage usage) are printed when Admin.Status succeeds; a forbidden Status or
-// Usage prints nothing. The usage line names the budget only when the store
-// is evictable (SQLite): a Postgres size is not held to it.
+// Usage prints nothing. The usage line names the budget when the store is
+// evictable, then the disk size, the ratio and the pressure tier.
 func RunStatus(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	_ = stdin
 	cmd := newOpCmd("status", stderr)
@@ -107,11 +107,13 @@ func RunStatus(ctx context.Context, args []string, environ []string, stdin io.Re
 }
 
 // usageLine is v1 internal/cli/status.go's "usage: %.1f MiB of %d MiB budget",
-// without the budget when the store is not evictable.
+// without the budget when the store is not evictable, then the disk size, the
+// ratio of disk to bytes and the pressure tier.
 func usageLine(u bus.Usage) string {
 	line := fmt.Sprintf("usage: %.1f MiB", float64(u.Bytes)/(1<<20))
 	if u.Evictable {
 		line += fmt.Sprintf(" of %d MiB budget", u.BudgetBytes>>20)
 	}
+	line += fmt.Sprintf(" (disk %.1f MiB, %.2fx, %s)", float64(u.DiskBytes)/(1<<20), u.DiskRatio, u.Tier)
 	return line
 }

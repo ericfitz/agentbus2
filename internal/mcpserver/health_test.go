@@ -53,7 +53,7 @@ func TestHealthTool(t *testing.T) {
 	if n, ok := got["notices"].([]any); !ok || len(n) != 0 {
 		t.Errorf("notices = %#v, want an empty array", got["notices"])
 	}
-	if s, _ := got["storage"].(map[string]any); s == nil || s["bytes"].(float64) <= 0 {
+	if s, _ := got["storage"].(map[string]any); s == nil || s["bytes"].(float64) <= 0 || s["disk_bytes"].(float64) <= 0 || s["disk_ratio"].(float64) <= 0 || s["tier"] != "normal" {
 		t.Errorf("storage = %v", got["storage"])
 	}
 }

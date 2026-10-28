@@ -48,7 +48,7 @@ func TestStatusReport(t *testing.T) {
 		t.Fatalf("admin status: %d %q", code, errs)
 	}
 	// SQLite is evictable, so the budget is shown.
-	if !regexp.MustCompile(`(?m)^usage: \d+\.\d MiB of \d+ MiB budget$`).MatchString(out) {
+	if !regexp.MustCompile(`(?m)^usage: \d+\.\d MiB of \d+ MiB budget \(disk \d+\.\d MiB, \d+\.\d\dx, normal\)$`).MatchString(out) {
 		t.Errorf("admin report lacks the usage line:\n%s", out)
 	}
 	for _, want := range []string{"embedding backlog: ", "general [ordinary] created by "} {
@@ -128,8 +128,8 @@ func TestStatusUsageLine(t *testing.T) {
 		u    bus.Usage
 		want string
 	}{
-		{bus.Usage{Bytes: 3 << 19, BudgetBytes: 512 << 20, Evictable: true}, "usage: 1.5 MiB of 512 MiB budget"},
-		{bus.Usage{Bytes: 3 << 19, BudgetBytes: 512 << 20}, "usage: 1.5 MiB"},
+		{bus.Usage{Bytes: 3 << 19, BudgetBytes: 512 << 20, Evictable: true, DiskBytes: 3 << 20, DiskRatio: 2, Tier: bus.PressureNormal}, "usage: 1.5 MiB of 512 MiB budget (disk 3.0 MiB, 2.00x, normal)"},
+		{bus.Usage{Bytes: 3 << 19, BudgetBytes: 512 << 20, DiskBytes: 3 << 20, DiskRatio: 2, Tier: bus.PressureNormal}, "usage: 1.5 MiB (disk 3.0 MiB, 2.00x, normal)"},
 	} {
 		if got := usageLine(tc.u); got != tc.want {
 			t.Errorf("usageLine(%+v) = %q, want %q", tc.u, got, tc.want)

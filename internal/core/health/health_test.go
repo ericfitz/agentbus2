@@ -131,7 +131,7 @@ func TestHealthAdminTier(t *testing.T) {
 	if h.Tier != bus.TierAdmin {
 		t.Fatalf("tier = %q", h.Tier)
 	}
-	if h.Storage == nil || h.Storage.Bytes <= 0 || !h.Storage.Evictable {
+	if h.Storage == nil || h.Storage.Bytes <= 0 || h.Storage.DiskBytes <= 0 || !h.Storage.Evictable {
 		t.Fatalf("storage = %+v", h.Storage)
 	}
 	if h.Notices == nil || len(h.Notices) != 0 {

@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentbus2/internal/core/rules"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -34,7 +36,25 @@ func (s Service) Usage(ctx context.Context, identity string) (bus.Usage, error) 
 	if err != nil {
 		return bus.Usage{}, err
 	}
-	out.Bytes, out.Evictable = u.Bytes, !u.Logical // interim until the Postgres budget task
-	out.BudgetBytes = int64(s.Cfg.SQLiteBudgetMiB) << 20
+	budget, _, err := core.Budget(s.Cfg, s.Store.Engine())
+	if err != nil {
+		return bus.Usage{}, err
+	}
+	var left store.EvictionLeft
+	if u.Bytes > budget {
+		err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+			var err error
+			left, err = tx.EvictionLeft(ctx, core.EvictionCutoffs(s.Cfg, s.NowMs()))
+			return err
+		})
+		if err != nil {
+			return bus.Usage{}, err
+		}
+	}
+	out.Bytes, out.BudgetBytes, out.Evictable, out.DiskBytes = u.Bytes, budget, true, u.DiskBytes
+	if u.Bytes > 0 {
+		out.DiskRatio = float64(u.DiskBytes) / float64(u.Bytes)
+	}
+	out.Tier = rules.StorageTier(u.Bytes, budget, core.TargetBytes(budget, s.Cfg.CleanupFreePercent), left.Early(), left.Late())
 	return out, nil
 }

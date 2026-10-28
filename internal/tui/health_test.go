@@ -129,8 +129,8 @@ func TestHealthUsageForbiddenPrintsNothing(t *testing.T) {
 func TestHealthStorageLine(t *testing.T) {
 	f := newFixture(t)
 	f.m.admin = true
-	f.m.usage = &bus.Usage{Bytes: 3 << 30, BudgetBytes: 2 << 30}
-	if body := healthBody(f); !strings.Contains(body, "storage 3.0 GiB of 2.0 GiB") || !strings.Contains(body, "150%") {
+	f.m.usage = &bus.Usage{Bytes: 3 << 30, BudgetBytes: 2 << 30, DiskBytes: 6 << 30, DiskRatio: 2, Tier: bus.PressureHard}
+	if body := healthBody(f); !strings.Contains(body, "storage 3.0 GiB of 2.0 GiB") || !strings.Contains(body, "150%") || !strings.Contains(body, "disk 6.0 GiB, 2.00x, hard") {
 		t.Fatalf("over-budget storage line:\n%s", body)
 	}
 }

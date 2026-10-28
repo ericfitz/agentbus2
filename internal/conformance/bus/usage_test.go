@@ -6,33 +6,48 @@ import (
 	"testing"
 
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/dbtest"
 	ab2store "github.com/ericfitz/agentbus2/internal/store"
 )
 
 func TestUsageAdminOnly(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		h := newHarness(t, e, harnessOptions{})
+		cfg := core.Defaults()
+		cfg.SQLiteBudgetMiB, cfg.PostgresBudgetMiB = 100, 200
+		h := newHarness(t, e, harnessOptions{cfg: &cfg})
 		ctx := context.Background()
 
 		_, err := h.as("kim").(ab2bus.Admin).Usage(ctx)
 		codeOf(t, err, ab2bus.CodeForbidden)
 
+		h.channel("dev", ab2store.KindOrdinary, "pat", nil)
+		if _, err := h.as("pat").Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "hello"}); err != nil {
+			t.Fatal(err)
+		}
 		root := h.admin("root").(ab2bus.Admin)
 		u, err := root.Usage(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}
-		// SQLite counts pages in use (never 0); Postgres counts the size_bytes
-		// of rows, which a fresh database may not hold yet.
-		if u.Bytes < 0 || (e.Name == "sqlite" && u.Bytes == 0) {
+		if u.Bytes <= 0 {
 			t.Errorf("Bytes = %d on %s", u.Bytes, e.Name)
 		}
-		if want := int64(h.cfg.SQLiteBudgetMiB) << 20; u.BudgetBytes != want {
+		want := int64(100) << 20
+		if e.Name == "postgres" {
+			want = int64(200) << 20
+		}
+		if u.BudgetBytes != want {
 			t.Errorf("BudgetBytes = %d, want %d", u.BudgetBytes, want)
 		}
-		if want := e.Name == "sqlite"; u.Evictable != want {
-			t.Errorf("Evictable = %v on %s", u.Evictable, e.Name)
+		if !u.Evictable {
+			t.Errorf("Evictable = false on %s", e.Name)
+		}
+		if u.DiskBytes <= 0 || u.DiskRatio <= 0 || u.DiskRatio != float64(u.DiskBytes)/float64(u.Bytes) {
+			t.Errorf("DiskBytes = %d, DiskRatio = %v, Bytes = %d", u.DiskBytes, u.DiskRatio, u.Bytes)
+		}
+		if u.Tier != ab2bus.PressureNormal {
+			t.Errorf("Tier = %q, want normal", u.Tier)
 		}
 		if u.Notice != "" {
 			t.Errorf("Notice = %q, want empty", u.Notice)

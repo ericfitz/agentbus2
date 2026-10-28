@@ -270,10 +270,13 @@ type healthEmbeddingsOut struct {
 }
 
 type usageOut struct {
-	Bytes       int64  `json:"bytes"`
-	BudgetBytes int64  `json:"budget_bytes"`
-	Evictable   bool   `json:"evictable"`
-	Notice      string `json:"notice,omitempty"`
+	Bytes       int64   `json:"bytes"`
+	BudgetBytes int64   `json:"budget_bytes"`
+	Evictable   bool    `json:"evictable"`
+	DiskBytes   int64   `json:"disk_bytes"`
+	DiskRatio   float64 `json:"disk_ratio"`
+	Tier        string  `json:"tier"`
+	Notice      string  `json:"notice,omitempty"`
 }
 
 type noticeOut struct {
@@ -318,7 +321,8 @@ func healthToOut(h bus.Health) healthOut {
 			Model: e.Model, LastError: e.LastError, LastErrorAt: e.LastErrorAt, RejectedLast: e.RejectedLast}
 	}
 	if u := h.Storage; u != nil {
-		o.Storage = &usageOut{Bytes: u.Bytes, BudgetBytes: u.BudgetBytes, Evictable: u.Evictable, Notice: u.Notice}
+		o.Storage = &usageOut{Bytes: u.Bytes, BudgetBytes: u.BudgetBytes, Evictable: u.Evictable,
+			DiskBytes: u.DiskBytes, DiskRatio: u.DiskRatio, Tier: string(u.Tier), Notice: u.Notice}
 	}
 	if h.Tier == bus.TierAdmin {
 		ns := make([]noticeOut, 0, len(h.Notices))

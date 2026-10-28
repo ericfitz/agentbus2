@@ -762,8 +762,9 @@ paths:
       operationId: adminUsage
       tags: [admin]
       description: >-
-        The database size, the configured SQLite budget and the capacity
-        notice (spec 3.2, Decision 48).
+        The database size, the budget of the store's engine, the disk size and
+        ratio, the pressure tier and the capacity notice (spec 3.2,
+        Decision 48).
       responses:
         "200":
           description: Database usage for administrators.
@@ -1889,16 +1890,28 @@ components:
           format: int64
     Usage:
       type: object
-      required: [bytes, budget_bytes, evictable]
+      required: [bytes, budget_bytes, evictable, disk_bytes, disk_ratio, tier]
       properties:
         bytes:
           type: integer
           format: int64
+          description: "The enforced measure: used file bytes on SQLite, the logical sum on Postgres."
         budget_bytes:
           type: integer
           format: int64
         evictable:
           type: boolean
+          description: A budget is enforced.
+        disk_bytes:
+          type: integer
+          format: int64
+        disk_ratio:
+          type: number
+          format: double
+          description: disk_bytes / bytes; 0 when bytes is 0
+        tier:
+          type: string
+          enum: [normal, approaching, soft, hard, exhausted]
         notice:
           type: string
           description: The capacity notice text, when one is set.

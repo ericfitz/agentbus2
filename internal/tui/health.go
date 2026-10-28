@@ -308,6 +308,7 @@ func (m Model) adminLines(p func(string, ...any), dim, ok, warn lipgloss.Style) 
 		filled := max(min(pct/5, 20), 0)
 		bar := strings.Repeat("█", filled) + dim.Render(strings.Repeat("█", 20-filled))
 		p("%s %s of %s %s %d%%\n", dim.Render("storage"), fmtBytes(u.Bytes), fmtBytes(u.BudgetBytes), bar, pct)
+		p("%s %s, %.2fx, %s\n", dim.Render("disk"), fmtBytes(u.DiskBytes), u.DiskRatio, u.Tier)
 	}
 	m.maintenanceLines(p, dim, warn)
 }

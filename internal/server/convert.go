@@ -76,11 +76,8 @@ func healthToGen(h bus.Health) gen.Health {
 		out.Embeddings = g
 	}
 	if u := h.Storage; u != nil {
-		g := &gen.Usage{Bytes: u.Bytes, BudgetBytes: u.BudgetBytes, Evictable: u.Evictable}
-		if u.Notice != "" {
-			g.Notice = &u.Notice
-		}
-		out.Storage = g
+		g := usageToGen(*u)
+		out.Storage = &g
 	}
 	if h.Notices != nil {
 		ns := make([]gen.Notice, len(h.Notices))
@@ -110,4 +107,17 @@ func healthToGen(h bus.Health) gen.Health {
 		out.Maintenance = g
 	}
 	return out
+}
+
+// usageToGen is the wire form of a usage reading, for the usage operation and
+// the health document's storage member.
+func usageToGen(u bus.Usage) gen.Usage {
+	g := gen.Usage{
+		Bytes: u.Bytes, BudgetBytes: u.BudgetBytes, Evictable: u.Evictable,
+		DiskBytes: u.DiskBytes, DiskRatio: u.DiskRatio, Tier: gen.UsageTier(u.Tier),
+	}
+	if u.Notice != "" {
+		g.Notice = &u.Notice
+	}
+	return g
 }

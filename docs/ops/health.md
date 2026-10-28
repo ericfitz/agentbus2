@@ -52,7 +52,7 @@ The administrator flag is the one that gates `GET /v1/admin/status` (see `admin-
 | `embeddings.model` | string | admin | the embedding model (absent when `off`) |
 | `embeddings.last_error`, `last_error_at` | string, integer | admin | the `embedding` notice's text and time (absent when unset) |
 | `embeddings.rejected_last` | string | admin | the latest rejection reason (absent when none) |
-| `storage` | object | admin | `bytes`, `budget_bytes`, `evictable` and, when set, the capacity `notice` (as in `GET /v1/admin/usage`) |
+| `storage` | object | admin | as in `GET /v1/admin/usage`: `bytes` (the enforced measure: used file bytes on SQLite, the logical sum of the rows' `size_bytes` on Postgres), `budget_bytes` (the budget of the store's engine), `evictable` (a budget is enforced: always `true`), `disk_bytes` (the physical size), `disk_ratio` (`disk_bytes / bytes`, 0 when `bytes` is 0), `tier` and, when set, the capacity `notice`. `tier` is `normal` at or below the sweep target (the budget less `cleanup_free_percent`), `approaching` above the target and at or below the budget, and above the budget `soft` while an orphaned bridge message, a tombstone past its floor or an expired enrollment token is still eligible for eviction, `hard` when only an idle task channel, an idle memory or an ordinary message is, and `exhausted` when nothing is |
 | `notices` | array | admin | the `capacity` and `embedding` operator notices; `[]` when none |
 | `maintenance.interval_seconds` | integer | admin | the maintenance tick period |
 | `maintenance.owner` | string | admin | this process's lock owner |
@@ -98,7 +98,7 @@ With a bearer: `agentbus2 login -profile P -identity I` on a server profile cach
 ```
 $ BEARER=$(jq -r .access_token "$AGENTBUS2_DATA_DIR/tokens/P/I.json")
 $ curl -sS -H "Authorization: Bearer $BEARER" http://127.0.0.1:8431/v1/health
-{"embeddings":{"backlog":0,"rejected":0,"state":"off"},"maintenance":{"interval_seconds":60,"jobs":[],"lock":"unknown","owner":"3b38e90889724e8727354d4f"},"notices":[],"now":1792911383866,"protocol_version":"1.0.0","started_at":1792911383259,"status":"ok","storage":{"budget_bytes":2147483648,"bytes":352256,"evictable":true},"store":{"engine":"sqlite","schema_version":1},"tier":"admin","version":"2.0.0-dev"}
+{"embeddings":{"backlog":0,"rejected":0,"state":"off"},"maintenance":{"interval_seconds":60,"jobs":[],"lock":"unknown","owner":"a31950eb95b5c835988bcf17"},"notices":[],"now":1793207928667,"protocol_version":"1.0.0","started_at":1793207928294,"status":"ok","storage":{"budget_bytes":2147483648,"bytes":352256,"disk_bytes":352256,"disk_ratio":1,"evictable":true,"tier":"normal"},"store":{"engine":"sqlite","schema_version":1},"tier":"admin","version":"2.0.0-dev"}
 ```
 
 `agentbus2 health [-profile P] [-identity I]` prints the same document, indented, using the profile's own credential. It exits 0 for `ok` and `degraded`, 1 for a `bus.Error` (an unreachable store among them) and 2 for a flag or resolution error.

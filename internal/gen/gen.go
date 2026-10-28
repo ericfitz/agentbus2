@@ -487,6 +487,33 @@ func (e SubscribeRequestFrom) Valid() bool {
 	}
 }
 
+// Defines values for UsageTier.
+const (
+	UsageTierApproaching UsageTier = "approaching"
+	UsageTierExhausted   UsageTier = "exhausted"
+	UsageTierHard        UsageTier = "hard"
+	UsageTierNormal      UsageTier = "normal"
+	UsageTierSoft        UsageTier = "soft"
+)
+
+// Valid indicates whether the value is a known member of the UsageTier enum.
+func (e UsageTier) Valid() bool {
+	switch e {
+	case UsageTierApproaching:
+		return true
+	case UsageTierExhausted:
+		return true
+	case UsageTierHard:
+		return true
+	case UsageTierNormal:
+		return true
+	case UsageTierSoft:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for AdminResetParamsScope.
 const (
 	Data       AdminResetParamsScope = "data"
@@ -1177,12 +1204,24 @@ type TokenRequest struct {
 // Usage defines model for Usage.
 type Usage struct {
 	BudgetBytes int64 `json:"budget_bytes"`
-	Bytes       int64 `json:"bytes"`
-	Evictable   bool  `json:"evictable"`
+
+	// Bytes The enforced measure: used file bytes on SQLite, the logical sum on Postgres.
+	Bytes     int64 `json:"bytes"`
+	DiskBytes int64 `json:"disk_bytes"`
+
+	// DiskRatio disk_bytes / bytes; 0 when bytes is 0
+	DiskRatio float64 `json:"disk_ratio"`
+
+	// Evictable A budget is enforced.
+	Evictable bool `json:"evictable"`
 
 	// Notice The capacity notice text, when one is set.
-	Notice *string `json:"notice,omitempty"`
+	Notice *string   `json:"notice,omitempty"`
+	Tier   UsageTier `json:"tier"`
 }
+
+// UsageTier defines model for Usage.Tier.
+type UsageTier string
 
 // Wake defines model for Wake.
 type Wake struct {
@@ -1627,7 +1666,7 @@ type ClientInterface interface {
 
 	// AdminUsage performs a GET /v1/admin/usage (the `AdminUsage` operationId) request.
 	//
-	// The database size, the configured SQLite budget and the capacity notice (spec 3.2, Decision 48).
+	// The database size, the budget of the store's engine, the disk size and ratio, the pressure tier and the capacity notice (spec 3.2, Decision 48).
 	AdminUsage(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// Jwks performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
@@ -2139,7 +2178,7 @@ func (c *Client) AdminStatus(ctx context.Context, reqEditors ...RequestEditorFn)
 
 // AdminUsage performs a GET /v1/admin/usage (the `AdminUsage` operationId) request.
 //
-// The database size, the configured SQLite budget and the capacity notice (spec 3.2, Decision 48).
+// The database size, the budget of the store's engine, the disk size and ratio, the pressure tier and the capacity notice (spec 3.2, Decision 48).
 func (c *Client) AdminUsage(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAdminUsageRequest(c.Server)
 	if err != nil {
@@ -5632,7 +5671,7 @@ type ClientWithResponsesInterface interface {
 
 	// AdminUsageWithResponse performs a GET /v1/admin/usage (the `AdminUsage` operationId) request.
 	//
-	// The database size, the configured SQLite budget and the capacity notice (spec 3.2, Decision 48).
+	// The database size, the budget of the store's engine, the disk size and ratio, the pressure tier and the capacity notice (spec 3.2, Decision 48).
 	//
 	// Returns a wrapper object for the known response body format(s).
 	AdminUsageWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AdminUsageResponse, error)
@@ -8703,7 +8742,7 @@ func (c *ClientWithResponses) AdminStatusWithResponse(ctx context.Context, reqEd
 
 // AdminUsageWithResponse performs a GET /v1/admin/usage (the `AdminUsage` operationId) request.
 //
-// The database size, the configured SQLite budget and the capacity notice (spec 3.2, Decision 48).
+// The database size, the budget of the store's engine, the disk size and ratio, the pressure tier and the capacity notice (spec 3.2, Decision 48).
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) AdminUsageWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AdminUsageResponse, error) {

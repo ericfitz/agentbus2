@@ -181,7 +181,11 @@ func fromGenHealth(g gen.Health) (ab2bus.Health, error) {
 		}
 	}
 	if u := g.Storage; u != nil {
-		out.Storage = &ab2bus.Usage{Bytes: u.Bytes, BudgetBytes: u.BudgetBytes, Evictable: u.Evictable, Notice: deref(u.Notice)}
+		su, err := fromGenUsage(*u)
+		if err != nil {
+			return ab2bus.Health{}, err
+		}
+		out.Storage = &su
 	}
 	if g.Notices != nil {
 		out.Notices = make([]ab2bus.Notice, len(*g.Notices))
