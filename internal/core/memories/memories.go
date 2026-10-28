@@ -169,6 +169,9 @@ func editPrepared(identity string, p access.Principal, in bus.EditMemoryInput, p
 // before the tombstone. It needs write on the memory's
 // channel and refuses a tasks-kind channel. The idempotency key replays the
 // stored result (Decision 46); a replay charges nothing and publishes nothing.
+// With an inspector configured the edit runs under write inspection
+// (core.RunInspected): the inspector sees the merged record, and the write
+// goes ahead only with the digest it judged.
 func (s Service) Edit(ctx context.Context, identity string, in bus.EditMemoryInput) (bus.EditResult, error) {
 	if in.Content != nil && *in.Content == "" {
 		return bus.EditResult{}, core.E(bus.CodeValidation, "content must not be empty; delete the memory instead")

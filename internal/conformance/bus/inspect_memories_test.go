@@ -191,3 +191,107 @@ func TestInspectDeleteNotInspected(t *testing.T) {
 		}
 	})
 }
+
+func TestInspectEditKeyed(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		var allow atomic.Bool
+		fi := &fakeInspector{reply: func(context.Context, core.InspectRequest) ([]byte, error) {
+			if allow.Load() {
+				return []byte(allowJSON), nil
+			}
+			return refuseJSON("policy", "no"), nil
+		}}
+		h := newHarness(t, e, harnessOptions{inspector: fi})
+		ctx := context.Background()
+		ch := h.channel("mem", ab2store.KindMemory, "owner", memoryACL(h))
+		id := inspectMemory(h, ch)
+		b := h.as("owner")
+		in := ab2bus.EditMemoryInput{ID: id, Content: memStrp("keyed"), IdempotencyKey: "k1"}
+
+		_, err := b.Edit(ctx, in)
+		codeOf(t, err, ab2bus.CodeInspectionRejected)
+		_, err = b.Edit(ctx, in)
+		codeOf(t, err, ab2bus.CodeInspectionRejected)
+		if c := len(fi.calls()); c != 2 {
+			t.Fatalf("%d inspector calls after two refusals, want 2 (a retry is inspected again)", c)
+		}
+		if inspectHasReceipt(h, "owner", "k1") {
+			t.Fatal("a refused keyed edit left a receipt")
+		}
+
+		allow.Store(true)
+		res, err := b.Edit(ctx, in)
+		if err != nil || res.Revision != 2 {
+			t.Fatalf("allowed edit = %+v, %v", res, err)
+		}
+		if c := len(fi.calls()); c != 3 {
+			t.Fatalf("%d inspector calls, want 3", c)
+		}
+		again, err := b.Edit(ctx, in)
+		if err != nil || again != res {
+			t.Fatalf("replay = %+v, %v; want %+v", again, err, res)
+		}
+		if c := len(fi.calls()); c != 3 {
+			t.Errorf("%d inspector calls after the replay, want 3", c)
+		}
+	})
+}
+
+func TestInspectEditChargesRefusal(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		fi := &fakeInspector{reply: func(context.Context, core.InspectRequest) ([]byte, error) {
+			return refuseJSON("policy", "no"), nil
+		}}
+		h := newHarness(t, e, harnessOptions{
+			cfg:       sendCfgWith(func(c *core.Config) { c.SendMessagesPerSecond = 1 }),
+			inspector: fi,
+		})
+		ctx := context.Background()
+		ch := h.channel("mem", ab2store.KindMemory, "owner", memoryACL(h))
+		id := inspectMemory(h, ch)
+		b := h.as("owner")
+		_, err := b.Edit(ctx, ab2bus.EditMemoryInput{ID: id, Content: memStrp("one")})
+		codeOf(t, err, ab2bus.CodeInspectionRejected)
+		_, err = b.Edit(ctx, ab2bus.EditMemoryInput{ID: id, Content: memStrp("two")})
+		codeOf(t, err, ab2bus.CodeRateLimited)
+		if c := len(fi.calls()); c != 1 {
+			t.Errorf("%d inspector calls, want 1 (the refusal was charged once)", c)
+		}
+	})
+}
+
+func TestInspectEditMergesOtherFields(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		fi := &fakeInspector{}
+		h := newHarness(t, e, harnessOptions{inspector: fi})
+		ctx := context.Background()
+		ch := h.channel("mem", ab2store.KindMemory, "owner", memoryACL(h))
+		id := inspectMemory(h, ch)
+		b := h.as("owner")
+		meta := map[string]string{"x": "y"}
+		edits := []ab2bus.EditMemoryInput{
+			{ID: id, Subject: memStrp("s2")},
+			{ID: id, Tags: []string{"b"}},
+			{ID: id, Metadata: &meta},
+		}
+		want := []core.InspectRecord{
+			{Subject: "s2", Content: "c", Tags: []string{"a"}, Metadata: map[string]string{"k": "v"}, BaseRevision: 1},
+			{Subject: "s2", Content: "c", Tags: []string{"b"}, Metadata: map[string]string{"k": "v"}, BaseRevision: 2},
+			{Subject: "s2", Content: "c", Tags: []string{"b"}, Metadata: meta, BaseRevision: 3},
+		}
+		for i, in := range edits {
+			if _, err := b.Edit(ctx, in); err != nil {
+				t.Fatalf("edit %d: %v", i, err)
+			}
+		}
+		calls := fi.calls()
+		if len(calls) != 3 {
+			t.Fatalf("%d inspector calls, want 3", len(calls))
+		}
+		for i, c := range calls {
+			if !reflect.DeepEqual(c.Record, want[i]) {
+				t.Errorf("call %d record = %+v, want %+v", i, c.Record, want[i])
+			}
+		}
+	})
+}
