@@ -22,7 +22,7 @@ func (s Service) budget() int64 {
 
 // evictToBudget deletes ordinary messages oldest-first while usage exceeds the
 // budget, down to the target (budget less CleanupFreePercent of it), then
-// reclaims freed pages. Only where Store.Usage reports Evictable (Milestone 7
+// reclaims freed pages. Only where Store.Usage is not Logical (Milestone 7
 // Gate 0 item 2, Decision (Eric, 2026-10-21)); elsewhere it does nothing.
 //
 // Ported from v1 internal/bus/maintenance.go evictToBudget. The sweep starts
@@ -36,7 +36,7 @@ func (s Service) evictToBudget(ctx context.Context, _ int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if !u.Evictable {
+	if u.Logical { // interim: Postgres is not enforced until the Postgres budget task
 		return 0, nil
 	}
 	budget := s.budget()
@@ -72,7 +72,7 @@ func (s Service) capacityNotice(ctx context.Context, now int64) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	if !u.Evictable {
+	if u.Logical { // interim, as in evictToBudget
 		return 0, nil
 	}
 	budget := s.budget()

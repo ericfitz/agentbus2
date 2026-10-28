@@ -34,7 +34,7 @@ func (s Service) Usage(ctx context.Context, identity string) (bus.Usage, error) 
 	if err != nil {
 		return bus.Usage{}, err
 	}
-	out.Bytes, out.Evictable = u.Bytes, u.Evictable
+	out.Bytes, out.Evictable = u.Bytes, !u.Logical // interim until the Postgres budget task
 	out.BudgetBytes = int64(s.Cfg.SQLiteBudgetMiB) << 20
 	return out, nil
 }

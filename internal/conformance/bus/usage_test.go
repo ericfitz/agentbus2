@@ -23,8 +23,10 @@ func TestUsageAdminOnly(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if u.Bytes <= 0 {
-			t.Errorf("Bytes = %d, want > 0", u.Bytes)
+		// SQLite counts pages in use (never 0); Postgres counts the size_bytes
+		// of rows, which a fresh database may not hold yet.
+		if u.Bytes < 0 || (e.Name == "sqlite" && u.Bytes == 0) {
+			t.Errorf("Bytes = %d on %s", u.Bytes, e.Name)
 		}
 		if want := int64(h.cfg.SQLiteBudgetMiB) << 20; u.BudgetBytes != want {
 			t.Errorf("BudgetBytes = %d, want %d", u.BudgetBytes, want)

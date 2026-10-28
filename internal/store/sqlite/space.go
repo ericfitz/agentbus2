@@ -16,8 +16,10 @@ const vacuumPages = 256
 // autoVacuumIncremental is PRAGMA auto_vacuum's value for INCREMENTAL.
 const autoVacuumIncremental = 2
 
-// Usage is v1 internal/bus/bus.go Usage: (page_count - freelist_count) *
-// page_size, the three PRAGMAs read on one connection.
+// Usage is v1 internal/bus/bus.go Usage: Bytes is (page_count -
+// freelist_count) * page_size, DiskBytes page_count * page_size, the three
+// PRAGMAs read on one connection. Logical is false: a delete frees pages, so
+// Bytes is measured again.
 func (dialect) Usage(ctx context.Context, db *sqlx.DB) (store.Usage, error) {
 	conn, err := db.Connx(ctx)
 	if err != nil {
@@ -33,7 +35,7 @@ func (dialect) Usage(ctx context.Context, db *sqlx.DB) (store.Usage, error) {
 			return store.Usage{}, err
 		}
 	}
-	return store.Usage{Bytes: (pages - free) * size, Evictable: true}, nil
+	return store.Usage{Bytes: (pages - free) * size, DiskBytes: pages * size}, nil
 }
 
 // Reclaim runs one incremental_vacuum step, outside any transaction.

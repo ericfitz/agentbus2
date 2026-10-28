@@ -46,7 +46,7 @@ func migrationsFor(e dbtest.Engine) []sqlstore.Migration {
 // number of times, including zero, and defaults opts.Now to fixedNow. rawDSN
 // returns the path or the schema-scoped DSN for a plain *sql.DB (never print
 // it).
-func isolate(t *testing.T, e dbtest.Engine) (reopen func(opts sqlstore.Options) (ab2store.Store, error), rawDSN func() string) {
+func isolate(t testing.TB, e dbtest.Engine) (reopen func(opts sqlstore.Options) (ab2store.Store, error), rawDSN func() string) {
 	t.Helper()
 	withNow := func(o sqlstore.Options) sqlstore.Options {
 		if o.Now == nil {
@@ -107,7 +107,7 @@ func isolate(t *testing.T, e dbtest.Engine) (reopen func(opts sqlstore.Options) 
 }
 
 // openStore is isolate plus one reopen(opts) that must succeed.
-func openStore(t *testing.T, e dbtest.Engine, opts sqlstore.Options) (s ab2store.Store, reopen func(opts sqlstore.Options) (ab2store.Store, error), rawDSN func() string) {
+func openStore(t testing.TB, e dbtest.Engine, opts sqlstore.Options) (s ab2store.Store, reopen func(opts sqlstore.Options) (ab2store.Store, error), rawDSN func() string) {
 	t.Helper()
 	reopen, rawDSN = isolate(t, e)
 	s, err := reopen(opts)
@@ -118,7 +118,7 @@ func openStore(t *testing.T, e dbtest.Engine, opts sqlstore.Options) (s ab2store
 }
 
 // rawDB opens a plain *sql.DB on the database rawDSN names, bypassing Open.
-func rawDB(t *testing.T, e dbtest.Engine, rawDSN func() string) *sql.DB {
+func rawDB(t testing.TB, e dbtest.Engine, rawDSN func() string) *sql.DB {
 	t.Helper()
 	db, err := sql.Open(e.Driver, rawDSN())
 	if err != nil {

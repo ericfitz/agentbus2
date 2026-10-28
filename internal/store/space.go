@@ -2,13 +2,15 @@ package store
 
 import "context"
 
-// Usage is the database's size on disk. Evictable: deleting rows lowers Bytes
-// promptly (SQLite); false on Postgres, where the relation size includes dead
-// tuples until vacuum, so a budget is never enforced against it (Gate 0 item
-// 2, Decision (Eric, 2026-10-21)).
+// Usage is what the database holds. Bytes is the enforced measure; DiskBytes
+// is the physical size. Logical is true when deleting a row lowers Bytes by
+// exactly its size_bytes (Postgres: the sum of size_bytes over
+// sqlstore.MeasuredTables, which dead tuples do not inflate); false when Bytes
+// must be measured again after a delete (SQLite: pages in use times page
+// size).
 type Usage struct {
-	Bytes     int64
-	Evictable bool
+	Bytes, DiskBytes int64
+	Logical          bool
 }
 
 // Space reports and reclaims database space.
