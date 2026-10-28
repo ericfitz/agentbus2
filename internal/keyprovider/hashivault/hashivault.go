@@ -353,12 +353,6 @@ func (s *signer) SignContext(ctx context.Context, digest []byte, opts crypto.Sig
 	}
 }
 
-// classify turns a request failure into an error that names what failed
-// without the request URL or anything from the connection setup, and marks the
-// Vault service's own failures (unreachable, out of time, HTTP 429 or 5xx, a
-// sealed or standby node) with keyprovider.ErrUnavailable. A refusal (bad
-// token, missing key, bad request) and a canceled context are not marked. It
-// decides by error type and status, never by message text.
 // maxVaultText caps the Vault-supplied text kept in an error.
 const maxVaultText = 256
 
@@ -372,6 +366,12 @@ func redact(text string) string {
 	return text
 }
 
+// classify turns a request failure into an error that names what failed
+// without the request URL or anything from the connection setup, and marks the
+// Vault service's own failures (unreachable, out of time, HTTP 429 or 5xx, a
+// sealed or standby node) with keyprovider.ErrUnavailable. A refusal (bad
+// token, missing key, bad request) and a canceled context are not marked. It
+// decides by error type and status, never by message text.
 func classify(what string, err error) error {
 	if errors.Is(err, context.Canceled) {
 		return fmt.Errorf("hashivault: %s: %w", what, err)
