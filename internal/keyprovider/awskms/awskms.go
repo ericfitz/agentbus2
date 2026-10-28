@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"os"
 	"strings"
 	"sync"
 
@@ -119,11 +120,11 @@ func (p *Provider) Next(ctx context.Context) (keyprovider.Key, error) {
 	name := describeURI(p.uri)
 	c, err := p.kmsClient(ctx)
 	if err != nil {
-		return keyprovider.Key{}, classify(err)
+		return keyprovider.Key{}, classify("awskms: loading AWS config", err)
 	}
 	d, err := c.DescribeKey(ctx, &kms.DescribeKeyInput{KeyId: aws.String(p.keyID)})
 	if err != nil {
-		return keyprovider.Key{}, classify(fmt.Errorf("awskms: %s: describe key: %w", name, err))
+		return keyprovider.Key{}, classify("awskms: "+name+": describe key", err)
 	}
 	md := d.KeyMetadata
 	if md == nil || md.Arn == nil || *md.Arn == "" {
@@ -141,7 +142,7 @@ func (p *Provider) Next(ctx context.Context) (keyprovider.Key, error) {
 	}
 	pk, err := c.GetPublicKey(ctx, &kms.GetPublicKeyInput{KeyId: md.Arn})
 	if err != nil {
-		return keyprovider.Key{}, classify(fmt.Errorf("awskms: %s: get public key: %w", name, err))
+		return keyprovider.Key{}, classify("awskms: "+name+": get public key", err)
 	}
 	pub, err := x509.ParsePKIXPublicKey(pk.PublicKey)
 	if err != nil {
@@ -218,11 +219,11 @@ func (s *signer) SignContext(ctx context.Context, digest []byte, opts crypto.Sig
 	}
 	sv, err := s.load(ctx)
 	if err != nil {
-		return nil, classify(fmt.Errorf("awskms: %s: %w", describeURI(s.ref), err))
+		return nil, classify("awskms: "+describeURI(s.ref), err)
 	}
 	sig, err := sv.SignMessage(nil, options.WithDigest(digest), options.WithContext(ctx), options.WithCryptoSignerOpts(crypto.SHA256))
 	if err != nil {
-		return nil, classify(fmt.Errorf("awskms: %s: %w", describeURI(s.ref), err))
+		return nil, classify("awskms: "+describeURI(s.ref), err)
 	}
 	return sig, nil
 }
@@ -254,19 +255,53 @@ var throttleCodes = map[string]bool{
 	"InternalServerError":                    true,
 }
 
-// classify marks an error that is the key service's own failure (unreachable,
-// timing out, throttling, 5xx) with keyprovider.ErrUnavailable so a rotate
-// answers a retryable `unavailable`. A refusal (bad credentials, a missing or
-// disabled key, a bad request) and a canceled context are returned as they
-// are. The original error stays in the chain.
-func classify(err error) error {
-	if err == nil || errors.Is(err, keyprovider.ErrUnavailable) || errors.Is(err, context.Canceled) {
+// maxProviderText caps the AWS-supplied text kept in an error.
+const maxProviderText = 256
+
+// capText redacts the AWS secrets in the environment from text and cuts it to
+// maxProviderText bytes without splitting a rune. The SDK does not put a secret
+// in an error today; this holds if a proxy or endpoint echoes one.
+func capText(text string) string {
+	for _, name := range []string{"AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"} {
+		if sec := os.Getenv(name); sec != "" {
+			text = strings.ReplaceAll(text, sec, "[redacted]")
+		}
+	}
+	if len(text) > maxProviderText {
+		text = strings.ToValidUTF8(text[:maxProviderText], "") + "..."
+	}
+	return text
+}
+
+// providerError is an SDK failure with a redacted, bounded message. Is and As
+// still reach the original chain (and keyprovider.ErrUnavailable when marked),
+// so classification by type is unchanged.
+type providerError struct {
+	msg  string
+	errs []error
+}
+
+func (e *providerError) Error() string   { return e.msg }
+func (e *providerError) Unwrap() []error { return e.errs }
+
+// classify names what failed (prefix) and marks an error that is the key
+// service's own failure (unreachable, timing out, throttling, 5xx) with
+// keyprovider.ErrUnavailable so a rotate answers a retryable `unavailable`. A
+// refusal (bad credentials, a missing or disabled key, a bad request) and a
+// canceled context are not marked. The AWS text is redacted and capped; the
+// original error stays in the chain.
+func classify(prefix string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, keyprovider.ErrUnavailable) {
 		return err
 	}
-	if unavailable(err) {
-		return fmt.Errorf("%w: %w", keyprovider.ErrUnavailable, err)
+	msg := prefix + ": " + capText(err.Error())
+	if !errors.Is(err, context.Canceled) && unavailable(err) {
+		return &providerError{msg: keyprovider.ErrUnavailable.Error() + ": " + msg, errs: []error{keyprovider.ErrUnavailable, err}}
 	}
-	return err
+	return &providerError{msg: msg, errs: []error{err}}
 }
 
 func unavailable(err error) bool {

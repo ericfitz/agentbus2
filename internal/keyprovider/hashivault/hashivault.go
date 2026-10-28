@@ -67,8 +67,10 @@ type Provider struct {
 
 var _ keyprovider.Provider = (*Provider)(nil)
 
-// New validates uri (hashivault://NAME) and returns a provider. It reads no
-// environment and makes no network call.
+// New validates uri (hashivault://NAME) and the Vault environment (resolveEnv)
+// and returns a provider, so a missing or invalid address, token or mount is a
+// configuration error at start (exit 2), as for the other backends. It makes
+// no network call; Next and Sign read the environment again on every use.
 func New(uri string) (keyprovider.Provider, error) {
 	p, err := newProvider(uri)
 	if err != nil {
@@ -81,6 +83,9 @@ func newProvider(uri string) (*Provider, error) {
 	name, ok := strings.CutPrefix(uri, scheme)
 	if !ok || !nameRE.MatchString(name) {
 		return nil, fmt.Errorf("hashivault: %s: the key URI must be hashivault://NAME, where NAME is letters, digits, '_', '-' and '.' and starts and ends with a letter, digit or '_'", describeURI(uri))
+	}
+	if _, err := resolveEnv(); err != nil {
+		return nil, err
 	}
 	return &Provider{name: name}, nil
 }

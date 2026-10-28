@@ -19,6 +19,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/config"
@@ -57,6 +58,7 @@ type fakeKMS struct {
 	calls   map[string]int     // operation -> requests
 	status  int                // when non-zero, every request answers it
 	errType string             // the X-Amzn-ErrorType of that answer
+	errMsg  string             // the message of that answer, "injected" when empty
 	hangOps map[string]bool    // operations that never answer
 
 	release chan struct{}
@@ -156,10 +158,13 @@ func (f *fakeKMS) handle(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	f.mu.Lock()
 	f.calls[op]++
-	status, errType, hang := f.status, f.errType, f.hangOps[op]
+	status, errType, hang, msg := f.status, f.errType, f.hangOps[op], f.errMsg
 	f.mu.Unlock()
 	if status != 0 {
-		writeErr(w, status, errType, "injected")
+		if msg == "" {
+			msg = "injected"
+		}
+		writeErr(w, status, errType, msg)
 		return
 	}
 	if hang {
@@ -733,4 +738,59 @@ func TestNextRefusesWrongKeyUsage(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "ENCRYPT_DECRYPT") || errors.Is(err, keyprovider.ErrUnavailable) {
 		t.Fatalf("err = %v", err)
 	}
+}
+
+// Provider text is capped at 256 bytes (never splitting a rune) and a secret
+// from the environment is redacted, on Next and on Sign, for a refusal and for
+// an outage alike; the classification by type is unchanged.
+func TestProviderTextIsRedactedAndBounded(t *testing.T) {
+	const secret = "s3cr3t-AWS-key-material"
+	t.Setenv("AWS_SECRET_ACCESS_KEY", secret)
+	t.Setenv("AWS_SESSION_TOKEN", secret+"-session")
+	f := newFakeKMS(t)
+	f.addP256(t, uuid1)
+	p := f.provider(t, "/"+uuid1)
+	ctx := context.Background()
+	k, err := p.Next(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte("x"))
+	long := strings.Repeat("é", 400) // multi-byte: the cut must not split a rune
+	for name, c := range map[string]struct {
+		status  int
+		errType string
+		want    bool
+	}{
+		"refusal": {400, "AccessDeniedException", false},
+		"outage":  {503, "ServiceUnavailableException", true},
+	} {
+		for _, msg := range []string{strings.Repeat("A", 1000), long, "echo " + secret + " and " + secret + "-session"} {
+			f.mu.Lock()
+			f.status, f.errType, f.errMsg = c.status, c.errType, msg
+			f.mu.Unlock()
+			_, errNext := p.Next(ctx)
+			fresh, _ := p.Signer(ctx, k)
+			_, errSign := fresh.SignContext(ctx, digest[:], crypto.SHA256)
+			for op, err := range map[string]error{"Next": errNext, "Sign": errSign} {
+				if err == nil {
+					t.Fatalf("%s %s: no error", name, op)
+				}
+				text := err.Error()
+				if len(text) > 256+200 { // the cap plus our own prefix
+					t.Errorf("%s %s: %d bytes of error text: %.120s...", name, op, len(text), text)
+				}
+				if !utf8.ValidString(text) {
+					t.Errorf("%s %s: error text is not valid UTF-8", name, op)
+				}
+				if strings.Contains(text, secret) {
+					t.Errorf("%s %s: the error leaks a secret: %s", name, op, text)
+				}
+				if got := errors.Is(err, keyprovider.ErrUnavailable); got != c.want {
+					t.Errorf("%s %s: ErrUnavailable = %v, want %v", name, op, got, c.want)
+				}
+			}
+		}
+	}
+	f.failAll(0, "")
 }

@@ -37,6 +37,9 @@ expect_exit() {
     *"$text"*) ;;
     *) fail "$name log lacks \"$text\"; log: $logs" ;;
   esac
+  case "$logs" in
+    *'://none'*) fail "$name log quotes the key URI; log: $logs" ;;
+  esac
 }
 
 echo "step 1: docker build"
@@ -50,11 +53,11 @@ expect_exit "$NAME-nolisten" 2 'listen is required' -e AGENTBUS2_SERVER_SQLITE=/
 echo "step 2c: every key provider backend is in the image"
 # The image carries all four backends (BUILD_TAGS in the Dockerfile; open note signing-keys 1); an untagged binary
 # answers every scheme with "not in this build". With the placeholder URI "<scheme>://none" the three URI-checking
-# backends refuse it as a configuration error (exit 2) and hashivault, which checks its environment (VAULT_ADDR) at
-# EnsureActive, fails as a runtime error (exit 1). No key service is needed. The log must carry the backend's own text
-# and must not quote the URI.
+# backends refuse it as a configuration error (exit 2); hashivault does too, because New checks its environment
+# (VAULT_ADDR, VAULT_TOKEN), which the container leaves unset. No key service is needed. The log must carry the
+# backend's own text; expect_exit also fails when the log quotes the URI ("://none").
 for spec in awskms:2:'agentbus2 server: awskms:' gcpkms:2:'agentbus2 server: gcpkms:' azurekms:2:'agentbus2 server: azurekms:' \
-  hashivault:1:'signing key provider hashivault'; do
+  hashivault:2:'agentbus2 server: hashivault:'; do
   scheme="${spec%%:*}"
   rest="${spec#*:}"
   want="${rest%%:*}"

@@ -127,9 +127,12 @@ self_test() {
       echo "PASS archive-binary-links-no-sigstore"
       SELF_PASS=$((SELF_PASS + 1))
     else
-      echo "FAIL archive-binary-links-no-sigstore: $(printf '%s' "$mods" | rg -i sigstore | head -3)"
+      echo "FAIL archive-binary-links-no-sigstore: $(printf '%s' "$mods" | grep -i sigstore | head -3)"
       SELF_FAIL=$((SELF_FAIL + 1))
     fi
+  else
+    echo "FAIL archive-binary-links-no-sigstore: no native binary at $tmp/native/agentbus2$ext"
+    SELF_FAIL=$((SELF_FAIL + 1))
   fi
 
   # The linux tarball on any host: the native one on Linux, else a cross

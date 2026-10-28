@@ -1261,3 +1261,34 @@ func TestConcurrentSigns(t *testing.T) {
 		}
 	}
 }
+
+// New refuses an unusable environment at once, so the server reports a
+// configuration error (exit 2) instead of failing at the first Next.
+func TestNewRefusesUnusableEnvironment(t *testing.T) {
+	f := newFakeVault(t)
+	cases := []struct {
+		name string
+		set  map[string]string
+		want string
+	}{
+		{"no address", map[string]string{"VAULT_ADDR": "", "BAO_ADDR": ""}, "VAULT_ADDR"},
+		{"no token", map[string]string{"VAULT_TOKEN": "", "BAO_TOKEN": ""}, "VAULT_TOKEN"},
+		{"bad address", map[string]string{"VAULT_ADDR": "ftp://x"}, "VAULT_ADDR must be"},
+		{"address with user info", map[string]string{"VAULT_ADDR": "http://u:" + secretToken + "@127.0.0.1:1"}, "no user info"},
+		{"bad mount", map[string]string{"TRANSIT_SECRET_ENGINE_PATH": "/x"}, "TRANSIT_SECRET_ENGINE_PATH"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			for k, v := range c.set {
+				t.Setenv(k, v)
+			}
+			p, err := New("hashivault://" + keyName)
+			if err == nil || p != nil || !strings.Contains(err.Error(), c.want) || errors.Is(err, keyprovider.ErrUnavailable) || strings.Contains(err.Error(), secretToken) {
+				t.Fatalf("New = %v, %v; want an error naming %q", p, err, c.want)
+			}
+		})
+	}
+	if f.total() != 0 {
+		t.Fatalf("%d requests", f.total())
+	}
+}

@@ -15,9 +15,9 @@ Until 2026-10-27 the server had one signing key: a single `signing_keys` row, cr
 Each of these is Eric's decision, recorded by the plan as "Eric's decisions of 2026-10-27".
 
 1. **External keys are chosen by key URI** (`awskms://`, `gcpkms://`, `azurekms://`, `hashivault://`) over sigstore's CGO-free per-backend modules. No URI means the Store-row provider. The algorithm is ES256 whenever the key is held externally and Ed25519 for the Store-row key.
-2. **The Store is the registry for every provider.** A `signing_keys` row carries the state, the provider, the resolved provider reference and the SPKI public key; the provider holds only the private part.
+2. **The Store is the registry for every provider**; the provider holds only the private part. (Plan: a `signing_keys` row carries the state, the provider, the resolved provider reference and the SPKI public key.)
 3. **The configured key URI (or an alias in it) is resolved at each rotation** and the resolved reference is recorded in the row. Replicas sign by the recorded reference.
-4. **Replicas reload on an unknown `kid`** (single-flight, at most once per 5 s) **and every 30 s** (`token.UnknownKeyReloadInterval`, `token.ReloadInterval`).
+4. **Replicas reload on an unknown `kid`** (single-flight, at most once per 5 s) **and every 30 s** (plan: `token.UnknownKeyReloadInterval`, `token.ReloadInterval`).
 5. **`remove_after = retired_at + 30 s + 86400 s + 60 s`**: the reload interval, the configured bearer lifetime ceiling and the leeway.
 6. **Rotate now is a host command and an admin API operation** (`Bus.Admin`, the client CLI), in protocol `1.0.0`. Eric: "Protocol version will be 1.0.0, end of discussion."
 7. **`-revoke-previous` deletes the previous active key in the rotation transaction.** The cooldown never refuses it.
@@ -39,7 +39,7 @@ The brief's "Changes to existing decisions" were not individually decided by Eri
 
 ## Settled open notes
 
-Each is reversible with one findable edit: `rg -n 'open note: signing-keys' .`. They are agent choices, settled in the plan and not Eric's.
+Each is reversible with one findable edit: `rg -n 'open note: signing-keys' .`. They are agent choices, settled in the plan and not Eric's. Note 1 is the one the spec left open for Eric; it awaits his review.
 
 1. **Release archive build tags.** `release/build-archive.sh` builds with no tag; the Docker image (`Dockerfile`, the server deployment target) builds with all four through `ARG BUILD_TAGS=awskms,gcpkms,azurekms,hashivault` passed as `-tags "${BUILD_TAGS}"`. The archives are the brew, scoop and winget installs that run agents, the CLI and the TUI, where a cloud SDK is dead weight (decision 12's "lean"); the image is what `docs/ops/deploy.md` deploys. Markers: `Dockerfile`, `release/build-archive.sh`. `release/build-archive.sh --self-test` asserts the archive binary links no sigstore module; `scripts/docker-smoke.sh` step 2c asserts the image has all four backends.
 2. **Where the build tag sits.** The adapter packages `internal/keyprovider/<backend>` carry no tag; only `internal/server/cmd/backend_<backend>.go` does. Every untagged gate (`vet`, `lint`, `test`, `vet-cross`, `windows.yml`, the m7 importer scan) then compiles every adapter on every GOOS, while the binary links an SDK only when `main` reaches the tagged file. Markers: `internal/server/cmd/keyprovider.go`, `keyprovider_test.go`.
@@ -48,19 +48,19 @@ Each is reversible with one findable edit: `rg -n 'open note: signing-keys' .`. 
 5. **The two maintenance jobs** (`signing key rotation`, `signing key removal`) exist only when the server wires the port (`maintenance.Service.SigningKeys`); local mode has neither. They sit before `assertion replay expiry`, which stays last. Marker: `internal/core/maintenance/jobs_test.go`.
 6. **Bounds** of the two settings (consequence 2). Marker: `internal/server/config/config_test.go`.
 7. **External sign timeout.** `Issuer.Mint` bounds the sign call with `token.SignTimeout` (10 s) on the request context. Marker: `internal/auth/token/keyset_test.go`.
-8. **Visibility of a stale external key and of a provider mismatch.** The lock holder's `signing key rotation` job returns them as its error, so health shows them; every replica's `Keyring` logs a warning on each reload that finds them. Marker: `internal/core/signingkeys/keyring_test.go`.
+8. **Visibility of a stale external key and of a provider mismatch.** The lock holder's `signing key rotation` job returns them as its error, so health shows them; every replica's `Keyring` logs a warning when the condition first appears (the provider mismatch warning is logged once per distinct condition, not on every reload; only "signing key unusable" repeats on every reload). Marker: `internal/core/signingkeys/keyring_test.go`.
 9. **Revoke propagation in the replica test** polls the other replica for up to `token.ReloadInterval + 5 s` (about 30 s per engine at worst). Marker: `internal/conformance/bus/replicas_test.go`.
 
 ## How the four backends work
 
 Facts from the committed adapters (`internal/keyprovider/<backend>`):
 
-- **Resolution.** Each backend calls its cloud client directly for `Next`, because sigstore hides the resolved version or ARN. AWS also does so for `DescribeKey` and `GetPublicKey`. All four sign through sigstore's signer, by the pinned reference the row records.
+- **Resolution.** Each backend calls its cloud client directly for `Next`, because sigstore hides the resolved version or ARN. For `awskms`, `Next` is `DescribeKey` then `GetPublicKey` on the resolved ARN. All four sign through sigstore's signer, by the pinned reference the row records.
 - **`Next` is bounded centrally** by `signingkeys.NextTimeout` (30 s), whatever the backend.
 - **Sign path.** `hashivault`, `gcpkms` and `azurekms` run the sign call in a goroutine bounded by the request context, with 16 slots (`signSlots`) and a `recover`; a call abandoned at the context's end finishes in the background. `awskms` has no goroutine, no slots and no `recover`: it passes the context to sigstore's `SignMessage` (`options.WithContext`), which honors it.
 - **Verify after sign.** `hashivault`, `gcpkms` and `azurekms` verify the returned signature under the public key the row holds (`ecdsa.VerifyASN1`) and refuse one that does not verify. `awskms` does not, because a key ARN is globally unique.
-- **Errors never quote the URI.** Messages name the key with `keyprovider.KeyName` (the URI without user info, query or fragment); provider text is redacted of known secrets and capped at 256 bytes.
-- **Credentials come from the environment.** `azurekms` requires `AZURE_TOKEN_CREDENTIALS` and refuses to start without it (a configuration error, exit 2). `hashivault` reads `VAULT_ADDR` (or `BAO_ADDR`) and `VAULT_TOKEN` (or `BAO_TOKEN`); it does not use the Vault token helper and does not log in or renew.
+- **Errors never quote the URI.** Messages name the key with `keyprovider.KeyName` (the URI without user info, query or fragment); provider text is redacted of known secrets (the token for `hashivault`, the access token for `gcpkms`, the credential secrets for `azurekms`, `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN` for `awskms`) and capped at 256 bytes without splitting a rune, in all four backends; the classification by type is not changed by it.
+- **Credentials come from the environment.** `azurekms` requires `AZURE_TOKEN_CREDENTIALS` and refuses to start without it (a configuration error, exit 2). `hashivault` reads `VAULT_ADDR` (or `BAO_ADDR`) and `VAULT_TOKEN` (or `BAO_TOKEN`) and refuses to start without a valid address, token and mount (a configuration error, exit 2); it does not use the Vault token helper and does not log in or renew.
 - **Outage.** `keyprovider.ErrUnavailable` is how a provider reports its service being down: `rotate` answers a retryable `unavailable`, the token endpoint answers 503 `temporarily_unavailable` ("the signing key is unavailable"), and the server exits 1 at start (a configuration error exits 2).
 
 ## Controller rulings (pending Eric's review)
@@ -72,7 +72,10 @@ These were made during execution by the controller or an implementing agent. The
 3. **Verify-after-sign** in `hashivault`, `gcpkms` and `azurekms`, and not in `awskms`.
 4. **The `gcpkms` project-segment tolerance**: when it checks that the version name the service returns belongs to the requested key, the adapter does not compare the project segment (the service may spell it with the project number instead of the project ID), and the pinned reference is the requested path plus the version number, never the service's spelling.
 5. **`azurekms` fails closed** without `AZURE_TOKEN_CREDENTIALS`, so the default credential chain never runs `az`, `azd` or `pwsh` from the server's `PATH`; Azure Germany is not supported.
-6. **Docker smoke assertion** (this task): `scripts/docker-smoke.sh` starts the image with `<scheme>://none` for each backend and asserts the backend's own refusal (exit 2 for the three that validate the URI, exit 1 for `hashivault`, which fails at `EnsureActive` on the unset `VAULT_ADDR`), which proves the tags are in the image without a key service.
+6. **Docker smoke assertion** (this task): `scripts/docker-smoke.sh` starts the image with `<scheme>://none` for each backend and asserts the backend's own refusal (exit 2 for all four: the three that validate the URI, and `hashivault`, whose `New` refuses the unset `VAULT_ADDR`), and that the log does not quote the URI, which proves the tags are in the image without a key service.
+7. **An `awskms` credential failure is retryable `unavailable` only when its cause chain holds a net or timeout error** (the metadata service or a token endpoint unreachable); any other credential failure (no provider, invalid or expired credentials) is a non-retryable refusal.
+8. **Provider text in `awskms` errors is redacted and capped** like the other three backends (Task 14 fix round 1): `AWS_SECRET_ACCESS_KEY` and `AWS_SESSION_TOKEN` from the environment are replaced and the SDK text is cut to 256 bytes; the original error stays in the chain, so `errors.Is` and `errors.As` classify as before.
+9. **`hashivault` validates its environment in `New`** (Task 14 fix round 1): an unset or invalid `VAULT_ADDR` or `BAO_ADDR`, an unset `VAULT_TOKEN` or `BAO_TOKEN` and an invalid `TRANSIT_SECRET_ENGINE_PATH` are configuration errors, so the start and `server admin signing-key rotate` exit 2 like the other three backends. The environment is still read again on every use.
 
 ## Binary sizes
 
