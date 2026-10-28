@@ -12,10 +12,12 @@ import (
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
+	"github.com/ericfitz/agentbus2/internal/keyprovider"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
-const adminSubcommands = "users and admins (add, remove, list), reset-credential, create-identity, create-human, enrollment (create, list, revoke)"
+const adminSubcommands = "users and admins (add, remove, list), reset-credential, create-identity, create-human, enrollment (create, list, revoke), signing-key (list, rotate)"
 
 const makeAdminReplaced = "make-admin was replaced by: admins add -identity NAME (admins remove -identity NAME)"
 
@@ -38,6 +40,12 @@ one.
 type hostEnv struct {
 	Svc     identities.Service
 	Issuers []string
+	// Keys is the signing key service with the configured settings and no
+	// provider: list reads the Core only, so it never fails on a backend this
+	// build lacks.
+	Keys signingkeys.Service
+	// OpenProvider opens the configured key provider; only rotate calls it.
+	OpenProvider func() (keyprovider.Provider, error)
 }
 
 type adminAction func(context.Context, hostEnv, io.Writer) error
@@ -87,6 +95,8 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 		run, code, done = createHumanCommand(subArgs, stdout, stderr)
 	case "enrollment":
 		run, code, done = enrollmentCommand(subArgs, stdout, stderr)
+	case "signing-key":
+		run, code, done = signingKeyCommand(subArgs, stdout, stderr)
 	default:
 		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin: unknown subcommand %q; subcommands: %s\n", sub, adminSubcommands)
 		return 2
@@ -110,7 +120,11 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin: %v\n", err)
 		return 1
 	}
-	env := hostEnv{Svc: identities.Service{Core: c}}
+	env := hostEnv{
+		Svc:          identities.Service{Core: c},
+		Keys:         signingkeys.Service{Core: c, Settings: signingSettings(cfg)},
+		OpenProvider: func() (keyprovider.Provider, error) { return openKeyProvider(cfg) },
+	}
 	for _, is := range cfg.Issuers {
 		env.Issuers = append(env.Issuers, is.Name)
 	}
@@ -411,4 +425,86 @@ func parseInterleaved(fs *flag.FlagSet, buf *bytes.Buffer, args []string, stdout
 		pos = append(pos, fs.Arg(0))
 		args = fs.Args()[1:]
 	}
+}
+
+const signingKeyUsage = "usage: agentbus2 server admin signing-key list | rotate [-revoke-previous]"
+
+// signingKeyCommand parses `signing-key list|rotate [-revoke-previous]`.
+//
+// State (Definition of Done D): see signingkeys.Service.Rotate. A second
+// rotate inside the cooldown exits 1 and changes nothing; -revoke-previous
+// is exempt and deletes the active key; two overlapping runs leave one
+// winner; a failed run leaves the rows as they were.
+func signingKeyCommand(args []string, stdout, stderr io.Writer) (adminAction, int, bool) {
+	if len(args) == 0 {
+		_, _ = fmt.Fprintln(stderr, signingKeyUsage)
+		return nil, 2, true
+	}
+	verb, rest := args[0], args[1:]
+	if verb != "list" && verb != "rotate" {
+		_, _ = fmt.Fprintf(stderr, "signing-key: unknown action %q; %s\n", verb, signingKeyUsage)
+		return nil, 2, true
+	}
+	fs, buf := subFlags("signing-key " + verb)
+	var revoke *bool
+	if verb == "rotate" {
+		revoke = fs.Bool("revoke-previous", false, "delete the previous active key instead of retiring it (exempt from the cooldown)")
+	}
+	pos, code, done := parseInterleaved(fs, buf, rest, stdout, stderr)
+	if done {
+		return nil, code, true
+	}
+	if len(pos) != 0 {
+		_, _ = fmt.Fprintf(stderr, "signing-key %s: unexpected argument %q\n", verb, pos[0])
+		return nil, 2, true
+	}
+	if verb == "list" {
+		return func(ctx context.Context, e hostEnv, w io.Writer) error {
+			rows, err := e.Keys.List(ctx)
+			if err != nil {
+				return err
+			}
+			for _, k := range rows {
+				_, _ = fmt.Fprintln(w, formatSigningKey(k))
+			}
+			return nil
+		}, 0, false
+	}
+	return func(ctx context.Context, e hostEnv, w io.Writer) error {
+		p, err := e.OpenProvider()
+		if err != nil {
+			return err
+		}
+		svc := e.Keys
+		svc.Provider = p
+		res, err := svc.Rotate(ctx, signingkeys.RotateInput{RevokePrevious: *revoke})
+		if err != nil {
+			return err
+		}
+		switch {
+		case res.Previous.KID == "":
+			_, _ = fmt.Fprintf(w, "active %s; previous: none\n", res.Active.KID)
+		case res.Revoked:
+			_, _ = fmt.Fprintf(w, "active %s; %s revoked\n", res.Active.KID, res.Previous.KID)
+		default:
+			// The retiring key's removal time, as ApplyRotation stored it.
+			_, _ = fmt.Fprintf(w, "active %s; %s retiring until %s\n", res.Active.KID, res.Previous.KID, rfc3339Ms(signingkeys.RemoveAfter(res.Active.CreatedAt)))
+		}
+		return nil
+	}, 0, false
+}
+
+func rfc3339Ms(ms int64) string { return time.UnixMilli(ms).UTC().Format(time.RFC3339) }
+
+// formatSigningKey is `<kid> <state> <provider> <algorithm> created T[ retired
+// T remove-after T][ ref R]`; the private key is never part of a row listing.
+func formatSigningKey(k store.SigningKey) string {
+	line := fmt.Sprintf("%s %s %s %s created %s", k.KID, k.State, k.Provider, k.Algorithm, rfc3339Ms(k.CreatedAt))
+	if k.State == store.SigningKeyRetiring {
+		line += fmt.Sprintf(" retired %s remove-after %s", rfc3339Ms(k.RetiredAt), rfc3339Ms(k.RemoveAfter))
+	}
+	if k.ProviderRef != "" {
+		line += " ref " + k.ProviderRef
+	}
+	return line
 }

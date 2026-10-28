@@ -8,11 +8,14 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/scopes"
+	"github.com/ericfitz/agentbus2/internal/keyprovider"
 	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/store/sqlite"
 )
@@ -472,5 +475,153 @@ func TestAdminCreateScopedIdentity(t *testing.T) {
 	code, out, _ = e.run("create-identity", "pat")
 	if code != 0 || out != "pat created\n" {
 		t.Fatalf("plain create: code %d out %q", code, out)
+	}
+}
+
+// seedSigningKey puts an active store-provider key with the given age into
+// the file, so a rotation test does not hit the 3600 s default cooldown by
+// accident (the command's clock is the real one and cannot be set). It
+// returns the kid.
+func (e *adminEnv) seedSigningKey(age time.Duration) string {
+	e.t.Helper()
+	_, st := e.service()
+	k, err := keyprovider.StoreProvider{}.Next(context.Background())
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	pub, err := keys.MarshalPublic(k.Public)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	row := store.SigningKey{
+		KID: k.KID, State: store.SigningKeyActive, Provider: store.SigningProviderStore, Algorithm: string(k.Algorithm),
+		PublicKey: pub, PrivateKeyPEM: string(k.PrivatePEM), CreatedAt: time.Now().Add(-age).UnixMilli(),
+	}
+	if err := st.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error { return tx.PutSigningKey(ctx, row) }); err != nil {
+		e.t.Fatal(err)
+	}
+	return k.KID
+}
+
+func TestAdminSigningKeyList(t *testing.T) {
+	e := newAdminEnv(t)
+	kid := e.seedSigningKey(2 * time.Hour)
+	code, out, errOut := e.run("signing-key", "list")
+	if code != 0 {
+		t.Fatalf("list: code %d stderr %q", code, errOut)
+	}
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 1 || !strings.HasPrefix(lines[0], kid+" active store ") || !strings.Contains(lines[0], " created ") {
+		t.Fatalf("list: %q", out)
+	}
+	if strings.Contains(out, "PRIVATE KEY") || strings.Contains(out, " retired ") || strings.Contains(out, " ref ") {
+		t.Fatalf("list leaks or over-reports: %q", out)
+	}
+	if !regexp.MustCompile(`^\S+ active store (EdDSA|ES256) created \d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$`).MatchString(lines[0]) {
+		t.Fatalf("list line format: %q", lines[0])
+	}
+	// An empty set prints nothing and succeeds.
+	e2 := newAdminEnv(t)
+	if code, out, _ := e2.run("signing-key", "list"); code != 0 || out != "" {
+		t.Fatalf("empty list: code %d out %q", code, out)
+	}
+}
+
+func TestAdminSigningKeyRotate(t *testing.T) {
+	e := newAdminEnv(t)
+	old := e.seedSigningKey(2 * time.Hour) // older than the 3600 s default cooldown
+	code, out, errOut := e.run("signing-key", "rotate")
+	if code != 0 {
+		t.Fatalf("rotate: code %d stderr %q", code, errOut)
+	}
+	m := regexp.MustCompile(`^active (\S+); (\S+) retiring until (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)\n$`).FindStringSubmatch(out)
+	if m == nil || m[2] != old || m[1] == old {
+		t.Fatalf("rotate output %q (old kid %s)", out, old)
+	}
+	newKID := m[1]
+	_, out, _ = e.run("signing-key", "list")
+	lines := strings.Split(strings.TrimSpace(out), "\n")
+	if len(lines) != 2 || !strings.HasPrefix(lines[0], newKID+" active ") ||
+		!strings.HasPrefix(lines[1], old+" retiring ") || !strings.Contains(lines[1], " retired ") || !strings.Contains(lines[1], " remove-after "+m[3]) {
+		t.Fatalf("list after rotate: %q", out)
+	}
+
+	// Inside the cooldown: refused, nothing changes.
+	code, _, errOut = e.run("signing-key", "rotate")
+	if code != 1 || !strings.Contains(errOut, "the next rotation is allowed at") || !strings.Contains(errOut, "-revoke-previous is exempt") {
+		t.Fatalf("second rotate: code %d stderr %q", code, errOut)
+	}
+	if _, again, _ := e.run("signing-key", "list"); again != out {
+		t.Fatalf("a refused rotate changed the set:\n%s\nvs\n%s", out, again)
+	}
+
+	// -revoke-previous is never refused by the cooldown; the deleted key is the
+	// active one (newKID) and the retiring one stays.
+	code, out, errOut = e.run("signing-key", "rotate", "-revoke-previous")
+	m2 := regexp.MustCompile(`^active (\S+); (\S+) revoked\n$`).FindStringSubmatch(out)
+	if code != 0 || m2 == nil || m2[2] != newKID {
+		t.Fatalf("revoke: code %d out %q stderr %q", code, out, errOut)
+	}
+	_, out, _ = e.run("signing-key", "list")
+	if strings.Contains(out, newKID) || !strings.Contains(out, m2[1]+" active ") || !strings.Contains(out, old+" retiring ") {
+		t.Fatalf("list after revoke: %q", out)
+	}
+	// The flag may come after nothing else; extra positionals are usage errors.
+	if code, _, _ := e.run("signing-key", "rotate", "-revoke-previous", "extra"); code != 2 {
+		t.Fatalf("extra argument: code %d, want 2", code)
+	}
+}
+
+func TestAdminSigningKeyRotateNoPrevious(t *testing.T) {
+	e := newAdminEnv(t)
+	code, out, errOut := e.run("signing-key", "rotate")
+	if code != 0 || !regexp.MustCompile(`^active \S+; previous: none\n$`).MatchString(out) {
+		t.Fatalf("rotate on an empty set: code %d out %q stderr %q", code, out, errOut)
+	}
+	if _, l, _ := e.run("signing-key", "list"); strings.Count(l, "\n") != 1 || !strings.Contains(l, " active ") {
+		t.Fatalf("list: %q", l)
+	}
+}
+
+func TestAdminSigningKeyCooldownSetting(t *testing.T) {
+	// A fresh key and a 1 s cooldown set with -set: the cooldown text names 1.
+	e := newAdminEnv(t)
+	e.seedSigningKey(0)
+	code, _, errOut := e.run("-set", "signing_key_rotation_cooldown_seconds=3000", "signing-key", "rotate")
+	if code != 1 || !strings.Contains(errOut, "signing_key_rotation_cooldown_seconds 3000") {
+		t.Fatalf("code %d stderr %q", code, errOut)
+	}
+}
+
+func TestAdminSigningKeyUnknownBackend(t *testing.T) {
+	e := newAdminEnv(t)
+	code, _, errOut := e.run("-set", "signing_key_uri=awskms:///alias/x", "signing-key", "rotate")
+	if code == 0 || errOut == "" {
+		t.Fatalf("code %d stderr %q, want a refusal", code, errOut)
+	}
+	// list needs no provider, so it works whatever the URI names.
+	if code, _, errOut := e.run("-set", "signing_key_uri=awskms:///alias/x", "signing-key", "list"); code != 0 {
+		t.Fatalf("list with an external URI: code %d stderr %q", code, errOut)
+	}
+}
+
+func TestAdminSigningKeyUsage(t *testing.T) {
+	e := newAdminEnv(t)
+	for _, bad := range [][]string{
+		{"signing-key"},
+		{"signing-key", "bogus"},
+		{"signing-key", "list", "extra"},
+		{"signing-key", "list", "-revoke-previous"},
+		{"signing-key", "rotate", "-from", "x"},
+		{"signing-key", "rotate", "extra"},
+	} {
+		if code, _, errOut := e.run(bad...); code != 2 || errOut == "" {
+			t.Errorf("%v: code %d stderr %q, want 2 with a message", bad, code, errOut)
+		}
+	}
+	// A usage error never opens the store: a path that cannot be created is not touched.
+	var o, er bytes.Buffer
+	if code := RunAdmin(context.Background(), []string{"-sqlite", "/nonexistent-dir/x.db", "signing-key", "bogus"}, nil, &o, &er); code != 2 {
+		t.Errorf("usage error with an unopenable store: code %d stderr %q", code, er.String())
 	}
 }
