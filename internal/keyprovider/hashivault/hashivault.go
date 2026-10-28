@@ -113,7 +113,10 @@ type env struct {
 // The Vault API client and sigstore's signer also read the variables the Vault
 // client reads (VAULT_NAMESPACE, VAULT_HEADERS, VAULT_CACERT, VAULT_CAPATH,
 // VAULT_CLIENT_CERT, VAULT_CLIENT_KEY, VAULT_SKIP_VERIFY, VAULT_TLS_SERVER_NAME,
-// VAULT_CLIENT_TIMEOUT, VAULT_PROXY_ADDR, HTTP_PROXY and kin).
+// VAULT_CACERT_BYTES, VAULT_PROXY_ADDR, VAULT_HTTP_PROXY and the standard
+// proxy variables). VAULT_CLIENT_TIMEOUT is parsed but not applied, because the
+// Config is hand-built: Next is bounded by NextTimeout (signingkeys) and sign
+// by the issuer's deadline.
 func resolveEnv() (env, error) {
 	e := env{
 		addr:  firstSet("VAULT_ADDR", "BAO_ADDR"),
@@ -158,10 +161,13 @@ func (p *Provider) Next(ctx context.Context) (keyprovider.Key, error) {
 	if err != nil {
 		return keyprovider.Key{}, err
 	}
-	c, err := vault.NewClient(&vault.Config{Address: e.addr})
+	cfg := &vault.Config{Address: e.addr}
+	c, err := vault.NewClient(cfg)
 	if err != nil {
 		return keyprovider.Key{}, fmt.Errorf("hashivault: building the Vault client: %w", err)
 	}
+	// One client per call: do not leave its idle connections behind.
+	defer cfg.HttpClient.CloseIdleConnections()
 	c.SetToken(e.token)
 	sec, err := c.Logical().ReadWithContext(ctx, e.mount+"/keys/"+p.name)
 	if err != nil {
@@ -278,7 +284,7 @@ func (s *signer) load() (*sighv.SignerVerifier, error) {
 		options.WithRPCAuthOpts(options.RPCAuth{Address: e.addr, Token: e.token, Path: e.mount}),
 		options.WithKeyVersion(strconv.FormatUint(s.version, 10)))
 	if err != nil {
-		return nil, fmt.Errorf("hashivault: key %s: building the Vault signer: %w", s.name, errors.Unwrap(err))
+		return nil, fmt.Errorf("hashivault: key %s: building the Vault signer: %s", s.name, strings.TrimPrefix(redact(err.Error()), "new vault client: "))
 	}
 	s.sv = sv
 	return sv, nil
@@ -321,7 +327,7 @@ func (s *signer) SignContext(ctx context.Context, digest []byte, opts crypto.Sig
 		// no error text) panics. A panic in this goroutine would end the server.
 		defer func() {
 			if r := recover(); r != nil {
-				ch <- signResult{nil, errors.New("hashivault: Vault returned no usable answer to the sign request (an empty reply)")}
+				ch <- signResult{nil, fmt.Errorf("hashivault: unexpected panic in the Vault signer (%T), most likely an empty reply from Vault", r)}
 			}
 		}()
 		sig, err := sv.SignMessage(nil,
@@ -336,6 +342,11 @@ func (s *signer) SignContext(ctx context.Context, digest []byte, opts crypto.Sig
 		if r.err != nil {
 			return nil, classify(label+": signing", r.err)
 		}
+		// Vault answered 200 for a key name and version, not necessarily this
+		// key: check the signature against the key the row holds.
+		if !ecdsa.VerifyASN1(s.pub, digest, r.sig) {
+			return nil, fmt.Errorf("hashivault: %s: Vault's signature does not verify under the key the row holds; likely causes: this replica uses another transit mount (TRANSIT_SECRET_ENGINE_PATH) or namespace (VAULT_NAMESPACE) than the one the key was resolved under, or the transit key was deleted and recreated under the same name", label)
+		}
 		return r.sig, nil
 	case <-ctx.Done():
 		return nil, classify(label+": signing", ctx.Err())
@@ -348,6 +359,19 @@ func (s *signer) SignContext(ctx context.Context, digest []byte, opts crypto.Sig
 // sealed or standby node) with keyprovider.ErrUnavailable. A refusal (bad
 // token, missing key, bad request) and a canceled context are not marked. It
 // decides by error type and status, never by message text.
+// maxVaultText caps the Vault-supplied text kept in an error.
+const maxVaultText = 256
+
+// redact replaces the configured token wherever text holds it.
+func redact(text string) string {
+	for _, tok := range []string{os.Getenv("VAULT_TOKEN"), os.Getenv("BAO_TOKEN")} {
+		if tok != "" {
+			text = strings.ReplaceAll(text, tok, "[redacted]")
+		}
+	}
+	return text
+}
+
 func classify(what string, err error) error {
 	if errors.Is(err, context.Canceled) {
 		return fmt.Errorf("hashivault: %s: %w", what, err)
@@ -359,7 +383,12 @@ func classify(what string, err error) error {
 	if errors.As(err, &resp) {
 		text := fmt.Sprintf("Vault answered HTTP %d", resp.StatusCode)
 		if len(resp.Errors) > 0 {
-			text += ": " + strings.Join(resp.Errors, "; ")
+			// Vault's (or a proxy's) text: redact the token, cap the length.
+			vt := redact(strings.Join(resp.Errors, "; "))
+			if len(vt) > maxVaultText {
+				vt = strings.ToValidUTF8(vt[:maxVaultText], "") + "..."
+			}
+			text += ": " + vt
 		}
 		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
 			return fmt.Errorf("hashivault: %s: %w: %s", what, keyprovider.ErrUnavailable, text)

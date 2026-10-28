@@ -24,6 +24,14 @@ import (
 // signed (the token_lifetime_seconds ceiling).
 const MaxBearerLifetime = 86400 * time.Second
 
+// NextTimeout bounds every Provider.Next, whatever the backend: a key service
+// that never answers fails the rotation (or the first start) instead of
+// hanging it.
+const NextTimeout = 30 * time.Second
+
+// nextTimeout is NextTimeout; tests shorten it.
+var nextTimeout = NextTimeout
+
 // RemoveAfter is when a key retired at retiredAt (Unix milliseconds) may be
 // removed: the issuer's reload interval, plus the longest bearer, plus the
 // verification leeway after it stopped signing.
@@ -140,10 +148,16 @@ func (p Prepared) KID() string { return p.key.KID }
 // nothing it returns is stored until ApplyRotation or RotatePrepared inserts
 // it, so a failure or a lost race leaves the set untouched.
 func (s Service) PrepareRotation(ctx context.Context) (Prepared, error) {
-	k, err := s.Provider.Next(ctx)
+	nctx, cancel := context.WithTimeout(ctx, nextTimeout)
+	defer cancel()
+	k, err := s.Provider.Next(nctx)
 	if err != nil {
 		// An outage of the key service, or a context that ended, is worth a
-		// retry; anything else is a bug or a refusal of this key.
+		// retry; anything else is a bug or a refusal of this key. Our own
+		// deadline counts whatever the provider made of it.
+		if ctx.Err() == nil && errors.Is(nctx.Err(), context.DeadlineExceeded) {
+			return Prepared{}, core.E(bus.CodeUnavailable, "signing key provider %s is unavailable: no answer within %s: %v", s.Provider.Name(), nextTimeout, err)
+		}
 		if errors.Is(err, keyprovider.ErrUnavailable) || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return Prepared{}, core.E(bus.CodeUnavailable, "signing key provider %s is unavailable: %v", s.Provider.Name(), err)
 		}

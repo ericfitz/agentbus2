@@ -58,8 +58,11 @@ type fakeVault struct {
 	signs   []map[string]any
 	status  int // when non-zero every request answers it
 	body    string
-	hangOps map[string]bool // "GET" or "PUT": never answers
-	empty   bool            // the sign endpoint answers 204 with no body
+	hangOps map[string]bool   // "GET" or "PUT": never answers
+	empty   bool              // the sign endpoint answers 204 with no body
+	echo    bool              // failAll bodies echo the X-Vault-Token header
+	other   *ecdsa.PrivateKey // when set, sign with this key instead
+	freed   sync.Once
 	release chan struct{}
 }
 
@@ -74,7 +77,7 @@ func newFakeVault(t *testing.T) *fakeVault {
 	}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.handle))
 	t.Cleanup(func() {
-		close(f.release)
+		f.free()
 		f.srv.Close()
 	})
 	t.Setenv("VAULT_ADDR", f.srv.URL)
@@ -85,6 +88,9 @@ func newFakeVault(t *testing.T) *fakeVault {
 	t.Setenv("HOME", t.TempDir())
 	return f
 }
+
+// free releases every hung request.
+func (f *fakeVault) free() { f.freed.Do(func() { close(f.release) }) }
 
 func (f *fakeVault) addP256(t *testing.T, name string) *ecdsa.PrivateKey {
 	t.Helper()
@@ -180,6 +186,9 @@ func (f *fakeVault) handle(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	f.reqs = append(f.reqs, r.Method+" "+r.URL.Path)
 	status, body := f.status, f.body
+	if f.echo {
+		body = `{"errors":["rejected token ` + r.Header.Get("X-Vault-Token") + `"]}`
+	}
 	hang := f.hangOps[r.Method]
 	tok := f.token
 	mount := f.mount
@@ -294,6 +303,11 @@ func (f *fakeVault) sign(w http.ResponseWriter, r *http.Request, rest string) {
 		return
 	}
 	priv, ok := k.versions[ver-1].(*ecdsa.PrivateKey)
+	f.mu.Lock()
+	if f.other != nil {
+		priv, ok = f.other, true
+	}
+	f.mu.Unlock()
 	if !ok {
 		f.reply(w, 400, `{"errors":["not an ecdsa key"]}`)
 		return
@@ -1040,7 +1054,7 @@ func TestSignSurvivesAnEmptyAnswer(t *testing.T) {
 	f.empty = true
 	f.mu.Unlock()
 	_, err = sg.SignContext(context.Background(), digest[:], crypto.SHA256)
-	if err == nil || errors.Is(err, keyprovider.ErrUnavailable) || !strings.Contains(err.Error(), "no usable answer") {
+	if err == nil || errors.Is(err, keyprovider.ErrUnavailable) || !strings.Contains(err.Error(), "panic") {
 		t.Fatalf("err = %v", err)
 	}
 	// The slot is given back.
@@ -1050,5 +1064,200 @@ func TestSignSurvivesAnEmptyAnswer(t *testing.T) {
 	}
 	if len(signSlots) != 0 {
 		t.Fatalf("%d sign slots still held", len(signSlots))
+	}
+}
+
+func TestVaultTextIsRedactedAndBounded(t *testing.T) {
+	f := newFakeVault(t)
+	f.addP256(t, keyName)
+	p := f.provider(t, keyName)
+	ctx := context.Background()
+	k, err := p.Next(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sg, err := p.Signer(ctx, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	digest := sha256.Sum256([]byte("x"))
+	// A server (or proxy) that echoes the token header into its error body.
+	f.mu.Lock()
+	f.echo = true
+	f.mu.Unlock()
+	for _, st := range []int{403, 500, 503} {
+		f.failAll(st, "")
+		_, e1 := p.Next(ctx)
+		_, e2 := sg.SignContext(ctx, digest[:], crypto.SHA256)
+		for _, e := range []error{e1, e2} {
+			if e == nil || strings.Contains(e.Error(), secretToken) || !strings.Contains(e.Error(), "[redacted]") {
+				t.Errorf("%d: err = %v", st, e)
+			}
+		}
+	}
+	// Long text is cut.
+	f.mu.Lock()
+	f.echo = false
+	f.mu.Unlock()
+	f.failAll(500, `{"errors":["`+strings.Repeat("x", 5000)+`"]}`)
+	_, err = p.Next(ctx)
+	if err == nil || len(err.Error()) > 600 {
+		t.Fatalf("long text kept: %d bytes", len(fmt.Sprint(err)))
+	}
+}
+
+func TestSignRefusesAnotherKeysSignature(t *testing.T) {
+	f := newFakeVault(t)
+	f.addP256(t, keyName)
+	p := f.provider(t, keyName)
+	ctx := context.Background()
+	k, err := p.Next(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sg, err := p.Signer(ctx, k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A same-named key under another mount or namespace, or a recreated key,
+	// answers 200 with a signature that does not verify under the row's key.
+	other, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	f.mu.Lock()
+	f.other = other
+	f.mu.Unlock()
+	digest := sha256.Sum256([]byte("x"))
+	_, err = sg.SignContext(ctx, digest[:], crypto.SHA256)
+	if err == nil || errors.Is(err, keyprovider.ErrUnavailable) {
+		t.Fatalf("err = %v", err)
+	}
+	for _, want := range []string{"mount", "namespace", "recreated"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error lacks %q: %v", want, err)
+		}
+	}
+	for _, bad := range []string{"hashivault://", secretToken} {
+		if strings.Contains(err.Error(), bad) {
+			t.Errorf("error holds %q: %v", bad, err)
+		}
+	}
+}
+
+func TestClientSetupFailureHasNoFormatNoise(t *testing.T) {
+	f := newFakeVault(t)
+	f.addP256(t, keyName)
+	p := f.provider(t, keyName)
+	k, err := p.Next(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sg, err := p.Signer(context.Background(), k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VAULT_SKIP_VERIFY", "maybe") // fails the Vault client's environment parse
+	digest := sha256.Sum256([]byte("x"))
+	_, e1 := sg.SignContext(context.Background(), digest[:], crypto.SHA256)
+	_, e2 := p.Next(context.Background())
+	for _, e := range []error{e1, e2} {
+		if e == nil || strings.Contains(e.Error(), "%!") || errors.Is(e, keyprovider.ErrUnavailable) {
+			t.Errorf("err = %v", e)
+		}
+	}
+}
+
+func TestHungFirstSignReadIsBounded(t *testing.T) {
+	f := newFakeVault(t)
+	f.addP256(t, keyName)
+	p := f.provider(t, keyName)
+	k, err := p.Next(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sg, err := p.Signer(context.Background(), k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.hang("GET") // sigstore's cold-cache key read, before it signs
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	digest := sha256.Sum256([]byte("x"))
+	start := time.Now()
+	_, err = sg.SignContext(ctx, digest[:], crypto.SHA256)
+	if !errors.Is(err, keyprovider.ErrUnavailable) || time.Since(start) > 3*time.Second {
+		t.Fatalf("err = %v after %v", err, time.Since(start))
+	}
+}
+
+func TestSlotsDrainAfterRelease(t *testing.T) {
+	f := newFakeVault(t)
+	f.addP256(t, keyName)
+	p := f.provider(t, keyName)
+	k, _ := p.Next(context.Background())
+	sg, err := p.Signer(context.Background(), k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	old := signSlots
+	signSlots = make(chan struct{}, 2)
+	t.Cleanup(func() { signSlots = old })
+	digest := sha256.Sum256([]byte("x"))
+	if _, err := sg.SignContext(context.Background(), digest[:], crypto.SHA256); err != nil {
+		t.Fatal(err) // warms sigstore's key cache
+	}
+	f.hang("PUT")
+	f.hang("POST")
+	for range 2 {
+		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		_, _ = sg.SignContext(ctx, digest[:], crypto.SHA256)
+		cancel()
+	}
+	if len(signSlots) != 2 {
+		t.Fatalf("%d slots held, want 2", len(signSlots))
+	}
+	f.free()
+	deadline := time.Now().Add(5 * time.Second)
+	for len(signSlots) != 0 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if len(signSlots) != 0 {
+		t.Fatalf("%d slots never drained", len(signSlots))
+	}
+	f.mu.Lock()
+	f.hangOps = map[string]bool{}
+	f.mu.Unlock()
+	if _, err := sg.SignContext(context.Background(), digest[:], crypto.SHA256); err != nil {
+		t.Fatalf("sign after the drain: %v", err)
+	}
+}
+
+func TestConcurrentSigns(t *testing.T) {
+	f := newFakeVault(t)
+	f.addP256(t, keyName)
+	p := f.provider(t, keyName)
+	k, _ := p.Next(context.Background())
+	sg, err := p.Signer(context.Background(), k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var wg sync.WaitGroup
+	errs := make(chan error, 12)
+	for i := range 12 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			d := sha256.Sum256([]byte{byte(i)})
+			sig, err := sg.SignContext(context.Background(), d[:], crypto.SHA256)
+			if err == nil && !ecdsa.VerifyASN1(k.Public.(*ecdsa.PublicKey), d[:], sig) {
+				err = errors.New("bad signature")
+			}
+			errs <- err
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		if err != nil {
+			t.Error(err)
+		}
 	}
 }
