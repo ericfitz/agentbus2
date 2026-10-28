@@ -94,6 +94,8 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | `embedding_api_key_file` | `AGENTBUS2_SERVER_EMBEDDING_API_KEY_FILE` | string | `(unset)` | File holding the API key. At most one of this and `embedding_api_key_env`. |
 | `embedding_api_key_env` | `AGENTBUS2_SERVER_EMBEDDING_API_KEY_ENV` | string | `(unset)` | Name of the environment variable that holds the API key (it must be set when named). |
 | `embedding_query_timeout_seconds` | `AGENTBUS2_SERVER_EMBEDDING_QUERY_TIMEOUT_SECONDS` | float | `10` | 0.1 to 120. Time allowed to embed a search query. |
+| `inspection_timeout_seconds` | `AGENTBUS2_SERVER_INSPECTION_TIMEOUT_SECONDS` | float | `5` | 0.1 to 60. Time allowed for one inspection, the whole call. |
+| `inspection_on_failure` | `AGENTBUS2_SERVER_INSPECTION_ON_FAILURE` | string | `"closed"` | `closed` refuses a write the inspector could not judge (retryable `unavailable`); `open` writes it uninspected. |
 | `slack_app_token_file` | `AGENTBUS2_SERVER_SLACK_APP_TOKEN_FILE` | string | `(unset)` | File holding the Slack app-level token (`xapp-`, scope `connections:write`) for Socket Mode. Set together with `slack_bot_token_file` or not at all; neither set means the Slack bridge is off. See `slack-bridge.md`. |
 | `slack_bot_token_file` | `AGENTBUS2_SERVER_SLACK_BOT_TOKEN_FILE` | string | `(unset)` | File holding the Slack bot token (`xoxb-`) for the Web API. Every replica needs both files to serve bridge calls. |
 | `slack_archive_after_done_hours` | `AGENTBUS2_SERVER_SLACK_ARCHIVE_AFTER_DONE_HOURS` | int | `168` | 1 to 8760. How long after its scope is marked done a bridged Slack channel is archived (earlier when no human remains in it). |

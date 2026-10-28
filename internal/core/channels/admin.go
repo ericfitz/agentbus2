@@ -9,7 +9,8 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
-// Notice kinds Status reports.
+// Notice kinds the embedding and usage reports read by name; Status reports
+// every kind of core.NoticeKinds.
 const (
 	noticeCapacity  = "capacity"
 	noticeEmbedding = "embedding"
@@ -52,7 +53,7 @@ func (s Service) Status(ctx context.Context, identity string) (bus.Status, error
 			info.Capabilities = capabilitiesOf(bridges, c.ID)
 			st.Channels = append(st.Channels, info)
 		}
-		for _, kind := range []string{noticeCapacity, noticeEmbedding} {
+		for _, kind := range core.NoticeKinds() {
 			n, ok, err := tx.Notice(ctx, kind)
 			if err != nil {
 				return err

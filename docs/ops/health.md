@@ -53,7 +53,7 @@ The administrator flag is the one that gates `GET /v1/admin/status` (see `admin-
 | `embeddings.last_error`, `last_error_at` | string, integer | admin | the `embedding` notice's text and time (absent when unset) |
 | `embeddings.rejected_last` | string | admin | the latest rejection reason (absent when none) |
 | `storage` | object | admin | as in `GET /v1/admin/usage`: `bytes` (the enforced measure: used file bytes on SQLite, the logical sum of the rows' `size_bytes` on Postgres), `budget_bytes` (the budget of the store's engine), `evictable` (a budget is enforced: always `true`), `disk_bytes` (the physical size), `disk_ratio` (`disk_bytes / bytes`, 0 when `bytes` is 0), `tier` and, when set, the capacity `notice`. `tier` is `normal` at or below the sweep target (the budget less `cleanup_free_percent`), `approaching` above the target and at or below the budget, and above the budget `soft` while an orphaned bridge message, a tombstone past its floor or an expired enrollment token is still eligible for eviction, `hard` when only an idle task channel, an idle memory or an ordinary message is, and `exhausted` when nothing is |
-| `notices` | array | admin | the `capacity` and `embedding` operator notices; `[]` when none |
+| `notices` | array | admin | the `capacity`, `embedding` and `inspection` operator notices; `[]` when none |
 | `maintenance.interval_seconds` | integer | admin | the maintenance tick period |
 | `maintenance.owner` | string | admin | this process's lock owner |
 | `maintenance.lock` | `held`, `held_elsewhere`, `unknown` | admin | the result of this process's last attempt to take the maintenance lock |
@@ -63,7 +63,7 @@ The administrator flag is the one that gates `GET /v1/admin/status` (see `admin-
 
 ### The status rule
 
-- `degraded` when the `capacity` or the `embedding` notice is set, or this process's last maintenance tick recorded a lock error or a failed job. Every tier sees the same `status`; only an administrator sees why.
+- `degraded` when the `capacity`, the `embedding` or the `inspection` notice is set, or this process's last maintenance tick recorded a lock error or a failed job. Every tier sees the same `status`; only an administrator sees why.
 - `ok` otherwise.
 - Not a document: when the store does not answer, the response is a 503 problem (`application/problem+json`) with `code` `unavailable`, `retryable` true and `detail` exactly `store unreachable`. The cause (a driver error that names a host, user or file path) is logged on the server and never sent, because the probe tier is unauthenticated.
 

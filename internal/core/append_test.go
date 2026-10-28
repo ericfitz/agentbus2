@@ -235,6 +235,7 @@ func TestEFixedRetryable(t *testing.T) {
 		bus.CodeRateLimited: true, bus.CodeUnavailable: true, bus.CodeInternal: true,
 		bus.CodeValidation: false, bus.CodeNotFound: false, bus.CodeConflict: false, bus.CodeForbidden: false,
 		bus.CodeNotRegistered: false, bus.CodeReplaced: false, bus.CodeSessionLapsed: false, bus.CodeSessionClosed: false,
+		bus.CodeInspectionRejected: false,
 	} {
 		if got := E(code, "x").Retryable; got != want {
 			t.Errorf("E(%s).Retryable = %v, want %v", code, got, want)

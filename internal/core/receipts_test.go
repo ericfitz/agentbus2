@@ -100,3 +100,71 @@ func TestWithReceiptFnErrorStoresNothing(t *testing.T) {
 		t.Fatalf("after a failed fn: ran=%v replayed=%v err=%v; want a fresh run", ran, replayed, err)
 	}
 }
+
+func TestCheckReceiptInRead(t *testing.T) {
+	c, _ := newTestCore(t, nil)
+	ctx := context.Background()
+	check := func(key string, payload any) (res rcpt, replayed bool, fp string, err error) {
+		err = c.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+			res = rcpt{}
+			var e error
+			replayed, fp, e = c.CheckReceipt(ctx, tx, "pat", key, payload, &res)
+			return e
+		})
+		return
+	}
+	if _, replayed, fp, err := check("k1", "one"); err != nil || replayed || fp == "" {
+		t.Fatalf("miss: replayed=%v fp=%q err=%v, want a miss with a fingerprint", replayed, fp, err)
+	}
+	if _, replayed, fp, err := check("", "one"); err != nil || replayed || fp != "" {
+		t.Fatalf("empty key: replayed=%v fp=%q err=%v, want false, empty, nil", replayed, fp, err)
+	}
+	if _, _, _, err := receiptCall(t, c, "pat", "k1", "one", 5); err != nil {
+		t.Fatal(err)
+	}
+	if res, replayed, _, err := check("k1", "one"); err != nil || !replayed || res.N != 5 {
+		t.Fatalf("hit: res=%+v replayed=%v err=%v, want the stored result", res, replayed, err)
+	}
+	if _, replayed, _, err := check("k1", "two"); bus.CodeOf(err) != bus.CodeConflict || replayed {
+		t.Fatalf("other payload: replayed=%v err=%v, want conflict", replayed, err)
+	}
+	if _, replayed, _, err := check("k-other", "one"); err != nil || replayed {
+		t.Fatalf("a read wrote a receipt: replayed=%v err=%v", replayed, err)
+	}
+}
+
+func TestStoreReceiptThenCheck(t *testing.T) {
+	c, _ := newTestCore(t, nil)
+	ctx := context.Background()
+	var fp string
+	err := c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		var res rcpt
+		var e error
+		_, fp, e = c.CheckReceipt(ctx, tx, "pat", "k1", "p", &res)
+		if e != nil {
+			return e
+		}
+		if e = c.StoreReceipt(ctx, tx, "pat", "", fp, rcpt{N: 1}); e != nil {
+			return e
+		}
+		return c.StoreReceipt(ctx, tx, "pat", "k1", fp, rcpt{N: 9})
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		var res rcpt
+		replayed, _, e := c.CheckReceipt(ctx, tx, "pat", "k1", "p", &res)
+		if e != nil || !replayed || res.N != 9 {
+			t.Errorf("after StoreReceipt: res=%+v replayed=%v err=%v", res, replayed, e)
+		}
+		replayed, _, e = c.CheckReceipt(ctx, tx, "pat", "", "p", &res)
+		if e != nil || replayed {
+			t.Errorf("empty key replayed=%v err=%v", replayed, e)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

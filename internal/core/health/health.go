@@ -12,13 +12,6 @@ import (
 	"github.com/ericfitz/agentbus2/internal/version"
 )
 
-// Notice kinds the document reads; they match the kinds channels.Status
-// reports.
-const (
-	noticeCapacity  = "capacity"
-	noticeEmbedding = "embedding"
-)
-
 // Service is the health aggregate over a Core.
 type Service struct{ *core.Core }
 
@@ -78,7 +71,7 @@ func (s Service) Health(ctx context.Context, identity, serverVersion string) (bu
 				tier = bus.TierAdmin
 			}
 		}
-		for _, kind := range []string{noticeCapacity, noticeEmbedding} {
+		for _, kind := range core.NoticeKinds() {
 			n, ok, err := tx.Notice(ctx, kind)
 			if err != nil {
 				return err

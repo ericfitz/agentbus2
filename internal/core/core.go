@@ -10,6 +10,7 @@ import (
 	"io"
 	"log/slog"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/core/access"
@@ -30,6 +31,9 @@ type Options struct {
 	Notifier notify.Notifier  // nil: notify.NewMemory()
 	Embedder Embedder         // nil: text search only
 	Logger   *slog.Logger     // nil: discard
+	// Inspector inspects every content write before it commits; nil: no
+	// inspection (write inspection, issue #5).
+	Inspector Inspector
 }
 
 // Core is the rule engine over a Store. Safe for concurrent use.
@@ -51,6 +55,13 @@ type Core struct {
 	notifier notify.Notifier
 	embedder Embedder
 	started  time.Time
+
+	inspector Inspector
+	// inspectMu guards the inspection notice state (inspect.go).
+	inspectMu    sync.Mutex
+	inspectState inspectState
+	noticeSetAt  time.Time
+	notifyTotal  atomic.Int64
 
 	tickMu   sync.Mutex
 	lastTick *MaintenanceTick
@@ -76,7 +87,7 @@ func New(s store.Store, cfg Config, opts Options) (*Core, error) {
 	if err != nil {
 		return nil, err
 	}
-	c := &Core{Store: s, Cfg: cfg, Owner: owner, now: opts.Now, notifier: opts.Notifier, embedder: opts.Embedder, Log: opts.Logger}
+	c := &Core{Store: s, Cfg: cfg, Owner: owner, now: opts.Now, notifier: opts.Notifier, embedder: opts.Embedder, Log: opts.Logger, inspector: opts.Inspector}
 	if c.now == nil {
 		c.now = time.Now
 	}

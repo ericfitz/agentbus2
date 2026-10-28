@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 )
@@ -12,6 +13,9 @@ func TestDefaultsValidate(t *testing.T) {
 	d := Defaults()
 	if d.SessionLeaseSeconds != 90 || d.LeaseSkewSeconds != 5 || d.ChannelCreation != "open" || d.WatchMaxSeconds != 50 {
 		t.Errorf("defaults = %+v", d)
+	}
+	if d.InspectionTimeoutSeconds != 5 || d.InspectionOnFailure != "closed" {
+		t.Errorf("inspection defaults = %v, %q, want 5, \"closed\"", d.InspectionTimeoutSeconds, d.InspectionOnFailure)
 	}
 	if d.ScopeIdleHours != 336 {
 		t.Errorf("ScopeIdleHours default = %d, want 336", d.ScopeIdleHours)
@@ -85,6 +89,40 @@ func TestConfigBounds(t *testing.T) {
 			c.EmbeddingQueryTimeoutSeconds = bad
 			if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "embedding_query_timeout_seconds") {
 				t.Errorf("embedding_query_timeout_seconds = %v: err = %v, want one naming the setting", bad, err)
+			}
+		}
+	})
+	t.Run("inspection_timeout_seconds", func(t *testing.T) {
+		for _, ok := range []float64{0.1, 60} {
+			c := Defaults()
+			c.InspectionTimeoutSeconds = ok
+			if err := c.Validate(); err != nil {
+				t.Errorf("inspection_timeout_seconds = %v rejected: %v", ok, err)
+			}
+		}
+		for _, bad := range []float64{0.09, 60.1, 0, -1} {
+			c := Defaults()
+			c.InspectionTimeoutSeconds = bad
+			want := fmt.Sprintf("inspection_timeout_seconds must be between 0.1 and 60, got %v", bad)
+			if err := c.Validate(); err == nil || err.Error() != want {
+				t.Errorf("inspection_timeout_seconds = %v: err = %v, want %q", bad, err, want)
+			}
+		}
+	})
+	t.Run("inspection_on_failure", func(t *testing.T) {
+		for _, ok := range []string{"closed", "open"} {
+			c := Defaults()
+			c.InspectionOnFailure = ok
+			if err := c.Validate(); err != nil {
+				t.Errorf("inspection_on_failure = %q rejected: %v", ok, err)
+			}
+		}
+		for _, bad := range []string{"maybe", "", "Open"} {
+			c := Defaults()
+			c.InspectionOnFailure = bad
+			want := fmt.Sprintf("inspection_on_failure must be \"closed\" or \"open\", got %q", bad)
+			if err := c.Validate(); err == nil || err.Error() != want {
+				t.Errorf("inspection_on_failure = %q: err = %v, want %q", bad, err, want)
 			}
 		}
 	})

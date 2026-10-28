@@ -93,6 +93,11 @@ type Config struct {
 	EmbeddingAPIKeyEnv           string  `json:"embedding_api_key_env"`
 	EmbeddingQueryTimeoutSeconds float64 `json:"embedding_query_timeout_seconds"`
 
+	// Write inspection (issue #5): the core's settings; the endpoint follows
+	// with the webhook adapter.
+	InspectionTimeoutSeconds float64 `json:"inspection_timeout_seconds"`
+	InspectionOnFailure      string  `json:"inspection_on_failure"`
+
 	// The Slack bridge (Slack bridge spec 5.1). Both token files or neither.
 	SlackAppTokenFile          string `json:"slack_app_token_file"`
 	SlackBotTokenFile          string `json:"slack_bot_token_file"`
@@ -143,6 +148,8 @@ func Default() Config {
 		IdleWindowHours:              d.IdleWindowHours,
 		CleanupFreePercent:           d.CleanupFreePercent,
 		EmbeddingQueryTimeoutSeconds: d.EmbeddingQueryTimeoutSeconds,
+		InspectionTimeoutSeconds:     d.InspectionTimeoutSeconds,
+		InspectionOnFailure:          d.InspectionOnFailure,
 	}
 }
 
@@ -197,6 +204,8 @@ func (c Config) Core() (core.Config, error) {
 		CleanupFreePercent:           c.CleanupFreePercent,
 		EmbeddingModel:               c.EmbeddingModel,
 		EmbeddingQueryTimeoutSeconds: c.EmbeddingQueryTimeoutSeconds,
+		InspectionTimeoutSeconds:     c.InspectionTimeoutSeconds,
+		InspectionOnFailure:          c.InspectionOnFailure,
 	}
 	if !IsShippedDefault(c.DefaultACL) {
 		cc.DefaultACL = DefaultACLFunc(c.DefaultACL)

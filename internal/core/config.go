@@ -74,6 +74,13 @@ type Config struct {
 	// Embedder.Model() when one is given (checked in New).
 	EmbeddingModel               string
 	EmbeddingQueryTimeoutSeconds float64
+
+	// InspectionTimeoutSeconds bounds one write inspection, the whole call.
+	// InspectionOnFailure is InspectionClosed (a write the inspector could not
+	// judge is refused, retryable unavailable) or InspectionOpen (it is written
+	// uninspected). A string so the zero value cannot silently mean open.
+	InspectionTimeoutSeconds float64
+	InspectionOnFailure      string
 }
 
 // The eviction floors (Eric, 2026-10-27): even under space pressure no message
@@ -113,6 +120,8 @@ func Defaults() Config {
 		IdleWindowHours:              168,
 		CleanupFreePercent:           25,
 		EmbeddingQueryTimeoutSeconds: 10,
+		InspectionTimeoutSeconds:     5,
+		InspectionOnFailure:          InspectionClosed,
 	}
 }
 
@@ -158,6 +167,14 @@ func (c Config) Validate() error {
 	}
 	if c.EmbeddingQueryTimeoutSeconds < 0.1 || c.EmbeddingQueryTimeoutSeconds > 120 {
 		return fmt.Errorf("embedding_query_timeout_seconds must be between 0.1 and 120, got %v", c.EmbeddingQueryTimeoutSeconds)
+	}
+	if c.InspectionTimeoutSeconds < 0.1 || c.InspectionTimeoutSeconds > 60 {
+		return fmt.Errorf("inspection_timeout_seconds must be between 0.1 and 60, got %v", c.InspectionTimeoutSeconds)
+	}
+	switch c.InspectionOnFailure {
+	case InspectionClosed, InspectionOpen:
+	default:
+		return fmt.Errorf("inspection_on_failure must be %q or %q, got %q", InspectionClosed, InspectionOpen, c.InspectionOnFailure)
 	}
 	switch c.ChannelCreation {
 	case ChannelCreationOpen, ChannelCreationAdmins:

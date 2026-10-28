@@ -76,6 +76,41 @@ func TestHealthDegradedOnNotice(t *testing.T) {
 	})
 }
 
+func TestHealthShowsInspectionNotice(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		pat, root := h.as("pat"), h.admin("root")
+		h.setNotice("inspection", "failing")
+
+		p, a := mustHealth(t, pat), mustHealth(t, root)
+		if p.Status != ab2bus.HealthDegraded || a.Status != ab2bus.HealthDegraded {
+			t.Fatalf("status = %q / %q, want degraded", p.Status, a.Status)
+		}
+		if p.Notices != nil {
+			t.Fatalf("identity tier lists notices: %+v", p.Notices)
+		}
+		if len(a.Notices) != 1 || a.Notices[0].Kind != "inspection" || a.Notices[0].Message != "failing" {
+			t.Fatalf("admin notices = %+v, want exactly the inspection notice", a.Notices)
+		}
+	})
+}
+
+func TestStatusShowsInspectionNotice(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		root := h.admin("root")
+		h.setNotice("inspection", "failing")
+
+		st, err := root.Status(context.Background())
+		if err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+		if len(st.Notices) != 1 || st.Notices[0].Kind != "inspection" || st.Notices[0].Message != "failing" {
+			t.Fatalf("status notices = %+v, want exactly the inspection notice", st.Notices)
+		}
+	})
+}
+
 func TestHealthEmbeddingsState(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{embedder: true})
