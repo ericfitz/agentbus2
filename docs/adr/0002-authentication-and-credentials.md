@@ -199,7 +199,8 @@ addendum restates the item with its test when it lands.
   stored as plaintext PEM, so database read access is equivalent to admin
   and the deployment docs say so. There is no `signing_key_file` setting.
   Superseded in part by Eric's decisions of 2026-10-27 (issues #6 and #8):
-  the singleton row became a key set (item 6 below).
+  the singleton row became a key set (item 6 below; ADR 0012 records the
+  decisions of 2026-10-27 whole).
 - **Milestone 5 items 3, 4 and 6.** As planned: a configured `issuer` URL
   whose default is the bound address; `reset-credential` leaves minted
   tokens valid until `exp`; `register` takes no `Idempotency-Key` (spec 3.4
@@ -290,7 +291,9 @@ the choice numbers below are its.
    provider port (`internal/keyprovider`), whose Store-row provider is the
    only one built in. The issuer signs with the active key, stamps its `kid`
    and verifies a bearer by `kid` against the whole set; the JWKS lists every
-   key. There is no `signing_key_file` setting.
+   key. There is no `signing_key_file` setting. ADR 0012 supersedes the
+   singleton of 2026-10-21 and records the rotation and key-provider
+   decisions.
 7. **One canonical issuer URL.** The `issuer` setting, defaulting to
    `http://<bound address>`. A request whose `Host` differs still
    authenticates: the issuer is a configured string. A `unix:` listener

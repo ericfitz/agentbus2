@@ -38,6 +38,7 @@ build() {
   mkdir -p "$outdir"
   bin="$outdir/agentbus2$ext"
 
+  # open note: signing-keys 1: release archives are built without a key-provider tag (lean)
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
     -ldflags "-s -w -X ${MODULE_VERSION_VAR}=${version}" -o "$bin" .
 
@@ -117,6 +118,19 @@ self_test() {
       SELF_FAIL=$((SELF_FAIL + 1))
       ;;
   esac
+
+  # The archive binary is lean: no key-provider tag, so no sigstore module (and no cloud SDK behind one) is linked.
+  if [[ -f "$tmp/native/agentbus2$ext" ]]; then
+    local mods
+    if mods="$(go version -m "$tmp/native/agentbus2$ext" 2>&1)" && [[ "$mods" == *"agentbus2"* ]] \
+      && [[ "$mods" != *sigstore* ]]; then
+      echo "PASS archive-binary-links-no-sigstore"
+      SELF_PASS=$((SELF_PASS + 1))
+    else
+      echo "FAIL archive-binary-links-no-sigstore: $(printf '%s' "$mods" | rg -i sigstore | head -3)"
+      SELF_FAIL=$((SELF_FAIL + 1))
+    fi
+  fi
 
   # The linux tarball on any host: the native one on Linux, else a cross
   # build (not run here, so only the packaging is judged).

@@ -36,6 +36,8 @@ openssl pkeyutl -verify -rawin -pubin -inkey agentbus2-release-ed25519.pub -in S
 grep agentbus2-vX.Y.Z-linux-amd64.tar.gz SHA256SUMS | sha256sum -c
 ```
 
+The archives hold no key-provider backend (no AWS, Google, Azure or Vault client is linked): they run agents, the CLI and the TUI, and a server that keeps its signing key in a key service is built from source with `-tags` or runs from the Docker image, which carries every backend (`ops/deploy.md`, `ops/signing-keys.md`).
+
 The Linux and Windows archives are built in GitHub Actions on runners of their own OS and architecture and carry a build provenance attestation. With the GitHub CLI you can check that an archive was built from this repository by that workflow, in addition to the signature check:
 
 ```sh

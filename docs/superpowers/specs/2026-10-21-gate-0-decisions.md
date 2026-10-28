@@ -91,6 +91,10 @@ updated to cite this file.
    plaintext PEM for now; database read access is therefore equivalent to
    admin, and the deployment docs say so. Rotation (including rotate now)
    is issue #6; a KMS or vault key provider is issue #8.
+   (Superseded in part by Eric's decisions of 2026-10-27: the singleton
+   became a key set rotated on a schedule, and the private part may be held
+   by an external key service; see `docs/adr/0012-signing-key-rotation-and-key-providers.md`.
+   The item stays as history.)
 3. A configured `issuer` URL whose default is the bound address: as planned
    (A).
 4. `reset-credential` leaves minted tokens valid until `exp`: as planned (A).

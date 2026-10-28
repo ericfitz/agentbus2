@@ -187,7 +187,9 @@ internal/` then prints nothing).
 - **Choice 1, the operation table.** `api/openapi.yaml` declared 33
   operations when this addendum was written. After the federated-identity
   work and the Slack bridge work (2026-10-23) it declares 52 (the 52nd is the `health` operation, 2026-10-25), counted from
-  `operationId` and `security: []`: 44 protected and 8 open. `health` (issue
+  `operationId` and `security: []`: 44 protected and 8 open (the signing-key
+  administration work of 2026-10-27 added two protected operations, so
+  `api/openapi.yaml` now declares 54: 46 protected and 8 open; ADR 0012). `health` (issue
   #11) is counted as open (Eric, 2026-10-25, "Count as open"); it is the one
   open operation that answers 401, to a presented invalid bearer (ADR 0010
   decision 12) (the Slack bridge

@@ -5,7 +5,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X github.com/ericfitz/agentbus2/internal/version.Version=${VERSION}" -o /out/agentbus2 . \
+# open note: signing-keys 1: the image carries every key-provider backend; the release archives carry none
+ARG BUILD_TAGS=awskms,gcpkms,azurekms,hashivault
+RUN CGO_ENABLED=0 go build -trimpath -tags "${BUILD_TAGS}" -ldflags "-s -w -X github.com/ericfitz/agentbus2/internal/version.Version=${VERSION}" -o /out/agentbus2 . \
     && mkdir -p /out/data
 
 FROM cgr.dev/chainguard/static:latest@sha256:c12f0107f8afb0bbc1b0eff96ff8675e85a10c6083d039b777c51fef5c27420f

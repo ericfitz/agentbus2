@@ -15,7 +15,7 @@ A scheme whose backend is not compiled into the binary stops the start with `the
 
 ## awskms
 
-Build: `go build -tags awskms .` (the default binary and the release archives link no AWS SDK; the Docker image's `Dockerfile` builds with no tag at present).
+Build: `go build -tags awskms .` (the default binary and the release archives link no AWS SDK; the Docker image of this repository is built with this tag, `ARG BUILD_TAGS` in its `Dockerfile`).
 
 - Key URI: `awskms://[endpoint]/{key-id|key-ARN|alias/NAME|alias-ARN}`, for example `awskms:///alias/agentbus2` or `awskms:///arn:aws:kms:us-east-1:111122223333:key/1234abcd-12ab-34cd-56ef-1234567890ab`. The optional `endpoint` is `host[:port]` and is always reached over https (for a VPC endpoint or a compatible service); leave it empty for the regional AWS endpoint. A URI that does not match is refused at start (exit 2).
 - The key: an AWS KMS asymmetric key with key spec `ECC_NIST_P256`, usage `SIGN_VERIFY`, state `Enabled`. Another key spec, a disabled key or another usage is refused when the URI is resolved.
@@ -29,7 +29,7 @@ Build: `go build -tags awskms .` (the default binary and the release archives li
 
 ## hashivault
 
-Build: `go build -tags hashivault .` (the default binary and the release archives link no Vault client; the Docker image's `Dockerfile` builds with no tag at present). The backend works with HashiCorp Vault and with OpenBao (same API); the URI scheme is `hashivault` for both, and `openbao://` is refused.
+Build: `go build -tags hashivault .` (the default binary and the release archives link no Vault client; the Docker image of this repository is built with this tag, `ARG BUILD_TAGS` in its `Dockerfile`). The backend works with HashiCorp Vault and with OpenBao (same API); the URI scheme is `hashivault` for both, and `openbao://` is refused.
 
 - Key URI: `hashivault://NAME`, the name of a key in Vault's transit secrets engine, for example `hashivault://agentbus2`. `NAME` is letters, digits, `_`, `-` and `.`, starting and ending with a letter, digit or `_`. Anything else (a path, a query, user info, a trailing slash) is refused at start (exit 2), and the refusal does not print the URI.
 - The key: a transit key of type `ecdsa-p256` that supports signing. Another type (`ed25519`, `ecdsa-p384`, RSA), a missing key or a key whose latest version has no readable public key is refused when the URI is resolved.
@@ -49,7 +49,7 @@ Build: `go build -tags hashivault .` (the default binary and the release archive
 
 ## gcpkms
 
-Build: `go build -tags gcpkms .` (the default binary and the release archives link no Google SDK; the Docker image's `Dockerfile` builds with no tag at present).
+Build: `go build -tags gcpkms .` (the default binary and the release archives link no Google SDK; the Docker image of this repository is built with this tag, `ARG BUILD_TAGS` in its `Dockerfile`).
 
 - Key URI: `gcpkms://projects/PROJECT/locations/LOCATION/keyRings/RING/cryptoKeys/KEY`, optionally followed by `/cryptoKeyVersions/VERSION` (a number of 1 or more), for example `gcpkms://projects/my-project/locations/global/keyRings/agentbus2/cryptoKeys/token-signing`. Each name is letters, digits, `_` and `-` (a project may also hold `.` and `:`). User info, a query, a fragment, a trailing slash, any other path segment and sigstore's `/versions/V` spelling are refused at start (exit 2), and the refusal does not print the URI.
 - The key: a Cloud KMS key with purpose `ASYMMETRIC_SIGN` and algorithm `EC_SIGN_P256_SHA256`. With no version in the URI, `rotate` pins the `ENABLED` version with the highest number; with one, that version, which must be `ENABLED`. Another algorithm (P-384, Ed25519, RSA), another purpose, a missing key or no `ENABLED` version is refused when the URI is resolved (not retryable).
@@ -65,7 +65,7 @@ Build: `go build -tags gcpkms .` (the default binary and the release archives li
 
 ## azurekms
 
-Build: `go build -tags azurekms .` (the default binary and the release archives link no Azure SDK; the Docker image's `Dockerfile` builds with no tag at present).
+Build: `go build -tags azurekms .` (the default binary and the release archives link no Azure SDK; the Docker image of this repository is built with this tag, `ARG BUILD_TAGS` in its `Dockerfile`).
 
 - Key URI: `azurekms://VAULT-HOST/KEY`, optionally followed by `/VERSION`, for example `azurekms://my-vault.vault.azure.net/token-signing`. `VAULT-HOST` is the vault's DNS name: 3 to 24 letters, digits and hyphens (starting and ending with a letter or digit) under `vault.azure.net`, `vault.azure.cn`, `vault.usgovcloudapi.net`, `managedhsm.azure.net`, `managedhsm.azure.cn` or `managedhsm.usgovcloudapi.net`. `KEY` is letters, digits and `-` (up to 127). `VERSION` is the 32 lowercase hex digits Key Vault assigns. User info, a port, an IP address or any other host, a query, a fragment, a trailing slash, any other path segment and a version in another form (`latest`, upper case) are refused at start (exit 2), and the refusal does not print the URI.
 - The key: an `EC` (or `EC-HSM`) key on curve `P-256` whose key operations include `sign`, enabled, and inside its not-before and expiry times. With no version in the URI, `rotate` pins the key's current version (the one Key Vault answers for the key name); with one, that version. A key of another type or curve (P-384, P-521, P-256K, RSA, oct), without the `sign` operation, disabled, expired, not valid yet, or missing is refused when the URI is resolved (not retryable). The answer's key identifier must name the same vault, key and (when the URI has one) version, or the answer is refused.

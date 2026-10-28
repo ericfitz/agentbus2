@@ -320,6 +320,8 @@ equivalent to admin.
 - **New aggregates.** `EnrollmentTokens` and `SigningKeys` are embedded in
   `Tx`. `signing_keys` is a singleton (`singleton = 1`, unique); the private
   key is plaintext PEM (Decision (Eric, 2026-10-21), Milestone 5 item 2).
+  (History: the singleton is superseded by the key set of the "Signing keys
+  addendum" below and ADR 0012.)
 - **Reset.** `Meta.ResetData` deletes notices, messages, channels (and what
   cascades from them), subscriptions, tag subscriptions, sessions, memory
   access and receipts; it keeps `schema_meta`, `seq_counter`, leases,
@@ -330,12 +332,13 @@ equivalent to admin.
   item 1, as decided).
 - **`ErrConflict` rerun.** `Register` and `CreateIdentity` re-run their
   transaction after `ErrConflict` at most twice, and
-  `LoadOrCreateSigningKey` once. The `Tx` contract is unchanged:
+  `LoadOrCreateSigningKey` once (history: that method is gone; the first
+  start is `signingkeys.EnsureActive`, ADR 0012). The `Tx` contract is unchanged:
   `ErrConflict` still ends the transaction, and the rerun is the core's.
 
 ## Signing keys addendum (Eric, 2026-10-27)
 
-Eric's decisions 2 and 8 (2026-10-27, issue #6) supersede "`signing_keys` is a
+Eric's decisions 2 and 8 (2026-10-27, issue #6; recorded whole in ADR 0012) supersede "`signing_keys` is a
 singleton" above: the table is a key set.
 
 - **Rows.** One row per key: `kid` (primary key), `state` (`active` or

@@ -47,6 +47,22 @@ expect_exit "$NAME-nocfg" 2 'exactly one of sqlite or postgres is required' "$IM
 echo "step 2b: a store without listen exits 2"
 expect_exit "$NAME-nolisten" 2 'listen is required' -e AGENTBUS2_SERVER_SQLITE=/data/agentbus2.db "$IMAGE"
 
+echo "step 2c: every key provider backend is in the image"
+# The image carries all four backends (BUILD_TAGS in the Dockerfile; open note signing-keys 1); an untagged binary
+# answers every scheme with "not in this build". With the placeholder URI "<scheme>://none" the three URI-checking
+# backends refuse it as a configuration error (exit 2) and hashivault, which checks its environment (VAULT_ADDR) at
+# EnsureActive, fails as a runtime error (exit 1). No key service is needed. The log must carry the backend's own text
+# and must not quote the URI.
+for spec in awskms:2:'agentbus2 server: awskms:' gcpkms:2:'agentbus2 server: gcpkms:' azurekms:2:'agentbus2 server: azurekms:' \
+  hashivault:1:'signing key provider hashivault'; do
+  scheme="${spec%%:*}"
+  rest="${spec#*:}"
+  want="${rest%%:*}"
+  text="${rest#*:}"
+  expect_exit "$NAME-nolisten" "$want" "$text" -e AGENTBUS2_SERVER_LISTEN=0.0.0.0:8420 \
+    -e AGENTBUS2_SERVER_SQLITE=/data/agentbus2.db -e "AGENTBUS2_SERVER_SIGNING_KEY_URI=$scheme://none" "$IMAGE"
+done
+
 echo "step 3: version"
 got="$(docker run --rm --entrypoint /agentbus2 "$IMAGE" version)"
 [ "$got" = smoke ] || fail "version printed \"$got\", want smoke"
