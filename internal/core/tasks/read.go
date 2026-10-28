@@ -49,10 +49,12 @@ func (s Service) Get(ctx context.Context, identity string, id int64) (bus.Task, 
 			return bus.Task{}, core.FromStore(err)
 		}
 		if !abandoned || pass > 0 {
+			s.markRead(ctx, ch, s.NowMs())
 			return t.Task, nil
 		}
 		if _, err := s.reclaim(ctx, ch.ID, []int64{id}, s.NowMs()); err != nil {
 			s.Log.Warn("task reclaim failed; serving the snapshot already read", "channel", ch.Name, "task", id, "err", err)
+			s.markRead(ctx, ch, s.NowMs())
 			return t.Task, nil
 		}
 	}
@@ -101,7 +103,29 @@ func (s Service) List(ctx context.Context, identity string, in bus.TaskListInput
 				s.Log.Warn("task reclaim failed; serving the snapshot already read", "channel", ch.Name, "err", err)
 			}
 		}
+		s.markRead(ctx, ch, s.NowMs())
 		return s.summaries(ts, in), nil
+	}
+}
+
+// readMarkStepMs is how old the recorded read of a task list must be before a
+// read records another: at most one write per list per hour.
+const readMarkStepMs = 3_600_000
+
+// markRead records a read of the task list in channels.last_read_at when the
+// snapshot's value is older than readMarkStepMs. It runs after a successful
+// read only, in a Tx of its own; a failure is logged and dropped, because a
+// read must not fail because the mark could not be written.
+// open note: postgres-budget 3
+func (s Service) markRead(ctx context.Context, ch store.Channel, now int64) {
+	if ch.LastReadAt >= now-readMarkStepMs {
+		return
+	}
+	err := s.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		return tx.TouchChannelRead(ctx, ch.ID, now)
+	})
+	if err != nil {
+		s.Log.Warn("task list read mark failed", "channel", ch.Name, "err", err)
 	}
 }
 
