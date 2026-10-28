@@ -777,3 +777,30 @@ func TestRunSlackTokenFiles(t *testing.T) {
 		}
 	})
 }
+
+// TestStartWithCorruptRetiringRowExits1: a retiring row the issuer cannot load
+// stops the start with exit 1 (a runtime failure, not a configuration error),
+// and the row is left alone.
+func TestStartWithCorruptRetiringRowExits1(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "ab2.db")
+	args := []string{"-listen", "127.0.0.1:0", "-sqlite", path, "-set", "issuer=http://agentbus2.local"}
+	runServer(t, args...).stop()
+
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	if _, err := db.Exec(`INSERT INTO signing_keys (kid, state, provider, provider_ref, algorithm, public_key, private_key_pem, created_at, retired_at, remove_after)
+		VALUES ('bad-kid', 'retiring', 'store', '', 'EdDSA', x'00', 'garbage', 1, 2, 3)`); err != nil {
+		t.Fatal(err)
+	}
+	code, _, errs := runOnce(nil, args...)
+	if code != 1 || !strings.Contains(errs, "bad-kid") {
+		t.Fatalf("corrupt retiring row: exit %d, stderr %q", code, errs)
+	}
+	var n int
+	if err := db.QueryRow("SELECT count(*) FROM signing_keys WHERE kid = 'bad-kid' AND private_key_pem = 'garbage'").Scan(&n); err != nil || n != 1 {
+		t.Fatalf("the corrupt row was changed: %d, %v", n, err)
+	}
+}

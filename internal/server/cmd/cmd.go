@@ -155,7 +155,7 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 	}
 	issuer, err := token.NewIssuer(ctx, issuerURL, signingkeys.NewKeyring(*keysSvc), time.Duration(cfg.TokenLifetimeSeconds)*time.Second, c.Now)
 	if err != nil {
-		return fail(2, "issuer: %v", err)
+		return fail(1, "issuer: %v", err)
 	}
 	// Serve's maintenance jobs rotate through this Service, so a rotation
 	// reloads this process's issuer at once.

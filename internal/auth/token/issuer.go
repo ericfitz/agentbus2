@@ -153,7 +153,7 @@ func (i *Issuer) startLoad() *keyLoad {
 // (other callers wait on the result), then publishes the outcome. On failure
 // the cached set stays and the next periodic reload is a full interval away.
 func (i *Issuer) runLoad(ctx context.Context, f *keyLoad) {
-	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), SignTimeout)
+	lctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), LoadTimeout)
 	defer cancel()
 	set, err := i.fetch(lctx)
 	i.mu.Lock()

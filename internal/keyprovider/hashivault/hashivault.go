@@ -289,7 +289,7 @@ func (s *signer) load() (*sighv.SignerVerifier, error) {
 		options.WithRPCAuthOpts(options.RPCAuth{Address: e.addr, Token: e.token, Path: e.mount}),
 		options.WithKeyVersion(strconv.FormatUint(s.version, 10)))
 	if err != nil {
-		return nil, fmt.Errorf("hashivault: key %s: building the Vault signer: %s", s.name, strings.TrimPrefix(redact(err.Error()), "new vault client: "))
+		return nil, fmt.Errorf("hashivault: key %s: building the Vault signer: %s", s.name, bound(strings.TrimPrefix(err.Error(), "new vault client: ")))
 	}
 	s.sv = sv
 	return sv, nil
@@ -371,6 +371,17 @@ func redact(text string) string {
 	return text
 }
 
+// bound redacts the configured token from text and caps its length at
+// maxVaultText, never splitting a rune. Every Vault- or transport-supplied text
+// kept in an error goes through it.
+func bound(text string) string {
+	text = redact(text)
+	if len(text) > maxVaultText {
+		text = strings.ToValidUTF8(text[:maxVaultText], "") + "..."
+	}
+	return text
+}
+
 // classify turns a request failure into an error that names what failed
 // without the request URL or anything from the connection setup, and marks the
 // Vault service's own failures (unreachable, out of time, HTTP 429 or 5xx, a
@@ -389,11 +400,7 @@ func classify(what string, err error) error {
 		text := fmt.Sprintf("Vault answered HTTP %d", resp.StatusCode)
 		if len(resp.Errors) > 0 {
 			// Vault's (or a proxy's) text: redact the token, cap the length.
-			vt := redact(strings.Join(resp.Errors, "; "))
-			if len(vt) > maxVaultText {
-				vt = strings.ToValidUTF8(vt[:maxVaultText], "") + "..."
-			}
-			text += ": " + vt
+			text += ": " + bound(strings.Join(resp.Errors, "; "))
 		}
 		if resp.StatusCode == 429 || resp.StatusCode >= 500 {
 			return fmt.Errorf("hashivault: %s: %w: %s", what, keyprovider.ErrUnavailable, text)
@@ -403,12 +410,15 @@ func classify(what string, err error) error {
 	var uerr *url.Error
 	if errors.As(err, &uerr) {
 		inner := uerr.Err
-		text := "the request failed: " + inner.Error()
-		var ne net.Error
-		if uerr.Timeout() || errors.As(inner, &ne) || errors.Is(inner, io.EOF) || errors.Is(inner, io.ErrUnexpectedEOF) {
+		text := "the request failed: " + bound(inner.Error())
+		// net.Error alone is too broad: every syscall.Errno satisfies it, a
+		// missing file included.
+		var op *net.OpError
+		var dns *net.DNSError
+		if uerr.Timeout() || errors.As(inner, &op) || errors.As(inner, &dns) || errors.Is(inner, io.EOF) || errors.Is(inner, io.ErrUnexpectedEOF) {
 			return fmt.Errorf("hashivault: %s: %w: %s", what, keyprovider.ErrUnavailable, text)
 		}
 		return fmt.Errorf("hashivault: %s: %s", what, text)
 	}
-	return fmt.Errorf("hashivault: %s: %w", what, err)
+	return fmt.Errorf("hashivault: %s: %s", what, bound(err.Error()))
 }

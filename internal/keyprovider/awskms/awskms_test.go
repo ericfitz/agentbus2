@@ -11,12 +11,15 @@ import (
 	"crypto/x509"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 	"unicode/utf8"
@@ -549,6 +552,7 @@ func TestServiceFailuresAreUnavailable(t *testing.T) {
 		"throttling 400":      {400, "ThrottlingException", true},
 		"429":                 {429, "TooManyRequestsException", true},
 		"dependency timeout":  {400, "DependencyTimeoutException", true},
+		"quota":               {400, "LimitExceededException", false},
 		"bad credentials":     {400, "UnrecognizedClientException", false},
 		"access denied":       {400, "AccessDeniedException", false},
 		"missing key":         {400, "NotFoundException", false},
@@ -685,6 +689,8 @@ func TestCredentialFailuresAreClassifiedByType(t *testing.T) {
 	}{
 		"network error":   {&net.OpError{Op: "dial", Net: "tcp", Err: errors.New("connection refused")}, true},
 		"deadline":        {context.DeadlineExceeded, true},
+		"net timeout":     {timeoutErr{}, true},
+		"missing file":    {fmt.Errorf("get credentials: %w", &fs.PathError{Op: "open", Path: "/var/run/token", Err: syscall.ENOENT}), false},
 		"no provider":     {errors.New("no EC2 IMDS role found"), false},
 		"invalid/expired": {errors.New("the security token included in the request is expired"), false},
 	} {
@@ -794,3 +800,10 @@ func TestProviderTextIsRedactedAndBounded(t *testing.T) {
 	}
 	f.failAll(0, "")
 }
+
+// timeoutErr is a net.Error that is only a timeout.
+type timeoutErr struct{}
+
+func (timeoutErr) Error() string   { return "i/o timeout" }
+func (timeoutErr) Timeout() bool   { return true }
+func (timeoutErr) Temporary() bool { return true }

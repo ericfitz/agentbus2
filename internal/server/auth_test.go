@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -927,4 +928,42 @@ func TestSignerUnavailableIs503(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestSignerUnavailableIsLogged: both grant paths answer the unchanged 503 and
+// leave the signer's error in the server log, once, never the bearer.
+func TestSignerUnavailableIsLogged(t *testing.T) {
+	break_ := func(e *env, lg *logBuf) {
+		e.opts.Logger = slog.New(slog.NewTextHandler(lg, &slog.HandlerOptions{Level: slog.LevelDebug}))
+		broken, err := token.NewIssuer(context.Background(), "http://inproc",
+			failingKeys{key: genKey(t, keys.EdDSA)}, time.Hour, e.clock.Now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		e.opts.Issuer = broken
+		e.once = sync.Once{}
+	}
+	t.Run("agent assertion", func(t *testing.T) {
+		lg := &logBuf{}
+		e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
+		key := genKey(t, keys.EdDSA)
+		e.mustRegister("pat", key)
+		break_(e, lg)
+		wantOAuthError(t, e.exchange(e.assertionFor("pat", key, "http://inproc/v1/auth/token", 0), ""), 503, "temporarily_unavailable", "the signing key is unavailable", "")
+		if got := strings.Count(lg.String(), "kms down"); got != 1 {
+			t.Errorf("log holds the signer error %d times: %s", got, lg.String())
+		}
+	})
+	t.Run("token exchange", func(t *testing.T) {
+		f := newFedEnv(t, 0, nil)
+		lg := f.log
+		break_(f.env, lg)
+		status, body, m := f.post(exchangeForm(f.prov.Mint(map[string]any{"sub": "g-1", "email": corpEric}), nil))
+		if status != 503 || m["error_description"] != "the signing key is unavailable" {
+			t.Errorf("exchange = %d %s", status, body)
+		}
+		if got := strings.Count(lg.String(), "kms down"); got != 1 {
+			t.Errorf("log holds the signer error %d times: %s", got, lg.String())
+		}
+	})
 }

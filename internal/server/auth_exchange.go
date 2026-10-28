@@ -41,8 +41,12 @@ func clip(s string) string {
 
 // refuseExchange logs a refused exchange (issuer, reason and identity when
 // known; never a token) and builds its response.
-func (a *api) refuseExchange(issuer string, e oauthError, reason, identity string) gen.TokenResponseObject {
+//
+// extra are further log attributes, for a cause that is not request-derived
+// (the signer's error, already redacted and capped by the key provider).
+func (a *api) refuseExchange(issuer string, e oauthError, reason, identity string, extra ...any) gen.TokenResponseObject {
 	attrs := []any{"issuer", clip(issuer), "reason", clip(reason), "code", e.Code}
+	attrs = append(attrs, extra...)
 	if identity != "" {
 		attrs = append(attrs, "identity", clip(identity))
 	}
@@ -128,7 +132,7 @@ func (a *api) tokenExchange(ctx context.Context, b *gen.TokenFormdataRequestBody
 	}
 	raw, exp, err := iss.Mint(ctx, token.MintInput{Identity: res.Identity, Kind: token.KindHuman, ClientID: clientID, Lifetime: ext.EffectiveHumanLifetime()})
 	if errors.Is(err, token.ErrSignerUnavailable) {
-		return a.refuseExchange(ext.Name, oauthFail(http.StatusServiceUnavailable, "temporarily_unavailable", "the signing key is unavailable"), "mint failed: signing key unavailable", res.Identity)
+		return a.refuseExchange(ext.Name, oauthFail(http.StatusServiceUnavailable, "temporarily_unavailable", "the signing key is unavailable"), "mint failed: signing key unavailable", res.Identity, "error", err.Error())
 	}
 	if err != nil {
 		return a.refuseExchange(ext.Name, oauthFromBus(bus.Internal(err), true), "mint failed", res.Identity)

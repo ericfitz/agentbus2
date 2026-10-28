@@ -108,6 +108,8 @@ func (a *api) clientCredentials(ctx context.Context, iss *token.Issuer, b *gen.T
 	}
 	raw, _, err := iss.Mint(ctx, token.MintInput{Identity: p.Identity, Kind: token.KindAgent})
 	if errors.Is(err, token.ErrSignerUnavailable) {
+		// The client sees the fixed text; the operator finds the cause here.
+		a.log.Warn("token grant failed: signing key unavailable", "identity", clip(p.Identity), "error", err.Error())
 		return oauthFail(http.StatusServiceUnavailable, "temporarily_unavailable", "the signing key is unavailable")
 	}
 	if err != nil {

@@ -18,6 +18,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"strings"
@@ -229,7 +230,9 @@ func (s *signer) SignContext(ctx context.Context, digest []byte, opts crypto.Sig
 }
 
 // throttleCodes are the KMS and generic AWS error codes that mean "try later"
-// rather than "this request is wrong".
+// rather than "this request is wrong". LimitExceededException is absent on
+// purpose: it is a quota refusal (too many grants or aliases), and retrying
+// does not clear it.
 var throttleCodes = map[string]bool{
 	"ThrottlingException":                    true,
 	"Throttling":                             true,
@@ -237,7 +240,6 @@ var throttleCodes = map[string]bool{
 	"RequestLimitExceeded":                   true,
 	"RequestThrottled":                       true,
 	"TooManyRequestsException":               true,
-	"LimitExceededException":                 true,
 	"DependencyTimeoutException":             true,
 	"KMSInternalException":                   true,
 	"InternalFailure":                        true,
@@ -321,6 +323,18 @@ func unavailable(err error) bool {
 		st := resp.HTTPStatusCode()
 		return st == 429 || st >= 500
 	}
-	var ne net.Error
-	return errors.As(err, &ne)
+	// net.Error alone is too broad: every syscall.Errno satisfies it, a missing
+	// credentials file (a wrapped fs.PathError) included. Decide by type.
+	var op *net.OpError
+	var dns *net.DNSError
+	var to interface{ Timeout() bool }
+	switch {
+	case errors.As(err, &op), errors.As(err, &dns):
+		return true
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return true
+	case errors.As(err, &to) && to.Timeout():
+		return true
+	}
+	return false
 }

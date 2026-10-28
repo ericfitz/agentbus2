@@ -22,6 +22,9 @@ const (
 	UnknownKeyReloadInterval = 5 * time.Second
 	// SignTimeout bounds one signature.
 	SignTimeout = 10 * time.Second
+	// LoadTimeout bounds one load of the key set (the Store read and the
+	// providers' signer construction); it has the value of SignTimeout.
+	LoadTimeout = SignTimeout
 )
 
 // ErrSignerUnavailable marks a Mint that could not sign: the key set has no

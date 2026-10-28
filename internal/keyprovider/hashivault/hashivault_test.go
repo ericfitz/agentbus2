@@ -15,13 +15,18 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/auth/token"
@@ -1290,5 +1295,55 @@ func TestNewRefusesUnusableEnvironment(t *testing.T) {
 	}
 	if f.total() != 0 {
 		t.Fatalf("%d requests", f.total())
+	}
+}
+
+// TestTransportAndSetupTextIsRedactedAndBounded: the texts of a transport
+// failure, the fallback and the signer build go through the same redaction and
+// cap as Vault's own text.
+func TestTransportAndSetupTextIsRedactedAndBounded(t *testing.T) {
+	t.Setenv("VAULT_TOKEN", secretToken)
+	long := strings.Repeat("é", 400)
+	for name, err := range map[string]error{
+		"url error": &url.Error{Op: "Get", URL: "http://x", Err: errors.New("boom " + secretToken + " " + long)},
+		"fallback":  errors.New("boom " + secretToken + " " + long),
+		"url net":   &url.Error{Op: "Get", URL: "http://x", Err: &net.OpError{Op: "dial", Net: "tcp", Err: errors.New(secretToken + long)}},
+	} {
+		text := classify("read", err).Error()
+		if strings.Contains(text, secretToken) {
+			t.Errorf("%s: leaks the token: %.80s", name, text)
+		}
+		if len(text) > maxVaultText+200 {
+			t.Errorf("%s: %d bytes of error text", name, len(text))
+		}
+		if !utf8.ValidString(text) {
+			t.Errorf("%s: not valid UTF-8", name)
+		}
+	}
+	// A missing file under the transport error is a refusal, not an outage.
+	pe := &url.Error{Op: "Get", URL: "http://x", Err: &fs.PathError{Op: "open", Path: "/x", Err: syscall.ENOENT}}
+	if errors.Is(classify("read", pe), keyprovider.ErrUnavailable) {
+		t.Error("a wrapped fs.PathError is unavailable")
+	}
+}
+
+// TestSignerBuildTextIsBounded: the text of a failed signer build is capped.
+func TestSignerBuildTextIsBounded(t *testing.T) {
+	f := newFakeVault(t)
+	f.addP256(t, keyName)
+	p := f.provider(t, keyName)
+	k, err := p.Next(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	sg, err := p.Signer(context.Background(), k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VAULT_SKIP_VERIFY", strings.Repeat("x", 3000)) // the client's environment parse echoes the value
+	digest := sha256.Sum256([]byte("x"))
+	_, e := sg.SignContext(context.Background(), digest[:], crypto.SHA256)
+	if e == nil || len(e.Error()) > maxVaultText+300 {
+		t.Fatalf("err = %.200v (%d bytes)", e, len(fmt.Sprint(e)))
 	}
 }
