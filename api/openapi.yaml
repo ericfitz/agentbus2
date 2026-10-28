@@ -1185,6 +1185,7 @@ components:
         code:
           type: string
           description: agentbus2 extension member (RFC 9457 section 3.2).
+          # open note: write-inspection 5
           enum:
             - validation
             - not_found
@@ -1198,6 +1199,7 @@ components:
             - unavailable
             - internal
             - unauthenticated
+            - inspection_rejected
         retryable:
           type: boolean
           description: agentbus2 extension member (RFC 9457 section 3.2).

@@ -78,6 +78,17 @@ func TestRemoteMapsKnownProblem(t *testing.T) {
 	}
 }
 
+func TestRemoteMapsInspectionRejected(t *testing.T) {
+	err := do(t, &canned{
+		status: 422, ctype: "application/problem+json",
+		body: `{"type":"about:blank","title":"Unprocessable Entity","status":422,"code":"inspection_rejected","detail":"rejected by inspection (pii): contains a key","retryable":false}`,
+	})
+	be := asBusError(t, err)
+	if *be != (ab2bus.Error{Code: "inspection_rejected", Message: "rejected by inspection (pii): contains a key", Retryable: false}) {
+		t.Fatalf("got %+v", be)
+	}
+}
+
 func TestRemoteTitleWhenNoDetail(t *testing.T) {
 	err := do(t, &canned{
 		status: 404, ctype: "application/problem+json",

@@ -61,7 +61,7 @@ func TestDocumentIs31AndValidates(t *testing.T) {
 		}
 	}
 	code := doc.Components.Schemas["Problem"].Value.Properties["code"].Value
-	want := []string{"validation", "not_found", "conflict", "forbidden", "not_registered", "rate_limited", "replaced", "session_lapsed", "session_closed", "unavailable", "internal", "unauthenticated"}
+	want := []string{"validation", "not_found", "conflict", "forbidden", "not_registered", "rate_limited", "replaced", "session_lapsed", "session_closed", "unavailable", "internal", "unauthenticated", "inspection_rejected"}
 	if len(code.Enum) != len(want) {
 		t.Fatalf("Problem.code enum: %v", code.Enum)
 	}

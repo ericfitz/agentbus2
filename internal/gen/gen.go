@@ -279,18 +279,19 @@ func (e MessageSenderKind) Valid() bool {
 
 // Defines values for ProblemCode.
 const (
-	Conflict        ProblemCode = "conflict"
-	Forbidden       ProblemCode = "forbidden"
-	Internal        ProblemCode = "internal"
-	NotFound        ProblemCode = "not_found"
-	NotRegistered   ProblemCode = "not_registered"
-	RateLimited     ProblemCode = "rate_limited"
-	Replaced        ProblemCode = "replaced"
-	SessionClosed   ProblemCode = "session_closed"
-	SessionLapsed   ProblemCode = "session_lapsed"
-	Unauthenticated ProblemCode = "unauthenticated"
-	Unavailable     ProblemCode = "unavailable"
-	Validation      ProblemCode = "validation"
+	Conflict           ProblemCode = "conflict"
+	Forbidden          ProblemCode = "forbidden"
+	InspectionRejected ProblemCode = "inspection_rejected"
+	Internal           ProblemCode = "internal"
+	NotFound           ProblemCode = "not_found"
+	NotRegistered      ProblemCode = "not_registered"
+	RateLimited        ProblemCode = "rate_limited"
+	Replaced           ProblemCode = "replaced"
+	SessionClosed      ProblemCode = "session_closed"
+	SessionLapsed      ProblemCode = "session_lapsed"
+	Unauthenticated    ProblemCode = "unauthenticated"
+	Unavailable        ProblemCode = "unavailable"
+	Validation         ProblemCode = "validation"
 )
 
 // Valid indicates whether the value is a known member of the ProblemCode enum.
@@ -299,6 +300,8 @@ func (e ProblemCode) Valid() bool {
 	case Conflict:
 		return true
 	case Forbidden:
+		return true
+	case InspectionRejected:
 		return true
 	case Internal:
 		return true

@@ -52,6 +52,15 @@ func TestValidCodeKnowsUnauthenticated(t *testing.T) {
 	}
 }
 
+func TestValidCodeKnowsInspectionRejected(t *testing.T) {
+	if !ValidCode(CodeInspectionRejected) || CodeInspectionRejected != "inspection_rejected" {
+		t.Fatalf("CodeInspectionRejected = %q, valid %v", CodeInspectionRejected, ValidCode(CodeInspectionRejected))
+	}
+	if e := Errorf(CodeInspectionRejected, false, "x"); e.Code != CodeInspectionRejected || e.Retryable {
+		t.Fatalf("%+v", e)
+	}
+}
+
 func TestValidCode(t *testing.T) {
 	for _, c := range []Code{CodeValidation, CodeNotFound, CodeConflict, CodeForbidden, CodeNotRegistered, CodeRateLimited, CodeReplaced, CodeSessionLapsed, CodeSessionClosed, CodeUnavailable, CodeInternal} {
 		if !ValidCode(c) {

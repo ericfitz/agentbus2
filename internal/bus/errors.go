@@ -32,20 +32,24 @@ const (
 	CodeSessionLapsed Code = "session_lapsed"
 	// CodeSessionClosed: the session was closed and can never resume.
 	CodeSessionClosed Code = "session_closed"
-	// CodeUnavailable: the store reported a retryable failure (Decision 69).
+	// CodeUnavailable: the store or the write inspector reported a retryable
+	// failure (Decision 69; write inspection).
 	CodeUnavailable Code = "unavailable"
 	// CodeInternal: an unexpected failure; retryable, as in v1.
 	CodeInternal Code = "internal"
 	// CodeUnauthenticated: a failed security requirement at the HTTP layer
 	// (Milestone 4, spec section 3.3); the core never produces it.
 	CodeUnauthenticated Code = "unauthenticated"
+	// CodeInspectionRejected: the write inspector refused the content (ADR
+	// 0013); not retryable.
+	CodeInspectionRejected Code = "inspection_rejected"
 )
 
 var validCodes = map[Code]bool{
 	CodeValidation: true, CodeNotFound: true, CodeConflict: true, CodeForbidden: true,
 	CodeNotRegistered: true, CodeRateLimited: true, CodeReplaced: true,
 	CodeSessionLapsed: true, CodeSessionClosed: true, CodeUnavailable: true, CodeInternal: true,
-	CodeUnauthenticated: true,
+	CodeUnauthenticated: true, CodeInspectionRejected: true,
 }
 
 // ValidCode reports whether c is one of the codes above.

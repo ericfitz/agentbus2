@@ -19,9 +19,10 @@ func TestStatusForEveryCode(t *testing.T) {
 		bus.CodeNotRegistered: 403, bus.CodeNotFound: 404, bus.CodeConflict: 409,
 		bus.CodeReplaced: 409, bus.CodeSessionLapsed: 410, bus.CodeSessionClosed: 410,
 		bus.CodeRateLimited: 429, bus.CodeUnavailable: 503, bus.CodeInternal: 500,
+		bus.CodeInspectionRejected: 422,
 	}
-	if len(want) != 12 {
-		t.Fatalf("table has %d codes, want 12", len(want))
+	if len(want) != 13 {
+		t.Fatalf("table has %d codes, want 13", len(want))
 	}
 	for code, status := range want {
 		if got := StatusFor(code); got != status {
