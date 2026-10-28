@@ -9,14 +9,15 @@ import (
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
-// Usage is the administrator's usage reading (Decision 48), the three members
-// of v1 internal/bus/admin.go Status (UsageBytes, BudgetBytes, Notice) as
-// their own operation. The admin check and the capacity notice are one Store
-// transaction; Store.Usage runs outside it (a PRAGMA on SQLite).
+// Usage is the administrator's usage reading (Decision 48). The admin check
+// and the capacity notice are one Store transaction; Store.Usage runs outside
+// it (a PRAGMA on SQLite). The budget is the one of the store's engine; only
+// when the measure is over it does a second Read ask what eviction could still
+// delete (EvictionLeft), which decides the tier. usageDoc builds the document.
 func (s Service) Usage(ctx context.Context, identity string) (bus.Usage, error) {
-	var out bus.Usage
+	var notice string
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
-		out = bus.Usage{}
+		notice = ""
 		if err := s.RequireServerAdmin(ctx, tx, identity); err != nil {
 			return err
 		}
@@ -25,7 +26,7 @@ func (s Service) Usage(ctx context.Context, identity string) (bus.Usage, error) 
 			return err
 		}
 		if ok {
-			out.Notice = n.Message
+			notice = n.Message
 		}
 		return nil
 	})
@@ -42,19 +43,28 @@ func (s Service) Usage(ctx context.Context, identity string) (bus.Usage, error) 
 	}
 	var left store.EvictionLeft
 	if u.Bytes > budget {
-		err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
-			var err error
-			left, err = tx.EvictionLeft(ctx, core.EvictionCutoffs(s.Cfg, s.NowMs()))
-			return err
+		err = s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+			var e error
+			left, e = tx.EvictionLeft(ctx, core.EvictionCutoffs(s.Cfg, s.NowMs()))
+			return e
 		})
 		if err != nil {
 			return bus.Usage{}, err
 		}
 	}
-	out.Bytes, out.BudgetBytes, out.Evictable, out.DiskBytes = u.Bytes, budget, true, u.DiskBytes
+	out := usageDoc(u, budget, core.TargetBytes(budget, s.Cfg.CleanupFreePercent), left)
+	out.Notice = notice
+	return out, nil
+}
+
+// usageDoc is the usage document without the notice: the enforced measure
+// against the budget, the disk size with its ratio (0 when there are no
+// bytes, never a division by zero) and the pressure tier.
+func usageDoc(u store.Usage, budget, target int64, left store.EvictionLeft) bus.Usage {
+	out := bus.Usage{Bytes: u.Bytes, BudgetBytes: budget, Evictable: true, DiskBytes: u.DiskBytes}
 	if u.Bytes > 0 {
 		out.DiskRatio = float64(u.DiskBytes) / float64(u.Bytes)
 	}
-	out.Tier = rules.StorageTier(u.Bytes, budget, core.TargetBytes(budget, s.Cfg.CleanupFreePercent), left.Early(), left.Late())
-	return out, nil
+	out.Tier = rules.StorageTier(u.Bytes, budget, target, left.Early(), left.Late())
+	return out
 }
