@@ -10,6 +10,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/scopes"
+	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
 	"github.com/ericfitz/agentbus2/internal/core/tasks"
 )
 
@@ -33,6 +34,9 @@ type Service struct {
 	// Archiver archives the Slack channel of a bridge the scope retirement
 	// job retires; nil means the bridge is off (spec 4.3).
 	Archiver scopes.Archiver
+	// SigningKeys runs the signing key rotation and removal jobs; nil means
+	// they are off (a process that does not serve the token endpoint).
+	SigningKeys *signingkeys.Service
 
 	// jobs replaces Jobs() when non-nil (tests drive Tick with fakes).
 	jobs []Job
@@ -75,7 +79,7 @@ func (s Service) Jobs() []Job {
 	if s.jobs != nil {
 		return s.jobs
 	}
-	return []Job{
+	js := []Job{
 		{"lapsed sessions", s.lapsedSessions},
 		// Brings the stored row of an administrator or a human that holds a
 		// scope in line with what every read already reports (spec 4.3, 4.5).
@@ -99,8 +103,14 @@ func (s Service) Jobs() []Job {
 		{"budget eviction", s.evictToBudget},
 		{"capacity notices", s.capacityNotice},
 		{"embeddings", s.embeddings},
-		{"assertion replay expiry", s.assertionReplayExpiry},
 	}
+	// Before "assertion replay expiry", which stays the last job.
+	if sk := s.SigningKeys; sk != nil {
+		js = append(js,
+			Job{"signing key rotation", sk.RotateDue},
+			Job{"signing key removal", sk.RemoveExpired})
+	}
+	return append(js, Job{"assertion replay expiry", s.assertionReplayExpiry})
 }
 
 // Tick runs one maintenance pass if this core holds the maintenance lock

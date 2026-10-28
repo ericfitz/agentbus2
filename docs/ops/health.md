@@ -108,8 +108,10 @@ $ curl -sS -H "Authorization: Bearer $BEARER" http://127.0.0.1:8431/v1/health
 The maintenance block is this process's view, kept in memory; nothing about a run is stored in the database. The loop ticks once per `maintenance_interval_seconds`, the first tick one interval after start on the server (in local mode, in `agentbus2 mcp` and `agentbus2 tui`, after a random delay of up to one interval), so `lock` is `unknown` and `jobs` is empty until then (and after a lock error). After a tick (here with an interval of 1 second):
 
 ```
-"maintenance":{"interval_seconds":1,"jobs":[{"changed":0,"name":"lapsed sessions","skipped":false}, ...14 jobs...],"last_tick_at":1792911399430,"lock":"held","owner":"724fe2f04ea92cd30e839391"}
+"maintenance":{"interval_seconds":1,"jobs":[{"changed":0,"name":"lapsed sessions","skipped":false}, ...14 jobs, 16 on a server...],"last_tick_at":1792911399430,"lock":"held","owner":"724fe2f04ea92cd30e839391"}
 ```
+
+The two extra jobs on a server, which run just before the last job (`assertion replay expiry`), are `signing key rotation` and `signing key removal`. Rotation reports 1 when it rotated the active signing key and 0 otherwise; its error is the provider mismatch text (the configured provider is not the active key's), or, for an external key the provider still names after it is older than `signing_key_rotation_hours`, `signing key <kid> is older than signing_key_rotation_hours (<n>): point the key URI at a new key, then run agentbus2 server admin signing-key rotate`. Removal reports how many retiring keys it deleted.
 
 With several replicas over Postgres exactly one holds the maintenance lock. Ask each replica: the one that answers `held` runs the jobs, the others answer `held_elsewhere` with no jobs. Two replicas both answering `held`, or none while every replica reports recent ticks, is worth investigating. `owner` is the answering process's own lock owner, not the holder's.
 
