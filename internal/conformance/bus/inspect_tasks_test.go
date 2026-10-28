@@ -338,6 +338,35 @@ func TestInspectTaskKeyed(t *testing.T) {
 		if c := len(fi.calls()); c != 6 {
 			t.Errorf("%d calls after the update replay, want 6", c)
 		}
+
+		// A later unkeyed patch changes the task; replaying the first key still
+		// returns the first result with no inspector call.
+		if _, err := pat.Update(ctx, ab2bus.TaskPatch{ID: made.ID, Description: taskPtr("other")}); err != nil {
+			t.Fatalf("unkeyed update: %v", err)
+		}
+		if c := len(fi.calls()); c != 7 {
+			t.Fatalf("%d calls after the unkeyed update, want 7", c)
+		}
+		uagain, err = pat.Update(ctx, uin)
+		if err != nil || !reflect.DeepEqual(uagain, ures) {
+			t.Fatalf("update replay after a change = %+v, %v; want %+v", uagain, err, ures)
+		}
+		if c := len(fi.calls()); c != 7 {
+			t.Errorf("%d calls after the second update replay, want 7", c)
+		}
+
+		// The same key with a different payload is a conflict, never inspected.
+		cin2 := cin
+		cin2.Subject = "different"
+		_, err = pat.Create(ctx, cin2)
+		codeOf(t, err, ab2bus.CodeConflict)
+		uin2 := uin
+		uin2.Description = taskPtr("different")
+		_, err = pat.Update(ctx, uin2)
+		codeOf(t, err, ab2bus.CodeConflict)
+		if c := len(fi.calls()); c != 7 {
+			t.Errorf("%d calls after the mismatched keys, want 7", c)
+		}
 	})
 }
 
@@ -361,4 +390,85 @@ func TestInspectTaskChargesRefusal(t *testing.T) {
 			t.Errorf("%d inspector calls, want 1 (the refusal was charged once)", c)
 		}
 	})
+}
+
+// rawTask stores a task row through the raw Store with the given rank, so a
+// test can build the equal sibling ranks only a corrupt write produces.
+func rawTask(h *harness, ch ab2store.Channel, subject, rank string) int64 {
+	h.t.Helper()
+	var seq int64
+	err := h.raw.Append(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
+		var err error
+		seq, _, err = h.core.Append(ctx, tx, core.AppendInput{
+			ChannelID: ch.ID, Channel: ch.Name, Kind: ab2store.KindTasks, Sender: "pat", SenderKind: ab2store.IdentityAgent,
+			Subject: subject, Content: `{"subject":"` + subject + `","status":"pending","rank":"` + rank + `"}`, TaskRow: true,
+		})
+		return err
+	})
+	if err != nil {
+		h.t.Fatalf("raw task: %v", err)
+	}
+	return seq
+}
+
+func TestInspectTaskRankCollision(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx := context.Background()
+		fi := &fakeInspector{}
+		h := newHarness(t, e, harnessOptions{inspector: fi})
+		ch := h.taskList("todo")
+		a := rawTask(h, ch, "a", "V")
+		b := rawTask(h, ch, "b", "V") // equal to a's rank: corrupt
+		pat := h.as("pat")
+
+		// Create after a: the pre-pass keeps rank V, the write renumbers and places.
+		made, err := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "todo", Subject: "new", After: a})
+		if err != nil {
+			t.Fatalf("Create across a collision: %v", err)
+		}
+		if n := len(fi.calls()); n != 1 {
+			t.Fatalf("%d inspector calls after create, want 1", n)
+		}
+		assertRanksOrdered(t, pat, "todo", []int64{a, made.ID, b})
+
+		// Update: move c before b (now behind a corrupt pair again) with a content patch.
+		h2 := newHarness(t, e, harnessOptions{inspector: fi})
+		ch2 := h2.taskList("todo")
+		a2 := rawTask(h2, ch2, "a", "V")
+		b2 := rawTask(h2, ch2, "b", "V")
+		pat2 := h2.as("pat")
+		c, err := pat2.Create(ctx, ab2bus.TaskCreateInput{Channel: "todo", Subject: "c"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		fi.reset()
+		if _, err := pat2.Update(ctx, ab2bus.TaskPatch{ID: c.ID, Description: taskPtr("moved"), Before: b2}); err != nil {
+			t.Fatalf("Update across a collision: %v", err)
+		}
+		if n := len(fi.calls()); n != 1 {
+			t.Fatalf("%d inspector calls after update, want 1", n)
+		}
+		assertRanksOrdered(t, pat2, "todo", []int64{a2, c.ID, b2})
+		got, err := pat2.GetTask(ctx, c.ID)
+		if err != nil || got.Description != "moved" {
+			t.Fatalf("task after update = %+v, %v", got, err)
+		}
+	})
+}
+
+// assertRanksOrdered checks that the tasks have strictly increasing ranks in
+// the given order.
+func assertRanksOrdered(t *testing.T, b ab2bus.Bus, list string, ids []int64) {
+	t.Helper()
+	prev := ""
+	for i, id := range ids {
+		got, err := b.GetTask(context.Background(), id)
+		if err != nil {
+			t.Fatalf("GetTask %d: %v", id, err)
+		}
+		if i > 0 && got.Rank <= prev {
+			t.Errorf("task %d rank %q is not above %q (order %v)", id, got.Rank, prev, ids)
+		}
+		prev = got.Rank
+	}
 }
