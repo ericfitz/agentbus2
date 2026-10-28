@@ -593,6 +593,7 @@ func TestSigningKeyProviderMismatchRefusesStart(t *testing.T) {
 		t.Fatalf("kid changed from %s to %s", kid, again.kid)
 	}
 	// A scheme without a backend in this build is a configuration error (2).
+	setBackend(t, "gcpkms", nil) // a build with the gcpkms tag registers it; this check needs it absent
 	code, _, errs = runOnce(nil, append(args, "-set", "signing_key_uri=gcpkms://k")...)
 	if code != 2 || !strings.Contains(errs, "the gcpkms backend is not in this build") {
 		t.Fatalf("no backend: exit %d, stderr %q", code, errs)

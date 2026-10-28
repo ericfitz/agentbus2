@@ -25,7 +25,7 @@
 # deps_violation=<package> imports <forbidden> [rule <name>] line per hit and
 # exits 1. A go list failure exits 2. <name> is the rule in the lists here
 # (store-no-core, notify-leaf, pgnotify-no-server, slackapi-allowlist,
-# slack-go-importers, awskms-importers, hashivault-importers,
+# slack-go-importers, awskms-importers, hashivault-importers, gcpkms-importers,
 # slackbridge-isolation, slack-consumers, keyprovider-leaf,
 # keyprovider-consumers); the self-test
 # (scripts/check-gates-selftest.sh) requires each probe to trip exactly one.
@@ -195,6 +195,18 @@ import_check() {
 	# reads the transit key (sigstore does not expose the latest key version).
 	check_importers hashivault-importers github.com/sigstore/sigstore/pkg/signature/kms/hashivault "$MOD/internal/keyprovider/hashivault"
 	check_importers hashivault-importers github.com/hashicorp/vault/api "$MOD/internal/keyprovider/hashivault"
+	# The gcpkms backend: sigstore's module signs; the Cloud KMS client reads the
+	# key (sigstore does not expose the version it resolves to), the auth
+	# library and the metadata client type the credential failures (gRPC
+	# flattens them), and gRPC and the API option/iterator packages are the
+	# client's own types. Each is imported by the adapter alone.
+	check_importers gcpkms-importers github.com/sigstore/sigstore/pkg/signature/kms/gcp "$MOD/internal/keyprovider/gcpkms"
+	check_importers gcpkms-importers cloud.google.com/go/kms "$MOD/internal/keyprovider/gcpkms"
+	check_importers gcpkms-importers cloud.google.com/go/auth "$MOD/internal/keyprovider/gcpkms"
+	check_importers gcpkms-importers cloud.google.com/go/compute/metadata "$MOD/internal/keyprovider/gcpkms"
+	check_importers gcpkms-importers google.golang.org/api "$MOD/internal/keyprovider/gcpkms"
+	check_importers gcpkms-importers google.golang.org/grpc "$MOD/internal/keyprovider/gcpkms"
+	check_importers gcpkms-importers google.golang.org/protobuf "$MOD/internal/keyprovider/gcpkms"
 	check_deps slackbridge-isolation ./internal/slackbridge internal/server internal/gen internal/slackapi/slackgo github.com/slack-go/slack
 	local p
 	for p in './internal/core/...' './internal/bus/...' ./internal/cli ./internal/mcpserver ./internal/client ./internal/server; do
