@@ -1,8 +1,11 @@
 package bus
 
 import (
+	"bytes"
 	"context"
 	"crypto"
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -13,6 +16,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/auth/assertion"
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentbus2/internal/auth/token"
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/bus/remote"
 	"github.com/ericfitz/agentbus2/internal/core"
@@ -45,7 +49,7 @@ type replica struct {
 
 // startReplica runs the real server command over the database at dsn and
 // waits for its listening line.
-func startReplica(t *testing.T, ctx context.Context, name string, e dbtest.Engine, dsn string) *replica {
+func startReplica(t *testing.T, ctx context.Context, name string, e dbtest.Engine, dsn string, extra ...string) *replica {
 	t.Helper()
 	r := &replica{name: name, done: make(chan int, 1)}
 	storeFlag := "-sqlite"
@@ -54,6 +58,7 @@ func startReplica(t *testing.T, ctx context.Context, name string, e dbtest.Engin
 	}
 	args := []string{"-listen", "127.0.0.1:0", storeFlag, dsn, "-registration", "open",
 		"-set", "issuer=" + replicaIssuer, "-set", "watch_merge_seconds=1", "-set", "watch_max_seconds=5"}
+	args = append(args, extra...)
 	go func() { r.done <- cmd.Run(ctx, args, nil, &r.stdout, &r.stderr) }()
 	deadline := time.Now().Add(30 * time.Second)
 	for {
@@ -556,5 +561,165 @@ func TestReplicasMaintenanceExclusive(t *testing.T) {
 				t.Fatal("the other Serve did not return")
 			}
 		})
+	})
+}
+
+// bearerKID is the kid in the header of a compact JWT.
+func bearerKID(t *testing.T, raw string) string {
+	t.Helper()
+	parts := strings.Split(raw, ".")
+	if len(parts) != 3 {
+		t.Fatalf("bearer has %d parts, want 3", len(parts))
+	}
+	hdr, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var h struct {
+		KID string `json:"kid"`
+	}
+	if err := json.Unmarshal(hdr, &h); err != nil {
+		t.Fatal(err)
+	}
+	return h.KID
+}
+
+// TestReplicasSigningKeyRotation: two replicas over one database and
+// rotations of the signing key set (issue #6 acceptance 4). The replicas and
+// the host commands run with signing_key_rotation_cooldown_seconds=1 (the
+// default 3600 s would refuse a rotation right after the key's creation) and
+// each leaf waits past that second before it rotates.
+func TestReplicasSigningKeyRotation(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		_, _, dsn := openStoreDSN(t, e)
+		const cooldown = "signing_key_rotation_cooldown_seconds=1"
+		a := startReplica(t, ctx, "A", e, dsn, "-set", cooldown)
+		b := startReplica(t, ctx, "B", e, dsn, "-set", cooldown)
+		stopped := false
+		stop := func() {
+			if stopped {
+				return
+			}
+			stopped = true
+			cancel()
+			for _, r := range []*replica{a, b} {
+				select {
+				case code := <-r.done:
+					if code != 0 {
+						t.Errorf("replica %s: Run returned %d after cancel, want 0; stderr %q", r.name, code, r.stderr.String())
+					}
+				case <-time.After(5 * time.Second):
+					t.Errorf("replica %s: Run did not return within 5 s of cancel", r.name)
+				}
+			}
+		}
+		defer stop()
+
+		storeFlag := "-sqlite"
+		if e.Name == "postgres" {
+			storeFlag = "-postgres"
+		}
+		admin := func(args ...string) (int, string, string) {
+			var so, se bytes.Buffer
+			code := cmd.RunAdmin(ctx, append([]string{storeFlag, dsn, "-set", cooldown}, args...), nil, &so, &se)
+			return code, so.String(), se.String()
+		}
+		pastCooldown := func() { time.Sleep(1200 * time.Millisecond) }
+
+		// (1) Two host rotations at once: one wins, one meets the cooldown.
+		t.Run("concurrent-rotate-one-active", func(t *testing.T) {
+			pastCooldown()
+			var codes [2]int
+			var errs [2]string
+			var wg sync.WaitGroup
+			for i := range codes {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					codes[i], _, errs[i] = admin("signing-key", "rotate")
+				}()
+			}
+			wg.Wait()
+			zero, one := 0, 0
+			for i, c := range codes {
+				switch c {
+				case 0:
+					zero++
+				case 1:
+					one++
+					if !strings.Contains(errs[i], "the next rotation is allowed at") {
+						t.Errorf("the losing rotation's stderr = %q, want the cooldown text", errs[i])
+					}
+				}
+			}
+			if zero != 1 || one != 1 {
+				t.Fatalf("exit codes %v (stderr %q, %q), want exactly one 0 and one 1", codes, errs[0], errs[1])
+			}
+			code, out, se := admin("signing-key", "list")
+			if code != 0 {
+				t.Fatalf("list: %d %s", code, se)
+			}
+			if n := strings.Count(out, " active "); n != 1 || strings.Count(out, " retiring ") != 1 {
+				t.Fatalf("list after the race:\n%s\nwant one active and one retiring key", out)
+			}
+		})
+
+		root := newReplicaWho(t, "root")
+		a.register(t, ctx, root)
+		if code, so, se := admin("admins", "add", "-identity", "root"); code != 0 {
+			t.Fatalf("admins add: %d %s%s", code, so, se)
+		}
+		_, rootBusA := a.login(t, ctx, root)
+
+		// (2) A rotation through A's API: A mints with the new kid, and B
+		// (which has never seen it) accepts the bearer at once.
+		var bearer2 string
+		t.Run("new-kid-verifies-on-both", func(t *testing.T) {
+			pastCooldown()
+			rot, err := rootBusA.RotateSigningKey(ctx, ab2bus.RotateSigningKeyInput{})
+			if err != nil {
+				t.Fatalf("RotateSigningKey through A: %v", err)
+			}
+			bearer2, _ = a.login(t, ctx, root)
+			if got := bearerKID(t, bearer2); got != rot.Active.KID {
+				t.Fatalf("A minted with kid %s, want the new active %s", got, rot.Active.KID)
+			}
+			if status, body := getChannels(t, a.base, bearer2); status != http.StatusOK {
+				t.Fatalf("GET /v1/channels through A = %d %s, want 200", status, body)
+			}
+			if status, body := getChannels(t, b.base, bearer2); status != http.StatusOK {
+				t.Fatalf("GET /v1/channels through B with the new kid's bearer = %d %s, want 200 (unknown-kid reload)", status, body)
+			}
+		})
+		if bearer2 == "" {
+			t.Fatal("no bearer from the new key; the revoke leaf cannot run")
+		}
+
+		// (3) A revoking rotation: A refuses the revoked key's bearer at once,
+		// B within one reload interval plus the unknown-kid margin.
+		t.Run("revoke-propagates", func(t *testing.T) {
+			// open note: signing-keys 9
+			rootA2 := remote.New(a.clientWith(t, bearer2))
+			if _, err := rootA2.RotateSigningKey(ctx, ab2bus.RotateSigningKeyInput{RevokePrevious: true}); err != nil {
+				t.Fatalf("revoking rotation through A: %v", err)
+			}
+			if status, body := getChannels(t, a.base, bearer2); status != http.StatusUnauthorized {
+				t.Fatalf("A with the revoked key's bearer = %d %s, want 401 at once", status, body)
+			}
+			deadline := time.Now().Add(token.ReloadInterval + 5*time.Second)
+			for {
+				status, body := getChannels(t, b.base, bearer2)
+				if status == http.StatusUnauthorized {
+					return
+				}
+				if time.Now().After(deadline) {
+					t.Fatalf("B still accepts the revoked key's bearer after %s: %d %s", token.ReloadInterval+5*time.Second, status, body)
+				}
+				time.Sleep(500 * time.Millisecond)
+			}
+		})
+		stop()
 	})
 }

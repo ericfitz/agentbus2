@@ -6,6 +6,7 @@ import (
 	"crypto"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -31,6 +32,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/keyprovider"
 	"github.com/ericfitz/agentbus2/internal/server/cmd"
+	ab2store "github.com/ericfitz/agentbus2/internal/store"
 )
 
 // syncBuffer is a bytes.Buffer safe for the server goroutine to write while
@@ -124,7 +126,7 @@ func TestAuthEndToEnd(t *testing.T) {
 		var stdout, stderr syncBuffer
 		done := make(chan int, 1)
 		go func() {
-			done <- cmd.Run(ctx, []string{"-listen", "0.0.0.0:0", storeFlag, dsn}, nil, &stdout, &stderr)
+			done <- cmd.Run(ctx, []string{"-listen", "0.0.0.0:0", storeFlag, dsn, "-set", "signing_key_rotation_cooldown_seconds=3"}, nil, &stdout, &stderr)
 		}()
 		stopped := false
 		stop := func() {
@@ -436,6 +438,88 @@ func TestAuthEndToEnd(t *testing.T) {
 			}
 			if status, body := getChannels(t, base, expired); status != http.StatusUnauthorized {
 				t.Fatalf("GET /v1/channels with an expired bearer = %d %s, want 401", status, body)
+			}
+		})
+
+		// (11) Signing key rotation over TCP. The server runs with a 3 s
+		// cooldown (the 3600 s default would refuse the first rotation of a
+		// key created seconds ago); the second rotate follows within it.
+		t.Run("signing-key-rotation", func(t *testing.T) {
+			before := root.bearer // signed by the key created at the start
+			set, err := root.bus.ListSigningKeys(ctx)
+			if err != nil || len(set) != 1 {
+				t.Fatalf("ListSigningKeys = %+v, %v; want the one pre-created key", set, err)
+			}
+			if wait := time.Until(time.UnixMilli(set[0].CreatedAt).Add(3500 * time.Millisecond)); wait > 0 {
+				time.Sleep(wait)
+			}
+			rot, err := root.bus.RotateSigningKey(ctx, ab2bus.RotateSigningKeyInput{})
+			if err != nil || rot.Active.KID == serverKID || rot.Previous.KID != serverKID {
+				t.Fatalf("RotateSigningKey = %+v, %v; want a new active key and %s as previous", rot, err, serverKID)
+			}
+
+			resp, err := http.Get(base + "/v1/auth/jwks")
+			if err != nil {
+				t.Fatal(err)
+			}
+			var jwks struct {
+				Keys []struct {
+					KID string `json:"kid"`
+				} `json:"keys"`
+			}
+			err = json.NewDecoder(resp.Body).Decode(&jwks)
+			_ = resp.Body.Close()
+			if err != nil || len(jwks.Keys) != 2 {
+				t.Fatalf("JWKS = %+v, %v; want two keys", jwks, err)
+			}
+			if status, body := getChannels(t, base, before); status != http.StatusOK {
+				t.Fatalf("a bearer minted before the rotation = %d %s, want 200", status, body)
+			}
+			fresh, err := mintBearer(ctx, anon, issuer, "root", root.key)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := bearerKID(t, fresh); got != rot.Active.KID {
+				t.Fatalf("a new login is signed with kid %s, want the new active %s", got, rot.Active.KID)
+			}
+
+			_, err = root.bus.RotateSigningKey(ctx, ab2bus.RotateSigningKeyInput{})
+			codeOf(t, err, ab2bus.CodeConflict)
+
+			// The revoked key is the one active before: the new one (rot.Active).
+			var revokedPEM string
+			if err := st.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+				rows, err := tx.ListSigningKeys(ctx)
+				for _, r := range rows {
+					if r.KID == rot.Active.KID {
+						revokedPEM = r.PrivateKeyPEM
+					}
+				}
+				return err
+			}); err != nil || revokedPEM == "" {
+				t.Fatalf("reading the key %s: %v", rot.Active.KID, err)
+			}
+			revokedKey, _, err := keys.ParsePrivatePEM([]byte(revokedPEM))
+			if err != nil {
+				t.Fatal(err)
+			}
+			rev, err := root.bus.RotateSigningKey(ctx, ab2bus.RotateSigningKeyInput{RevokePrevious: true})
+			if err != nil || !rev.Revoked || rev.Previous.KID != rot.Active.KID {
+				t.Fatalf("revoking RotateSigningKey = %+v, %v; want %s revoked", rev, err, rot.Active.KID)
+			}
+			local, err := token.NewIssuer(context.Background(), issuerURL, token.StaticKeys(revokedKey), time.Hour, time.Now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			forged, _, err := local.Mint(context.Background(), token.MintInput{Identity: "root", Kind: token.KindAgent})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status, body := getChannels(t, base, forged); status != http.StatusUnauthorized {
+				t.Fatalf("a bearer signed by the revoked key = %d %s, want 401", status, body)
+			}
+			if status, body := getChannels(t, base, before); status != http.StatusOK {
+				t.Fatalf("the retiring key's bearer after the revoke = %d %s, want 200", status, body)
 			}
 		})
 

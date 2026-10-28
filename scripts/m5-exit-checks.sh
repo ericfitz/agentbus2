@@ -6,7 +6,7 @@
 # log. It must exist and be non-empty (exit 2 naming the path). The script
 # prints auth_sqlite=<n> and auth_postgres=<n> (the leaf `--- PASS:
 # TestAuthEndToEnd/<engine>/<subtest>` lines) and fail=<n> (every `--- FAIL`
-# line), and exits 1 unless fail=0 and both counts are exactly 11.
+# line), and exits 1 unless fail=0 and both counts are exactly 12.
 #
 # The import rule is checked on production imports (`go list -deps` without
 # -test), for every package a pattern matches:
@@ -28,7 +28,7 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MOD=github.com/ericfitz/agentbus2
-WANT=11
+WANT=12
 
 # check_deps PATTERN FORBIDDEN...: each forbidden entry is an in-module path
 # (relative to the module), matched as a whole line of `go list -deps` or as
