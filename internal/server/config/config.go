@@ -83,6 +83,8 @@ type Config struct {
 	ReceiveMaxCount            int `json:"receive_max_count"`
 	ResultDefaultKiB           int `json:"result_default_kib"`
 	SQLiteBudgetMiB            int `json:"sqlite_budget_mib"`
+	PostgresBudgetMiB          int `json:"postgres_budget_mib"`
+	IdleWindowHours            int `json:"idle_window_hours"`
 	CleanupFreePercent         int `json:"cleanup_free_percent"`
 
 	EmbeddingEndpoint            string  `json:"embedding_endpoint"`
@@ -137,6 +139,8 @@ func Default() Config {
 		ReceiveMaxCount:              d.ReceiveMaxCount,
 		ResultDefaultKiB:             d.ResultDefaultKiB,
 		SQLiteBudgetMiB:              d.SQLiteBudgetMiB,
+		PostgresBudgetMiB:            d.PostgresBudgetMiB,
+		IdleWindowHours:              d.IdleWindowHours,
 		CleanupFreePercent:           d.CleanupFreePercent,
 		EmbeddingQueryTimeoutSeconds: d.EmbeddingQueryTimeoutSeconds,
 	}
@@ -188,6 +192,8 @@ func (c Config) Core() (core.Config, error) {
 		ReceiveMaxCount:              c.ReceiveMaxCount,
 		ResultDefaultKiB:             c.ResultDefaultKiB,
 		SQLiteBudgetMiB:              c.SQLiteBudgetMiB,
+		PostgresBudgetMiB:            c.PostgresBudgetMiB,
+		IdleWindowHours:              c.IdleWindowHours,
 		CleanupFreePercent:           c.CleanupFreePercent,
 		EmbeddingModel:               c.EmbeddingModel,
 		EmbeddingQueryTimeoutSeconds: c.EmbeddingQueryTimeoutSeconds,

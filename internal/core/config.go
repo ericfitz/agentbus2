@@ -60,18 +60,30 @@ type Config struct {
 	ReceiveDefaultCount     int
 	ReceiveMaxCount         int
 	ResultDefaultKiB        int
-	// SQLiteBudgetMiB bounds the SQLite file; eviction and the capacity notice
-	// act only where Store.Usage reports Evictable (Milestone 7 Gate 0 item 2,
-	// Decision (Eric, 2026-10-21)). CleanupFreePercent is how far below the
-	// budget eviction sweeps.
+	// SQLiteBudgetMiB and PostgresBudgetMiB are the budget of each engine's
+	// enforced measure (core.Budget): used pages on SQLite, the logical sum on
+	// Postgres (ADR 0004 Postgres budget addendum). CleanupFreePercent is how
+	// far below the budget eviction sweeps. IdleWindowHours is how long a task
+	// list or memory must be untouched before the budget backstop may delete it.
 	SQLiteBudgetMiB    int
+	PostgresBudgetMiB  int
 	CleanupFreePercent int
+	IdleWindowHours    int
 
 	// EmbeddingModel names the model of the Embedder; it must equal
 	// Embedder.Model() when one is given (checked in New).
 	EmbeddingModel               string
 	EmbeddingQueryTimeoutSeconds float64
 }
+
+// The eviction floors (Eric, 2026-10-27): even under space pressure no message
+// younger than MessageFloorHours and no tombstone younger than
+// TombstoneFloorHours is deleted. They are also the lower bounds of
+// message_retention_hours and tombstone_min_hours.
+const (
+	MessageFloorHours   = 1
+	TombstoneFloorHours = 72
+)
 
 // Defaults returns the configuration with every default of plan choice 6.
 func Defaults() Config {
@@ -97,6 +109,8 @@ func Defaults() Config {
 		ReceiveMaxCount:              1000,
 		ResultDefaultKiB:             64,
 		SQLiteBudgetMiB:              2048,
+		PostgresBudgetMiB:            2048,
+		IdleWindowHours:              168,
 		CleanupFreePercent:           25,
 		EmbeddingQueryTimeoutSeconds: 10,
 	}
@@ -116,8 +130,8 @@ func (c Config) Validate() error {
 		{"watch_max_seconds", c.WatchMaxSeconds, 1, 240},
 		{"watch_merge_seconds", c.WatchMergeSeconds, 0, 60},
 		{"maintenance_interval_seconds", c.MaintenanceIntervalSeconds, 1, 3600},
-		{"message_retention_hours", c.MessageRetentionHours, 1, 8760},
-		{"tombstone_min_hours", c.TombstoneMinHours, 72, 720},
+		{"message_retention_hours", c.MessageRetentionHours, MessageFloorHours, 8760},
+		{"tombstone_min_hours", c.TombstoneMinHours, TombstoneFloorHours, 720},
 		{"receipt_retention_minutes", c.ReceiptRetentionMinutes, 1, 1440},
 		{"max_message_kib", c.MaxMessageKiB, 1, 1024},
 		{"send_messages_per_second", c.SendMessagesPerSecond, 1, 10000},
@@ -126,6 +140,8 @@ func (c Config) Validate() error {
 		{"receive_max_count", c.ReceiveMaxCount, 1, 10000},
 		{"result_default_kib", c.ResultDefaultKiB, 1, 4096},
 		{"sqlite_budget_mib", c.SQLiteBudgetMiB, 64, 1048576},
+		{"postgres_budget_mib", c.PostgresBudgetMiB, 64, 1048576},
+		{"idle_window_hours", c.IdleWindowHours, 24, 8760},
 		{"cleanup_free_percent", c.CleanupFreePercent, 5, 90},
 		{"empty_channel_reap_hours", c.EmptyChannelReapHours, 1, 8760},
 		{"scope_idle_hours", c.ScopeIdleHours, 1, 8760},

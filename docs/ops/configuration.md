@@ -86,6 +86,8 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | `receive_max_count` | `AGENTBUS2_SERVER_RECEIVE_MAX_COUNT` | int | `1000` | 1 to 10000. |
 | `result_default_kib` | `AGENTBUS2_SERVER_RESULT_DEFAULT_KIB` | int | `64` | 1 to 4096. Default size cap of a history or task result. |
 | `sqlite_budget_mib` | `AGENTBUS2_SERVER_SQLITE_BUDGET_MIB` | int | `2048` | 64 to 1048576. SQLite file size above which the oldest ordinary messages are evicted. Enforced on SQLite only; on Postgres it is accepted and has no effect. |
+| `postgres_budget_mib` | `AGENTBUS2_SERVER_POSTGRES_BUDGET_MIB` | int | `2048` | 64 to 1048576. Logical size (the bytes of every row eviction can delete, with a fixed per-row overhead) above which the budget backstop deletes, on Postgres. Disk use is a multiple of it; `GET /v1/health` reports the ratio. |
+| `idle_window_hours` | `AGENTBUS2_SERVER_IDLE_WINDOW_HOURS` | int | `168` | 24 to 8760. Under space pressure, a task list or memory with no new message, task change or read for this long may be deleted. |
 | `cleanup_free_percent` | `AGENTBUS2_SERVER_CLEANUP_FREE_PERCENT` | int | `25` | 5 to 90. How far below `sqlite_budget_mib` an eviction sweep goes. |
 | `embedding_endpoint` | `AGENTBUS2_SERVER_EMBEDDING_ENDPOINT` | string | `(unset)` | Absolute URL of an embeddings API. When set, `embedding_model` is required. |
 | `embedding_model` | `AGENTBUS2_SERVER_EMBEDDING_MODEL` | string | `(unset)` | Model name sent to the endpoint. |

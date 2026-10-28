@@ -45,6 +45,8 @@ func TestConfigBounds(t *testing.T) {
 		{"receive_max_count", 1, 10000, func(c *Config, v int) { c.ReceiveDefaultCount, c.ReceiveMaxCount = 1, v }},
 		{"result_default_kib", 1, 4096, func(c *Config, v int) { c.ResultDefaultKiB = v }},
 		{"sqlite_budget_mib", 64, 1048576, func(c *Config, v int) { c.SQLiteBudgetMiB = v }},
+		{"postgres_budget_mib", 64, 1048576, func(c *Config, v int) { c.PostgresBudgetMiB = v }},
+		{"idle_window_hours", 24, 8760, func(c *Config, v int) { c.IdleWindowHours = v }},
 		{"cleanup_free_percent", 5, 90, func(c *Config, v int) { c.CleanupFreePercent = v }},
 		{"empty_channel_reap_hours", 1, 8760, func(c *Config, v int) { c.EmptyChannelReapHours = v }},
 		{"scope_idle_hours", 1, 8760, func(c *Config, v int) { c.ScopeIdleHours = v }},
@@ -128,5 +130,25 @@ func TestNewChecksEmbedder(t *testing.T) {
 	}
 	if _, err := New(nil, Defaults(), Options{}); err == nil {
 		t.Error("nil store accepted")
+	}
+}
+
+// TestFloorsAreTheLowerBounds pins the eviction floors as the lower bounds of
+// the two retention settings.
+func TestFloorsAreTheLowerBounds(t *testing.T) {
+	c := Defaults()
+	c.MessageRetentionHours, c.TombstoneMinHours = MessageFloorHours, TombstoneFloorHours
+	if err := c.Validate(); err != nil {
+		t.Fatalf("floors rejected: %v", err)
+	}
+	c = Defaults()
+	c.MessageRetentionHours = MessageFloorHours - 1
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "message_retention_hours") {
+		t.Errorf("below the message floor: %v", err)
+	}
+	c = Defaults()
+	c.TombstoneMinHours = TombstoneFloorHours - 1
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "tombstone_min_hours") {
+		t.Errorf("below the tombstone floor: %v", err)
 	}
 }

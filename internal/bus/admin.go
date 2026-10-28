@@ -15,6 +15,27 @@ type Status struct {
 	EmbeddingErrorAt      int64
 }
 
+// PressureTier is how close the stored data is to the budget.
+type PressureTier string
+
+// The pressure tiers, in order of severity.
+const (
+	PressureNormal      PressureTier = "normal"
+	PressureApproaching PressureTier = "approaching"
+	PressureSoft        PressureTier = "soft"
+	PressureHard        PressureTier = "hard"
+	PressureExhausted   PressureTier = "exhausted"
+)
+
+// ValidPressureTier reports whether t is one of the five tiers.
+func ValidPressureTier(t PressureTier) bool {
+	switch t {
+	case PressureNormal, PressureApproaching, PressureSoft, PressureHard, PressureExhausted:
+		return true
+	}
+	return false
+}
+
 // Usage is the database size, the configured SQLite budget and the capacity
 // notice. Evictable is false on Postgres, where no budget is enforced.
 // Notice is the capacity notice text when one is set.
