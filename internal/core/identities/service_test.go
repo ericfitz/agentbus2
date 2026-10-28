@@ -1,6 +1,7 @@
 package identities
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -588,7 +589,7 @@ type snapshot struct {
 	Identities []store.Identity
 	Keys       map[string][]store.PublicKey
 	Tokens     []store.EnrollmentToken
-	Signing    store.SigningKey
+	Signing    []store.SigningKey
 	MaxSeq     int64
 }
 
@@ -608,7 +609,7 @@ func snap(t *testing.T, s Service) snapshot {
 		if sn.Tokens, err = tx.ListEnrollmentTokens(ctx); err != nil {
 			return err
 		}
-		if sn.Signing, err = tx.SigningKey(ctx); err != nil {
+		if sn.Signing, err = tx.ListSigningKeys(ctx); err != nil {
 			return err
 		}
 		sn.MaxSeq, err = tx.MaxSeq(ctx)
@@ -758,7 +759,7 @@ func TestResetEverythingKeepsCaller(t *testing.T) {
 		if len(got.Tokens) != 0 {
 			t.Fatalf("tokens = %+v", got.Tokens)
 		}
-		if got.Signing != before.Signing || got.MaxSeq != before.MaxSeq {
+		if !reflect.DeepEqual(got.Signing, before.Signing) || got.MaxSeq != before.MaxSeq {
 			t.Fatal("signing key or MaxSeq changed")
 		}
 		chs, _ := channelNames(t, s)
@@ -838,6 +839,15 @@ func TestEnrollmentTokenLifecycle(t *testing.T) {
 	wantCode(t, err, bus.CodeValidation)
 }
 
+// testSigningRow is an active store-provider row with a placeholder public
+// key; the loader checks the PEM, not the public key column.
+func testSigningRow(kid, alg, pem string) store.SigningKey {
+	return store.SigningKey{
+		KID: kid, State: store.SigningKeyActive, Provider: store.SigningProviderStore,
+		Algorithm: alg, PublicKey: []byte{1}, PrivateKeyPEM: pem, CreatedAt: startMs,
+	}
+}
+
 func TestSigningKeyLifecycle(t *testing.T) {
 	ctx := context.Background()
 	s, _ := newSvc(t, nil)
@@ -845,8 +855,15 @@ func TestSigningKeyLifecycle(t *testing.T) {
 	if err != nil || !created || alg != keys.EdDSA {
 		t.Fatalf("first = %v, %v, %v", alg, created, err)
 	}
-	var row store.SigningKey
-	tx(t, s, func(ctx context.Context, tx store.Tx) error { var e error; row, e = tx.SigningKey(ctx); return e })
+	var rows []store.SigningKey
+	tx(t, s, func(ctx context.Context, tx store.Tx) error { var e error; rows, e = tx.ListSigningKeys(ctx); return e })
+	if len(rows) != 1 || rows[0].State != store.SigningKeyActive || rows[0].Provider != store.SigningProviderStore {
+		t.Fatalf("rows = %+v, want one active store row", rows)
+	}
+	row := rows[0]
+	if pub, _ := keys.MarshalPublic(k1.Public()); !bytes.Equal(row.PublicKey, pub) {
+		t.Fatal("row public key differs")
+	}
 	if kid, _ := keys.KID(k1.Public()); row.KID != kid {
 		t.Fatal("row KID differs")
 	}
@@ -866,7 +883,7 @@ func TestSigningKeyLifecycle(t *testing.T) {
 	// a corrupt row is reported and left alone
 	s2, _ := newSvc(t, nil)
 	if err := s2.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-		return tx.PutSigningKey(ctx, store.SigningKey{KID: "kid1", Algorithm: "EdDSA", PrivateKeyPEM: "garbage", CreatedAt: startMs})
+		return tx.PutSigningKey(ctx, testSigningRow("kid1", "EdDSA", "garbage"))
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -874,9 +891,9 @@ func TestSigningKeyLifecycle(t *testing.T) {
 	wantCode(t, err, bus.CodeInternal)
 	wantDetail(t, err, `"kid1"`)
 	tx(t, s2, func(ctx context.Context, tx store.Tx) error {
-		r, err := tx.SigningKey(ctx)
-		if err != nil || r.PrivateKeyPEM != "garbage" {
-			t.Fatalf("row = %+v, %v", r, err)
+		r, err := tx.ListSigningKeys(ctx)
+		if err != nil || len(r) != 1 || r[0].PrivateKeyPEM != "garbage" {
+			t.Fatalf("rows = %+v, %v", r, err)
 		}
 		return nil
 	})
@@ -886,7 +903,7 @@ func TestSigningKeyLifecycle(t *testing.T) {
 	other, _ := keys.Generate(keys.EdDSA)
 	pem, _ := keys.EncodePrivatePEM(other)
 	tx(t, s3, func(ctx context.Context, tx store.Tx) error {
-		return tx.PutSigningKey(ctx, store.SigningKey{KID: "wrong", Algorithm: "EdDSA", PrivateKeyPEM: string(pem), CreatedAt: startMs})
+		return tx.PutSigningKey(ctx, testSigningRow("wrong", "EdDSA", string(pem)))
 	})
 	_, _, _, err = s3.LoadOrCreateSigningKey(ctx)
 	wantCode(t, err, bus.CodeInternal)
@@ -899,7 +916,7 @@ func TestSigningKeyLifecycle(t *testing.T) {
 	for _, colAlg := range []string{"EdDSA"} {
 		s4, _ := newSvc(t, nil)
 		tx(t, s4, func(ctx context.Context, tx store.Tx) error {
-			return tx.PutSigningKey(ctx, store.SigningKey{KID: esKID, Algorithm: colAlg, PrivateKeyPEM: string(esPEM), CreatedAt: startMs})
+			return tx.PutSigningKey(ctx, testSigningRow(esKID, colAlg, string(esPEM)))
 		})
 		signer, _, _, err := s4.LoadOrCreateSigningKey(ctx)
 		if signer != nil {
@@ -907,6 +924,24 @@ func TestSigningKeyLifecycle(t *testing.T) {
 		}
 		wantCode(t, err, bus.CodeInternal)
 		wantDetail(t, err, esKID)
+	}
+}
+
+// A set with no active row (only retiring rows) gets a new active key; the
+// retiring rows are left alone.
+func TestSigningKeyRetiringOnlyCreatesActive(t *testing.T) {
+	ctx := context.Background()
+	s, _ := newSvc(t, nil)
+	old := testSigningRow("old", "EdDSA", "x")
+	old.State, old.RetiredAt, old.RemoveAfter = store.SigningKeyRetiring, startMs, startMs+10
+	tx(t, s, func(ctx context.Context, tx store.Tx) error { return tx.PutSigningKey(ctx, old) })
+	if _, _, created, err := s.LoadOrCreateSigningKey(ctx); err != nil || !created {
+		t.Fatalf("created = %v, %v", created, err)
+	}
+	var rows []store.SigningKey
+	tx(t, s, func(ctx context.Context, tx store.Tx) error { var e error; rows, e = tx.ListSigningKeys(ctx); return e })
+	if len(rows) != 2 || rows[0].State != store.SigningKeyActive || rows[1].KID != "old" {
+		t.Fatalf("rows = %+v, want the new active row then old", rows)
 	}
 }
 
@@ -1221,10 +1256,13 @@ func TestLoadOrCreateSigningKeyRerunsAfterConflict(t *testing.T) {
 			t.Fatalf("%d transactions, want 2", got)
 		}
 		err = winner.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
-			_, err := tx.SigningKey(ctx)
+			rows, err := tx.ListSigningKeys(ctx)
+			if err == nil && len(rows) != 0 {
+				err = fmt.Errorf("%d rows", len(rows))
+			}
 			return err
 		})
-		if !errors.Is(err, store.ErrNotFound) {
+		if err != nil {
 			t.Fatalf("a faulted attempt left a signing key row: %v", err)
 		}
 	})

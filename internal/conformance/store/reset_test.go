@@ -118,8 +118,8 @@ func TestResetDataWipesDataKeepsRegistry(t *testing.T) {
 			if l, err := tx.ListEnrollmentTokens(ctx); err != nil || len(l) != 1 {
 				t.Errorf("tokens = %v, %v; want 1", l, err)
 			}
-			if _, err := tx.SigningKey(ctx); err != nil {
-				t.Errorf("SigningKey: %v", err)
+			if ks, err := tx.ListSigningKeys(ctx); err != nil || len(ks) != 1 {
+				t.Errorf("ListSigningKeys = %v, %v; want 1", ks, err)
 			}
 			if got, err := tx.MaxSeq(ctx); err != nil || got != maxSeq {
 				t.Errorf("MaxSeq = %d, %v; want %d", got, err, maxSeq)
@@ -163,8 +163,8 @@ func TestResetRegistryKeepsOne(t *testing.T) {
 				if l, err := tx.ListEnrollmentTokens(ctx); err != nil || len(l) != 0 {
 					t.Errorf("tokens = %v, %v; want none", l, err)
 				}
-				if _, err := tx.SigningKey(ctx); err != nil {
-					t.Errorf("SigningKey: %v", err)
+				if ks, err := tx.ListSigningKeys(ctx); err != nil || len(ks) != 1 {
+					t.Errorf("ListSigningKeys = %v, %v; want 1", ks, err)
 				}
 				if got, err := tx.MaxSeq(ctx); err != nil || got != maxSeq {
 					t.Errorf("MaxSeq = %d, %v; want %d", got, err, maxSeq)

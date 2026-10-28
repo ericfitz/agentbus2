@@ -34,11 +34,12 @@ func TestStoreImplementsEveryAggregate(t *testing.T) {
 			}{
 				{"MaxSeq", func() error { _, err := tx.MaxSeq(ctx); return err }},
 				{"ListEnrollmentTokens", func() error { _, err := tx.ListEnrollmentTokens(ctx); return err }},
-				{"SigningKey", func() error {
-					if _, err := tx.SigningKey(ctx); !errors.Is(err, ab2store.ErrNotFound) {
-						return err // an empty store answers ErrNotFound; nil would be a stub
+				{"ListSigningKeys", func() error {
+					ks, err := tx.ListSigningKeys(ctx)
+					if err == nil && len(ks) != 0 {
+						return errors.New("an empty store lists signing keys") // a stub would not know
 					}
-					return nil
+					return err
 				}},
 				{"PutAssertionJTI", func() error { return tx.PutAssertionJTI(ctx, "alice", "probe", 1) }},
 				{"ListIdentities", func() error { _, err := tx.ListIdentities(ctx); return err }},

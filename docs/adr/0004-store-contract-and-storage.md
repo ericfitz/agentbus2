@@ -333,6 +333,34 @@ equivalent to admin.
   `LoadOrCreateSigningKey` once. The `Tx` contract is unchanged:
   `ErrConflict` still ends the transaction, and the rerun is the core's.
 
+## Signing keys addendum (Eric, 2026-10-27)
+
+Eric's decisions 2 and 8 (2026-10-27, issue #6) supersede "`signing_keys` is a
+singleton" above: the table is a key set.
+
+- **Rows.** One row per key: `kid` (primary key), `state` (`active` or
+  `retiring`), `provider` (`store`, `awskms`, `gcpkms`, `azurekms`,
+  `hashivault`), `provider_ref` (the key's name inside an external provider,
+  empty for `store`), `algorithm` (`EdDSA` or `ES256`), `public_key` (SPKI
+  DER), `private_key_pem` (plaintext PKCS#8 PEM, `store` provider only, NULL
+  otherwise), `created_at`, `retired_at` and `remove_after` (Unix
+  milliseconds, 0 while active). CHECKs tie the private key and the provider
+  reference to the provider, and `retired_at` to the state.
+- **One active key.** The partial unique index `signing_keys_one_active` on
+  `(state) WHERE state = 'active'` admits one active row, so concurrent
+  inserters of a second active row end with one winner and `ErrConflict` for
+  the rest, on both engines. A duplicate `kid` is also `ErrConflict`.
+- **Methods.** `PutSigningKey` (validation in Go: `ErrInvalid` names the
+  field), `ListSigningKeys` (active row first, then retiring rows by
+  `retired_at` descending, then `kid`), `RetireSigningKey` (compare-and-swap
+  from `active` to `retiring`; `ErrNotFound` when no active row has that
+  `kid`), `DeleteSigningKey` and `DeleteSigningKeysBefore` (retiring rows
+  whose `remove_after` is below `now`, never an active row). `SigningKey(ctx)`
+  is removed.
+- **Reset.** Unchanged: `ResetData` and `ResetRegistry` keep every row.
+- **Pre-release.** The table changed in place in `0001_initial.sql`; no
+  migration (Eric, 2026-10-25).
+
 ## Milestone 7 addendum (2026-10-21)
 
 Choices the plan made where the spec delegated them, and the Gate 0 items as

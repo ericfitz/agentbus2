@@ -170,11 +170,20 @@ CREATE TABLE enrollment_tokens (
 );
 CREATE TABLE signing_keys (
   kid TEXT PRIMARY KEY,
-  singleton INTEGER NOT NULL DEFAULT 1 UNIQUE CHECK (singleton = 1),
+  state TEXT NOT NULL CHECK (state IN ('active', 'retiring')),
+  provider TEXT NOT NULL CHECK (provider IN ('store', 'awskms', 'gcpkms', 'azurekms', 'hashivault')),
+  provider_ref TEXT NOT NULL DEFAULT '',
   algorithm TEXT NOT NULL CHECK (algorithm IN ('EdDSA', 'ES256')),
-  private_key_pem TEXT NOT NULL,
-  created_at INTEGER NOT NULL
+  public_key BLOB NOT NULL,
+  private_key_pem TEXT,
+  created_at INTEGER NOT NULL,
+  retired_at INTEGER NOT NULL DEFAULT 0,
+  remove_after INTEGER NOT NULL DEFAULT 0,
+  CHECK ((provider = 'store') = (private_key_pem IS NOT NULL)),
+  CHECK ((provider = 'store') = (provider_ref = '')),
+  CHECK ((state = 'active') = (retired_at = 0))
 );
+CREATE UNIQUE INDEX signing_keys_one_active ON signing_keys (state) WHERE state = 'active';
 CREATE TABLE human_bindings (
   identity TEXT PRIMARY KEY REFERENCES identities(name) ON DELETE CASCADE,
   issuer TEXT NOT NULL DEFAULT '',

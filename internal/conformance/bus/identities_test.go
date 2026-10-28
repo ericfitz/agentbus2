@@ -89,9 +89,9 @@ func TestIdentitiesSigningKeyConcurrent(t *testing.T) {
 			t.Fatalf("created = %d, want 1", created)
 		}
 		h.tx(func(ctx context.Context, tx ab2store.Tx) error {
-			row, err := tx.SigningKey(ctx)
-			if err == nil && row.KID != first {
-				t.Errorf("stored KID %s, returned %s", row.KID, first)
+			rows, err := tx.ListSigningKeys(ctx)
+			if err == nil && (len(rows) != 1 || rows[0].KID != first) {
+				t.Errorf("stored rows %+v, returned %s", rows, first)
 			}
 			return err
 		})
