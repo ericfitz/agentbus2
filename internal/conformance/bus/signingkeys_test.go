@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -164,6 +165,53 @@ func TestSigningKeysConcurrentRevoke(t *testing.T) {
 		rows := keyRows(h)
 		if len(rows) != 1 || rows[0].State != ab2store.SigningKeyActive {
 			t.Fatalf("rows %+v, want one active row", rows)
+		}
+	})
+}
+
+// Two administrator rotations with one Idempotency-Key, started together on
+// two replicas, rotate once: both return the same result, exactly one is not a
+// replay (OnChange runs once), and the set ends with one active and one
+// retiring key.
+func TestSigningKeysConcurrentIdempotentRotate(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		h.admin("root")
+		a, b := keysOver(t, h), keysOver(t, h)
+		if _, _, err := a.EnsureActive(context.Background()); err != nil {
+			t.Fatal(err)
+		}
+		h.clock.Advance(2 * time.Hour) // past the cooldown
+		var changed atomic.Int32
+		a.OnChange, b.OnChange = func() { changed.Add(1) }, func() { changed.Add(1) }
+		res := make([]ab2bus.SigningKeyRotation, 2)
+		errs := make([]error, 2)
+		start := make(chan struct{})
+		var wg sync.WaitGroup
+		for i, s := range []signingkeys.Service{a, b} {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				<-start
+				res[i], errs[i] = s.RotateSigningKey(context.Background(), "root", ab2bus.RotateSigningKeyInput{IdempotencyKey: "same"})
+			}()
+		}
+		close(start)
+		wg.Wait()
+		for i, err := range errs {
+			if err != nil {
+				t.Fatalf("rotation %d: %v", i, err)
+			}
+		}
+		if res[0] != res[1] {
+			t.Errorf("results differ:\n%+v\n%+v", res[0], res[1])
+		}
+		if n := changed.Load(); n != 1 {
+			t.Errorf("OnChange ran %d times, want 1 (one non-replay)", n)
+		}
+		rows := keyRows(h)
+		if len(rows) != 2 || countState(rows, ab2store.SigningKeyActive) != 1 || countState(rows, ab2store.SigningKeyRetiring) != 1 || rows[0].KID != res[0].Active.KID {
+			t.Fatalf("rows %+v, want one active (%s) and one retiring", rows, res[0].Active.KID)
 		}
 	})
 }
