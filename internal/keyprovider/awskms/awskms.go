@@ -312,7 +312,7 @@ func unavailable(err error) bool {
 	}
 	// Credential failures need no case of their own: one caused by a network
 	// or timeout error (the instance metadata service, a token endpoint) is a
-	// net.Error or a deadline below and counts as an outage; any other (no
+	// network or timeout error below and counts as an outage; any other (no
 	// provider, invalid or expired credentials) matches nothing and is a refusal.
 	var api smithy.APIError
 	if errors.As(err, &api) && throttleCodes[api.ErrorCode()] {
