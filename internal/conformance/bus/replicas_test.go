@@ -621,16 +621,21 @@ func TestReplicasSigningKeyRotation(t *testing.T) {
 		if e.Name == "postgres" {
 			storeFlag = "-postgres"
 		}
-		admin := func(args ...string) (int, string, string) {
+		adminWith := func(cd string, args ...string) (int, string, string) {
 			var so, se bytes.Buffer
-			code := cmd.RunAdmin(ctx, append([]string{storeFlag, dsn, "-set", cooldown}, args...), nil, &so, &se)
+			code := cmd.RunAdmin(ctx, append([]string{storeFlag, dsn, "-set", cd}, args...), nil, &so, &se)
 			return code, so.String(), se.String()
 		}
+		admin := func(args ...string) (int, string, string) { return adminWith(cooldown, args...) }
 		pastCooldown := func() { time.Sleep(1200 * time.Millisecond) }
 
 		// (1) Two host rotations at once: one wins, one meets the cooldown.
 		t.Run("concurrent-rotate-one-active", func(t *testing.T) {
-			pastCooldown()
+			// The host commands use a 3 s cooldown here and the key is older
+			// than that, so both may rotate; a loser that stalls up to 3 s
+			// after the winner still meets the winner's young key.
+			const wide = "signing_key_rotation_cooldown_seconds=3"
+			time.Sleep(3200 * time.Millisecond)
 			var codes [2]int
 			var errs [2]string
 			var wg sync.WaitGroup
@@ -638,7 +643,7 @@ func TestReplicasSigningKeyRotation(t *testing.T) {
 				wg.Add(1)
 				go func() {
 					defer wg.Done()
-					codes[i], _, errs[i] = admin("signing-key", "rotate")
+					codes[i], _, errs[i] = adminWith(wide, "signing-key", "rotate")
 				}()
 			}
 			wg.Wait()

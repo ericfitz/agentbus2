@@ -443,7 +443,7 @@ func TestAuthEndToEnd(t *testing.T) {
 
 		// (11) Signing key rotation over TCP. The server runs with a 3 s
 		// cooldown (the 3600 s default would refuse the first rotation of a
-		// key created seconds ago); the second rotate follows within it.
+		// key created seconds ago); the second rotate follows at once.
 		t.Run("signing-key-rotation", func(t *testing.T) {
 			before := root.bearer // signed by the key created at the start
 			set, err := root.bus.ListSigningKeys(ctx)
@@ -457,6 +457,10 @@ func TestAuthEndToEnd(t *testing.T) {
 			if err != nil || rot.Active.KID == serverKID || rot.Previous.KID != serverKID {
 				t.Fatalf("RotateSigningKey = %+v, %v; want a new active key and %s as previous", rot, err, serverKID)
 			}
+
+			// Right after the first rotation, inside the cooldown.
+			_, err = root.bus.RotateSigningKey(ctx, ab2bus.RotateSigningKeyInput{})
+			codeOf(t, err, ab2bus.CodeConflict)
 
 			resp, err := http.Get(base + "/v1/auth/jwks")
 			if err != nil {
@@ -482,9 +486,6 @@ func TestAuthEndToEnd(t *testing.T) {
 			if got := bearerKID(t, fresh); got != rot.Active.KID {
 				t.Fatalf("a new login is signed with kid %s, want the new active %s", got, rot.Active.KID)
 			}
-
-			_, err = root.bus.RotateSigningKey(ctx, ab2bus.RotateSigningKeyInput{})
-			codeOf(t, err, ab2bus.CodeConflict)
 
 			// The revoked key is the one active before: the new one (rot.Active).
 			var revokedPEM string
