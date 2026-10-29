@@ -19,6 +19,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/embed"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentbus2/internal/core/inspect"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/core/notify/pgnotify"
 	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
@@ -172,11 +173,20 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 
 	var embedder core.Embedder
 	if cfg.EmbeddingEndpoint != "" {
-		apiKey, err := embeddingKey(cfg, environ)
+		key, err := apiKey("embedding_api_key_file", cfg.EmbeddingAPIKeyFile, "embedding_api_key_env", cfg.EmbeddingAPIKeyEnv, environ)
 		if err != nil {
 			return fail(2, "%v", err)
 		}
-		embedder = embed.NewHTTP(cfg.EmbeddingEndpoint, cfg.EmbeddingModel, apiKey, nil)
+		embedder = embed.NewHTTP(cfg.EmbeddingEndpoint, cfg.EmbeddingModel, key, nil)
+	}
+
+	var inspector core.Inspector
+	if cfg.InspectionEndpoint != "" {
+		key, err := apiKey("inspection_api_key_file", cfg.InspectionAPIKeyFile, "inspection_api_key_env", cfg.InspectionAPIKeyEnv, environ)
+		if err != nil {
+			return fail(2, "%v", err)
+		}
+		inspector = inspect.NewWebhook(cfg.InspectionEndpoint, key, nil)
 	}
 
 	notifier, closeNotifier := storeNotifier(ctx, cfg, logger)
@@ -199,6 +209,7 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		SigningKeys:  keysSvc,
 		External:     ext,
 		Embedder:     embedder,
+		Inspector:    inspector,
 		Slack:        slackClient,
 		SlackCfg: slackbridge.Config{
 			ArchiveAfterDone: time.Duration(cfg.SlackArchiveAfterDoneHours) * time.Hour,
@@ -286,19 +297,20 @@ func externalIssuers(cfg config.Config) []*token.External {
 	return out
 }
 
-// embeddingKey reads the embeddings API key from embedding_api_key_file or
-// from the variable embedding_api_key_env names in environ; neither set means
-// no key. Validate allows at most one of the two.
-func embeddingKey(cfg config.Config, environ []string) (string, error) {
+// apiKey reads an API key from the file the setting fileSetting names (file)
+// or from the variable the setting envSetting names (env) in environ; neither
+// set means no key. Validate allows at most one of the two. An error names the
+// setting, never the key.
+func apiKey(fileSetting, file, envSetting, env string, environ []string) (string, error) {
 	switch {
-	case cfg.EmbeddingAPIKeyFile != "":
-		b, err := os.ReadFile(cfg.EmbeddingAPIKeyFile)
+	case file != "":
+		b, err := os.ReadFile(file)
 		if err != nil {
-			return "", fmt.Errorf("embedding_api_key_file: %w", err)
+			return "", fmt.Errorf("%s: %w", fileSetting, err)
 		}
 		return strings.TrimSpace(string(b)), nil
-	case cfg.EmbeddingAPIKeyEnv != "":
-		prefix := cfg.EmbeddingAPIKeyEnv + "="
+	case env != "":
+		prefix := env + "="
 		val := ""
 		for _, kv := range environ {
 			if v, ok := strings.CutPrefix(kv, prefix); ok {
@@ -306,7 +318,7 @@ func embeddingKey(cfg config.Config, environ []string) (string, error) {
 			}
 		}
 		if val == "" {
-			return "", fmt.Errorf("embedding_api_key_env names %s, which is not set", cfg.EmbeddingAPIKeyEnv)
+			return "", fmt.Errorf("%s names %s, which is not set", envSetting, env)
 		}
 		return strings.TrimSpace(val), nil
 	}

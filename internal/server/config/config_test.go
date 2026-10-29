@@ -367,3 +367,86 @@ func TestMaxBearerLifetimeIsTheCeiling(t *testing.T) {
 		}
 	}
 }
+
+// The inspection endpoint follows the profile oidc.issuer rule (spec 4.3): an
+// absolute https URL, or http on a loopback host; no credentials in the URL.
+func TestInspectionSettings(t *testing.T) {
+	const rule = "inspection_endpoint must be https, or http on a loopback host"
+	ok := []string{
+		"https://inspector.example/v1",
+		"https://inspector.example:8443/v1?tenant=a",
+		"HTTPS://inspector.example/v1",
+		"http://127.0.0.1:9/x",
+		"http://127.1.2.3:9/x",
+		"http://[::1]:9/x",
+		"http://localhost:9/x",
+		"http://LOCALHOST:9/x",
+	}
+	for _, ep := range ok {
+		c := valid()
+		c.InspectionEndpoint = ep
+		if err := c.Validate(); err != nil {
+			t.Errorf("endpoint %q: %v, want accepted", ep, err)
+		}
+	}
+	bad := map[string]string{
+		"http://inspector.example/x":          rule,
+		"http://10.0.0.5:9/x":                 rule,
+		"http://localhost.example/x":          rule,
+		"ftp://x/y":                           rule,
+		"file:///etc/passwd":                  rule,
+		"inspector":                           rule,
+		"/v1/inspect":                         rule,
+		"https:///v1":                         rule,
+		"https://":                            rule,
+		"http://:9/x":                         rule,
+		"https://%zz/x":                       rule,
+		"mailto:a@b.example":                  rule,
+		"https:inspector.example":             rule,
+		"https://user:pw@inspector.example/x": "must not carry credentials",
+		"https://user@inspector.example/x":    "must not carry credentials",
+		"http://user:pw@127.0.0.1:9/x":        "must not carry credentials",
+	}
+	for ep, want := range bad {
+		c := valid()
+		c.InspectionEndpoint = ep
+		err := c.Validate()
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("endpoint %q: Validate() = %v, want error containing %q", ep, err, want)
+		}
+		if err != nil && strings.Contains(err.Error(), "pw@") {
+			t.Errorf("endpoint %q: the error echoes the password: %v", ep, err)
+		}
+	}
+
+	both := valid()
+	both.InspectionEndpoint = "https://inspector.example/v1"
+	both.InspectionAPIKeyFile, both.InspectionAPIKeyEnv = "f", "E"
+	if err := both.Validate(); err == nil || !strings.Contains(err.Error(), "at most one of inspection_api_key_file and inspection_api_key_env") {
+		t.Errorf("both key settings: %v", err)
+	}
+	for name, mut := range map[string]func(*Config){
+		"file": func(c *Config) { c.InspectionAPIKeyFile = "f" },
+		"env":  func(c *Config) { c.InspectionAPIKeyEnv = "E" },
+	} {
+		c := valid()
+		mut(&c)
+		if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "inspection_api_key_file and inspection_api_key_env need inspection_endpoint") {
+			t.Errorf("key %s without endpoint: %v", name, err)
+		}
+	}
+	for name, mut := range map[string]func(*Config){
+		"file": func(c *Config) { c.InspectionAPIKeyFile = "f" },
+		"env":  func(c *Config) { c.InspectionAPIKeyEnv = "E" },
+	} {
+		c := valid()
+		c.InspectionEndpoint = "https://inspector.example/v1"
+		mut(&c)
+		if err := c.Validate(); err != nil {
+			t.Errorf("key %s with endpoint: %v", name, err)
+		}
+	}
+	if d := Default(); d.InspectionEndpoint != "" || d.InspectionAPIKeyFile != "" || d.InspectionAPIKeyEnv != "" {
+		t.Errorf("defaults are not unset: %+v", d)
+	}
+}

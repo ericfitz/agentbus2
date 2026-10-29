@@ -94,6 +94,9 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | `embedding_api_key_file` | `AGENTBUS2_SERVER_EMBEDDING_API_KEY_FILE` | string | `(unset)` | File holding the API key. At most one of this and `embedding_api_key_env`. |
 | `embedding_api_key_env` | `AGENTBUS2_SERVER_EMBEDDING_API_KEY_ENV` | string | `(unset)` | Name of the environment variable that holds the API key (it must be set when named). |
 | `embedding_query_timeout_seconds` | `AGENTBUS2_SERVER_EMBEDDING_QUERY_TIMEOUT_SECONDS` | float | `10` | 0.1 to 120. Time allowed to embed a search query. |
+| `inspection_endpoint` | `AGENTBUS2_SERVER_INSPECTION_ENDPOINT` | string | `(unset)` | URL of the write inspector (a webhook). `https`, or `http` only on a loopback host (`localhost`, `127.0.0.0/8`, `::1`); no credentials in the URL. Unset means no inspection. See `inspection.md`. |
+| `inspection_api_key_file` | `AGENTBUS2_SERVER_INSPECTION_API_KEY_FILE` | string | `(unset)` | File holding the bearer token sent to the inspector. At most one of this and `inspection_api_key_env`; either needs `inspection_endpoint`. |
+| `inspection_api_key_env` | `AGENTBUS2_SERVER_INSPECTION_API_KEY_ENV` | string | `(unset)` | Name of the environment variable that holds that token (it must be set when named). |
 | `inspection_timeout_seconds` | `AGENTBUS2_SERVER_INSPECTION_TIMEOUT_SECONDS` | float | `5` | 0.1 to 60. Time allowed for one inspection, the whole call. |
 | `inspection_on_failure` | `AGENTBUS2_SERVER_INSPECTION_ON_FAILURE` | string | `"closed"` | `closed` refuses a write the inspector could not judge (retryable `unavailable`); `open` writes it uninspected. |
 | `slack_app_token_file` | `AGENTBUS2_SERVER_SLACK_APP_TOKEN_FILE` | string | `(unset)` | File holding the Slack app-level token (`xapp-`, scope `connections:write`) for Socket Mode. Set together with `slack_bot_token_file` or not at all; neither set means the Slack bridge is off. See `slack-bridge.md`. |
@@ -101,6 +104,10 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | `slack_archive_after_done_hours` | `AGENTBUS2_SERVER_SLACK_ARCHIVE_AFTER_DONE_HOURS` | int | `168` | 1 to 8760. How long after its scope is marked done a bridged Slack channel is archived (earlier when no human remains in it). |
 | `slack_max_message_chars` | `AGENTBUS2_SERVER_SLACK_MAX_MESSAGE_CHARS` | int | `3000` | 200 to 3000 (3000 is Slack's limit for a section's text). A longer bus message is cut and ends with a note pointing to agentbus2. |
 | `log_level` | `AGENTBUS2_SERVER_LOG_LEVEL` | string | `"info"` | `debug`, `info`, `warn` or `error`. Logs are text on stderr. |
+
+### Write inspection
+
+When `inspection_endpoint` is set, every content write (`send`, `edit_memory`, `task_create`, and a `task_update` that changes the subject, description or metadata) is sent to that webhook before it commits, and the inspector can refuse it. Every inspected record leaves the server process, so use `https` and an inspector you trust. The request, the verdict, the failure modes and the replica behavior are in [inspection.md](inspection.md).
 
 ### Retention and the budget backstop
 

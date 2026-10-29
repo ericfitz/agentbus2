@@ -804,3 +804,62 @@ func TestStartWithCorruptRetiringRowExits1(t *testing.T) {
 		t.Fatalf("the corrupt row was changed: %d, %v", n, err)
 	}
 }
+
+// A missing inspection key file, or an inspection_api_key_env naming an unset
+// variable, fails the start with exit 2 naming the setting (issue #5).
+func TestInspectionKeyStartFailures(t *testing.T) {
+	base := func() []string {
+		return []string{"-listen", "127.0.0.1:0", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"),
+			"-set", "inspection_endpoint=http://127.0.0.1:1/inspect"}
+	}
+	missing := filepath.Join(t.TempDir(), "no-such-key")
+	code, _, errs := runOnce(nil, append(base(), "-set", "inspection_api_key_file="+missing)...)
+	if code != 2 || !strings.Contains(errs, "inspection_api_key_file") {
+		t.Fatalf("missing key file: exit %d, stderr %q", code, errs)
+	}
+	code, _, errs = runOnce([]string{"OTHER=x"}, append(base(), "-set", "inspection_api_key_env=AB2_TEST_INSPECTION_KEY")...)
+	if code != 2 || !strings.Contains(errs, "inspection_api_key_env") || !strings.Contains(errs, "AB2_TEST_INSPECTION_KEY") {
+		t.Fatalf("unset key variable: exit %d, stderr %q", code, errs)
+	}
+	code, _, errs = runOnce([]string{"AB2_TEST_INSPECTION_KEY="}, append(base(), "-set", "inspection_api_key_env=AB2_TEST_INSPECTION_KEY")...)
+	if code != 2 || !strings.Contains(errs, "AB2_TEST_INSPECTION_KEY") {
+		t.Fatalf("empty key variable: exit %d, stderr %q", code, errs)
+	}
+	// A key setting without the endpoint is refused at start with its marker.
+	code, _, errs = runOnce(nil, "-listen", "127.0.0.1:0", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"),
+		"-set", "inspection_api_key_env=X")
+	if code != 2 || !strings.Contains(errs, "inspection_api_key_file and inspection_api_key_env need inspection_endpoint") {
+		t.Fatalf("key without endpoint: exit %d, stderr %q", code, errs)
+	}
+	// An endpoint that is plain http off loopback is refused.
+	code, _, errs = runOnce(nil, "-listen", "127.0.0.1:0", "-sqlite", filepath.Join(t.TempDir(), "ab2.db"),
+		"-set", "inspection_endpoint=http://inspector.example/x")
+	if code != 2 || !strings.Contains(errs, "inspection_endpoint must be https") {
+		t.Fatalf("plain http endpoint: exit %d, stderr %q", code, errs)
+	}
+}
+
+// apiKey reads a key file or a named variable, trims it and rejects an unset
+// one; neither setting means no key.
+func TestAPIKey(t *testing.T) {
+	dir := t.TempDir()
+	f := filepath.Join(dir, "k")
+	if err := os.WriteFile(f, []byte("  secret\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := apiKey("s_file", f, "s_env", "", nil); err != nil || got != "secret" {
+		t.Fatalf("file: %q, %v", got, err)
+	}
+	if got, err := apiKey("s_file", "", "s_env", "V", []string{"A=1", "V= tok "}); err != nil || got != "tok" {
+		t.Fatalf("env: %q, %v", got, err)
+	}
+	if got, err := apiKey("s_file", "", "s_env", "", nil); err != nil || got != "" {
+		t.Fatalf("none: %q, %v", got, err)
+	}
+	if _, err := apiKey("s_file", "", "s_env", "V", []string{"A=1"}); err == nil || !strings.Contains(err.Error(), "s_env names V, which is not set") {
+		t.Fatalf("unset: %v", err)
+	}
+	if _, err := apiKey("s_file", filepath.Join(dir, "none"), "s_env", "", nil); err == nil || !strings.Contains(err.Error(), "s_file") {
+		t.Fatalf("missing file: %v", err)
+	}
+}

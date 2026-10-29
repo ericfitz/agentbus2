@@ -6,6 +6,7 @@ One binary, `agentbus2`, provides the server (`agentbus2 server`) and its host-s
 - [health.md](health.md): the liveness and readiness probes, the tiered health document, reading the maintenance block on replicas.
 - [configuration.md](configuration.md): precedence, flags, and every setting with its environment variable, default and bounds. Checked against the code by `go test ./internal/server/config/`.
 - [admin-bootstrap.md](admin-bootstrap.md): `server admin` commands, enrollment tokens, the first administrator, the admin API.
+- [inspection.md](inspection.md): the write-inspection webhook: what is sent, the verdict, failure modes, health and logs.
 - [slack-bridge.md](slack-bridge.md): the Slack app, the token files, creating, removing and archiving a bridge, and what happens when a create fails.
 - [signing-keys.md](signing-keys.md): the key providers, rotation per provider, the trust boundary and what happens when the key service is down.
 - [backup.md](backup.md): what to back up, how, and what a restore loses.

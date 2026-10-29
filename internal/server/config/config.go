@@ -93,8 +93,11 @@ type Config struct {
 	EmbeddingAPIKeyEnv           string  `json:"embedding_api_key_env"`
 	EmbeddingQueryTimeoutSeconds float64 `json:"embedding_query_timeout_seconds"`
 
-	// Write inspection (issue #5): the core's settings; the endpoint follows
-	// with the webhook adapter.
+	// Write inspection (issue #5): the webhook (endpoint and key) and the
+	// core's settings.
+	InspectionEndpoint       string  `json:"inspection_endpoint"`
+	InspectionAPIKeyFile     string  `json:"inspection_api_key_file"`
+	InspectionAPIKeyEnv      string  `json:"inspection_api_key_env"`
 	InspectionTimeoutSeconds float64 `json:"inspection_timeout_seconds"`
 	InspectionOnFailure      string  `json:"inspection_on_failure"`
 
@@ -290,6 +293,16 @@ func (c Config) Validate() error {
 	if c.EmbeddingAPIKeyFile != "" && c.EmbeddingAPIKeyEnv != "" {
 		return errors.New("at most one of embedding_api_key_file and embedding_api_key_env may be set")
 	}
+	if c.InspectionAPIKeyFile != "" && c.InspectionAPIKeyEnv != "" {
+		return errors.New("at most one of inspection_api_key_file and inspection_api_key_env may be set")
+	}
+	if c.InspectionEndpoint == "" {
+		if c.InspectionAPIKeyFile != "" || c.InspectionAPIKeyEnv != "" {
+			return errors.New("inspection_api_key_file and inspection_api_key_env need inspection_endpoint")
+		}
+	} else if err := validateInspectionEndpoint(c.InspectionEndpoint); err != nil {
+		return err
+	}
 	if (c.SlackAppTokenFile == "") != (c.SlackBotTokenFile == "") {
 		return errors.New("slack_app_token_file and slack_bot_token_file must be set together")
 	}
@@ -316,6 +329,29 @@ func (c Config) Warnings() []string {
 		w = append(w, fmt.Sprintf("issuers: entry %d: jwks_uri %q is plain http on a non-loopback host; anyone on the path can substitute the key set (use https)", i, is.JWKSURI))
 	}
 	return w
+}
+
+// validateInspectionEndpoint applies the rule of the profile oidc.issuer
+// setting: an absolute https URL, or http on a loopback host, and no
+// credentials in the URL (the key settings carry the bearer). An error never
+// echoes a URL that carries or may carry credentials.
+func validateInspectionEndpoint(ep string) error {
+	u, err := url.Parse(ep)
+	if err != nil {
+		shown := ep
+		if strings.Contains(ep, "@") {
+			shown = "(unparseable)"
+		}
+		return fmt.Errorf("inspection_endpoint must be https, or http on a loopback host, got %q", shown)
+	}
+	if u.User != nil {
+		return errors.New("inspection_endpoint must not carry credentials in the URL; use inspection_api_key_file or inspection_api_key_env")
+	}
+	if u.Hostname() == "" || u.Opaque != "" || (u.Scheme != "http" && u.Scheme != "https") ||
+		(u.Scheme == "http" && !loopbackHost(u.Hostname())) {
+		return fmt.Errorf("inspection_endpoint must be https, or http on a loopback host, got %q", ep)
+	}
+	return nil
 }
 
 func loopbackHost(h string) bool {

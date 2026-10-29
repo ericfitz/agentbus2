@@ -6,11 +6,14 @@ import (
 	"crypto"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -726,5 +729,130 @@ func TestReplicasSigningKeyRotation(t *testing.T) {
 			}
 		})
 		stop()
+	})
+}
+
+// TestReplicasInspection is the issue #5 replica check: two `agentbus2 server`
+// replicas set from inspection_endpoint each call the one inspector for their
+// own writes; a refusal is a 422 inspection_rejected and stores nothing; a
+// failing inspector makes a send retryable unavailable and health degraded. It
+// has no t.Run leaf, so the counted Milestone 7 leaves do not change.
+func TestReplicasInspection(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		_, _, dsn := openStoreDSN(t, e)
+
+		var requests, failing atomic.Int64
+		insp := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			if failing.Load() != 0 {
+				http.Error(w, "down", http.StatusInternalServerError)
+				return
+			}
+			var req struct {
+				Record struct {
+					Content string `json:"content"`
+				} `json:"record"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			if req.Record.Content == "no" {
+				_, _ = w.Write([]byte(`{"verdict":"refuse","code":"blocked","reason":"not allowed"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"verdict":"allow"}`))
+		}))
+		defer insp.Close()
+
+		set := []string{"-set", "inspection_endpoint=" + insp.URL}
+		a := startReplica(t, ctx, "A", e, dsn, set...)
+		b := startReplica(t, ctx, "B", e, dsn, set...)
+		defer func() {
+			cancel()
+			for _, r := range []*replica{a, b} {
+				select {
+				case <-r.done:
+				case <-time.After(5 * time.Second):
+					t.Errorf("replica %s: Run did not return within 5 s of cancel", r.name)
+				}
+			}
+		}()
+
+		pat := newReplicaWho(t, "pat")
+		a.register(t, ctx, pat)
+		bearer, busA := a.login(t, ctx, pat)
+		clientB := b.clientWith(t, bearer)
+		busB := remote.New(clientB)
+		if _, err := busA.CreateChannel(ctx, ab2bus.CreateChannelInput{Name: "dev"}); err != nil {
+			t.Fatalf("CreateChannel: %v", err)
+		}
+		count := func() int {
+			t.Helper()
+			msgs, err := busA.History(ctx, ab2bus.HistoryInput{Channel: "dev", Count: 50})
+			if err != nil {
+				t.Fatalf("History: %v", err)
+			}
+			return len(msgs)
+		}
+
+		// Each replica calls the inspector once for its own send.
+		for _, s := range []struct {
+			who string
+			bus *remote.Bus
+		}{{"A", busA}, {"B", busB}} {
+			if _, err := s.bus.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "yes"}); err != nil {
+				t.Fatalf("Send through %s: %v", s.who, err)
+			}
+		}
+		if n := requests.Load(); n != 2 {
+			t.Fatalf("inspector saw %d requests for two sends, want 2", n)
+		}
+		if n := count(); n != 2 {
+			t.Fatalf("%d messages after two allowed sends, want 2", n)
+		}
+
+		// A refusal through the second replica: inspection_rejected, 422, stored nothing.
+		_, err := busB.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "no"})
+		codeOf(t, err, ab2bus.CodeInspectionRejected)
+		var be *ab2bus.Error
+		if !errors.As(err, &be) || be.Retryable || !strings.Contains(be.Message, "rejected by inspection (blocked): not allowed") {
+			t.Fatalf("refusal = %v", err)
+		}
+		resp, err := clientB.SendMessageWithResponse(ctx, "dev", &gen.SendMessageParams{}, gen.SendRequest{Content: "no"})
+		if err != nil {
+			t.Fatalf("raw send: %v", err)
+		}
+		if resp.StatusCode() != http.StatusUnprocessableEntity {
+			t.Fatalf("raw refused send status %d, want 422; body %s", resp.StatusCode(), resp.Body)
+		}
+		if n := requests.Load(); n != 4 {
+			t.Fatalf("inspector saw %d requests, want 4", n)
+		}
+		if n := count(); n != 2 {
+			t.Fatalf("%d messages after refusals, want 2", n)
+		}
+		if h, err := busA.Health(ctx); err != nil || h.Status != ab2bus.HealthOK {
+			t.Fatalf("health before the inspector fails = %+v, %v, want ok", h, err)
+		}
+
+		// A failing inspector closes writes (retryable) and degrades health.
+		failing.Store(1)
+		_, err = busA.Send(ctx, ab2bus.SendInput{Channel: "dev", Content: "yes"})
+		codeOf(t, err, ab2bus.CodeUnavailable)
+		if !errors.As(err, &be) || !be.Retryable {
+			t.Fatalf("failed inspection = %v, want retryable", err)
+		}
+		if n := count(); n != 2 {
+			t.Fatalf("%d messages after a failed inspection, want 2", n)
+		}
+		for _, bus := range []*remote.Bus{busA, busB} {
+			if h, err := bus.Health(ctx); err != nil || h.Status != ab2bus.HealthDegraded || h.Tier != ab2bus.TierIdentity {
+				t.Fatalf("health with a failing inspector = %+v, %v, want degraded at the identity tier", h, err)
+			}
+		}
 	})
 }

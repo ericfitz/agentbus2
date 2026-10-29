@@ -51,6 +51,8 @@ type Config struct {
 	// nil: they are off.
 	SigningKeys *signingkeys.Service
 	Embedder    core.Embedder // nil: text search only; embed.Install when set
+	// Inspector judges content writes before they commit; nil: no inspection.
+	Inspector core.Inspector
 
 	// Slack is the Slack Web API and Socket Mode client; nil: the Slack bridge
 	// is off and bridge calls answer forbidden. SlackCfg configures the bridge
@@ -118,7 +120,7 @@ func Serve(ctx context.Context, c Config) error {
 	if c.Cfg != nil {
 		cfg = *c.Cfg
 	}
-	cr, err := core.New(c.Store, cfg, core.Options{Now: c.Now, Notifier: c.Notifier, Embedder: c.Embedder, Logger: c.Logger})
+	cr, err := core.New(c.Store, cfg, core.Options{Now: c.Now, Notifier: c.Notifier, Embedder: c.Embedder, Inspector: c.Inspector, Logger: c.Logger})
 	if err != nil {
 		return err
 	}
