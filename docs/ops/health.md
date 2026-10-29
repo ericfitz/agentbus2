@@ -63,7 +63,7 @@ The administrator flag is the one that gates `GET /v1/admin/status` (see `admin-
 
 ### The status rule
 
-- `degraded` when the `capacity`, the `embedding` or the `inspection` notice is set, or this process's last maintenance tick recorded a lock error or a failed job. Every tier sees the same `status`; only an administrator sees why.
+- `degraded` when the `capacity`, the `embedding` or the `inspection` notice is set (a notice left by a replica that died while failing stays until any replica restarts and succeeds once: restart any replica), or this process's last maintenance tick recorded a lock error or a failed job. Every tier sees the same `status`; only an administrator sees why.
 - `ok` otherwise.
 - Not a document: when the store does not answer, the response is a 503 problem (`application/problem+json`) with `code` `unavailable`, `retryable` true and `detail` exactly `store unreachable`. The cause (a driver error that names a host, user or file path) is logged on the server and never sent, because the probe tier is unauthenticated.
 

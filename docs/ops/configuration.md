@@ -91,12 +91,12 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | `cleanup_free_percent` | `AGENTBUS2_SERVER_CLEANUP_FREE_PERCENT` | int | `25` | 5 to 90. How far below the engine's budget (`sqlite_budget_mib` or `postgres_budget_mib`) an eviction sweep goes. |
 | `embedding_endpoint` | `AGENTBUS2_SERVER_EMBEDDING_ENDPOINT` | string | `(unset)` | Absolute URL of an embeddings API. When set, `embedding_model` is required. |
 | `embedding_model` | `AGENTBUS2_SERVER_EMBEDDING_MODEL` | string | `(unset)` | Model name sent to the endpoint. |
-| `embedding_api_key_file` | `AGENTBUS2_SERVER_EMBEDDING_API_KEY_FILE` | string | `(unset)` | File holding the API key. At most one of this and `embedding_api_key_env`. |
-| `embedding_api_key_env` | `AGENTBUS2_SERVER_EMBEDDING_API_KEY_ENV` | string | `(unset)` | Name of the environment variable that holds the API key (it must be set when named). |
+| `embedding_api_key_file` | `AGENTBUS2_SERVER_EMBEDDING_API_KEY_FILE` | string | `(unset)` | File holding the API key. At most one of this and `embedding_api_key_env`. A blank key is refused at start. |
+| `embedding_api_key_env` | `AGENTBUS2_SERVER_EMBEDDING_API_KEY_ENV` | string | `(unset)` | Name of the environment variable that holds the API key (it must be set when named). A blank key is refused at start. |
 | `embedding_query_timeout_seconds` | `AGENTBUS2_SERVER_EMBEDDING_QUERY_TIMEOUT_SECONDS` | float | `10` | 0.1 to 120. Time allowed to embed a search query. |
 | `inspection_endpoint` | `AGENTBUS2_SERVER_INSPECTION_ENDPOINT` | string | `(unset)` | URL of the write inspector (a webhook). `https`, or `http` only on a loopback host (`localhost`, `127.0.0.0/8`, `::1`); no credentials in the URL. Unset means no inspection. See `inspection.md`. |
-| `inspection_api_key_file` | `AGENTBUS2_SERVER_INSPECTION_API_KEY_FILE` | string | `(unset)` | File holding the bearer token sent to the inspector. At most one of this and `inspection_api_key_env`; either needs `inspection_endpoint`. |
-| `inspection_api_key_env` | `AGENTBUS2_SERVER_INSPECTION_API_KEY_ENV` | string | `(unset)` | Name of the environment variable that holds that token (it must be set when named). |
+| `inspection_api_key_file` | `AGENTBUS2_SERVER_INSPECTION_API_KEY_FILE` | string | `(unset)` | File holding the bearer token sent to the inspector. At most one of this and `inspection_api_key_env`; either needs `inspection_endpoint`. A blank key is refused at start. |
+| `inspection_api_key_env` | `AGENTBUS2_SERVER_INSPECTION_API_KEY_ENV` | string | `(unset)` | Name of the environment variable that holds that token (it must be set when named). A blank key is refused at start. |
 | `inspection_timeout_seconds` | `AGENTBUS2_SERVER_INSPECTION_TIMEOUT_SECONDS` | float | `5` | 0.1 to 60. Time allowed for one inspection, the whole call. |
 | `inspection_on_failure` | `AGENTBUS2_SERVER_INSPECTION_ON_FAILURE` | string | `"closed"` | `closed` refuses a write the inspector could not judge (retryable `unavailable`); `open` writes it uninspected. |
 | `slack_app_token_file` | `AGENTBUS2_SERVER_SLACK_APP_TOKEN_FILE` | string | `(unset)` | File holding the Slack app-level token (`xapp-`, scope `connections:write`) for Socket Mode. Set together with `slack_bot_token_file` or not at all; neither set means the Slack bridge is off. See `slack-bridge.md`. |

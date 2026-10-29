@@ -470,23 +470,40 @@ func (c *Core) noteSuccess(ctx context.Context) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), noticeTxTimeout)
 	defer cancel()
 	// open note: write-inspection 4 (the unknown state is cleared by the first success)
-	var cleared bool
-	err := c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-		cleared = false
+	// Read first: a success that will clear nothing opens no write Tx.
+	var cleared, needTx bool
+	err := c.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		n, found, err := tx.Notice(ctx, NoticeInspection)
 		if err != nil {
 			return err
 		}
-		if !found {
+		switch {
+		case !found:
 			cleared = true
-			return nil
+		case c.Now().Sub(time.UnixMilli(n.SetAt)) >= noticeResetAge:
+			needTx = true
 		}
-		if c.Now().Sub(time.UnixMilli(n.SetAt)) < noticeResetAge {
-			return nil
-		}
-		cleared = true
-		return tx.ClearNotice(ctx, NoticeInspection)
+		return nil
 	})
+	if err == nil && needTx {
+		// Re-check inside the Tx: the notice may have changed since the read.
+		err = c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+			cleared = false
+			n, found, err := tx.Notice(ctx, NoticeInspection)
+			if err != nil {
+				return err
+			}
+			if !found {
+				cleared = true
+				return nil
+			}
+			if c.Now().Sub(time.UnixMilli(n.SetAt)) < noticeResetAge {
+				return nil
+			}
+			cleared = true
+			return tx.ClearNotice(ctx, NoticeInspection)
+		})
+	}
 	if err != nil {
 		c.Log.Warn("write inspection notice not cleared", "error", err.Error())
 		return

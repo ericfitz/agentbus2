@@ -30,7 +30,7 @@ The server POSTs one JSON object (`Content-Type: application/json`). Members:
 | `operation` | `send`, `edit_memory`, `task_create` or `task_update` |
 | `source` | `api` or `slack` |
 | `sender`, `sender_kind` | the writing identity and its kind, `agent` or `human` |
-| `session` | the session's display name; absent when there is none |
+| `session` | the session's display name; present only on send, when the send names a session |
 | `channel` | `name` and `kind` (`ordinary`, `memory` or `tasks`) |
 | `record` | the normalized record to be stored: `subject`, `content`, `description`, `type`, `tags`, `metadata`, `reply_to`, `base_revision` (an empty member is left out) |
 
@@ -74,7 +74,7 @@ A failure is a timeout (`inspection_timeout_seconds` covers the whole call), a t
 - `inspection_on_failure=open`: the write is stored uninspected and a warn log line says so. Use this when the inspector is advisory.
 - If the caller itself goes away (client disconnect, request deadline) while the inspector runs, nothing is written in either mode and the answer is the retryable `unavailable`.
 
-In both modes a failure sets the server notice `inspection` and health goes `degraded` ([health.md](health.md); an administrator sees the notice text, the class of the failure and the mode). The notice is rewritten at most once a minute per process. A successful inspection clears it, once the notice is at least a minute old.
+In both modes a failure sets the server notice `inspection` and health goes `degraded` ([health.md](health.md); an administrator sees the notice text, the class of the failure and the mode). The notice is rewritten at most once a minute per process. A successful inspection clears it only in a process that is not already ok: one that failed earlier (a failing to ok transition) or one that has not yet succeeded since it started (its first success), and only when the notice is absent or at least a minute old. A process that is already ok never clears a notice, because another replica may still be failing. A notice left by a replica that died while failing therefore stays set, and health stays `degraded`, until any replica restarts and succeeds once; the remedy is to restart any replica.
 
 ## Logs
 

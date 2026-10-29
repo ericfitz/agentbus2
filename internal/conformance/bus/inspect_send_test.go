@@ -210,6 +210,72 @@ func TestInspectSendKeyed(t *testing.T) {
 	})
 }
 
+// TestInspectSendKeyedOverlap: two keyed sends with the same key and content
+// both inspect (blocked together on a barrier); one message and one receipt
+// are stored, and both calls answer alike.
+func TestInspectSendKeyedOverlap(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		var arrived atomic.Int32
+		release := make(chan struct{})
+		fi := &fakeInspector{reply: func(ctx context.Context, _ core.InspectRequest) ([]byte, error) {
+			arrived.Add(1)
+			select {
+			case <-release:
+			case <-ctx.Done():
+			}
+			return []byte(allowJSON), nil
+		}}
+		h := newHarness(t, e, harnessOptions{inspector: fi})
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		h.channel("dev", ab2store.KindOrdinary, "pat", nil)
+		b := h.as("pat")
+		in := ab2bus.SendInput{Channel: "dev", Content: "overlap", IdempotencyKey: "k1"}
+		type result struct {
+			res ab2bus.SendResult
+			err error
+		}
+		out := make(chan result, 2)
+		for i := 0; i < 2; i++ {
+			go func() {
+				r, err := b.Send(ctx, in)
+				out <- result{r, err}
+			}()
+		}
+		deadline := time.After(10 * time.Second)
+		for arrived.Load() < 2 {
+			select {
+			case <-deadline:
+				t.Fatalf("only %d of 2 sends reached the inspector", arrived.Load())
+			case <-time.After(5 * time.Millisecond):
+			}
+		}
+		close(release)
+		var got [2]result
+		for i := range got {
+			select {
+			case got[i] = <-out:
+			case <-deadline:
+				t.Fatal("sends did not finish")
+			}
+		}
+		for i, r := range got {
+			if r.err != nil {
+				t.Fatalf("send %d: %v", i, r.err)
+			}
+		}
+		if got[0].res != got[1].res {
+			t.Errorf("results differ: %+v vs %+v", got[0].res, got[1].res)
+		}
+		if n := inspectMaxSeq(h); n != 1 {
+			t.Errorf("MaxSeq = %d, want 1 stored message", n)
+		}
+		if !inspectHasReceipt(h, "pat", "k1") {
+			t.Error("no receipt stored")
+		}
+	})
+}
+
 func TestInspectSendRefusalsBeforeInspection(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		fi := &fakeInspector{}

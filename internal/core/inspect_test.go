@@ -673,10 +673,26 @@ type hookStore struct {
 	mu     sync.Mutex
 	before func()
 	after  func()
+	// readAfter runs once, after the next Read returns.
+	readAfter func()
+	txs       int
+}
+
+func (s *hookStore) Read(ctx context.Context, fn func(context.Context, store.Tx) error) error {
+	err := s.Store.Read(ctx, fn)
+	s.mu.Lock()
+	h := s.readAfter
+	s.readAfter = nil
+	s.mu.Unlock()
+	if h != nil {
+		h()
+	}
+	return err
 }
 
 func (s *hookStore) Tx(ctx context.Context, fn func(context.Context, store.Tx) error) error {
 	s.mu.Lock()
+	s.txs++
 	b := s.before
 	s.before = nil
 	s.mu.Unlock()
@@ -702,7 +718,7 @@ func TestInspectionFailureDuringSuccessClear(t *testing.T) {
 	hs := &hookStore{Store: c.Store}
 	c.Store = hs
 	ctx := context.Background()
-	hs.after = func() { c.noteFailure(ctx, FailTransport) }
+	hs.readAfter = func() { c.noteFailure(ctx, FailTransport) }
 	c.noteSuccess(ctx) // state unknown, no notice: would become ok
 	if _, ok := inspectionNotice(t, c); !ok {
 		t.Fatal("the interleaved failure did not set the notice")
@@ -740,5 +756,29 @@ func TestInspectionSuccessDuringFailureWrite(t *testing.T) {
 	c.noteSuccess(ctx)
 	if _, ok := inspectionNotice(t, c); ok {
 		t.Fatal("the next success did not clear the notice")
+	}
+}
+
+// TestInspectionSuccessYoungNoticeOpensNoTx: a success in state failing, with a
+// notice younger than the reset age, only reads.
+func TestInspectionSuccessYoungNoticeOpensNoTx(t *testing.T) {
+	in := &stubInspector{reply: replyWith(`{"verdict":"allow"}`)}
+	c, _, _ := newInspectCore(t, nil, in)
+	ctx := context.Background()
+	c.noteFailure(ctx, FailTransport)
+	hs := &hookStore{Store: c.Store}
+	c.Store = hs
+	c.noteSuccess(ctx)
+	if hs.txs != 0 {
+		t.Fatalf("noteSuccess opened %d write Tx, want 0", hs.txs)
+	}
+	if _, ok := inspectionNotice(t, c); !ok {
+		t.Fatal("a young notice was cleared")
+	}
+	c.inspectMu.Lock()
+	st := c.inspectState
+	c.inspectMu.Unlock()
+	if st != inspectFailing {
+		t.Fatalf("state = %v, want failing", st)
 	}
 }

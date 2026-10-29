@@ -38,6 +38,14 @@ func TestFailFormatsBusError(t *testing.T) {
 	}
 }
 
+func TestFailFormatsInspectionRejected(t *testing.T) {
+	var b bytes.Buffer
+	be := &bus.Error{Code: bus.CodeInspectionRejected, Message: "rejected by inspection (pii): contains a key"}
+	if code := fail(&b, be); code != 1 || b.String() != "agentbus2: inspection_rejected: rejected by inspection (pii): contains a key\n" {
+		t.Fatalf("code %d, output %q", code, b.String())
+	}
+}
+
 func TestParseExit(t *testing.T) {
 	for _, c := range []struct {
 		err  error

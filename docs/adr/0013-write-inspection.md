@@ -26,7 +26,7 @@ Each of these is Eric's decision.
 6. **A bridged Slack message is inspected; a refusal is a drop.** The bridge counts it dropped, as for a trust refusal.
 7. **The request carries the record, the sender and its kind, the session, the channel name and kind, and the source.** It carries no ACL, administrator flag or scope.
 8. **Content writes only:** `send`, `edit_memory`, `task_create` and `task_update`. Reads and administration are not inspected.
-9. **No exemptions:** no identity, channel or operation is skipped.
+9. **No exemptions:** no identity or channel is exempt. Operations are scoped by decision 8.
 10. **Operator attention is a warn log line**: a verdict that sets `notify` writes `write inspection asks for operator attention`; a failure also logs at warn.
 11. **Log lines only, never the payload.**
 12. **Server mode only.** A local profile is never inspected.
@@ -62,6 +62,7 @@ These are not Eric's decisions. The agent that wrote the plan settled them, and 
 - **Strict inputs.** `ParseVerdict` rejects as malformed a duplicate member, a `null` member, a member in the wrong case, and an `allow` carrying `code` or `reason`. An unknown verdict, unknown `inspection_on_failure` value, unknown `Source` or `Operation` never means allow: an unknown `Source` or `Operation` answers `internal`, and a failure class outside timeout, transport, status, malformed and verdict is logged as `transport`. Float settings reject NaN and Inf, and a blank key file is refused.
 - **Bridge.** The bridge's trust check runs in a `Store.Read` before the send, so an untrusted message reaches the inspector only if trust changes between that check and the append.
 - **State.** The inspection keeps no stored state except the `inspection` notice. A keyed retry after a refusal re-inspects (no receipt was stored); a keyed retry after success replays without inspection; two overlapping keyed calls both inspect and one receipt wins.
+- **Pre-pass content decision.** A task update the pre-pass judged content-neutral is not rechecked in the write pass; only content already in the store can land uninspected that way, the same cost as the receipt-expiry window.
 - **No schema change and no new migration.** The notice uses the existing `notices` table.
 
 ## Deferred
