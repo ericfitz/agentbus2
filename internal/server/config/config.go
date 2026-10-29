@@ -230,7 +230,7 @@ func (c Config) Validate() error {
 		u, err := url.Parse(c.Issuer)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" ||
 			u.Path != "" || u.RawQuery != "" || u.Fragment != "" || strings.ContainsAny(c.Issuer, "?#") {
-			return fmt.Errorf("issuer must be an absolute http or https URL without path, query, fragment or trailing slash, got %q", c.Issuer)
+			return fmt.Errorf("issuer must be an absolute http or https URL without path, query, fragment or trailing slash, got %s", safeURL(c.Issuer))
 		}
 	}
 	if c.TokenLifetimeSeconds < 1 || c.TokenLifetimeSeconds > MaxTokenLifetimeSeconds {
@@ -287,7 +287,7 @@ func (c Config) Validate() error {
 			return errors.New("embedding_model is required when embedding_endpoint is set")
 		}
 		if !absoluteURL(c.EmbeddingEndpoint) {
-			return fmt.Errorf("embedding_endpoint: must be an absolute URL with scheme and host, got %q", c.EmbeddingEndpoint)
+			return fmt.Errorf("embedding_endpoint: must be an absolute URL with scheme and host, got %s", safeURL(c.EmbeddingEndpoint))
 		}
 	}
 	if c.EmbeddingAPIKeyFile != "" && c.EmbeddingAPIKeyEnv != "" {
@@ -338,20 +338,27 @@ func (c Config) Warnings() []string {
 func validateInspectionEndpoint(ep string) error {
 	u, err := url.Parse(ep)
 	if err != nil {
-		shown := ep
-		if strings.Contains(ep, "@") {
-			shown = "(unparseable)"
-		}
-		return fmt.Errorf("inspection_endpoint must be https, or http on a loopback host, got %q", shown)
+		return fmt.Errorf("inspection_endpoint must be https, or http on a loopback host, got %s", safeURL(ep))
 	}
 	if u.User != nil {
 		return errors.New("inspection_endpoint must not carry credentials in the URL; use inspection_api_key_file or inspection_api_key_env")
 	}
 	if u.Hostname() == "" || u.Opaque != "" || (u.Scheme != "http" && u.Scheme != "https") ||
 		(u.Scheme == "http" && !loopbackHost(u.Hostname())) {
-		return fmt.Errorf("inspection_endpoint must be https, or http on a loopback host, got %q", ep)
+		return fmt.Errorf("inspection_endpoint must be https, or http on a loopback host, got %s", safeURL(ep))
 	}
 	return nil
+}
+
+// safeURL names a URL setting's value in an error by scheme and host only: the
+// path, query string and userinfo may carry a secret. A value that does not
+// parse, or has no scheme and host, is shown as "(not an absolute URL)".
+func safeURL(s string) string {
+	u, err := url.Parse(s)
+	if err != nil || u.Scheme == "" || u.Hostname() == "" {
+		return "(not an absolute URL)"
+	}
+	return u.Scheme + "://" + u.Host
 }
 
 func loopbackHost(h string) bool {
@@ -378,10 +385,10 @@ func validateIssuer(is Issuer) error {
 		return fmt.Errorf("name %q is reserved", is.Name)
 	}
 	if !absoluteURL(is.Issuer) {
-		return fmt.Errorf("issuer must be an absolute URL, got %q", is.Issuer)
+		return fmt.Errorf("issuer must be an absolute URL, got %s", safeURL(is.Issuer))
 	}
 	if !absoluteURL(is.JWKSURI) {
-		return fmt.Errorf("jwks_uri must be an absolute URL, got %q", is.JWKSURI)
+		return fmt.Errorf("jwks_uri must be an absolute URL, got %s", safeURL(is.JWKSURI))
 	}
 	if is.Audience == "" {
 		return errors.New("audience is required")

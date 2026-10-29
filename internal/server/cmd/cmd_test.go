@@ -859,6 +859,16 @@ func TestAPIKey(t *testing.T) {
 	if _, err := apiKey("s_file", "", "s_env", "V", []string{"A=1"}); err == nil || !strings.Contains(err.Error(), "s_env names V, which is not set") {
 		t.Fatalf("unset: %v", err)
 	}
+	blank := filepath.Join(dir, "blank")
+	if err := os.WriteFile(blank, []byte(" \n\t"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := apiKey("s_file", blank, "s_env", "", nil); err == nil || !strings.Contains(err.Error(), "s_file: the key is empty") {
+		t.Fatalf("blank file: %v", err)
+	}
+	if _, err := apiKey("s_file", "", "s_env", "V", []string{"V=  "}); err == nil {
+		t.Fatal("blank variable accepted")
+	}
 	if _, err := apiKey("s_file", filepath.Join(dir, "none"), "s_env", "", nil); err == nil || !strings.Contains(err.Error(), "s_file") {
 		t.Fatalf("missing file: %v", err)
 	}

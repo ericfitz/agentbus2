@@ -308,7 +308,7 @@ func apiKey(fileSetting, file, envSetting, env string, environ []string) (string
 		if err != nil {
 			return "", fmt.Errorf("%s: %w", fileSetting, err)
 		}
-		return strings.TrimSpace(string(b)), nil
+		return nonEmptyKey(fileSetting, strings.TrimSpace(string(b)))
 	case env != "":
 		prefix := env + "="
 		val := ""
@@ -320,9 +320,18 @@ func apiKey(fileSetting, file, envSetting, env string, environ []string) (string
 		if val == "" {
 			return "", fmt.Errorf("%s names %s, which is not set", envSetting, env)
 		}
-		return strings.TrimSpace(val), nil
+		return nonEmptyKey(envSetting, strings.TrimSpace(val))
 	}
 	return "", nil
+}
+
+// nonEmptyKey refuses a key that is blank after trimming: a named key setting
+// that yields no key would send requests with no credential.
+func nonEmptyKey(setting, key string) (string, error) {
+	if key == "" {
+		return "", fmt.Errorf("%s: the key is empty", setting)
+	}
+	return key, nil
 }
 
 // slackClientFor reads the two Slack token files and builds the adapter; nil

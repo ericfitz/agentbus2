@@ -78,7 +78,7 @@ In both modes a failure sets the server notice `inspection` and health goes `deg
 
 ## Logs
 
-Every log line about an inspected write carries `request_id`, `operation`, `source`, `sender` and `channel`, and `latency_ms` (an allow logs at debug). A refusal also logs `code` and `reason` (the reason cut to 256 bytes) at info; a failure logs `class` (`timeout`, `transport`, `status`, `malformed`, `verdict` or `canceled`) and `on_failure` at warn; `notify` logs at warn. The payload (subject, content, description, tags, metadata values) is never logged, and neither are the key or the URL's path and query string.
+Every log line about an inspected write carries `request_id`, `operation`, `source`, `sender` and `channel`, and `latency_ms` (an allow logs at debug). A refusal also logs `code` and `reason` (the reason cut to 256 bytes) at info; a failure logs `error` (the adapter's message: scheme and host only, cut to 256 bytes) and `class` (`timeout`, `transport`, `status`, `malformed`, `verdict` or `canceled`) and `on_failure` at warn; `notify` logs at warn. The payload (subject, content, description, tags, metadata values) is never logged, and neither are the key or the URL's path and query string.
 
 ## Replicas
 

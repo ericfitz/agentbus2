@@ -450,3 +450,51 @@ func TestInspectionSettings(t *testing.T) {
 		t.Errorf("defaults are not unset: %+v", d)
 	}
 }
+
+// A rejected URL setting never echoes the path, the query string or userinfo.
+func TestURLErrorsNameSchemeAndHostOnly(t *testing.T) {
+	const secret = "SECRETQ"
+	cases := []struct {
+		name string
+		mut  func(*Config, string)
+	}{
+		{"inspection", func(c *Config, u string) { c.InspectionEndpoint = u }},
+		{"embedding", func(c *Config, u string) { c.EmbeddingEndpoint = u; c.EmbeddingModel = "m" }},
+	}
+	urls := []string{
+		"http://inspector.example/path/SECRETPATH?token=" + secret,
+		"ftp://inspector.example/path/SECRETPATH?token=" + secret,
+		"https://%zz/SECRETPATH?token=" + secret,
+		"/SECRETPATH?token=" + secret,
+	}
+	for _, tc := range cases {
+		for _, u := range urls {
+			c := valid()
+			tc.mut(&c, u)
+			err := c.Validate()
+			if tc.name == "embedding" && strings.HasPrefix(u, "http://") {
+				continue // an absolute http URL is valid for embeddings
+			}
+			if tc.name == "embedding" && strings.HasPrefix(u, "ftp://") {
+				continue
+			}
+			if err == nil {
+				t.Errorf("%s %q: accepted", tc.name, u)
+				continue
+			}
+			if strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "SECRETPATH") {
+				t.Errorf("%s %q: error echoes the query or path: %v", tc.name, u, err)
+			}
+		}
+	}
+	c := valid()
+	c.InspectionEndpoint = "http://inspector.example/p?token=" + secret
+	if err := c.Validate(); err == nil || !strings.Contains(err.Error(), "http://inspector.example") {
+		t.Errorf("error should name scheme and host: %v", err)
+	}
+	c = valid()
+	c.Issuer = "http://x/SECRETPATH?token=" + secret
+	if err := c.Validate(); err == nil || strings.Contains(err.Error(), secret) || strings.Contains(err.Error(), "SECRETPATH") {
+		t.Errorf("issuer error: %v", err)
+	}
+}
