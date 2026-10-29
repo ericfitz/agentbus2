@@ -458,9 +458,11 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 	case classForbidden:
 		return s.drop(ctx, b, m, dropReason(err))
 	case classRejected:
+		// open note: write-inspection 12 (fixed drop reason; the inspector's text stays in the core's log)
 		// The inspector's code and reason stay in the core's log line.
 		return s.drop(ctx, b, m, "rejected by inspection")
 	}
+	// open note: write-inspection 1 (classRetry: a retryable conflict is retried, never a duplicate)
 	return OutcomeRetry, err
 }
 
@@ -483,6 +485,7 @@ func sendErrorClass(err error) string {
 	}
 	switch be.Code {
 	case bus.CodeConflict:
+		// open note: write-inspection 1
 		if be.Retryable {
 			return classRetry
 		}

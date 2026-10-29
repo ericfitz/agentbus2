@@ -866,6 +866,9 @@ func TestSlackBridgeInbound(t *testing.T) {
 			if len(f.human()) != 0 || f.droppedLogs() != 1 || !f.dropped(m.TS) {
 				t.Fatalf("messages %d, drop logs %d, dropped %v", len(f.human()), f.droppedLogs(), f.dropped(m.TS))
 			}
+			if lg := f.logs.String(); strings.Contains(lg, "policy") || strings.Contains(lg, `"no"`) || strings.Contains(lg, "reason=no") {
+				t.Errorf("the bridge log carries the inspector's code or reason:\n%s", lg)
+			}
 			if !strings.Contains(f.logs.String(), `reason="rejected by inspection"`) {
 				t.Errorf("log lacks the fixed reason:\n%s", f.logs.String())
 			}
@@ -885,7 +888,8 @@ func TestSlackBridgeInbound(t *testing.T) {
 			fi := &fakeInspector{reply: func(context.Context, core.InspectRequest) ([]byte, error) {
 				return nil, &core.InspectError{Class: core.FailTransport, Err: errors.New("down")}
 			}}
-			f := newInFixOpts(t, e, harnessOptions{inspector: fi}, nil)
+			cfg := sendCfgWith(func(c *core.Config) { c.InspectionOnFailure = core.InspectionClosed })
+			f := newInFixOpts(t, e, harnessOptions{inspector: fi, cfg: cfg}, nil)
 			m := f.fake.Say(f.sl, "U1", "later", "")
 			f.want(m, "retry")
 			if len(f.human()) != 0 || f.dropped(m.TS) {
