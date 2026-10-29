@@ -492,6 +492,12 @@ var retryable = map[codes.Code]bool{
 // request) and a canceled context do not. It decides by error type and gRPC
 // status code, never by message text. Provider text is redacted of secrets and
 // capped; nothing here prints a URI.
+//
+// A DeadlineExceeded status also wraps context.DeadlineExceeded: the call's
+// deadline is the caller's, sent to the service as grpc-timeout, and the
+// server enforces its copy itself (grpc-go ends the stream when it fires), so
+// the answer can arrive before the caller's context is marked done. The
+// status is the deadline whichever side noticed it first.
 func classify(what string, err error, secrets ...string) error {
 	if errors.Is(err, context.Canceled) {
 		return fmt.Errorf("gcpkms: %s: %w", what, context.Canceled)
@@ -508,6 +514,9 @@ func classify(what string, err error, secrets ...string) error {
 			text := fmt.Sprintf("Cloud KMS answered %s", st.Code())
 			if m := st.Message(); m != "" {
 				text += ": " + capText(m, secrets)
+			}
+			if st.Code() == codes.DeadlineExceeded {
+				return fmt.Errorf("gcpkms: %s: %w: %w: %s", what, keyprovider.ErrUnavailable, context.DeadlineExceeded, text)
 			}
 			if retryable[st.Code()] {
 				return fmt.Errorf("gcpkms: %s: %w: %s", what, keyprovider.ErrUnavailable, text)

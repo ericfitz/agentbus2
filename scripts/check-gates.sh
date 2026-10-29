@@ -52,7 +52,9 @@ check_unit_excludes() {
 	if AGENTBUS2_TEST_POSTGRES_DSN="$BAD_DSN" make test >"$log" 2>&1; then
 		pass "$name"
 	else
-		fail "$name" "make test failed with an unreachable Postgres (conformance leaked into the unit set?): $({ grep -E '^\s*--- FAIL|^FAIL|^panic' "$log" || true; tail -n 5 "$log"; } | tr '\n' ' ')"
+		# Each "--- FAIL" and panic line comes with the three lines after it,
+		# where go test prints the test's own message (a t.Fatalf text).
+		fail "$name" "make test failed with an unreachable Postgres (conformance leaked into the unit set?): $({ grep -E -A 3 '^\s*--- FAIL|^panic' "$log" | grep -vx -- '--' || true; grep -E '^FAIL' "$log" || true; tail -n 5 "$log"; } | tr '\n' ' ')"
 	fi
 }
 

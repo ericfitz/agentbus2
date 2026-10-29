@@ -100,6 +100,10 @@ block_unit_leak() {
 	begin
 	run_gates "$log" 'PKGS_UNIT=./...'
 	expect_checks "$label" "$log" unit-tests-exclude-conformance
+	# The gate line carries the failing test's own message (the line after its
+	# "--- FAIL"), not only the test's name: here the unreachable text.
+	grep -q '^FAIL unit-tests-exclude-conformance: .*is unreachable' "$log" ||
+		problem "$label" "the gate line lacks the failing test's message: $(grep '^FAIL unit-tests-exclude-conformance' "$log" | head -n 1 | cut -c 1-400)"
 	finish "$label"
 	revert
 }

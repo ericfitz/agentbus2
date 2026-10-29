@@ -220,9 +220,10 @@ func (f *fakeKMS) gate(_ context.Context, method string) error {
 	ferr := f.failOps[method]
 	f.mu.Unlock()
 	if hang {
-		// Only the client's deadline may end a hung call: the server's copy
-		// arrives as a rounded grpc-timeout and can expire first, answering
-		// DeadlineExceeded while the client's context is still live.
+		// A hung handler never answers. The deadline still ends the call: the
+		// grpc server enforces its copy of grpc-timeout itself and ends the
+		// stream when it fires, and the client's context ends it too;
+		// TestNextHonorsServerSideDeadline covers the first path alone.
 		<-f.release
 	}
 	return ferr
@@ -817,6 +818,42 @@ func TestNextHonorsContextForPinnedVersion(t *testing.T) {
 	_, err := f.provider(t, keyURI+"/cryptoKeyVersions/1").Next(ctx)
 	if !errors.Is(err, keyprovider.ErrUnavailable) || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+// announcedDeadline is a context that advertises a deadline it never
+// enforces: the gRPC client sends it as grpc-timeout and only the server's
+// copy fires, which is what happens in a race the server wins.
+type announcedDeadline struct{ dl time.Time }
+
+func (a announcedDeadline) Deadline() (time.Time, bool) { return a.dl, true }
+func (announcedDeadline) Done() <-chan struct{}         { return nil }
+func (announcedDeadline) Err() error                    { return nil }
+func (announcedDeadline) Value(any) any                 { return nil }
+
+// The grpc server enforces the caller's deadline itself: when its copy of
+// grpc-timeout fires it ends the stream, and the client reports a
+// DeadlineExceeded status that can arrive before the caller's context is
+// marked done. The answer is the deadline all the same.
+func TestNextHonorsServerSideDeadline(t *testing.T) {
+	for _, hung := range []string{"GetCryptoKey", "ListCryptoKeyVersions", "GetPublicKey", "GetCryptoKeyVersion"} {
+		t.Run(hung, func(t *testing.T) {
+			f := newFakeKMS(t)
+			f.addKey(t)
+			f.hang(hung)
+			uri := keyURI
+			if hung == "GetCryptoKeyVersion" {
+				uri += "/cryptoKeyVersions/1"
+			}
+			start := time.Now()
+			_, err := f.provider(t, uri).Next(announcedDeadline{time.Now().Add(200 * time.Millisecond)})
+			if !errors.Is(err, keyprovider.ErrUnavailable) || !errors.Is(err, context.DeadlineExceeded) || time.Since(start) > 3*time.Second {
+				t.Fatalf("err = %v after %v", err, time.Since(start))
+			}
+			if !strings.Contains(err.Error(), "DeadlineExceeded") {
+				t.Fatalf("the error does not name the code: %v", err)
+			}
+		})
 	}
 }
 
