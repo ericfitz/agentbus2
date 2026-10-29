@@ -297,6 +297,7 @@ func (c Config) Validate() error {
 		return errors.New("at most one of inspection_api_key_file and inspection_api_key_env may be set")
 	}
 	if c.InspectionEndpoint == "" {
+		// open note: write-inspection 6 (a credential with nowhere to go is refused)
 		if c.InspectionAPIKeyFile != "" || c.InspectionAPIKeyEnv != "" {
 			return errors.New("inspection_api_key_file and inspection_api_key_env need inspection_endpoint")
 		}

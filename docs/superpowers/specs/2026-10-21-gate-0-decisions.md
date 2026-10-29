@@ -51,6 +51,8 @@ updated to cite this file.
 4. Idle subscription expiry not ported: as built (A).
 5. Inspection hook not ported in 2.0.0 (A); tracked as a future feature with
    a response mechanism in issue #5.
+   Superseded by ADR 0013 (Eric, 2026-10-27): ported as a webhook, server
+   mode only.
 6. `general` cannot be deleted or renamed by anyone: as built (A).
 7. No live-subscriber refusal on channel delete: as built (A).
 8. **Changed** (B, rule A of the follow-up): empty-channel reaping is

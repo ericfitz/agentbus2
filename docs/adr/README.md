@@ -24,6 +24,7 @@ NNNN" to keep the two series apart.
 | [0010](0010-server-health.md) | Server health | Accepted (agent proposal, ratified by Eric 2026-10-25) |
 | [0011](0011-one-access-check.md) | One access check | Accepted (Eric, 2026-10-25) |
 | [0012](0012-signing-key-rotation-and-key-providers.md) | Signing key rotation and key providers | Accepted (Eric, 2026-10-27); controller rulings pending his review |
+| [0013](0013-write-inspection.md) | Write inspection | Accepted (Eric, 2026-10-27) |
 
 Decisions 60 (TUI in a later milestone), 61 (release tooling in the
 final milestone) and 87 (Scoop and winget in that tooling) are scheduling

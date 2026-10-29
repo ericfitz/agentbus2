@@ -645,6 +645,35 @@ ordinary authorization, and "the only admin lost its credential" is
 solved on the host. An administrator holds `admin` on every channel
 (Decision 80); the special identity `admins` names all of them.
 
+### 4.8 Write inspection
+
+Eric, 2026-10-27 (issue #5, ADR 0013; the design is
+`docs/superpowers/specs/2026-10-27-write-inspection-design.md`, the operator
+guide `docs/ops/inspection.md`). The decisions:
+
+1. Responses are `allow` and `refuse`; the sender learns through the error,
+   operators through the log. No redact, no hold.
+2. A read-only pre-pass runs the write's `plan*` step in a `Store.Read`, the
+   inspector runs outside any transaction, and the authoritative write runs
+   the step again and checks a record digest (Decision 26).
+3. The transport is a webhook only (`inspection_*` settings, Decision 85).
+4. `inspection_on_failure` is `closed` (default) or `open`.
+5. A refusal is `inspection_rejected`, 422, not retryable; a failure is
+   `unavailable`, 503, retryable.
+6. A bridged Slack message is inspected; a refusal is a drop.
+7. The request carries the record, sender and kind, session, channel name
+   and kind, and the source; no ACL, administrator flag or scope (ADR 0011).
+8. Content writes only: `send`, `edit_memory`, `task_create`, `task_update`.
+9. No exemptions.
+10. A warn log line asks for operator attention (`notify`).
+11. Log lines only, never the payload.
+12. Server mode only; a local profile is never inspected.
+13. A refused write is charged to the sender's rate limit, amending
+    Milestone 3 rule 1.
+
+The protocol stays `1.0.0`. The agent's own choices (open notes 1 to 14)
+are in ADR 0013, apart from these.
+
 ## 5. Storage
 
 ### 5.1 Store contract and Tx

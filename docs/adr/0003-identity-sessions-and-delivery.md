@@ -239,7 +239,8 @@ them on 2026-10-21 (`docs/superpowers/specs/2026-10-21-gate-0-decisions.md`).
 5. **The inspection hook is not ported** (v1 `inspect.go`,
    `inspection_command`). Decision (Eric, 2026-10-21): not ported in
    2.0.0; tracked as a future feature with a response mechanism in issue
-   #5.
+   #5. Superseded by ADR 0013 (Eric, 2026-10-27): ported as a webhook,
+   server mode only.
 9. **The polling guard is not ported** (v1 `pollingGuardEmptyWaits`):
    `receive` is non-blocking (Decision 83). Decision (Eric, 2026-10-21):
    as built.
