@@ -392,7 +392,7 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 			in.ReplyTo = &replyTo
 		}
 		var gone bool
-		_, err := (messaging.Service{Core: s.core}).SendWith(ctx, identity, in, messaging.SendOptions{Hook: func(ctx context.Context, tx store.Tx, seq int64) error {
+		_, err := (messaging.Service{Core: s.core}).SendWith(ctx, identity, in, messaging.SendOptions{Source: core.SourceSlack, Hook: func(ctx context.Context, tx store.Tx, seq int64) error {
 			gone = false
 			bind, err := s.trust(ctx, tx, b, identity, su)
 			if errors.Is(err, errBridgeGone) {
@@ -440,10 +440,10 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 	case errors.Is(err, errBridgeGone):
 		return OutcomeIgnored, nil
 	}
-	switch bus.CodeOf(err) {
-	case bus.CodeConflict:
+	switch sendErrorClass(err) {
+	case classDuplicate:
 		return OutcomeDuplicate, nil
-	case bus.CodeValidation:
+	case classInvalid:
 		// The refusal is deterministic, so record the ts in the drop set: a
 		// stalled cursor re-reads the message on every catch-up pass, which
 		// then ignores it above without logging it again.
@@ -455,10 +455,46 @@ func (s *Service) handleMessage(ctx context.Context, channelID string, m slackap
 		}
 		s.log.Info("slack message ignored", "slack_user", m.User, "slack_channel", b.SlackChannelID, "code", bus.CodeValidation)
 		return OutcomeIgnored, nil
-	case bus.CodeForbidden:
+	case classForbidden:
 		return s.drop(ctx, b, m, dropReason(err))
+	case classRejected:
+		// The inspector's code and reason stay in the core's log line.
+		return s.drop(ctx, b, m, "rejected by inspection")
 	}
 	return OutcomeRetry, err
+}
+
+// The classes of a send error (sendErrorClass).
+const (
+	classDuplicate = "duplicate" // a non-retryable conflict: the ts is already mapped
+	classInvalid   = "invalid"
+	classForbidden = "forbidden"
+	classRejected  = "rejected" // the write inspector refused the message
+	classRetry     = "retry"    // everything else, a retryable conflict included
+)
+
+// sendErrorClass classifies the error of the send. A retryable conflict (a
+// record that changed twice under inspection) is a retry, never a duplicate;
+// an inspector failure (unavailable) is a retry too.
+func sendErrorClass(err error) string {
+	var be *bus.Error
+	if !errors.As(err, &be) {
+		return classRetry
+	}
+	switch be.Code {
+	case bus.CodeConflict:
+		if be.Retryable {
+			return classRetry
+		}
+		return classDuplicate
+	case bus.CodeValidation:
+		return classInvalid
+	case bus.CodeForbidden:
+		return classForbidden
+	case bus.CodeInspectionRejected:
+		return classRejected
+	}
+	return classRetry
 }
 
 func withAfter(meta map[string]string, after int64) map[string]string {

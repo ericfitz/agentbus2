@@ -843,6 +843,64 @@ func TestSlackBridgeInbound(t *testing.T) {
 				t.Errorf("messages = %+v", got)
 			}
 		})
+
+		t.Run("inspection-sees-slack-source", func(t *testing.T) {
+			fi := &fakeInspector{}
+			f := newInFixOpts(t, e, harnessOptions{inspector: fi}, nil)
+			f.want(f.fake.Say(f.sl, "U1", "hi", ""), "sent")
+			calls := fi.calls()
+			if len(calls) != 1 {
+				t.Fatalf("%d inspector calls, want 1", len(calls))
+			}
+			if r := calls[0]; r.Source != core.SourceSlack || r.SenderKind != "human" || r.Sender != slAlice || r.Channel.Name != "job1-chat" {
+				t.Errorf("request = %+v", r)
+			}
+		})
+		t.Run("inspection-refusal-dropped-once", func(t *testing.T) {
+			fi := &fakeInspector{reply: func(context.Context, core.InspectRequest) ([]byte, error) {
+				return refuseJSON("policy", "no"), nil
+			}}
+			f := newInFixOpts(t, e, harnessOptions{inspector: fi}, nil)
+			m := f.fake.Say(f.sl, "U1", "bad", "")
+			f.want(m, "dropped")
+			if len(f.human()) != 0 || f.droppedLogs() != 1 || !f.dropped(m.TS) {
+				t.Fatalf("messages %d, drop logs %d, dropped %v", len(f.human()), f.droppedLogs(), f.dropped(m.TS))
+			}
+			if !strings.Contains(f.logs.String(), `reason="rejected by inspection"`) {
+				t.Errorf("log lacks the fixed reason:\n%s", f.logs.String())
+			}
+			n := len(fi.calls())
+			if err := f.svc.CatchUp(ctx); err != nil {
+				t.Fatalf("CatchUp: %v", err)
+			}
+			if len(f.human()) != 0 || f.droppedLogs() != 1 || len(fi.calls()) != n {
+				t.Errorf("catch-up redelivered: %d messages, %d drop logs, %d inspector calls (was %d)", len(f.human()), f.droppedLogs(), len(fi.calls()), n)
+			}
+			fi.mu.Lock()
+			fi.reply = nil
+			fi.mu.Unlock()
+			f.want(f.fake.Say(f.sl, "U1", "good", ""), "sent")
+		})
+		t.Run("inspection-failure-retried", func(t *testing.T) {
+			fi := &fakeInspector{reply: func(context.Context, core.InspectRequest) ([]byte, error) {
+				return nil, &core.InspectError{Class: core.FailTransport, Err: errors.New("down")}
+			}}
+			f := newInFixOpts(t, e, harnessOptions{inspector: fi}, nil)
+			m := f.fake.Say(f.sl, "U1", "later", "")
+			f.want(m, "retry")
+			if len(f.human()) != 0 || f.dropped(m.TS) {
+				t.Fatalf("a failed inspection stored %d messages, dropped %v", len(f.human()), f.dropped(m.TS))
+			}
+			fi.mu.Lock()
+			fi.reply = nil
+			fi.mu.Unlock()
+			if err := f.svc.CatchUp(ctx); err != nil {
+				t.Fatalf("CatchUp: %v", err)
+			}
+			if got := f.human(); len(got) != 1 || got[0].Content != "later" {
+				t.Fatalf("after recovery messages = %+v", got)
+			}
+		})
 	})
 }
 
