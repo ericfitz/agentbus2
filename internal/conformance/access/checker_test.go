@@ -139,6 +139,8 @@ func TestRequireTexts(t *testing.T) {
 		check("agent memory", "pat", access.Channel{ID: mem.ID}, access.Deliver, &want{bus.CodeValidation, "mem is a memory channel: agents do not subscribe to memories (decision 20); use search to find a memory and get_memory to read it", false})
 		check("agent memory read", "pat", access.Channel{ID: mem.ID}, access.Read, nil)
 		check("identity scope", "job1-coder", access.Identity{Name: "pat"}, access.See, &want{bus.CodeNotFound, `identity "pat" is not registered`, false})
+		check("set status own", "pat", access.Identity{Name: "pat"}, access.SetStatus, nil)
+		check("set status other", "pat", access.Identity{Name: "kim"}, access.SetStatus, &want{bus.CodeForbidden, "pat may set only its own status", false})
 		check("undefined pair", "pat", access.Server{}, access.Read, &want{bus.CodeInternal, `access: action "read" is not defined for server`, false})
 		check("unknown channel", "pat", access.Channel{ID: 99999}, access.Read, &want{bus.CodeNotFound, "channel 99999 does not exist", false})
 		// Check never panics on an undefined pair.

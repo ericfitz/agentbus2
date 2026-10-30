@@ -1000,6 +1000,42 @@ block_eviction_message_floor_removed() {
 		'--- FAIL: TestMaintenanceEvictionFloors/postgres'
 }
 
+# --- 32. agent-status-rules ------------------------------------------------------------
+# agent status: the SetStatus clauses of decide (Task 2) and the core's call of it (Task 5)
+# Docker-free. Each clause of the Identity/SetStatus rule in
+# internal/core/access/decide.go must be pinned by TestDecideSetStatus.
+# mutate_unit_block LABEL FILE FROM TO PKG RUN WANT: replace the anchor FROM
+# (exactly once in FILE) with TO in the worktree, require the change, run the
+# named unit test in PKG and require '--- FAIL: WANT' in its log.
+mutate_unit_block() {
+	local label="$1" file="$2" from="$3" to="$4" pkg="$5" run="$6" want="$7"
+	local log="$tmp/$label.log" f="$wt/$file" content
+	begin
+	if [ "$(grep -cF -- "$from" "$f")" -ne 1 ]; then
+		problem "$label" "anchor text not exactly once in $file: $from"
+	else
+		content="$(cat "$f")"
+		printf '%s\n' "${content//"$from"/"$to"}" >"$tmp/x" && cp "$tmp/x" "$f"
+		if ! grep -qF -- "$to" "$f"; then
+			problem "$label" "mutation changed nothing ($to absent from $file)"
+		else
+			(cd "$wt" && go test -count=1 -p 1 -v -run "$run" "$pkg" >"$log" 2>&1) || true
+			grep -qF -- "--- FAIL: $want" "$log" || problem "$label" "log lacks '--- FAIL: $want': $(tail -n 3 "$log" | tr '\n' ' ')"
+		fi
+	fi
+	finish "$label"
+	revert
+}
+
+block_agent_status_rules_fire() {
+	mutate_unit_block status-agent-clause-ignored internal/core/access/decide.go \
+		'if p.Kind != store.IdentityAgent {' 'if false {' \
+		./internal/core/access/ '^TestDecideSetStatus$' TestDecideSetStatus/human_refused
+	mutate_unit_block status-owner-clause-ignored internal/core/access/decide.go \
+		'if f.Name != p.Name {' 'if false {' \
+		./internal/core/access/ '^TestDecideSetStatus$' TestDecideSetStatus/another_identity_refused
+}
+
 block_skip_in_wiring
 block_unit_leak
 block_gen_edited
@@ -1031,6 +1067,7 @@ block_slackbridge_catchup_before_drain
 block_access_rule_sites_fires
 block_postgres_budget_physical_measure
 block_eviction_message_floor_removed
+block_agent_status_rules_fire
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"

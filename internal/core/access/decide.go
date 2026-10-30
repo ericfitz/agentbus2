@@ -24,6 +24,7 @@ const (
 	ReasonProtectedEntry = "protected_entry"
 	ReasonUndefined      = "undefined"
 	ReasonNamePrefix     = "name_prefix"
+	ReasonNotAgent       = "not_agent"
 )
 
 // Decision is the answer of the access check. Code and Text are set only when
@@ -177,13 +178,26 @@ func decide(p Principal, f facts, a Action) Decision {
 		}
 		return allowed
 	case identityFacts:
-		if a != See {
-			return undefined(f, a)
+		switch a {
+		case See:
+			if !inScope(p, f) {
+				return deny(bus.CodeNotFound, ReasonOutOfScope, "identity %q is not registered", f.Name)
+			}
+			return allowed
+		case SetStatus:
+			// Own identity, agents only (Eric 2026-10-27, agent status decision 4).
+			if !inScope(p, f) {
+				return deny(bus.CodeNotFound, ReasonOutOfScope, "identity %q is not registered", f.Name)
+			}
+			if f.Name != p.Name {
+				return deny(bus.CodeForbidden, ReasonNotOwner, "%s may set only its own status", p.Name)
+			}
+			if p.Kind != store.IdentityAgent {
+				return deny(bus.CodeForbidden, ReasonNotAgent, "%s is not an agent; only an agent sets a status", p.Name)
+			}
+			return allowed
 		}
-		if !inScope(p, f) {
-			return deny(bus.CodeNotFound, ReasonOutOfScope, "identity %q is not registered", f.Name)
-		}
-		return allowed
+		return undefined(f, a)
 	}
 	return undefined(f, a)
 }

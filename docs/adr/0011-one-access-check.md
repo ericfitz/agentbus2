@@ -20,7 +20,7 @@ The rule "who may do what to which object" was computed in many places: `Core.Au
    | ACLChange | `ReplaceACL` |
    | Server | `Administer`, `CreateChannel` |
    | Session | `Use` |
-   | Identity | `See` |
+   | Identity | `See`, `SetStatus` |
    | ChannelName | `TakeName` |
    | ScopeName | `TakeName` |
 
@@ -41,6 +41,7 @@ The rule "who may do what to which object" was computed in many places: `Core.Au
    | Server | CreateChannel | `channel_creation` is `open`, or the principal is an administrator (Decision 93) |
    | Session | Use | the session's identity is the principal's |
    | Identity | See | the scope gate, which admits every human and every administrator |
+   | Identity | SetStatus | the scope gate, then the principal is the identity and an agent (`forbidden`, Reason `not_owner`, `%s may set only its own status`; `forbidden`, Reason `not_agent`, `%s is not an agent; only an agent sets a status`); ADR 0014 adds it (Eric 2026-10-27, agent status decision 4) |
    | ChannelName | TakeName | a scoped principal's channel is named `<scope>-<rest>`, and a name starting `<s>-` for a scope `s` (any state) belongs to `s`; code `validation`, Reason `name_prefix` (the rule is Eric's decision 2026-10-26 (3); the action, object names and Reason are an agent choice; decision 19 below) |
    | ScopeName | TakeName | an administrator only (`forbidden`, Reason `not_admin`; every caller holds `Administer` first); the new scope's `<name>-` prefix nests with no existing scope's (any state) and no channel of another or no scope is named `<name>-*`; code `conflict`, Reason `name_prefix` (the rule is Eric's decision 2026-10-26 (3); the action, object names and Reason are an agent choice; decision 19 below) |
 

@@ -165,6 +165,41 @@ func TestDecideSessionAndIdentity(t *testing.T) {
 	}
 }
 
+// open note: agent-status 10
+func TestDecideSetStatus(t *testing.T) {
+	own := func(n string, k store.IdentityKind, scope string) identityFacts {
+		return identityFacts{store.Identity{Name: n, Kind: k, Scope: scope}}
+	}
+	tests := []struct {
+		name   string
+		p      Principal
+		f      identityFacts
+		allow  bool
+		code   bus.Code
+		reason string
+		text   string
+	}{
+		{name: "own agent allowed", p: pat, f: own("pat", store.IdentityAgent, ""), allow: true},
+		{name: "scoped own allowed", p: coder, f: own("job1-coder", store.IdentityAgent, "job1"), allow: true},
+		{name: "another identity refused", p: pat, f: own("kim", store.IdentityAgent, ""), code: bus.CodeForbidden, reason: ReasonNotOwner, text: "pat may set only its own status"},
+		{name: "human refused", p: hal, f: own("hal", store.IdentityHuman, ""), code: bus.CodeForbidden, reason: ReasonNotAgent, text: "hal is not an agent; only an agent sets a status"},
+		{name: "out of scope refused", p: coder, f: own("kim", store.IdentityAgent, ""), code: bus.CodeNotFound, reason: ReasonOutOfScope, text: `identity "kim" is not registered`},
+		{name: "admin on another refused", p: root, f: own("pat", store.IdentityAgent, ""), code: bus.CodeForbidden, reason: ReasonNotOwner, text: "root may set only its own status"},
+		{name: "unknown kind fails closed", p: Principal{Name: "x", Kind: "robot"}, f: own("x", "robot", ""), code: bus.CodeForbidden, reason: ReasonNotAgent, text: "x is not an agent; only an agent sets a status"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			d := decide(tt.p, tt.f, SetStatus)
+			if d.Allowed != tt.allow {
+				t.Fatalf("decision = %+v, want allowed=%v", d, tt.allow)
+			}
+			if !tt.allow && (d.Code != tt.code || d.Reason != tt.reason || d.Text != tt.text) {
+				t.Errorf("decision = %+v, want %s/%s/%q", d, tt.code, tt.reason, tt.text)
+			}
+		})
+	}
+}
+
 func TestHumansAndAdminsVisibleAndHumansGroup(t *testing.T) {
 	ord := store.KindOrdinary
 	// Identity/See: an unscoped principal sees everyone; a scoped agent sees its
@@ -248,7 +283,7 @@ func TestScopeGate(t *testing.T) {
 }
 
 func TestAnonymousDeniedEverything(t *testing.T) {
-	all := []Action{Read, Write, Admin, List, Unsubscribe, FilterReceive, Deliver, Post, Administer, CreateChannel, Use, See, TakeName}
+	all := []Action{Read, Write, Admin, List, Unsubscribe, FilterReceive, Deliver, Post, Administer, CreateChannel, Use, See, SetStatus, TakeName}
 	fs := []facts{
 		chFacts("", store.KindOrdinary, entry(store.Everyone, rwa)),
 		serverFacts{ChannelCreation: "open"},
@@ -277,6 +312,15 @@ func TestUndefinedPairIsInternal(t *testing.T) {
 				t.Errorf("%T/%q = %+v, want internal", f, a, d)
 			}
 		}
+	}
+	if d := decide(root, chFacts("", store.KindOrdinary), SetStatus); d.Allowed || d.Code != bus.CodeInternal {
+		t.Errorf("channel/set_status = %+v", d)
+	}
+	if d := decide(root, sessionFacts{}, SetStatus); d.Allowed || d.Code != bus.CodeInternal {
+		t.Errorf("session/set_status = %+v", d)
+	}
+	if d := decide(pat, identityFacts{}, Use); d.Allowed || d.Code != bus.CodeInternal {
+		t.Errorf("identity/use = %+v", d)
 	}
 	if d := decide(root, chFacts("", store.KindOrdinary), Use); d.Allowed || d.Code != bus.CodeInternal {
 		t.Errorf("channel/use = %+v", d)

@@ -18,6 +18,7 @@ const (
 	CreateChannel Action = "create_channel" // server (Decision 93)
 	Use           Action = "use"            // session
 	See           Action = "see"            // identity
+	SetStatus     Action = "set_status"     // identity: own identity, agents only (Eric 2026-10-27, agent status decision 4)
 	ReplaceACL    Action = "replace_acl"    // ACLChange (Eric 2026-10-25, spec 4.6)
 	TakeName      Action = "take_name"      // ChannelName and ScopeName: the scope-prefix naming rules (Eric 2026-10-26, issue #18)
 )
