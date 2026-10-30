@@ -1034,6 +1034,10 @@ block_agent_status_rules_fire() {
 	mutate_unit_block status-owner-clause-ignored internal/core/access/decide.go \
 		'if f.Name != p.Name {' 'if false {' \
 		./internal/core/access/ '^TestDecideSetStatus$' TestDecideSetStatus/another_identity_refused
+	mutate_unit_block status-core-check-skipped internal/core/statuses/statuses.go \
+		'if err := s.Access.Require(ctx, tx, p, access.Identity{Name: p.Name}, access.SetStatus); err != nil {' \
+		'if err := error(nil); err != nil {' \
+		./internal/conformance/bus/ '^TestAgentStatusAccess$/sqlite' TestAgentStatusAccess/sqlite/human_set_refused
 }
 
 block_skip_in_wiring
