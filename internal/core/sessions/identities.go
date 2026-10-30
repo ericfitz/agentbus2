@@ -24,6 +24,14 @@ func (s Service) Identities(ctx context.Context, identity string) ([]bus.Identit
 		if err != nil {
 			return err
 		}
+		latest, err := tx.LatestAgentStatuses(ctx)
+		if err != nil {
+			return err
+		}
+		statuses := make(map[string]bus.AgentStatus, len(latest))
+		for _, r := range latest {
+			statuses[r.Identity] = core.AgentStatusToBus(r)
+		}
 		for _, id := range all {
 			live, err := s.LiveSessions(ctx, tx, id.Name)
 			if err != nil {
@@ -33,6 +41,9 @@ func (s Service) Identities(ctx context.Context, identity string) ([]bus.Identit
 				continue
 			}
 			info := bus.IdentityInfo{Name: id.Name, Kind: bus.IdentityKind(id.Kind), Admin: id.Admin}
+			if st, ok := statuses[id.Name]; ok {
+				info.Status = &st
+			}
 			for _, row := range live {
 				info.Sessions = append(info.Sessions, bus.SessionInfo{
 					ID: row.ID, Identity: row.Identity, DisplayName: row.DisplayName, OpenedAt: row.OpenedAt,

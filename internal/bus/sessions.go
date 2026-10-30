@@ -123,6 +123,10 @@ type IdentityInfo struct {
 	Kind     IdentityKind
 	Admin    bool
 	Sessions []SessionInfo
+	// Status is the identity's latest status, nil when it has none. It sits on
+	// the identity, not on each session: the status is keyed per identity
+	// (open note: agent-status 15).
+	Status *AgentStatus
 }
 
 // Sessions is the session, delivery and discovery seam.

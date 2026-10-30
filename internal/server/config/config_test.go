@@ -43,6 +43,9 @@ func TestDefaultMatchesCore(t *testing.T) {
 	if d.ScopeIdleHours != 336 {
 		t.Errorf("scope_idle_hours default = %d, want 336", d.ScopeIdleHours)
 	}
+	if d.StatusHistoryCount != 20 {
+		t.Errorf("status_history_count default = %d, want 20", d.StatusHistoryCount)
+	}
 	if d.Listen != "" || d.Registration != "" || d.SQLite != "" || d.Postgres != "" || d.Issuer != "" {
 		t.Errorf("Listen, Registration, SQLite, Postgres and Issuer must default empty: %+v", d)
 	}
@@ -127,6 +130,8 @@ func TestValidateRejects(t *testing.T) {
 		{"reap bound", func(c *Config) { c.EmptyChannelReapHours = 0 }, "empty_channel_reap_hours"},
 		{"scope idle low", func(c *Config) { c.ScopeIdleHours = 0 }, "scope_idle_hours"},
 		{"scope idle high", func(c *Config) { c.ScopeIdleHours = 8761 }, "scope_idle_hours"},
+		{"status history low", func(c *Config) { c.StatusHistoryCount = 0 }, "status_history_count"},
+		{"status history high", func(c *Config) { c.StatusHistoryCount = 1001 }, "status_history_count"},
 		{"default acl", func(c *Config) { c.DefaultACL = []ACLEntry{{"ghost", []string{"read"}}} }, "default_acl"},
 	}
 	for _, tc := range cases {

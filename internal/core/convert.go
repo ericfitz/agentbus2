@@ -131,3 +131,13 @@ func ScopeToBus(s store.Scope) bus.Scope {
 		CreatedAt: s.CreatedAt, DoneAt: s.DoneAt, LastActivity: s.LastActivity,
 	}
 }
+
+// AgentStatusToBus converts a stored status row. Tag is the stored tag and
+// LastTag stays empty; the list sets both for an entry.
+func AgentStatusToBus(r store.AgentStatus) bus.AgentStatus {
+	return bus.AgentStatus{
+		Identity: r.Identity, Revision: r.Revision, Tag: bus.StatusTag(r.Tag),
+		Text: r.Text, Problem: r.Problem, Session: r.SessionID,
+		DisplayName: r.DisplayName, SetAt: r.SetAt,
+	}
+}

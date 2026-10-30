@@ -400,6 +400,6 @@ func overBudgetText(setting string, budget int64, u store.Usage) string {
 
 // exhaustedText is the notice when nothing is left to evict.
 func exhaustedText(setting string, budget int64, u store.Usage) string {
-	return fmt.Sprintf("agentbus2 capacity exhausted: %s=%d MiB (disk %d MiB, %.2fx) is filled by task lists and memories active within idle_window_hours, ordinary messages younger than 1 hour and tombstones younger than 72 hours, which are never evicted; raise %s and restart every replica, lower idle_window_hours, or have an administrator reset the bus to discard all data",
+	return fmt.Sprintf("agentbus2 capacity exhausted: %s=%d MiB (disk %d MiB, %.2fx) is filled by task lists and memories active within idle_window_hours, ordinary messages younger than 1 hour tombstones younger than 72 hours and agent status history, which are never evicted; raise %s and restart every replica, lower idle_window_hours, or have an administrator reset the bus to discard all data",
 		setting, budget>>20, u.DiskBytes>>20, diskRatio(u), setting)
 }
