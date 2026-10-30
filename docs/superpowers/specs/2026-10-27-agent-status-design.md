@@ -2,6 +2,7 @@
 
 ## 1. Status
 
+- Implemented by `docs/superpowers/plans/2026-10-27-agent-status.md`; recorded in ADR 0014.
 - Draft of 2026-10-27, written by an agent.
 - Nothing in it is a decision until Eric marks it so. Where it says "Recommended" it is a proposal.
 - **Eric reviewed this brief on 2026-10-27:** all 15 of its decisions are **decided** and none is open. Decisions 1 to 4 and 6 to 15 are ratified as recommended; decision 5 (the TUI layout) is Layout 2, the agents board, ratified as written, including the status-bar attention count and an icon-only tag on each session row.
