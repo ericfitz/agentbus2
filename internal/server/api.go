@@ -11,6 +11,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core/scopes"
 	"github.com/ericfitz/agentbus2/internal/core/search"
 	"github.com/ericfitz/agentbus2/internal/core/sessions"
+	"github.com/ericfitz/agentbus2/internal/core/statuses"
 	"github.com/ericfitz/agentbus2/internal/core/tasks"
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/version"
@@ -32,6 +33,7 @@ type api struct {
 	search    search.Service
 	memories  memories.Service
 	tasks     tasks.Service
+	statuses  statuses.Service
 }
 
 var _ gen.StrictServerInterface = (*api)(nil)
@@ -56,5 +58,6 @@ func newAPI(c *core.Core, o Options) *api {
 		search:    search.Service{Core: c},
 		memories:  memories.Service{Core: c},
 		tasks:     tasks.Service{Core: c},
+		statuses:  statuses.Service{Core: c, Sessions: sess},
 	}
 }

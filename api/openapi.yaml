@@ -232,6 +232,74 @@ paths:
                   $ref: "#/components/schemas/Identity"
         default:
           $ref: "#/components/responses/Problem"
+  /v1/sessions/{session}/status:
+    post:
+      operationId: setAgentStatus
+      tags: [sessions]
+      description: >-
+        Sets the calling agent's status from one of its live sessions. Only
+        an agent sets a status, and only its own.
+      parameters:
+        - $ref: "#/components/parameters/SessionParam"
+        - $ref: "#/components/parameters/IdempotencyKeyParam"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SetAgentStatusRequest"
+      responses:
+        "200":
+          description: The stored status revision.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AgentStatus"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/agent-statuses:
+    get:
+      operationId: listAgentStatuses
+      tags: [sessions]
+      description: >-
+        Every visible identity with a stored status, by identity. An entry
+        whose identity has no live session reads tag offline, with last_tag
+        the stored tag.
+      responses:
+        "200":
+          description: The current statuses.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentStatusEntry"
+        default:
+          $ref: "#/components/responses/Problem"
+  /v1/identities/{identity}/statuses:
+    get:
+      operationId: agentStatusHistory
+      tags: [sessions]
+      description: >-
+        One identity's status revisions, oldest first, at most
+        status_history_count.
+      parameters:
+        - name: identity
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: The stored revisions.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/AgentStatus"
+        default:
+          $ref: "#/components/responses/Problem"
   /v1/channels:
     get:
       operationId: listChannels
@@ -1505,6 +1573,64 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/SessionInfo"
+        status:
+          $ref: "#/components/schemas/AgentStatus"
+    SetAgentStatusRequest:
+      type: object
+      additionalProperties: false
+      required: [tag, text]
+      properties:
+        tag:
+          type: string
+          description: >-
+            One of idle, planning, implementing, reviewing, waiting, blocked,
+            needs-human. offline is set by the server.
+        text:
+          type: string
+        problem:
+          type: string
+    AgentStatus:
+      type: object
+      required: [identity, revision, tag, text, session, display_name, set_at]
+      properties:
+        identity:
+          type: string
+        revision:
+          type: integer
+          format: int64
+        tag:
+          type: string
+        last_tag:
+          type: string
+          description: >-
+            listAgentStatuses only: the stored tag; tag reads offline when
+            live is false.
+        text:
+          type: string
+        problem:
+          type: string
+          description: Absent when empty.
+        session:
+          type: string
+        display_name:
+          type: string
+        set_at:
+          type: integer
+          format: int64
+          description: Unix milliseconds.
+    AgentStatusEntry:
+      type: object
+      required: [identity, kind, live, status]
+      properties:
+        identity:
+          type: string
+        kind:
+          type: string
+          enum: [agent, human]
+        live:
+          type: boolean
+        status:
+          $ref: "#/components/schemas/AgentStatus"
     Channel:
       type: object
       required: [name, kind, capabilities]

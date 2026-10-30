@@ -142,4 +142,13 @@ type Sessions interface {
 	Peek(ctx context.Context, in PeekInput) (PeekResult, error)
 	// Identities lists identities with a live session (v1 discover).
 	Identities(ctx context.Context) ([]IdentityInfo, error)
+	// SetAgentStatus sets the caller's status from one of its live sessions
+	// (issue #10). Only an agent sets a status, and only its own.
+	SetAgentStatus(ctx context.Context, in SetAgentStatusInput) (AgentStatus, error)
+	// AgentStatuses lists every visible identity with a stored status, by
+	// identity.
+	AgentStatuses(ctx context.Context) ([]AgentStatusEntry, error)
+	// AgentStatusHistory lists one identity's stored statuses, oldest first,
+	// at most the configured history count.
+	AgentStatusHistory(ctx context.Context, identity string) ([]AgentStatus, error)
 }

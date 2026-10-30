@@ -138,6 +138,9 @@ func TestOperationTable(t *testing.T) {
 		"rotateSigningKey":            "POST /v1/admin/signing-keys/rotate",
 		"authorizationServerMetadata": "GET /.well-known/oauth-authorization-server",
 		"health":                      "GET /v1/health",
+		"setAgentStatus":              "POST /v1/sessions/{session}/status",
+		"listAgentStatuses":           "GET /v1/agent-statuses",
+		"agentStatusHistory":          "GET /v1/identities/{identity}/statuses",
 	}
 	doc := loadDoc(t)
 	got := map[string]string{}
@@ -172,8 +175,8 @@ func TestOperationTable(t *testing.T) {
 			t.Errorf("unexpected operation %s", id)
 		}
 	}
-	if open != 8 || protected != 46 {
-		t.Fatalf("security: %d open, %d protected; want 8 and 46", open, protected)
+	if open != 8 || protected != 49 {
+		t.Fatalf("security: %d open, %d protected; want 8 and 49", open, protected)
 	}
 }
 

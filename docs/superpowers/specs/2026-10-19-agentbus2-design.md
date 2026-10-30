@@ -242,6 +242,7 @@ section 4.6 maps each operation to a permission).
 | Memories | Get; edit (idempotent, new revision); delete; revisions | `edit_memory` gains an idempotency key. Decision 46. An edit keeps every field it omits (content, subject, type, metadata, tags) and clears one given empty; empty content is a validation error (delete instead); an optional `if_revision` fails with `conflict` when the live revision differs. post-build decision 10 (Eric, 2026-10-21). |
 | Tasks | Create, claim, release, update, get, list on a task list | Ported from v1; leases and reclaim. Owner checked against the identity registry (Decision 81). A task list is a channel of kind `tasks` (Decision 90); task operations accept only that kind. |
 | Identities | List live identities and sessions (v1 `discover`) | Server-assigned display names. Decision 39. |
+| Agent status | set (through a session), list, history | Eric's decisions 2026-10-27, ADR 0014. |
 | Admin | Reset; delete or rename a channel; usage; status; reset-credential | Separate interface and API section, authorization requires an admin-flagged identity (Decisions 48, 58, 73). Admin bootstrap is a server-host command, section 4.7. Delete and rename are authorized by `admin` on the channel, which server admins hold everywhere (Decision 89); the admin API keeps both. |
 
 ### 3.3 Errors

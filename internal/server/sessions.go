@@ -116,6 +116,10 @@ func (a *api) ListIdentities(ctx context.Context, _ gen.ListIdentitiesRequestObj
 		for _, s := range i.Sessions {
 			g.Sessions = append(g.Sessions, gen.SessionInfo{Id: s.ID, Identity: s.Identity, DisplayName: s.DisplayName, OpenedAt: s.OpenedAt})
 		}
+		if i.Status != nil {
+			st := genAgentStatus(*i.Status)
+			g.Status = &st
+		}
 		out = append(out, g)
 	}
 	return out, nil

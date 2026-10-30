@@ -189,7 +189,10 @@ internal/` then prints nothing).
   work and the Slack bridge work (2026-10-23) it declares 52 (the 52nd is the `health` operation, 2026-10-25), counted from
   `operationId` and `security: []`: 44 protected and 8 open (the signing-key
   administration work of 2026-10-27 added two protected operations, so
-  `api/openapi.yaml` now declares 54: 46 protected and 8 open; ADR 0012). `health` (issue
+  `api/openapi.yaml` then declared 54: 46 protected and 8 open; ADR 0012; the
+  three agent-status operations of 2026-10-27, `setAgentStatus`,
+  `listAgentStatuses` and `agentStatusHistory` (issue #10), are protected, so
+  it now declares 57: 49 protected and 8 open; ADR 0014). `health` (issue
   #11) is counted as open (Eric, 2026-10-25, "Count as open"); it is the one
   open operation that answers 401, to a presented invalid bearer (ADR 0010
   decision 12) (the Slack bridge

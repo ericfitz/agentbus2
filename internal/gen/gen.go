@@ -40,6 +40,24 @@ func (e ACLEntryPermissions) Valid() bool {
 	}
 }
 
+// Defines values for AgentStatusEntryKind.
+const (
+	AgentStatusEntryKindAgent AgentStatusEntryKind = "agent"
+	AgentStatusEntryKindHuman AgentStatusEntryKind = "human"
+)
+
+// Valid indicates whether the value is a known member of the AgentStatusEntryKind enum.
+func (e AgentStatusEntryKind) Valid() bool {
+	switch e {
+	case AgentStatusEntryKindAgent:
+		return true
+	case AgentStatusEntryKindHuman:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for BridgeState.
 const (
 	Archived BridgeState = "archived"
@@ -582,6 +600,36 @@ type AgentIdentity struct {
 	Scope           *string `json:"scope,omitempty"`
 }
 
+// AgentStatus defines model for AgentStatus.
+type AgentStatus struct {
+	DisplayName string `json:"display_name"`
+	Identity    string `json:"identity"`
+
+	// LastTag listAgentStatuses only: the stored tag; tag reads offline when live is false.
+	LastTag *string `json:"last_tag,omitempty"`
+
+	// Problem Absent when empty.
+	Problem  *string `json:"problem,omitempty"`
+	Revision int64   `json:"revision"`
+	Session  string  `json:"session"`
+
+	// SetAt Unix milliseconds.
+	SetAt int64  `json:"set_at"`
+	Tag   string `json:"tag"`
+	Text  string `json:"text"`
+}
+
+// AgentStatusEntry defines model for AgentStatusEntry.
+type AgentStatusEntry struct {
+	Identity string               `json:"identity"`
+	Kind     AgentStatusEntryKind `json:"kind"`
+	Live     bool                 `json:"live"`
+	Status   AgentStatus          `json:"status"`
+}
+
+// AgentStatusEntryKind defines model for AgentStatusEntry.Kind.
+type AgentStatusEntryKind string
+
 // AuthMethod defines model for AuthMethod.
 type AuthMethod struct {
 	BearerFormat *string `json:"bearer_format,omitempty"`
@@ -834,6 +882,7 @@ type Identity struct {
 	Kind     IdentityKind  `json:"kind"`
 	Name     string        `json:"name"`
 	Sessions []SessionInfo `json:"sessions"`
+	Status   *AgentStatus  `json:"status,omitempty"`
 }
 
 // IdentityKind defines model for Identity.Kind.
@@ -1049,6 +1098,15 @@ type SessionInfo struct {
 	Id          string `json:"id"`
 	Identity    string `json:"identity"`
 	OpenedAt    int64  `json:"opened_at"`
+}
+
+// SetAgentStatusRequest defines model for SetAgentStatusRequest.
+type SetAgentStatusRequest struct {
+	Problem *string `json:"problem,omitempty"`
+
+	// Tag One of idle, planning, implementing, reviewing, waiting, blocked, needs-human. offline is set by the server.
+	Tag  string `json:"tag"`
+	Text string `json:"text"`
 }
 
 // SigningKey defines model for SigningKey.
@@ -1404,6 +1462,12 @@ type PeekParams struct {
 	IncludeOwn *bool `form:"include_own,omitempty" json:"include_own,omitempty"`
 }
 
+// SetAgentStatusParams defines parameters for SetAgentStatus.
+type SetAgentStatusParams struct {
+	// IdempotencyKey Absent or empty means no receipt (Decision 66).
+	IdempotencyKey *IdempotencyKeyParam `json:"Idempotency-Key,omitempty"`
+}
+
 // WatchParams defines parameters for Watch.
 type WatchParams struct {
 	After *int64 `form:"after,omitempty" json:"after,omitempty"`
@@ -1492,6 +1556,9 @@ type OpenSessionJSONRequestBody = OpenSessionRequest
 
 // ReceiveJSONRequestBody defines body for Receive for application/json ContentType.
 type ReceiveJSONRequestBody = ReceiveRequest
+
+// SetAgentStatusJSONRequestBody defines body for SetAgentStatus for application/json ContentType.
+type SetAgentStatusJSONRequestBody = SetAgentStatusRequest
 
 // SubscribeTagsJSONRequestBody defines body for SubscribeTags for application/json ContentType.
 type SubscribeTagsJSONRequestBody = TagPatterns
@@ -1672,6 +1739,11 @@ type ClientInterface interface {
 	// The database size, the budget of the store's engine, the disk size and ratio, the pressure tier and the capacity notice (spec 3.2, Decision 48).
 	AdminUsage(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// ListAgentStatuses performs a GET /v1/agent-statuses (the `ListAgentStatuses` operationId) request.
+	//
+	// Every visible identity with a stored status, by identity. An entry whose identity has no live session reads tag offline, with last_tag the stored tag.
+	ListAgentStatuses(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// Jwks performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
 	Jwks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1774,6 +1846,11 @@ type ClientInterface interface {
 	// ListIdentities performs a GET /v1/identities (the `ListIdentities` operationId) request.
 	ListIdentities(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
+	// AgentStatusHistory performs a GET /v1/identities/{identity}/statuses (the `AgentStatusHistory` operationId) request.
+	//
+	// One identity's status revisions, oldest first, at most status_history_count.
+	AgentStatusHistory(ctx context.Context, identity string, reqEditors ...RequestEditorFn) (*http.Response, error)
+
 	// DeleteMemory performs a DELETE /v1/memories/{id} (the `DeleteMemory` operationId) request.
 	DeleteMemory(ctx context.Context, id IdParam, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
@@ -1817,6 +1894,18 @@ type ClientInterface interface {
 	// Receive performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request.
 	// Takes a body of the `application/json` content type.
 	Receive(ctx context.Context, session SessionParam, body ReceiveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetAgentStatusWithBody performs a POST /v1/sessions/{session}/status (the `SetAgentStatus` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Sets the calling agent's status from one of its live sessions. Only an agent sets a status, and only its own.
+	SetAgentStatusWithBody(ctx context.Context, session SessionParam, params *SetAgentStatusParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// SetAgentStatus performs a POST /v1/sessions/{session}/status (the `SetAgentStatus` operationId) request.
+	// Takes a body of the `application/json` content type.
+	//
+	// Sets the calling agent's status from one of its live sessions. Only an agent sets a status, and only its own.
+	SetAgentStatus(ctx context.Context, session SessionParam, params *SetAgentStatusParams, body SetAgentStatusJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// Watch performs a GET /v1/sessions/{session}/watch (the `Watch` operationId) request.
 	Watch(ctx context.Context, session SessionParam, params *WatchParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2194,6 +2283,21 @@ func (c *Client) AdminUsage(ctx context.Context, reqEditors ...RequestEditorFn) 
 	return c.Client.Do(req)
 }
 
+// ListAgentStatuses performs a GET /v1/agent-statuses (the `ListAgentStatuses` operationId) request.
+//
+// Every visible identity with a stored status, by identity. An entry whose identity has no live session reads tag offline, with last_tag the stored tag.
+func (c *Client) ListAgentStatuses(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListAgentStatusesRequest(c.Server)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // Jwks performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
 func (c *Client) Jwks(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewJwksRequest(c.Server)
@@ -2556,6 +2660,21 @@ func (c *Client) ListIdentities(ctx context.Context, reqEditors ...RequestEditor
 	return c.Client.Do(req)
 }
 
+// AgentStatusHistory performs a GET /v1/identities/{identity}/statuses (the `AgentStatusHistory` operationId) request.
+//
+// One identity's status revisions, oldest first, at most status_history_count.
+func (c *Client) AgentStatusHistory(ctx context.Context, identity string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewAgentStatusHistoryRequest(c.Server, identity)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
 // DeleteMemory performs a DELETE /v1/memories/{id} (the `DeleteMemory` operationId) request.
 func (c *Client) DeleteMemory(ctx context.Context, id IdParam, params *DeleteMemoryParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeleteMemoryRequest(c.Server, id, params)
@@ -2710,6 +2829,38 @@ func (c *Client) ReceiveWithBody(ctx context.Context, session SessionParam, cont
 // Takes a body of the `application/json` content type.
 func (c *Client) Receive(ctx context.Context, session SessionParam, body ReceiveJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewReceiveRequest(c.Server, session, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetAgentStatusWithBody performs a POST /v1/sessions/{session}/status (the `SetAgentStatus` operationId) request,
+// with any type of body and a specified content type.
+//
+// Sets the calling agent's status from one of its live sessions. Only an agent sets a status, and only its own.
+func (c *Client) SetAgentStatusWithBody(ctx context.Context, session SessionParam, params *SetAgentStatusParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetAgentStatusRequestWithBody(c.Server, session, params, contentType, body)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// SetAgentStatus performs a POST /v1/sessions/{session}/status (the `SetAgentStatus` operationId) request.
+// Takes a body of the `application/json` content type.
+//
+// Sets the calling agent's status from one of its live sessions. Only an agent sets a status, and only its own.
+func (c *Client) SetAgentStatus(ctx context.Context, session SessionParam, params *SetAgentStatusParams, body SetAgentStatusJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewSetAgentStatusRequest(c.Server, session, params, body)
 	if err != nil {
 		return nil, err
 	}
@@ -3626,6 +3777,33 @@ func NewAdminUsageRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewListAgentStatusesRequest constructs an http.Request for the ListAgentStatuses method
+func NewListAgentStatusesRequest(server string) (*http.Request, error) {
+	var err error
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/agent-statuses")
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewJwksRequest constructs an http.Request for the Jwks method
 func NewJwksRequest(server string) (*http.Request, error) {
 	var err error
@@ -4520,6 +4698,40 @@ func NewListIdentitiesRequest(server string) (*http.Request, error) {
 	return req, nil
 }
 
+// NewAgentStatusHistoryRequest constructs an http.Request for the AgentStatusHistory method
+func NewAgentStatusHistoryRequest(server string, identity string) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "identity", identity, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/identities/%s/statuses", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
 // NewDeleteMemoryRequest constructs an http.Request for the DeleteMemory method
 func NewDeleteMemoryRequest(server string, id IdParam, params *DeleteMemoryParams) (*http.Request, error) {
 	var err error
@@ -5054,6 +5266,68 @@ func NewReceiveRequestWithBody(server string, session SessionParam, contentType 
 	}
 
 	req.Header.Add("Content-Type", contentType)
+
+	return req, nil
+}
+
+// NewSetAgentStatusRequest calls the generic SetAgentStatus builder with application/json body
+func NewSetAgentStatusRequest(server string, session SessionParam, params *SetAgentStatusParams, body SetAgentStatusJSONRequestBody) (*http.Request, error) {
+	var bodyReader io.Reader
+	buf, err := json.Marshal(body)
+	if err != nil {
+		return nil, err
+	}
+	bodyReader = bytes.NewReader(buf)
+	return NewSetAgentStatusRequestWithBody(server, session, params, "application/json", bodyReader)
+}
+
+// NewSetAgentStatusRequestWithBody constructs an http.Request for the SetAgentStatus method, with any body, and a specified content type
+func NewSetAgentStatusRequestWithBody(server string, session SessionParam, params *SetAgentStatusParams, contentType string, body io.Reader) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "session", session, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/sessions/%s/status", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
+	}
+
+	req, err := http.NewRequest(http.MethodPost, queryURL.String(), body)
+	if err != nil {
+		return nil, err
+	}
+
+	req.Header.Add("Content-Type", contentType)
+
+	if params != nil {
+
+		if params.IdempotencyKey != nil {
+			var headerParam0 string
+
+			headerParam0, err = runtime.StyleParamWithOptions("simple", false, "Idempotency-Key", *params.IdempotencyKey, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationHeader, Type: "string", Format: ""})
+			if err != nil {
+				return nil, err
+			}
+
+			req.Header.Set("Idempotency-Key", headerParam0)
+		}
+
+	}
 
 	return req, nil
 }
@@ -5679,6 +5953,13 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	AdminUsageWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*AdminUsageResponse, error)
 
+	// ListAgentStatusesWithResponse performs a GET /v1/agent-statuses (the `ListAgentStatuses` operationId) request.
+	//
+	// Every visible identity with a stored status, by identity. An entry whose identity has no live session reads tag offline, with last_tag the stored tag.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	ListAgentStatusesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAgentStatusesResponse, error)
+
 	// JwksWithResponse performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -5817,6 +6098,13 @@ type ClientWithResponsesInterface interface {
 	// Returns a wrapper object for the known response body format(s).
 	ListIdentitiesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListIdentitiesResponse, error)
 
+	// AgentStatusHistoryWithResponse performs a GET /v1/identities/{identity}/statuses (the `AgentStatusHistory` operationId) request.
+	//
+	// One identity's status revisions, oldest first, at most status_history_count.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	AgentStatusHistoryWithResponse(ctx context.Context, identity string, reqEditors ...RequestEditorFn) (*AgentStatusHistoryResponse, error)
+
 	// DeleteMemoryWithResponse performs a DELETE /v1/memories/{id} (the `DeleteMemory` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
@@ -5878,6 +6166,20 @@ type ClientWithResponsesInterface interface {
 	// ReceiveWithResponse performs a POST /v1/sessions/{session}/receive (the `Receive` operationId) request.
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	ReceiveWithResponse(ctx context.Context, session SessionParam, body ReceiveJSONRequestBody, reqEditors ...RequestEditorFn) (*ReceiveResponse, error)
+
+	// SetAgentStatusWithBodyWithResponse performs a POST /v1/sessions/{session}/status (the `SetAgentStatus` operationId) request,
+	// with any type of body and a specified content type.
+	//
+	// Sets the calling agent's status from one of its live sessions. Only an agent sets a status, and only its own.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	SetAgentStatusWithBodyWithResponse(ctx context.Context, session SessionParam, params *SetAgentStatusParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetAgentStatusResponse, error)
+
+	// SetAgentStatusWithResponse performs a POST /v1/sessions/{session}/status (the `SetAgentStatus` operationId) request.
+	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+	//
+	// Sets the calling agent's status from one of its live sessions. Only an agent sets a status, and only its own.
+	SetAgentStatusWithResponse(ctx context.Context, session SessionParam, params *SetAgentStatusParams, body SetAgentStatusJSONRequestBody, reqEditors ...RequestEditorFn) (*SetAgentStatusResponse, error)
 
 	// WatchWithResponse performs a GET /v1/sessions/{session}/watch (the `Watch` operationId) request.
 	//
@@ -6833,6 +7135,54 @@ func (r AdminUsageResponse) ContentType() string {
 	return ""
 }
 
+type ListAgentStatusesResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]AgentStatusEntry
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r ListAgentStatusesResponse) GetJSON200() *[]AgentStatusEntry {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r ListAgentStatusesResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r ListAgentStatusesResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r ListAgentStatusesResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r ListAgentStatusesResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r ListAgentStatusesResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type JwksResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -7683,6 +8033,54 @@ func (r ListIdentitiesResponse) ContentType() string {
 	return ""
 }
 
+type AgentStatusHistoryResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *[]AgentStatus
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r AgentStatusHistoryResponse) GetJSON200() *[]AgentStatus {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r AgentStatusHistoryResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r AgentStatusHistoryResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r AgentStatusHistoryResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r AgentStatusHistoryResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r AgentStatusHistoryResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
 type DeleteMemoryResponse struct {
 	Body         []byte
 	HTTPResponse *http.Response
@@ -8095,6 +8493,54 @@ func (r ReceiveResponse) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r ReceiveResponse) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type SetAgentStatusResponse struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AgentStatus
+	// ApplicationproblemJSONDefault the response for an HTTP default `application/problem+json` response
+	ApplicationproblemJSONDefault *Problem
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r SetAgentStatusResponse) GetJSON200() *AgentStatus {
+	return r.JSON200
+}
+
+// GetApplicationproblemJSONDefault returns the response for an HTTP default `application/problem+json` response
+func (r SetAgentStatusResponse) GetApplicationproblemJSONDefault() *Problem {
+	return r.ApplicationproblemJSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r SetAgentStatusResponse) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r SetAgentStatusResponse) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r SetAgentStatusResponse) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r SetAgentStatusResponse) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -8756,6 +9202,19 @@ func (c *ClientWithResponses) AdminUsageWithResponse(ctx context.Context, reqEdi
 	return ParseAdminUsageResponse(rsp)
 }
 
+// ListAgentStatusesWithResponse performs a GET /v1/agent-statuses (the `ListAgentStatuses` operationId) request.
+//
+// Every visible identity with a stored status, by identity. An entry whose identity has no live session reads tag offline, with last_tag the stored tag.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) ListAgentStatusesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*ListAgentStatusesResponse, error) {
+	rsp, err := c.ListAgentStatuses(ctx, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseListAgentStatusesResponse(rsp)
+}
+
 // JwksWithResponse performs a GET /v1/auth/jwks (the `Jwks` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -9050,6 +9509,19 @@ func (c *ClientWithResponses) ListIdentitiesWithResponse(ctx context.Context, re
 	return ParseListIdentitiesResponse(rsp)
 }
 
+// AgentStatusHistoryWithResponse performs a GET /v1/identities/{identity}/statuses (the `AgentStatusHistory` operationId) request.
+//
+// One identity's status revisions, oldest first, at most status_history_count.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) AgentStatusHistoryWithResponse(ctx context.Context, identity string, reqEditors ...RequestEditorFn) (*AgentStatusHistoryResponse, error) {
+	rsp, err := c.AgentStatusHistory(ctx, identity, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseAgentStatusHistoryResponse(rsp)
+}
+
 // DeleteMemoryWithResponse performs a DELETE /v1/memories/{id} (the `DeleteMemory` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
@@ -9182,6 +9654,32 @@ func (c *ClientWithResponses) ReceiveWithResponse(ctx context.Context, session S
 		return nil, err
 	}
 	return ParseReceiveResponse(rsp)
+}
+
+// SetAgentStatusWithBodyWithResponse performs a POST /v1/sessions/{session}/status (the `SetAgentStatus` operationId) request,
+// with any type of body and a specified content type.
+//
+// Sets the calling agent's status from one of its live sessions. Only an agent sets a status, and only its own.
+//
+// Returns a wrapper object for the known response body format(s).
+func (c *ClientWithResponses) SetAgentStatusWithBodyWithResponse(ctx context.Context, session SessionParam, params *SetAgentStatusParams, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SetAgentStatusResponse, error) {
+	rsp, err := c.SetAgentStatusWithBody(ctx, session, params, contentType, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetAgentStatusResponse(rsp)
+}
+
+// SetAgentStatusWithResponse performs a POST /v1/sessions/{session}/status (the `SetAgentStatus` operationId) request.
+// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
+//
+// Sets the calling agent's status from one of its live sessions. Only an agent sets a status, and only its own.
+func (c *ClientWithResponses) SetAgentStatusWithResponse(ctx context.Context, session SessionParam, params *SetAgentStatusParams, body SetAgentStatusJSONRequestBody, reqEditors ...RequestEditorFn) (*SetAgentStatusResponse, error) {
+	rsp, err := c.SetAgentStatus(ctx, session, params, body, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseSetAgentStatusResponse(rsp)
 }
 
 // WatchWithResponse performs a GET /v1/sessions/{session}/watch (the `Watch` operationId) request.
@@ -9924,6 +10422,39 @@ func ParseAdminUsageResponse(rsp *http.Response) (*AdminUsageResponse, error) {
 	return response, nil
 }
 
+// ParseListAgentStatusesResponse parses an HTTP response from a ListAgentStatusesWithResponse call
+func ParseListAgentStatusesResponse(rsp *http.Response) (*ListAgentStatusesResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &ListAgentStatusesResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []AgentStatusEntry
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseJwksResponse parses an HTTP response from a JwksWithResponse call
 func ParseJwksResponse(rsp *http.Response) (*JwksResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -10519,6 +11050,39 @@ func ParseListIdentitiesResponse(rsp *http.Response) (*ListIdentitiesResponse, e
 	return response, nil
 }
 
+// ParseAgentStatusHistoryResponse parses an HTTP response from a AgentStatusHistoryWithResponse call
+func ParseAgentStatusHistoryResponse(rsp *http.Response) (*AgentStatusHistoryResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &AgentStatusHistoryResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest []AgentStatus
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
 // ParseDeleteMemoryResponse parses an HTTP response from a DeleteMemoryWithResponse call
 func ParseDeleteMemoryResponse(rsp *http.Response) (*DeleteMemoryResponse, error) {
 	bodyBytes, err := io.ReadAll(rsp.Body)
@@ -10791,6 +11355,39 @@ func ParseReceiveResponse(rsp *http.Response) (*ReceiveResponse, error) {
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest ReceiveResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Problem
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.ApplicationproblemJSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseSetAgentStatusResponse parses an HTTP response from a SetAgentStatusWithResponse call
+func ParseSetAgentStatusResponse(rsp *http.Response) (*SetAgentStatusResponse, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &SetAgentStatusResponse{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AgentStatus
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -11134,6 +11731,9 @@ type ServerInterface interface {
 	// (GET /v1/admin/usage)
 	AdminUsage(w http.ResponseWriter, r *http.Request)
 
+	// (GET /v1/agent-statuses)
+	ListAgentStatuses(w http.ResponseWriter, r *http.Request)
+
 	// (GET /v1/auth/jwks)
 	Jwks(w http.ResponseWriter, r *http.Request)
 
@@ -11188,6 +11788,9 @@ type ServerInterface interface {
 	// (GET /v1/identities)
 	ListIdentities(w http.ResponseWriter, r *http.Request)
 
+	// (GET /v1/identities/{identity}/statuses)
+	AgentStatusHistory(w http.ResponseWriter, r *http.Request, identity string)
+
 	// (DELETE /v1/memories/{id})
 	DeleteMemory(w http.ResponseWriter, r *http.Request, id IdParam, params DeleteMemoryParams)
 
@@ -11214,6 +11817,9 @@ type ServerInterface interface {
 
 	// (POST /v1/sessions/{session}/receive)
 	Receive(w http.ResponseWriter, r *http.Request, session SessionParam)
+
+	// (POST /v1/sessions/{session}/status)
+	SetAgentStatus(w http.ResponseWriter, r *http.Request, session SessionParam, params SetAgentStatusParams)
 
 	// (GET /v1/sessions/{session}/watch)
 	Watch(w http.ResponseWriter, r *http.Request, session SessionParam, params WatchParams)
@@ -11748,6 +12354,20 @@ func (siw *ServerInterfaceWrapper) AdminUsage(w http.ResponseWriter, r *http.Req
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.AdminUsage(w, r)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// ListAgentStatuses operation middleware
+func (siw *ServerInterfaceWrapper) ListAgentStatuses(w http.ResponseWriter, r *http.Request) {
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.ListAgentStatuses(w, r)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -12421,6 +13041,32 @@ func (siw *ServerInterfaceWrapper) ListIdentities(w http.ResponseWriter, r *http
 	handler.ServeHTTP(w, r)
 }
 
+// AgentStatusHistory operation middleware
+func (siw *ServerInterfaceWrapper) AgentStatusHistory(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "identity" -------------
+	var identity string
+
+	err = runtime.BindStyledParameterWithOptions("simple", "identity", r.PathValue("identity"), &identity, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "identity", Err: err})
+		return
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.AgentStatusHistory(w, r, identity)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
 // DeleteMemory operation middleware
 func (siw *ServerInterfaceWrapper) DeleteMemory(w http.ResponseWriter, r *http.Request) {
 
@@ -12846,6 +13492,56 @@ func (siw *ServerInterfaceWrapper) Receive(w http.ResponseWriter, r *http.Reques
 
 	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		siw.Handler.Receive(w, r, session)
+	}))
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		handler = middleware(handler)
+	}
+
+	handler.ServeHTTP(w, r)
+}
+
+// SetAgentStatus operation middleware
+func (siw *ServerInterfaceWrapper) SetAgentStatus(w http.ResponseWriter, r *http.Request) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "session" -------------
+	var session SessionParam
+
+	err = runtime.BindStyledParameterWithOptions("simple", "session", r.PathValue("session"), &session, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "", ValueIsUnescaped: true})
+	if err != nil {
+		siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "session", Err: err})
+		return
+	}
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params SetAgentStatusParams
+
+	headers := r.Header
+
+	// ------------- Optional header parameter "Idempotency-Key" -------------
+	if valueList, found := headers[http.CanonicalHeaderKey("Idempotency-Key")]; found {
+		var IdempotencyKey IdempotencyKeyParam
+		n := len(valueList)
+		if n != 1 {
+			siw.ErrorHandlerFunc(w, r, &TooManyValuesForParamError{ParamName: "Idempotency-Key", Count: n})
+			return
+		}
+
+		err = runtime.BindStyledParameterWithOptions("simple", "Idempotency-Key", valueList[0], &IdempotencyKey, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationHeader, Explode: false, Required: false, Type: "string", Format: ""})
+		if err != nil {
+			siw.ErrorHandlerFunc(w, r, &InvalidParamFormatError{ParamName: "Idempotency-Key", Err: err})
+			return
+		}
+
+		params.IdempotencyKey = &IdempotencyKey
+
+	}
+
+	handler := http.Handler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		siw.Handler.SetAgentStatus(w, r, session, params)
 	}))
 
 	for _, middleware := range siw.HandlerMiddlewares {
@@ -13339,6 +14035,9 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sessions/{session}/watch", wrapper.Watch)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/sessions/{session}/peek", wrapper.Peek)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/identities", wrapper.ListIdentities)
+	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/sessions/{session}/status", wrapper.SetAgentStatus)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/agent-statuses", wrapper.ListAgentStatuses)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/identities/{identity}/statuses", wrapper.AgentStatusHistory)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/channels", wrapper.ListChannels)
 	m.HandleFunc(http.MethodPost+" "+options.BaseURL+"/v1/channels", wrapper.CreateChannel)
 	m.HandleFunc(http.MethodDelete+" "+options.BaseURL+"/v1/channels/{channel}", wrapper.DeleteChannel)
@@ -14116,6 +14815,44 @@ func (response AdminUsagedefaultApplicationProblemPlusJSONResponse) VisitAdminUs
 	return err
 }
 
+type ListAgentStatusesRequestObject struct {
+}
+
+type ListAgentStatusesResponseObject interface {
+	VisitListAgentStatusesResponse(w http.ResponseWriter) error
+}
+
+type ListAgentStatuses200JSONResponse []AgentStatusEntry
+
+func (response ListAgentStatuses200JSONResponse) VisitListAgentStatusesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type ListAgentStatusesdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response ListAgentStatusesdefaultApplicationProblemPlusJSONResponse) VisitListAgentStatusesResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type JwksRequestObject struct {
 }
 
@@ -14837,6 +15574,45 @@ func (response ListIdentitiesdefaultApplicationProblemPlusJSONResponse) VisitLis
 	return err
 }
 
+type AgentStatusHistoryRequestObject struct {
+	Identity string `json:"identity"`
+}
+
+type AgentStatusHistoryResponseObject interface {
+	VisitAgentStatusHistoryResponse(w http.ResponseWriter) error
+}
+
+type AgentStatusHistory200JSONResponse []AgentStatus
+
+func (response AgentStatusHistory200JSONResponse) VisitAgentStatusHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AgentStatusHistorydefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response AgentStatusHistorydefaultApplicationProblemPlusJSONResponse) VisitAgentStatusHistoryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type DeleteMemoryRequestObject struct {
 	Id     IdParam `json:"id"`
 	Params DeleteMemoryParams
@@ -15171,6 +15947,47 @@ type ReceivedefaultApplicationProblemPlusJSONResponse struct {
 }
 
 func (response ReceivedefaultApplicationProblemPlusJSONResponse) VisitReceiveResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/problem+json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetAgentStatusRequestObject struct {
+	Session SessionParam `json:"session"`
+	Params  SetAgentStatusParams
+	Body    *SetAgentStatusJSONRequestBody
+}
+
+type SetAgentStatusResponseObject interface {
+	VisitSetAgentStatusResponse(w http.ResponseWriter) error
+}
+
+type SetAgentStatus200JSONResponse AgentStatus
+
+func (response SetAgentStatus200JSONResponse) VisitSetAgentStatusResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type SetAgentStatusdefaultApplicationProblemPlusJSONResponse struct {
+	Body       Problem
+	StatusCode int
+}
+
+func (response SetAgentStatusdefaultApplicationProblemPlusJSONResponse) VisitSetAgentStatusResponse(w http.ResponseWriter) error {
 
 	var buf bytes.Buffer
 	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
@@ -15570,6 +16387,9 @@ type StrictServerInterface interface {
 	// (GET /v1/admin/usage)
 	AdminUsage(ctx context.Context, request AdminUsageRequestObject) (AdminUsageResponseObject, error)
 
+	// (GET /v1/agent-statuses)
+	ListAgentStatuses(ctx context.Context, request ListAgentStatusesRequestObject) (ListAgentStatusesResponseObject, error)
+
 	// (GET /v1/auth/jwks)
 	Jwks(ctx context.Context, request JwksRequestObject) (JwksResponseObject, error)
 
@@ -15624,6 +16444,9 @@ type StrictServerInterface interface {
 	// (GET /v1/identities)
 	ListIdentities(ctx context.Context, request ListIdentitiesRequestObject) (ListIdentitiesResponseObject, error)
 
+	// (GET /v1/identities/{identity}/statuses)
+	AgentStatusHistory(ctx context.Context, request AgentStatusHistoryRequestObject) (AgentStatusHistoryResponseObject, error)
+
 	// (DELETE /v1/memories/{id})
 	DeleteMemory(ctx context.Context, request DeleteMemoryRequestObject) (DeleteMemoryResponseObject, error)
 
@@ -15650,6 +16473,9 @@ type StrictServerInterface interface {
 
 	// (POST /v1/sessions/{session}/receive)
 	Receive(ctx context.Context, request ReceiveRequestObject) (ReceiveResponseObject, error)
+
+	// (POST /v1/sessions/{session}/status)
+	SetAgentStatus(ctx context.Context, request SetAgentStatusRequestObject) (SetAgentStatusResponseObject, error)
 
 	// (GET /v1/sessions/{session}/watch)
 	Watch(ctx context.Context, request WatchRequestObject) (WatchResponseObject, error)
@@ -16226,6 +17052,30 @@ func (sh *strictHandler) AdminUsage(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// ListAgentStatuses operation middleware
+func (sh *strictHandler) ListAgentStatuses(w http.ResponseWriter, r *http.Request) {
+	var request ListAgentStatusesRequestObject
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.ListAgentStatuses(ctx, request.(ListAgentStatusesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "ListAgentStatuses")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(ListAgentStatusesResponseObject); ok {
+		if err := validResponse.VisitListAgentStatusesResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // Jwks operation middleware
 func (sh *strictHandler) Jwks(w http.ResponseWriter, r *http.Request) {
 	var request JwksRequestObject
@@ -16749,6 +17599,32 @@ func (sh *strictHandler) ListIdentities(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// AgentStatusHistory operation middleware
+func (sh *strictHandler) AgentStatusHistory(w http.ResponseWriter, r *http.Request, identity string) {
+	var request AgentStatusHistoryRequestObject
+
+	request.Identity = identity
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.AgentStatusHistory(ctx, request.(AgentStatusHistoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AgentStatusHistory")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(AgentStatusHistoryResponseObject); ok {
+		if err := validResponse.VisitAgentStatusHistoryResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // DeleteMemory operation middleware
 func (sh *strictHandler) DeleteMemory(w http.ResponseWriter, r *http.Request, id IdParam, params DeleteMemoryParams) {
 	var request DeleteMemoryRequestObject
@@ -16999,6 +17875,40 @@ func (sh *strictHandler) Receive(w http.ResponseWriter, r *http.Request, session
 		sh.options.ResponseErrorHandlerFunc(w, r, err)
 	} else if validResponse, ok := response.(ReceiveResponseObject); ok {
 		if err := validResponse.VisitReceiveResponse(w); err != nil {
+			sh.options.ResponseErrorHandlerFunc(w, r, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// SetAgentStatus operation middleware
+func (sh *strictHandler) SetAgentStatus(w http.ResponseWriter, r *http.Request, session SessionParam, params SetAgentStatusParams) {
+	var request SetAgentStatusRequestObject
+
+	request.Session = session
+	request.Params = params
+
+	var body SetAgentStatusJSONRequestBody
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		sh.options.RequestErrorHandlerFunc(w, r, fmt.Errorf("can't decode JSON body: %w", err))
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx context.Context, w http.ResponseWriter, r *http.Request, request interface{}) (interface{}, error) {
+		return sh.ssi.SetAgentStatus(ctx, request.(SetAgentStatusRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "SetAgentStatus")
+	}
+
+	response, err := handler(r.Context(), w, r, request)
+
+	if err != nil {
+		sh.options.ResponseErrorHandlerFunc(w, r, err)
+	} else if validResponse, ok := response.(SetAgentStatusResponseObject); ok {
+		if err := validResponse.VisitSetAgentStatusResponse(w); err != nil {
 			sh.options.ResponseErrorHandlerFunc(w, r, err)
 		}
 	} else if response != nil {

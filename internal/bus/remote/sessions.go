@@ -140,6 +140,10 @@ func (b *Bus) Identities(ctx context.Context) ([]ab2bus.IdentityInfo, error) {
 			return nil, err
 		}
 		info := ab2bus.IdentityInfo{Name: i.Name, Kind: kind, Admin: i.Admin}
+		if i.Status != nil {
+			st := fromGenAgentStatus(*i.Status)
+			info.Status = &st
+		}
 		for _, s := range i.Sessions {
 			info.Sessions = append(info.Sessions, ab2bus.SessionInfo{ID: s.Id, Identity: s.Identity, DisplayName: s.DisplayName, OpenedAt: s.OpenedAt})
 		}
