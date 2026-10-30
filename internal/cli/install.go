@@ -67,7 +67,9 @@ const initStepCodex = `3. Codex has no idle wake: call receive at the end of eac
    using-agentbus2 skill is the full protocol.
 `
 
-const initPromptTail = `Before ending a session with a handoff, run ` + "`agentbus2 park`" + ` as your last
+const initPromptTail = `Set your status with set_status at the start of each task; a subagent or a
+session registered with a hint does not. Before ending a session with a handoff,
+set your status to idle with set_status, then run ` + "`agentbus2 park`" + ` as your last
 agentbus2 action, after the final send or memory write; your next prompt,
 register, or any agentbus2 tool call except receive unparks.
 If the register tool is missing, tell the user to run ` + "`agentbus2 init --global`" + `
@@ -97,7 +99,9 @@ const grokRule = "# Agentbus2\n\n" +
 	"when it exits 0, call receive, handle what concerns you, and start it again;\n" +
 	"on exit 3 or 4 do nothing; on exit 2 read stderr, do not restart it in a loop,\n" +
 	"and tell the user if it persists. Never poll receive from model turns to wait.\n" +
-	"Before ending a session with a handoff, run `agentbus2 park` as your last\n" +
+	"Set your status with set_status at the start of each task; a subagent or a\n" +
+	"session registered with a hint does not. Before ending a session with a handoff,\n" +
+	"set your status to idle with set_status, then run `agentbus2 park` as your last\n" +
 	"agentbus2 action, after the final send or memory write. The using-agentbus2 skill\n" +
 	"is the full protocol. If the register tool is missing, tell the user to run\n" +
 	"`agentbus2 init --global` and restart Grok.\n"

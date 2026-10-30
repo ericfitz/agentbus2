@@ -229,6 +229,9 @@ func TestInstructions(t *testing.T) {
 	if got != mcpserver.Instructions || !strings.Contains(got, mcpserver.RegisterSteps) || !strings.Contains(got, "without waiting to be asked") {
 		t.Fatalf("instructions = %q", got)
 	}
+	if !strings.Contains(mcpserver.RegisterSteps, "set_status") || !strings.Contains(mcpserver.RegisterSteps, "idle before agentbus2 park") {
+		t.Fatalf("RegisterSteps lacks the status sentence: %q", mcpserver.RegisterSteps)
+	}
 }
 
 func TestToolListIsExact(t *testing.T) {

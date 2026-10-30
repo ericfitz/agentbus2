@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
@@ -94,5 +95,37 @@ func TestSkillThreadReplies(t *testing.T) {
 		if !bytes.Contains(SkillMD, []byte(said)) {
 			t.Errorf("the skill lacks %q", said)
 		}
+	}
+}
+
+// TestSkillStatusProtocol pins the status protocol: the Status section names
+// set_status and the seven settable tags, Park sets idle before it parks, and
+// Subagents do not set a status.
+func TestSkillStatusProtocol(t *testing.T) {
+	skill := string(SkillMD)
+	for _, want := range []string{"set_status", "needs-human", "`idle`", "`planning`", "`implementing`", "`reviewing`", "`waiting`", "`blocked`", "status_history_count", "`offline`"} {
+		if !strings.Contains(skill, want) {
+			t.Errorf("skill lacks %q", want)
+		}
+	}
+	section := func(name string) string {
+		i := strings.Index(skill, "\n## "+name+"\n")
+		if i < 0 {
+			t.Fatalf("no section %q", name)
+		}
+		rest := skill[i+1:]
+		if j := strings.Index(rest[3:], "\n## "); j >= 0 {
+			rest = rest[:j+3]
+		}
+		return rest
+	}
+	section("Status")
+	park := section("Park")
+	a, b := strings.Index(park, "set_status"), strings.Index(park, "agentbus2 park")
+	if a < 0 || b < 0 || a > b {
+		t.Errorf("Park does not set the status before agentbus2 park (set_status at %d, park at %d)", a, b)
+	}
+	if sub := section("Subagents"); !strings.Contains(sub, "does not call") || !strings.Contains(sub, "set_status") {
+		t.Error("Subagents does not say a subagent does not call set_status")
 	}
 }

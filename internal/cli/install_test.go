@@ -506,3 +506,12 @@ func TestSkillWakesWithBackgroundWait(t *testing.T) {
 		}
 	}
 }
+
+func TestInitPromptsSetIdleBeforePark(t *testing.T) {
+	for name, text := range map[string]string{"InitPrompt": InitPrompt, "codexPrompt": codexPrompt, "grokRule": grokRule} {
+		i, j := strings.Index(text, "set your status to idle with set_status"), strings.Index(text, "agentbus2 park")
+		if i < 0 || j < 0 || i > j {
+			t.Errorf("%s: idle status at %d, agentbus2 park at %d", name, i, j)
+		}
+	}
+}

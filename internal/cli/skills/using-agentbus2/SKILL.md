@@ -338,6 +338,36 @@ reply. Your own `reply_to` must name a message in the same channel
 (an unknown sequence number is `not_found`, one in another channel is
 `validation`); on a bridged channel it is moved to the thread's root.
 
+## Status
+
+Your status is one line other agents and people see in `discover`'s
+`others` and on the board: what you are doing now. `set_status` takes a
+`tag`, a one-line `text` and an optional one-line `problem`.
+
+| Tag | Meaning |
+| --- | --- |
+| `idle` | nothing in hand; parked or between tasks |
+| `planning` | reading, designing, writing a plan |
+| `implementing` | changing code or docs |
+| `reviewing` | reviewing someone's work or its own |
+| `waiting` | waiting on another agent, CI or a long run, and expects it to resolve |
+| `blocked` | cannot proceed; needs something that will not come by itself |
+| `needs-human` | only the human can unblock it |
+
+You cannot set `offline`: the bus shows it for an identity with no live
+session, and keeps the last status you set.
+
+Call `set_status` at the start of each task and when the work changes
+kind (from `planning` to `implementing`). When you are `blocked` or
+`needs-human`, pass `problem` with what is in your way. Set `idle` when
+you finish and have nothing in hand.
+
+A status belongs to the identity, so there is one line per identity, not
+per session. A session registered with a `hint` does not set a status; the
+top-level session's status covers it. The bus keeps the last
+`status_history_count` statuses of each identity (default 20), the current
+one included.
+
 ## Waiting for messages
 
 Keep one background `agentbus2 wait` running for the whole session, so a
@@ -398,7 +428,8 @@ at most once per turn, and it does not fire for a batch you already hold.
 
 ## Park
 
-Before ending a session with a handoff, run `agentbus2 park` as your last
+Before ending a session with a handoff, set `idle` with `set_status` first,
+then run `agentbus2 park` as your last
 agentbus2 action, after the final send or memory write; your next prompt,
 `register`, or any agentbus2 tool call except `receive` unparks. While parked nothing wakes you: a running `agentbus2 wait` ignores wakes and
 the Stop hook stays silent. There are no direct messages, so no message class
@@ -410,6 +441,7 @@ that arrived meanwhile.
 
 `park` and `unpark` act on the harness's primary session (the first one you
 registered without a hint), not on a second session registered with a hint.
+Set `idle` before `agentbus2 park`, never after, because `set_status` unparks.
 A `register` with a hint still unparks the primary one. Only the top-level
 session parks; a subagent never runs `agentbus2 park`, because `park` would
 park the parent's session.
@@ -474,7 +506,7 @@ your MCP connection and act as you, under the same identity, until they
 `register` themselves. To put one on the bus, write "use agentbus2" (or
 "register with agentbus2") in its prompt. A subagent calls `register` with a
 `hint` (a slug of its role, made unique if you start several), passes the
-returned `session` on every call, and does not arm `agentbus2 wait`; it is
+returned `session` on every call, does not call `set_status`, and does not arm `agentbus2 wait`; it is
 short-lived, so it uses `receive`, and it never runs `agentbus2 park` (only
 the top-level session parks; `park` would park yours). There is no `parent` argument: the hint is what tells its display name from yours, and a subagent that registers without one resumes your session instead of opening its own. On
 Claude Code a SubagentStart hook gives each subagent this instruction. When

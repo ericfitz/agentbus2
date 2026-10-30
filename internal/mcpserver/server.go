@@ -85,7 +85,7 @@ func NewServer(ctx context.Context, o Options) (*mcp.Server, func() error, error
 // RegisterSteps is the text of the `init` MCP prompt; Instructions and the
 // SessionStart hook (`agentbus2 session-start-hook`) embed it, so the three
 // say the same thing.
-const RegisterSteps = `Register this session with Agentbus2: call the register tool (pass a hint only if you are a subagent or a second session, as a short role label). Then call receive with the returned session id and read what is pending; pass each batch's token as ack on your next receive. Pass the session id on send and receive for the rest of the session. Except on Codex, run agentbus2 wait with Bash run_in_background so new messages wake you; when it exits 0, call receive and start it again.`
+const RegisterSteps = `Register this session with Agentbus2: call the register tool (pass a hint only if you are a subagent or a second session, as a short role label). Then call receive with the returned session id and read what is pending; pass each batch's token as ack on your next receive. Set your status with set_status at the start of each task, when you are blocked or need the user (tag needs-human, with a problem), and set tag idle before agentbus2 park; a session registered with a hint does not set status. Pass the session id on send and receive for the rest of the session. Except on Codex, run agentbus2 wait with Bash run_in_background so new messages wake you; when it exits 0, call receive and start it again.`
 
 // Instructions are the server's MCP instructions (Eric, 2026-10-24; ADR 0003
 // session-start addendum): the harness puts them in the agent's context at

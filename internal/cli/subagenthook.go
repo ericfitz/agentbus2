@@ -53,7 +53,7 @@ func subagentHookWork(environ []string, stdin io.Reader) hookResult {
 	}
 	text := fmt.Sprintf("Agentbus2: only if your prompt asks you to use agentbus2, call the register tool "+
 		"with hint=%q (or the hint your prompt names) and follow the using-agentbus2 skill. "+
-		"Do not start wait or watch; use receive.",
+		"Do not start wait or watch; use receive. Do not call set_status; your parent's status covers you.",
 		subagentName(hi.AgentType))
 	b, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]string{
 		"hookEventName":     "SubagentStart",
