@@ -18,11 +18,12 @@ import (
 // history under it. The data is the status round's (AgentStatuses, every
 // 5 seconds); the history is fetched only while it is open.
 
-// agentBoard is the board's state: open, the selected row, and, while one
-// agent's history is shown, its identity and rows.
+// agentBoard is the board's state: open, the selected agent's identity (not
+// a row index: the rows re-sort every status round, like sessSel) and, while
+// one agent's history is shown, its identity and rows.
 type agentBoard struct {
 	open bool
-	sel  int
+	sel  string // selected identity; "" or one that left selects the first row
 	hist string // identity whose history is shown; "" on the board
 	rows []bus.AgentStatus
 	err  error
@@ -103,6 +104,17 @@ func (m Model) boardRows() []boardRow {
 	return rows
 }
 
+// boardSel is the index of the selected row: the row of board.sel, else the
+// first.
+func (m Model) boardSel() int {
+	for i, r := range m.boardRows() {
+		if r.identity == m.board.sel {
+			return i
+		}
+	}
+	return 0
+}
+
 // attention counts the live agents whose tag is needs-human or blocked. An
 // agent that went offline reads offline and is not counted (open note:
 // agent-status 7).
@@ -160,20 +172,24 @@ func (m *Model) updateBoard(msg tea.Msg) tea.Cmd {
 			return nil
 		}
 		m.closeBoard()
-	case "up":
-		if m.board.hist == "" {
-			m.board.sel = max(m.board.sel-1, 0)
-		}
-	case "down":
-		if m.board.hist == "" {
-			m.board.sel = min(m.board.sel+1, max(len(m.boardRows())-1, 0))
-		}
-	case "enter":
+	case "up", "down":
 		rows := m.boardRows()
-		if m.board.hist != "" || m.board.sel >= len(rows) {
+		if m.board.hist != "" || len(rows) == 0 {
 			return nil
 		}
-		m.board.hist, m.board.rows, m.board.err = rows[m.board.sel].identity, nil, nil
+		i := m.boardSel()
+		if keyString(msg) == "up" {
+			i = max(i-1, 0)
+		} else {
+			i = min(i+1, len(rows)-1)
+		}
+		m.board.sel = rows[i].identity
+	case "enter":
+		rows := m.boardRows()
+		if m.board.hist != "" || len(rows) == 0 {
+			return nil
+		}
+		m.board.hist, m.board.rows, m.board.err = rows[m.boardSel()].identity, nil, nil
 		return m.agentHistoryCmd(m.board.hist)
 	}
 	return nil
@@ -186,7 +202,7 @@ func (m Model) renderBoard() string {
 	if m.board.hist != "" {
 		lines = strings.Split(m.renderHistoryFor(h), "\n")
 	} else {
-		lines = m.boardLines(w)
+		lines = m.boardLines(w, h)
 	}
 	for i := range lines {
 		lines[i] = cut(lines[i], w, "…")
@@ -197,9 +213,11 @@ func (m Model) renderBoard() string {
 	return lipgloss.NewStyle().Width(w).Height(h).MaxHeight(h).Render(strings.Join(lines, "\n"))
 }
 
-// boardLines is the board: the title, the column heads, one line per row and
-// the offline divider before the first offline row.
-func (m Model) boardLines(w int) []string {
+// boardLines is the board for a pane h lines high: the title, the column
+// heads, one line per row and the offline divider before the first offline
+// row. When the rows do not fit, they scroll to keep the selected one visible
+// and the title and heads stay.
+func (m Model) boardLines(w, h int) []string {
 	th := m.theme
 	dim, warn := th.Style(th.Dim), th.Style(th.Warn)
 	rows := m.boardRows()
@@ -207,18 +225,21 @@ func (m Model) boardLines(w int) []string {
 		dim.Render(fmt.Sprintf("agents (%d) · enter history · esc back", len(rows))),
 		dim.Render(fmt.Sprintf("%-16s %-17s %-6s %s", "AGENT", "TAG", "SINCE", "NOW")),
 	}
-	now := time.Now().UnixMilli()
+	nowMs := time.Now().UnixMilli()
 	divided := false
+	sel := m.boardSel()
+	selLine := 0 // index of the selected row's line within body
+	var body []string
 	for i, r := range rows {
 		if !r.live && !divided {
 			divided = true
-			lines = append(lines, dim.Render("── offline ──"))
+			body = append(body, dim.Render("── offline ──"))
 		}
 		tag, since, text := "-", "-", "-"
 		var problem string
 		if r.st != nil {
 			tag = string(r.tag)
-			since = shortDur(time.Duration(now-r.st.SetAt) * time.Millisecond)
+			since = shortDur(time.Duration(nowMs-r.st.SetAt) * time.Millisecond)
 			text, problem = r.st.Text, r.st.Problem
 			if !r.live {
 				text = "last: " + text
@@ -228,31 +249,37 @@ func (m Model) boardLines(w int) []string {
 		if r.st == nil {
 			icon = iconAgent
 		}
-		now := text
+		note := text
 		if problem != "" {
-			now += warn.Render(" · " + problem)
+			note += warn.Render(" · " + problem)
 		}
 		pad := func(s string, n int) string {
 			return s + strings.Repeat(" ", max(n-lipgloss.Width(s), 0))
 		}
-		line := pad(cut(r.identity, 16, "…"), 16) + " " + pad(icon+cut(tag, 14, "…"), 17) + " " + pad(since, 6) + " " + now
-		if i == m.board.sel {
+		line := pad(cut(r.identity, 16, "…"), 16) + " " + pad(icon+cut(tag, 14, "…"), 17) + " " + pad(since, 6) + " " + note
+		if i == sel {
 			line = th.RailSel(true, cut(markSel+line, w, "…"), w)
+			selLine = len(body)
 		} else {
 			line = " " + line
 		}
-		lines = append(lines, line)
+		body = append(body, line)
 	}
 	if len(rows) == 0 {
-		lines = append(lines, dim.Render("no agents"))
+		body = append(body, dim.Render("no agents"))
 	}
-	return lines
+	if room := h - len(lines); room >= 1 && len(body) > room {
+		lo, hi := window(selLine, len(body), room)
+		body = body[lo:hi]
+	}
+	return append(lines, body...)
 }
 
 // renderHistoryFor is the history of the open board for a pane h lines high.
 func (m Model) renderHistoryFor(h int) string {
 	if m.board.err != nil {
-		return m.theme.Style(m.theme.Error).Render(iconError + "history: " + errText(m.board.err))
+		title := m.theme.Style(m.theme.Dim).Render(m.board.hist + " · history, oldest first · esc back")
+		return title + "\n" + m.theme.Style(m.theme.Error).Render(iconError+"history: "+errText(m.board.err))
 	}
 	return m.renderHistory(m.board.hist, m.board.rows, h)
 }

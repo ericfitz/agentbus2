@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -128,10 +129,10 @@ func TestAgentsBoardHistoryOldestFirst(t *testing.T) {
 		statusSet{bus.StatusReviewing, "third thought", "tests red"})
 	f.run(f.m.statusCmd())
 	f.key("enter")
-	for i := 0; i < 20 && f.m.boardRows()[f.m.board.sel].identity != "hal"; i++ {
+	for i := 0; i < 20 && f.m.boardRows()[f.m.boardSel()].identity != "hal"; i++ {
 		f.key("down")
 	}
-	if f.m.boardRows()[f.m.board.sel].identity != "hal" {
+	if f.m.boardRows()[f.m.boardSel()].identity != "hal" {
 		t.Fatal("could not select hal")
 	}
 	before := cb.count("AgentStatusHistory")
@@ -216,20 +217,20 @@ func TestAgentsBoardKeys(t *testing.T) {
 	}
 	f.key("down")
 	f.key("down")
-	if f.m.board.sel != 2 {
-		t.Fatalf("sel = %d after two downs", f.m.board.sel)
+	if f.m.boardSel() != 2 {
+		t.Fatalf("sel = %d after two downs", f.m.boardSel())
 	}
 	for range 50 {
 		f.key("down")
 	}
-	if f.m.board.sel != len(f.m.boardRows())-1 {
-		t.Fatalf("sel = %d, want the last row", f.m.board.sel)
+	if f.m.boardSel() != len(f.m.boardRows())-1 {
+		t.Fatalf("sel = %d, want the last row", f.m.boardSel())
 	}
 	for range 50 {
 		f.key("up")
 	}
-	if f.m.board.sel != 0 {
-		t.Fatalf("sel = %d, want 0", f.m.board.sel)
+	if f.m.boardSel() != 0 {
+		t.Fatalf("sel = %d, want 0", f.m.boardSel())
 	}
 	f.key("?")
 	if f.m.mode != modeHelp {
@@ -256,5 +257,78 @@ func TestStatusRoundCallsAgentStatuses(t *testing.T) {
 	}
 	if n := cb.count("AgentStatusHistory") - h; n != 0 {
 		t.Fatalf("AgentStatusHistory calls = %d, want 0", n)
+	}
+}
+
+// TestAgentsBoardSelectionSurvivesResort: the selection follows the agent,
+// not the row index, when a status round re-sorts the rows (final review
+// Important 1).
+func TestAgentsBoardSelectionSurvivesResort(t *testing.T) {
+	f, _ := boardFixture(t)
+	f.key("enter")
+	f.key("down") // bob -> amy
+	if got := f.m.boardRows()[f.m.boardSel()].identity; got != "amy" {
+		t.Fatalf("selected %q, want amy", got)
+	}
+	f.agentWithStatus(t, "aaa", true, statusSet{bus.StatusNeedsHuman, "look here", ""})
+	f.run(f.m.statusCmd())
+	rows := f.m.boardRows()
+	if rows[0].identity != "aaa" {
+		t.Fatalf("aaa did not sort first: %v", rowNames(f.m, "aaa", "bob", "amy"))
+	}
+	if got := rows[f.m.boardSel()].identity; got != "amy" {
+		t.Fatalf("selection moved to %q after a re-sort, want amy", got)
+	}
+	f.key("enter")
+	if f.m.board.hist != "amy" {
+		t.Fatalf("enter opened %q, want amy", f.m.board.hist)
+	}
+}
+
+// TestAgentsBoardScrolls: with more rows than the pane, moving down keeps
+// the selected row visible (final review Important 2).
+func TestAgentsBoardScrolls(t *testing.T) {
+	f, _ := boardFixture(t)
+	for _, n := range []string{"a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9"} {
+		f.agentWithStatus(t, n, true, statusSet{bus.StatusImplementing, "busy " + n, ""})
+	}
+	f.run(f.m.statusCmd())
+	f.m.height = 14
+	f.m.layout()
+	h := f.m.stream.Height()
+	if h >= len(f.m.boardRows())+2 {
+		t.Fatalf("pane (%d lines) is not smaller than the board (%d rows)", h, len(f.m.boardRows()))
+	}
+	f.key("enter")
+	for range len(f.m.boardRows()) {
+		f.key("down")
+		sel := f.m.boardRows()[f.m.boardSel()].identity
+		out := stripANSI(f.m.renderBoard())
+		if n := len(strings.Split(out, "\n")); n > h {
+			t.Fatalf("board is %d lines in a pane of %d", n, h)
+		}
+		if !strings.Contains(out, sel) {
+			t.Fatalf("selected row %q is not visible:\n%s", sel, out)
+		}
+		if !strings.Contains(out, "agents (") {
+			t.Fatalf("title scrolled away:\n%s", out)
+		}
+	}
+}
+
+// TestAgentsBoardFailedRefreshKeepsTitle: a failed history refresh keeps the
+// title and the esc hint (final review Minor 11).
+func TestAgentsBoardFailedRefreshKeepsTitle(t *testing.T) {
+	f, _ := boardFixture(t)
+	f.key("enter")
+	f.key("enter")
+	id := f.m.board.hist
+	if id == "" {
+		t.Fatal("history did not open")
+	}
+	f.send(agentHistoryMsg{identity: id, err: errors.New("boom")})
+	out := stripANSI(f.m.renderBoard())
+	if !strings.Contains(out, id+" · history") || !strings.Contains(out, "esc back") || !strings.Contains(out, "boom") {
+		t.Fatalf("failed refresh lost the title or error:\n%s", out)
 	}
 }
