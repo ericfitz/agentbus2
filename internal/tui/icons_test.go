@@ -2,10 +2,13 @@ package tui
 
 import (
 	"bytes"
+	"io"
 	"strings"
 	"testing"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/ericfitz/agentbus2/internal/bus"
 )
 
 func TestLoadIconsEmojiIsDefaultAndByteIdentical(t *testing.T) {
@@ -217,4 +220,39 @@ func TestBridgedIconGlyphs(t *testing.T) {
 	if iconBridged != emojiIcons["bridged"] {
 		t.Fatalf("Terminal.app: bridged %q, want %q", iconBridged, emojiIcons["bridged"])
 	}
+}
+
+// open note: agent-status 3
+func TestStatusIconsCoverTags(t *testing.T) {
+	t.Cleanup(func() { setIcons(emojiIcons) })
+	tags := []bus.StatusTag{
+		bus.StatusIdle, bus.StatusPlanning, bus.StatusImplementing, bus.StatusReviewing,
+		bus.StatusWaiting, bus.StatusBlocked, bus.StatusNeedsHuman, bus.StatusOffline,
+	}
+	base := map[bus.StatusTag]rune{
+		bus.StatusPlanning: 0x1F4DD, bus.StatusImplementing: 0x1F528, bus.StatusReviewing: 0x1F50D,
+		bus.StatusWaiting: 0x23F3, bus.StatusBlocked: 0x26D4, bus.StatusNeedsHuman: 0x1F64B, bus.StatusOffline: 0x26AB,
+	}
+	check := func(set string) {
+		for _, tag := range tags {
+			g := statusIcon(tag)
+			if g == "" || lipgloss.Width(g) != 3 {
+				t.Errorf("%s: statusIcon(%q) = %q, width %d, want non-empty and 3", set, tag, g, lipgloss.Width(g))
+			}
+		}
+		if g := statusIcon("future"); g != iconAgent {
+			t.Errorf("%s: statusIcon(future) = %q, want iconAgent %q", set, g, iconAgent)
+		}
+	}
+	check("emoji")
+	if statusIcon(bus.StatusIdle) != iconIdle {
+		t.Errorf("idle must reuse iconIdle")
+	}
+	for tag, r := range base {
+		if got := []rune(statusIcon(tag))[0]; got != r {
+			t.Errorf("emoji base of %q = U+%X, want U+%X", tag, got, r)
+		}
+	}
+	LoadIcons(Settings{Icons: "nerdfont"}, io.Discard)
+	check("nerdfont")
 }

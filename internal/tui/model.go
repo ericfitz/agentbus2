@@ -95,7 +95,9 @@ type Model struct {
 	sessSel      string             // display name of the selected sessions row, "" when none; the main pane shows its details and no channel is selected
 	collapsed    [railSections]bool // sections drawn as their heading alone; lives only in this running TUI
 	identities   []bus.IdentityInfo
-	sessionsSeen map[string]time.Time // session display name -> last listed live
+	agents       []bus.AgentStatusEntry // the last status round's agent statuses
+	board        agentBoard             // the agents board, opened with enter on the sessions heading
+	sessionsSeen map[string]time.Time   // session display name -> last listed live
 	admin        bool
 	status       bus.Status
 	statusOK     bool
@@ -278,6 +280,8 @@ func (m Model) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			m.usage = msg.usage
 		}
+	case agentHistoryMsg:
+		m.onAgentHistory(msg)
 	case healthMsg:
 		// Never a toast: the overlay's server line says what happened.
 		m.healthDoc, m.healthErr = msg.h, msg.err
@@ -513,6 +517,9 @@ func (m *Model) updateNormal(msg tea.Msg) tea.Cmd {
 	if m.prompt.active {
 		return m.updatePrompt(msg)
 	}
+	if m.board.open {
+		return m.updateBoard(msg)
+	}
 	k := keyString(msg)
 	if k != "" && !isVersionKey(k) {
 		m.mem = memView{} // any other key shows the latest version again
@@ -536,6 +543,10 @@ func (m *Model) updateNormal(msg tea.Msg) tea.Cmd {
 	// reply to the cursor message in the stream, compose to the selected
 	// channel otherwise.
 	case "enter":
+		if m.headSel == secSessions && m.pane() == paneChannels {
+			m.openBoard() // open note: agent-status 4
+			return nil
+		}
 		if m.headSel >= 0 && m.pane() == paneChannels {
 			m.toggleSection(m.headSel, !m.collapsed[m.headSel])
 			return nil
@@ -1280,6 +1291,7 @@ func (m *Model) onStatus(msg statusMsg) tea.Cmd {
 		return nil
 	}
 	m.identities = msg.identities
+	m.agents = msg.agents
 	m.statusErr = msg.statusFail
 	if !msg.keepAdmin {
 		m.admin = msg.admin
@@ -1297,7 +1309,12 @@ func (m *Model) onStatus(msg statusMsg) tea.Cmd {
 		}
 	}
 	m.reconcileSession()
-	return m.setChannels(msg.channels, msg.tags, "oldest")
+	cmd := m.setChannels(msg.channels, msg.tags, "oldest")
+	if m.board.open && m.board.hist != "" {
+		// An open history is refetched once per round (open note: agent-status 14).
+		return tea.Batch(cmd, m.agentHistoryCmd(m.board.hist))
+	}
+	return cmd
 }
 
 // setChannels replaces the channel list (sorted by section, then name), keeps
@@ -1383,7 +1400,11 @@ func (m *Model) statusCmd() tea.Cmd {
 		if err != nil {
 			return statusMsg{channels: chans, identities: ids, err: err}
 		}
-		msg := statusMsg{channels: chans, identities: ids, tags: tags}
+		agents, err := c.b.AgentStatuses(c.ctx)
+		if err != nil {
+			return statusMsg{channels: chans, identities: ids, tags: tags, err: err}
+		}
+		msg := statusMsg{channels: chans, identities: ids, tags: tags, agents: agents}
 		st, err := c.b.Status(c.ctx)
 		switch {
 		case err == nil:

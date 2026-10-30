@@ -152,3 +152,34 @@ func TestRefreshRemovingShownChannelKeepsSessionSelection(t *testing.T) {
 		t.Fatalf("after leaving: sessSel %q sel %d", f.m.sessSel, f.m.sel)
 	}
 }
+
+// open note: agent-status 5
+func TestSessionRowStatusIcon(t *testing.T) {
+	f := sessionFixture(t)
+	f.m.identities = append(f.m.identities,
+		bus.IdentityInfo{Name: "kim", Kind: bus.IdentityAgent, Sessions: []bus.SessionInfo{{ID: "s3", Identity: "kim", DisplayName: "kim/x"}}})
+	for i := range f.m.identities {
+		if f.m.identities[i].Name == "sam" {
+			f.m.identities[i].Status = &bus.AgentStatus{Identity: "sam", Tag: bus.StatusReviewing, Text: "reading"}
+		}
+	}
+	line := func(name string) string {
+		for _, l := range strings.Split(stripANSI(f.m.renderRails()), "\n") {
+			if strings.Contains(l, name) {
+				return strings.TrimLeft(l, " ▶")
+			}
+		}
+		t.Fatalf("no rail row for %q", name)
+		return ""
+	}
+	for name, want := range map[string]string{
+		"sam/impl": iconStatusReviewing,
+		"kim/x":    iconAgent,
+		"eric/tui": iconUser,
+		"codex":    iconIdle,
+	} {
+		if l := line(name); !strings.HasPrefix(l, want) {
+			t.Errorf("row %q = %q, want the prefix %q", name, l, want)
+		}
+	}
+}

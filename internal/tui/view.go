@@ -193,7 +193,9 @@ func (m Model) render() string {
 	dim := m.theme.Style(m.theme.Dim)
 	header := m.renderHeader()
 	pane := m.stream.View()
-	if m.sessSel != "" {
+	if m.board.open {
+		pane = m.renderBoard()
+	} else if m.sessSel != "" {
 		pane = m.renderSession()
 	}
 	center := lipgloss.JoinVertical(lipgloss.Left, header, pane)
@@ -455,6 +457,17 @@ type sessionRow struct {
 	seen     time.Time
 }
 
+// identityStatus is the latest status of identity from the last status
+// round, nil when it has none.
+func (m Model) identityStatus(identity string) *bus.AgentStatus {
+	for i := range m.identities {
+		if m.identities[i].Name == identity {
+			return m.identities[i].Status
+		}
+	}
+	return nil
+}
+
 // sessionRows lists every live session (from Identities) then the idle ones
 // (from sessionsSeen), each group sorted by display name.
 func (m Model) sessionRows() []sessionRow {
@@ -503,10 +516,20 @@ func (m Model) renderRails() string {
 	// takes the one highlight on screen.
 	heading := func(sec int, s railSpan) string {
 		text := markOpen + " " + railHeadings[sec]
+		attn := ""
+		if n := m.attention(); sec == secSessions && n > 0 {
+			attn = attentionText(n) // open note: agent-status 7
+		}
+		if attn != "" {
+			text += " (" + attn + ")"
+		}
 		if s.collapsed {
 			info := strconv.Itoa(s.n)
 			if u := m.sectionUnread(sec); u > 0 {
 				info += ", " + strconv.Itoa(u) + " unread"
+			}
+			if attn != "" {
+				info += ", " + attn
 			}
 			text = markSel + " " + railHeadings[sec] + " (" + info + ")"
 		}
@@ -597,6 +620,12 @@ func (m Model) renderRails() string {
 			name = th.Style(th.User).Render(r.display + " (you)")
 		}
 		row := m.senderIcon(own) + name
+		if !own {
+			if st := m.identityStatus(r.identity); st != nil {
+				// open note: agent-status 5: the status icon replaces the gear.
+				row = th.Style(th.Agent).Render(statusIcon(st.Tag)) + name
+			}
+		}
 		// The identity is noise when the display name already starts with it.
 		if prefix, _, _ := strings.Cut(r.display, "/"); prefix != r.identity {
 			row += " " + dim.Render("("+r.identity+")")
@@ -809,6 +838,9 @@ func (m Model) renderStatusBar() string {
 	th := m.theme
 	left := th.Style(th.Dim).Render("agentbus2 v"+version.Version) + "  "
 	left += "as " + th.Style(th.User).Render(m.c.identity)
+	if n := m.attention(); n > 0 {
+		left += "  " + th.Style(th.Warn).Render(attentionText(n))
+	}
 	if m.statusOK {
 		// The administrator's view: the embedding pass and the notices
 		// (capacity, embedding) the server reports (Decision 73).

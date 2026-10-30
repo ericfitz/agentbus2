@@ -24,6 +24,21 @@ var (
 	iconError   = "✗ "           // ballot X, the toast and overlay-footer error prefix
 )
 
+// Agent status icons (issue #10). open note: agent-status 3: planning is the
+// memo and implementing the hammer, not the map and the hammer-and-wrench:
+// U+1F5FA and U+1F6E0 are Emoji_Presentation=No like the gear and would need
+// Terminal.app variants. The other five are Emoji_Presentation=Yes, and idle
+// reuses iconIdle.
+var (
+	iconStatusPlanning     = "\U0001F4DD\uFE0F " // memo
+	iconStatusImplementing = "\U0001F528\uFE0F " // hammer
+	iconStatusReviewing    = "\U0001F50D\uFE0F " // magnifying glass tilted left
+	iconStatusWaiting      = "\u23F3\uFE0F "     // hourglass with flowing sand
+	iconStatusBlocked      = "\u26D4\uFE0F "     // no entry
+	iconStatusNeedsHuman   = "\U0001F64B\uFE0F " // person raising hand
+	iconStatusOffline      = "\u26AB\uFE0F "     // black circle
+)
+
 // Task status marks. The stopwatch U+23F1 is text-presentation by default
 // (like the gear) and carries U+FE0F for the color glyph; Terminal.app gets
 // appleTerminalIcons' variant for the same reason as the gear.
@@ -87,6 +102,10 @@ var iconVars = map[string]*string{
 	"idle": &iconIdle, "bridged": &iconBridged, "tasks": &iconTasks, "arrow": &iconArrow, "error": &iconError,
 	"task_pending": &taskPending, "task_in_progress": &taskInProgress, "task_completed": &taskCompleted,
 	"collapsed": &markSel, "expanded": &markOpen,
+	"status_planning": &iconStatusPlanning, "status_implementing": &iconStatusImplementing,
+	"status_reviewing": &iconStatusReviewing, "status_waiting": &iconStatusWaiting,
+	"status_blocked": &iconStatusBlocked, "status_needs_human": &iconStatusNeedsHuman,
+	"status_offline": &iconStatusOffline,
 }
 
 // emojiIcons is the default set, captured from the variables' initial values.
@@ -117,6 +136,14 @@ var nerdIcons = map[string]string{
 	"expanded":         "\uf0d7",     // fa-caret-down
 	"error":            "\uf06a",     // fa-circle-exclamation (nf fa-exclamation_circle)
 	"arrow":            "\uf061",     // fa-arrow-right
+
+	"status_planning":     "\uf0ca", // fa-list-ul
+	"status_implementing": "\uf121", // fa-code
+	"status_reviewing":    "\uf002", // fa-magnifying-glass
+	"status_waiting":      "\uf252", // fa-hourglass-half
+	"status_blocked":      "\uf05e", // fa-ban
+	"status_needs_human":  "\uf256", // fa-hand
+	"status_offline":      "\uf111", // fa-circle
 }
 
 // padIcon pads a glyph to its emoji counterpart's layout: the wide icons

@@ -81,9 +81,9 @@ The rail has five sections, each under a heading:
 | `memories` | channels of kind `memory` |
 | `tasks` | channels of kind `tasks` |
 | `tags` | the tag sets you follow (`t` on the rail), read-only |
-| `sessions` | every live session by display name, then the recently idle ones; `↑`/`↓` select a row and the main pane shows its details |
+| `sessions` | every live session by display name, then the recently idle ones; `↑`/`↓` select a row and the main pane shows its details; a live agent row draws the icon of its status tag in place of the `agent` icon, and a row with no status keeps `agent` (your own row and idle rows are unchanged) |
 
-The section of a channel comes from its kind, never from its name. Rows show the full name. `←`/`→` or `enter` on a heading collapses or expands its section; a collapsed heading shows `(count[, N unread])`. Collapsing lasts until the TUI quits. `home` selects the `channels` heading. A `sessions` row is a rail stop. Selecting it replaces the main pane with that session's details: display name, identity (`unknown` for an idle row, whose identity the TUI never learned), session id (live rows only), and `live` or `idle, last seen <time>`. The details come from what the rail already holds, so selecting a row makes no bus call; there is still no inbox view and no messaging from a session row (ADR 0006), and `i`, `enter`, `s`, `d` and `r` do nothing on one. When a refresh removes the selected row, the selection moves to the `sessions` heading.
+The section of a channel comes from its kind, never from its name. Rows show the full name. `←`/`→` or `enter` on a heading collapses or expands its section, except `enter` on the `sessions` heading, which opens the agents board (below); a collapsed heading shows `(count[, N unread][, N need you])`, and the expanded `sessions` heading shows `(N need you)` while any agent does. Collapsing lasts until the TUI quits. `home` selects the `channels` heading. A `sessions` row is a rail stop. Selecting it replaces the main pane with that session's details: display name, identity (`unknown` for an idle row, whose identity the TUI never learned), session id (live rows only), and `live` or `idle, last seen <time>`. The details come from what the rail already holds, so selecting a row makes no bus call; there is still no inbox view and no messaging from a session row (ADR 0006), and `i`, `enter`, `s`, `d` and `r` do nothing on one. When a refresh removes the selected row, the selection moves to the `sessions` heading.
 
 Rail markers:
 
@@ -102,7 +102,7 @@ The full map is the `?` overlay (`internal/tui/help.go`). The main keys:
 | --- | --- |
 | `tab` / `shift+tab` | next / previous pane |
 | `i` | compose |
-| `enter` | reply to the cursor message, else compose; in a task list, save the draft; on a rail heading, collapse or expand |
+| `enter` | reply to the cursor message, else compose; in a task list, save the draft; on a rail heading, collapse or expand it (on the `sessions` heading, open the agents board) |
 | `esc` | leave compose; cancel a task draft; clear the message cursor |
 | `↑` `↓` | previous / next in the focused pane |
 | `→` `←` | open / hide a message's body, then its replies; on a heading, expand / collapse |
@@ -133,6 +133,10 @@ A channel of kind `tasks` shows the task tree. `space` cycles the draft state (n
 ### Search
 
 `/` opens search. `tab` cycles the mode: text, semantic, both. When the semantic search is unavailable the results are text only and say so.
+
+### Agents board
+
+`enter` on the `sessions` heading replaces the main pane with the agents board: the status each agent reports for itself (issue #10). The title line reads `agents (N) · enter history · esc back`; the columns are `AGENT`, `TAG` (the tag's icon and name), `SINCE` (how long ago the status was set) and `NOW` (the text, then ` · <problem>` in the warning color when there is one). A row sorts live `needs-human` first, then live `blocked`, then the other live agents by identity, then, under a dim `── offline ──` line, the offline agents by identity. A live agent that never set a status is listed with `-` in the tag, since and text columns. An offline agent shows tag `offline` and `last: <its last text>`. `↑`/`↓` move the selection; `enter` shows the selected agent's history, one line per revision, oldest first (`<time> <icon> <tag> <text>[ · <problem>] by <display name>`), the newest rows when they do not fit the pane, and `no status yet` for none; `esc` goes from the history to the board and from the board back to the `sessions` heading. `q`, `?` and `h` work as everywhere; every other key is ignored. The board reads the same status round as the rail (one `AgentStatuses` call every 5 seconds); an open history is fetched again once per round, and nothing is fetched for a closed one. The attention count is the number of live agents whose tag is `needs-human` or `blocked`: it shows as `N need you` in the status bar after `as <identity>` and in the `sessions` heading, and an agent that went offline while `needs-human` is not counted. A tag this build does not know draws the `agent` icon.
 
 ### Health
 
@@ -204,7 +208,14 @@ A value is one of the sixteen ANSI color names (`black`, `red`, `green`, `yellow
 | `tasks` | task-list channels | U+F0AE |
 | `agent` | other agent senders and sessions | U+EE0D |
 | `user` | your own name and human senders | U+F007 |
-| `idle` | a session not seen live for a while | U+F04B2 |
+| `idle` | a session not seen live for a while; the `idle` status tag | U+F04B2 |
+| `status_planning` | status tag `planning` (emoji U+1F4DD) | U+F0CA |
+| `status_implementing` | status tag `implementing` (emoji U+1F528) | U+F121 |
+| `status_reviewing` | status tag `reviewing` (emoji U+1F50D) | U+F002 |
+| `status_waiting` | status tag `waiting` (emoji U+23F3) | U+F252 |
+| `status_blocked` | status tag `blocked` (emoji U+26D4) | U+F05E |
+| `status_needs_human` | status tag `needs-human` (emoji U+1F64B) | U+F256 |
+| `status_offline` | status tag `offline` (emoji U+26AB) | U+F111 |
 | `task_pending` | a pending task | U+F096 |
 | `task_in_progress` | an in-progress task | U+F152 |
 | `task_completed` | a completed task | U+F14A |

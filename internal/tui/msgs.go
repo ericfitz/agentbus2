@@ -22,6 +22,7 @@ type (
 		channels   []bus.Channel
 		identities []bus.IdentityInfo
 		tags       [][]string
+		agents     []bus.AgentStatusEntry
 		admin      bool
 		keepAdmin  bool  // Status failed for another reason than forbidden
 		statusFail error // that failure, shown in the status bar
@@ -40,6 +41,12 @@ type (
 	healthMsg struct {
 		h   *bus.Health
 		err error
+	}
+	// agentHistoryMsg is one agent's status history, for the agents board.
+	agentHistoryMsg struct {
+		identity string
+		rows     []bus.AgentStatus
+		err      error
 	}
 	// historyMsg is a window of channel history.
 	historyMsg struct {

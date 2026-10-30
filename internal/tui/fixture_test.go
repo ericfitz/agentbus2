@@ -330,3 +330,13 @@ func (b *countingBus) Status(ctx context.Context) (bus.Status, error) {
 	b.note("Status", "")
 	return b.Bus.Status(ctx)
 }
+
+func (b *countingBus) AgentStatuses(ctx context.Context) ([]bus.AgentStatusEntry, error) {
+	b.note("AgentStatuses", "")
+	return b.Bus.AgentStatuses(ctx)
+}
+
+func (b *countingBus) AgentStatusHistory(ctx context.Context, identity string) ([]bus.AgentStatus, error) {
+	b.note("AgentStatusHistory", identity)
+	return b.Bus.AgentStatusHistory(ctx, identity)
+}

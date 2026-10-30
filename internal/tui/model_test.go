@@ -1118,7 +1118,9 @@ func TestNoInboxView(t *testing.T) {
 		wasCollapsed := f.m.collapsed
 		f.key("enter")
 		validMode()
-		if pos.item < 0 {
+		if pos.item < 0 && pos.sec == secSessions {
+			f.key("esc") // enter opened the agents board (open note: agent-status 4)
+		} else if pos.item < 0 {
 			f.key("enter") // toggle back so the walk's positions stay put
 			if f.m.collapsed != wasCollapsed {
 				t.Fatalf("enter twice on heading %d must restore collapsed: %v -> %v", pos.sec, wasCollapsed, f.m.collapsed)
@@ -1132,13 +1134,16 @@ func TestNoInboxView(t *testing.T) {
 		if pos.sec == secSessions && pos.item < 0 {
 			sawSessions = true
 			f.key("enter")
-			if !f.m.collapsed[secSessions] {
-				t.Fatalf("enter on the sessions heading must toggle collapsed[secSessions]")
+			if !f.m.board.open || f.m.collapsed[secSessions] {
+				t.Fatalf("enter on the sessions heading must open the agents board, not toggle collapsed[secSessions]")
 			}
 			if got := counts(); got != before {
 				t.Fatalf("the sessions heading made bus calls: %v -> %v", before, got)
 			}
-			f.key("enter")
+			f.key("esc")
+			if f.m.board.open || f.m.headSel != secSessions {
+				t.Fatalf("esc must close the board on the sessions heading: open=%v headSel=%d", f.m.board.open, f.m.headSel)
+			}
 		}
 		f.key("down")
 		validMode()
