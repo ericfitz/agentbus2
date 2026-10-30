@@ -29,5 +29,5 @@ Issue #11 asks for server health through the REST API, surfaced in the TUI healt
 ## Consequences
 
 - `Store.SchemaVersion` joins the Store contract (ADR 0004, Health addendum); the maintenance record adds nothing to it.
-- The MCP server has 25 tools; the `health` tool unparks a parked session like every tool but `receive` (Decision 18).
+- The MCP server has 26 tools; the `health` tool unparks a parked session like every tool but `receive` (Decision 18).
 - Not done on purpose: a cross-replica maintenance record, a Docker `HEALTHCHECK`, metrics.

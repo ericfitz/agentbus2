@@ -208,3 +208,11 @@ type taskListIn struct {
 	Status  string `json:"status,omitempty" jsonschema:"only tasks with this status"`
 	Owner   string `json:"owner,omitempty" jsonschema:"only tasks owned by this identity"`
 }
+
+type setStatusIn struct {
+	Session        string `json:"session,omitempty" jsonschema:"your session id as returned by register (optional; default: this server's main session)"`
+	Tag            string `json:"tag" jsonschema:"idle, planning, implementing, reviewing, waiting, blocked or needs-human"`
+	Text           string `json:"text" jsonschema:"what you are doing now: one line, at most 200 characters"`
+	Problem        string `json:"problem,omitempty" jsonschema:"what is in your way: one line (optional)"`
+	IdempotencyKey string `json:"idempotency_key,omitempty" jsonschema:"makes a retry safe: the same key replays the first result"`
+}

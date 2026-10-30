@@ -241,7 +241,7 @@ func TestToolListIsExact(t *testing.T) {
 	want := []string{
 		"register", "close_session", "create_channel", "list_channels", "delete_channel", "rename_channel",
 		"get_acl", "set_acl", "subscribe", "unsubscribe", "send", "receive", "history", "search",
-		"get_memory", "edit_memory", "delete_memory", "discover", "health",
+		"get_memory", "edit_memory", "delete_memory", "discover", "set_status", "health",
 		"task_create", "task_claim", "task_release", "task_update", "task_get", "task_list",
 	}
 	got := map[string]bool{}
@@ -259,7 +259,7 @@ func TestToolListIsExact(t *testing.T) {
 			t.Errorf("tool %s has no description", tl.Name)
 		}
 	}
-	if len(want) != 25 {
+	if len(want) != 26 {
 		t.Fatalf("test table has %d names", len(want))
 	}
 	for _, n := range want {

@@ -211,6 +211,21 @@ type identityOut struct {
 	Admin    bool             `json:"admin"`
 	Kind     bus.IdentityKind `json:"kind"`
 	Sessions []sessionInfoOut `json:"sessions"`
+	Status   *statusOut       `json:"status,omitempty"`
+}
+
+// statusOut is one agent status revision on the wire of the tools.
+type statusOut struct {
+	Tag         string `json:"tag"`
+	Text        string `json:"text"`
+	Problem     string `json:"problem,omitempty"`
+	Revision    int64  `json:"revision"`
+	DisplayName string `json:"display_name"`
+	SetAt       int64  `json:"set_at"`
+}
+
+func toStatusOut(s bus.AgentStatus) *statusOut {
+	return &statusOut{Tag: string(s.Tag), Text: s.Text, Problem: s.Problem, Revision: s.Revision, DisplayName: s.DisplayName, SetAt: s.SetAt}
 }
 
 type gapOut struct {
@@ -349,6 +364,9 @@ func identitiesOut(in []bus.IdentityInfo) []identityOut {
 		for _, si := range i.Sessions {
 			o.Sessions = append(o.Sessions, sessionInfoOut{Session: si.ID, DisplayName: si.DisplayName, OpenedAt: si.OpenedAt})
 		}
+		if i.Status != nil {
+			o.Status = toStatusOut(*i.Status)
+		}
 		out = append(out, o)
 	}
 	return out
@@ -435,7 +453,7 @@ func waitDuration(sec float64) (time.Duration, error) {
 }
 
 func (s *server) addTools(srv *mcp.Server) {
-	mcp.AddTool(srv, &mcp.Tool{Name: "register", Description: "Agentbus2: open a session for your profile's identity. Returns session (pass it on receive, and on send so the message is attributed to this session), identity, display_name, resume_token, resumed, pending (message counts per subscribed channel), rejected_cursors (offered cursors that were not adopted, each with a reason) and others (the identities with live sessions). Without a hint the call resumes this harness's main session (resumed=true) after a restart of the MCP server and on a repeated register, such as after the conversation is cleared; resuming ignores offered cursors and redelivers any batch you did not ack; a hint, a short role label such as reviewer, always opens a new session named identity/hint. Pass resume_token to resume a specific session, and cursors to offer positions you kept."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "register", Description: "Agentbus2: open a session for your profile's identity. Returns session (pass it on receive, and on send so the message is attributed to this session), identity, display_name, resume_token, resumed, pending (message counts per subscribed channel), rejected_cursors (offered cursors that were not adopted, each with a reason) and others (the identities with live sessions, each with its status (tag, text, problem, display_name, set_at) when it has set one). Without a hint the call resumes this harness's main session (resumed=true) after a restart of the MCP server and on a repeated register, such as after the conversation is cleared; resuming ignores offered cursors and redelivers any batch you did not ack; a hint, a short role label such as reviewer, always opens a new session named identity/hint. Pass resume_token to resume a specific session, and cursors to offer positions you kept."},
 		s.register)
 	mcp.AddTool(srv, &mcp.Tool{Name: "close_session", Description: "Agentbus2: close a session for good. Its display name is freed and it can never be resumed. Without it a session just lapses and register without a hint resumes it."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in sessionIn) (*mcp.CallToolResult, any, error) {
@@ -684,7 +702,7 @@ func (s *server) addTools(srv *mcp.Server) {
 				return map[string]any{"deleted": in.ID}, nil
 			})
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "discover", Description: "Agentbus2: list the identities that have live sessions, with those sessions' display names. Each entry carries kind, agent or human."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "discover", Description: "Agentbus2: list the identities that have live sessions, with those sessions' display names. Each entry carries kind, agent or human, and its status (tag, text, problem, display_name, set_at) when it has set one."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in optSessionIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) {
 				ids, err := b.Identities(ctx)
@@ -693,6 +711,33 @@ func (s *server) addTools(srv *mcp.Server) {
 				}
 				return map[string]any{"identities": identitiesOut(ids)}, nil
 			})
+		})
+	mcp.AddTool(srv, &mcp.Tool{Name: "set_status", Description: "Agentbus2: set your status, the one line the operator's board shows for your identity. tag is one of idle, planning, implementing, reviewing, waiting, blocked, needs-human (offline is set by the bus when you have no live session). text says what you are doing now (one line, at most 200 characters); problem (optional, one line) says what is in your way. Each call replaces your current status and keeps the earlier ones as history. Set it at the start of each task, when you are blocked or need the user, and set idle before agentbus2 park. A session registered with a hint does not set status. Use idempotency_key to make retries safe."},
+		func(ctx context.Context, req *mcp.CallToolRequest, in setStatusIn) (*mcp.CallToolResult, any, error) {
+			id := in.Session
+			if id == "" {
+				// open note: agent-status 9
+				c, err := s.getConn()
+				if err != nil {
+					return result(nil, err)
+				}
+				s.smu.Lock()
+				own := s.ownPrimary(c.Resolved)
+				s.smu.Unlock()
+				if own == nil {
+					return result(nil, validation("set_status needs a session: call register first, or pass session"))
+				}
+				id = own.Session
+			}
+			return result(withSession(ctx, s, id, func(b bus.Bus, id string) (*statusOut, error) {
+				st, err := b.SetAgentStatus(ctx, bus.SetAgentStatusInput{
+					Session: id, Tag: bus.StatusTag(in.Tag), Text: in.Text, Problem: in.Problem, IdempotencyKey: in.IdempotencyKey,
+				})
+				if err != nil {
+					return nil, err
+				}
+				return toStatusOut(st), nil
+			}))
 		})
 	mcp.AddTool(srv, &mcp.Tool{Name: "health", Description: "Agentbus2: the server's health as your identity may see it: status (ok or degraded), version, store engine and schema version, embedding state and backlog; an administrator also sees storage, notices and the maintenance lock. Call it when something that should work does not, before reporting a bus problem; a failure names the cause: an unreachable server or store, an unregistered session or an unresolved identity."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in optSessionIn) (*mcp.CallToolResult, any, error) {
