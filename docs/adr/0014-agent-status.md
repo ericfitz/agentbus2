@@ -4,7 +4,7 @@ Status: Accepted (Eric, 2026-10-27, decisions 1 to 15 below). The "Settled open 
 
 Covers issue #10 (ericfitz/agentbus2#10, aligned with ericfitz/agentbus#43). The design is `docs/superpowers/specs/2026-10-27-agent-status-design.md` (section 5 holds Eric's decisions); the plan is `docs/superpowers/plans/2026-10-27-agent-status.md`; the operator setting is in `docs/ops/configuration.md`; the agent-facing text is the "Status" section of `internal/cli/skills/using-agentbus2/SKILL.md`.
 
-Changes no earlier ADR's decision. It adds the `Identity/SetStatus` action to ADR 0011's table, three operations to ADR 0001's count (ADR 0010 decision 12 and ADR 0001's addendum carry the new totals) and a clause to the capacity text of ADR 0004.
+Changes no earlier ADR's decision. It adds the `Identity/SetStatus` action to ADR 0011's table, three operations to ADR 0001's count (ADR 0010 decision 12 and ADR 0001's addendum carry the new totals) and one clause to the runtime capacity notice in `internal/core/maintenance/budget.go` ("agent status history" joins the list of data that is never evicted).
 
 ## Context
 
@@ -49,7 +49,7 @@ The protocol stays `1.0.0`: the additions ship in `1.0.0` (Eric, 2026-10-27: "Pr
 
 ## Behavior
 
-- **Retention.** `status_history_count` (environment `AGENTBUS2_SERVER_STATUS_HISTORY_COUNT`), default 20, range 1 to 1000, counts the current status. Each write inserts the next revision and prunes to N in the same transaction, so history is bounded without a job and a failure between the two rolls back whole. The bound is identities times N rows of at most about 600 bytes each.
+- **Retention.** `status_history_count` (environment `AGENTBUS2_SERVER_STATUS_HISTORY_COUNT`), default 20, range 1 to 1000, counts the current status. Each write inserts the next revision and prunes to N in the same transaction, so history is bounded without a job and a failure between the two rolls back whole. The bound is identities times N rows of at most about 1.7 KB each (the 200-character limit counts runes, `rules.MaxLineRunes`, so text and problem can take 4 bytes per rune, plus the tag, session id and display name).
 - **Offline.** A read reports `offline` for an identity with no live session and keeps the last stored status: `listAgentStatuses` entries carry `live`, and `last_tag` (the stored tag). `since` is the stored status's `set_at`. Nothing is written at close or lapse.
 - **Pull only.** No wake and no push on a change; the TUI polls once per 5-second round. A push is a follow-up through issue #13.
 - **Rows go with the identity.** The `agent_statuses` rows are deleted when the identity is retired (`RetireIdentity` deletes the identity row, which cascades) and by `ResetRegistry` and `ResetData`; never by time and never at session close.
@@ -86,7 +86,7 @@ These are not Eric's decisions. The agents that wrote and implemented the plan s
 4. **Board key:** `enter` on the `sessions` heading opens the board; the arrow keys still collapse and expand it; `w` stays free. Marker: `internal/tui/agents_test.go`, `internal/tui/model.go`. Consequence (controller ruling 9): `TestNoInboxView` was edited, its no-inbox intent kept (the board makes no bus call).
 5. **Session-row icon:** on a live agent row whose identity has a status, the status icon replaces the gear; no status keeps the gear; the TUI's own row and idle rows are unchanged. Marker: `internal/tui/session_rows_test.go`, `internal/tui/view.go`.
 6. **Live agents with no status** appear on the board in the live group with `-` for tag, since and text. Refinement (controller ruling 10): only with at least one session, which keeps the seeded `slack-bridge` off the board. Marker: `internal/tui/agents.go`.
-7. **Attention count** counts live entries with tag `needs-human` or `blocked` only; it shows as `N need you` (warn color) in the status bar and as `(N need you)` after the `sessions` heading, which is uncolored (controller ruling 10). Marker: `internal/tui/agents_test.go`, `internal/tui/view.go`.
+7. **Attention count** counts live entries with tag `needs-human` or `blocked` only; it shows as `N need you` (warn color) in the status bar and as `(N need you)` after the `sessions` heading, which is uncolored (controller ruling 10); when the heading is collapsed it reads `(count, N need you)`, with the unread total between them when there is one: `(count, U unread, N need you)`. Marker: `internal/tui/agents_test.go`, `internal/tui/view.go`.
 8. **Rate limit:** a set is checked and charged as one operation of `len(tag)+len(text)+len(problem)` bytes against `send_messages_per_second` and `send_kib_per_second`, with the `Edit` text. Marker: `internal/core/statuses/statuses.go` at the `Limits.Check` call.
 9. **Default session:** MCP `set_status` without `session` uses the MCP server's own primary session, else `validation`; CLI `agent-status set` without `-session` locates the harness session (the `park` pattern), exit 2 when none; never a throwaway session. Marker: `internal/mcpserver/server.go`, `internal/mcpserver/agentstatus_test.go`, `internal/cli/agentstatus_test.go`.
 10. **Denials of `SetStatus`:** the texts and Reasons in the Access section above; the kind test fails closed. Marker: `internal/core/access/decide_test.go` `TestDecideSetStatus`.
@@ -96,7 +96,7 @@ These are not Eric's decisions. The agents that wrote and implemented the plan s
 14. **Board history refresh:** while an agent's history is open the TUI refetches it once per 5-second status round. Marker: `internal/tui/agents_test.go`, `internal/tui/model.go`.
 15. **`Status` on `IdentityInfo` only**, not on `SessionInfo`: the status is keyed per identity, so a per-session copy would repeat it. Marker: `internal/bus/sessions.go`.
 
-Further agent choice (controller ruling 4, no marker): the capacity text lists "agent status history" with tombstones as never evicted, and the Postgres logical usage sum is not extended to `agent_statuses` (no `size_bytes` column; bounded by identities times N), so the Postgres budget undercounts at most about 600 bytes times N per identity.
+Further agent choice (controller ruling 4, no marker): the capacity text lists "agent status history" with tombstones as never evicted, and the Postgres logical usage sum is not extended to `agent_statuses` (no `size_bytes` column; bounded by identities times N), so the Postgres budget undercounts at most about 1.7 KB times N per identity.
 
 ## Shared with agentbus v1 ADR 0026
 
