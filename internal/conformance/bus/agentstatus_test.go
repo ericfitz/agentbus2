@@ -149,6 +149,8 @@ func TestAgentStatusValidation(t *testing.T) {
 			{"bogus", ab2bus.SetAgentStatusInput{Session: s.ID, Tag: "bogus", Text: "x"}},
 			{"empty_text", ab2bus.SetAgentStatusInput{Session: s.ID, Tag: ab2bus.StatusIdle}},
 			{"multiline_text", ab2bus.SetAgentStatusInput{Session: s.ID, Tag: ab2bus.StatusIdle, Text: "a\nb"}},
+			{"carriage_return_text", ab2bus.SetAgentStatusInput{Session: s.ID, Tag: ab2bus.StatusIdle, Text: "a\rb"}},
+			{"multiline_problem", ab2bus.SetAgentStatusInput{Session: s.ID, Tag: ab2bus.StatusIdle, Text: "x", Problem: "a\nb"}},
 		}
 		for _, c := range cases {
 			t.Run(c.name, func(t *testing.T) {
