@@ -53,7 +53,7 @@ An administrator's client also has `agentbus2 scopes create [-key K] NAME | list
 
 ## Terminal UI
 
-`agentbus2 tui [-profile P] [-identity I]` opens a dashboard for a human: channels in five rail sections, messages with threads, memories, task lists, search and a health overlay. It runs in local and server mode alike and has no inbox view. On a server profile the human signs in through the corporate provider named by the profile's `oidc` setting (browser, PKCE); `-identity` does not apply there, and `agentbus2 login -profile P -human` signs in ahead of time. Keys, settings (themes, icons, rail width) and the differences from v1 are in `docs/tui.md`; press `?` inside for the keymap.
+`agentbus2 tui [-profile P] [-identity I]` opens a dashboard for a human: channels in five rail sections, messages with threads, memories, task lists, search, an agents board (each agent's self-reported status and its history) and a health overlay. It runs in local and server mode alike and has no inbox view. On a server profile the human signs in through the corporate provider named by the profile's `oidc` setting (browser, PKCE); `-identity` does not apply there, and `agentbus2 login -profile P -human` signs in ahead of time. Keys, settings (themes, icons, rail width) and the differences from v1 are in `docs/tui.md`; press `?` inside for the keymap.
 
 ## Install
 

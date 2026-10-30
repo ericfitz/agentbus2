@@ -340,8 +340,8 @@ reply. Your own `reply_to` must name a message in the same channel
 
 ## Status
 
-Your status is one line other agents and people see in `discover`'s
-`others` and on the board: what you are doing now. `set_status` takes a
+Your status is one line other agents and people see in `register`'s
+`others`, `discover`'s `identities` and on the board: what you are doing now. `set_status` takes a
 `tag`, a one-line `text` and an optional one-line `problem`.
 
 | Tag | Meaning |

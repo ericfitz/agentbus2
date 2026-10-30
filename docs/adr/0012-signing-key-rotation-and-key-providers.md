@@ -35,7 +35,7 @@ The brief's "Changes to existing decisions" were not individually decided by Eri
 2. The settings `signing_key_uri`, `signing_key_rotation_hours` and `signing_key_rotation_cooldown_seconds` (decisions 1, 11 and 10). Bounds: hours is 0 or 48 to 8760; cooldown is 1 to 86400, always below the 48-hour minimum, so a cooldown never delays a scheduled rotation.
 3. "Database read access equals the administrator flag" holds only for the Store-row provider (decision 1 and the issue #8 acceptance criterion): an external provider's private key never reaches the database or a backup.
 4. The external SDK dependencies sit behind build tags (decisions 1 and 12). The import rule that enforces it (`keyprovider-leaf`, `keyprovider-consumers` in `scripts/m7-exit-checks.sh`) is an agent choice.
-5. The wire addition lands in `1.0.0` (decision 6): `GET /v1/admin/signing-keys` and `POST /v1/admin/signing-keys/rotate`. `api/openapi.yaml` now declares 54 operations, 8 open and 46 protected (ADR 0001 and ADR 0010 counted 52 and 44 protected before).
+5. The wire addition lands in `1.0.0` (decision 6): `GET /v1/admin/signing-keys` and `POST /v1/admin/signing-keys/rotate`. `api/openapi.yaml` now declares 54 operations, 8 open and 46 protected (ADR 0001 and ADR 0010 counted 52 and 44 protected before; 57 and 49 protected after the three agent-status operations, ADR 0014).
 
 ## Settled open notes
 

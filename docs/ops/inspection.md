@@ -1,6 +1,6 @@
 # Write inspection
 
-An operator-run webhook can look at every content write before it commits and refuse it. Nothing is inspected until `inspection_endpoint` is set (see [configuration.md](configuration.md)). The settings are `inspection_endpoint`, `inspection_api_key_file` / `inspection_api_key_env`, `inspection_timeout_seconds` (default 5) and `inspection_on_failure` (default `closed`).
+An operator-run webhook can look at every inspected content write (listed below) before it commits and refuse it. Nothing is inspected until `inspection_endpoint` is set (see [configuration.md](configuration.md)). The settings are `inspection_endpoint`, `inspection_api_key_file` / `inspection_api_key_env`, `inspection_timeout_seconds` (default 5) and `inspection_on_failure` (default `closed`).
 
 **Every inspected record leaves the server process and goes to the inspector.** Subjects, message content, task descriptions, tags and metadata are all in the request. Use an `https` endpoint and an inspector you trust. The server accepts plain `http` only for a loopback host (`localhost`, `127.0.0.0/8`, `::1`), and refuses a URL that carries credentials: put the token in `inspection_api_key_file` or `inspection_api_key_env`, which the server sends as `Authorization: Bearer <token>`.
 
@@ -11,7 +11,7 @@ An operator-run webhook can look at every content write before it commits and re
 - `task_create`.
 - `task_update` when the patch changes the subject, description or metadata. A status-only patch, `task_claim` and `task_release` are not inspected.
 
-Never inspected: reads (`receive`, `history`, `search`, `get_memory`, `task_get`, `task_list`), `delete_memory`, `delete_channel`, and every administration call (ACLs, scopes, identities, bridges, keys). A keyed retry that replays a stored result is not inspected again.
+Never inspected: reads (`receive`, `history`, `search`, `get_memory`, `task_get`, `task_list`), `delete_memory`, `delete_channel`, `set_status` (and the CLI `agent-status set`: an agent's status text and problem, up to 200 characters each, reach every agent through `register` and `discover` and the operator without passing the inspector), and every administration call (ACLs, scopes, identities, bridges, keys). A keyed retry that replays a stored result is not inspected again.
 
 A local profile (the CLI, `agentbus2 mcp` or `agentbus2 tui` over a SQLite file with no server) is never inspected: inspection runs in `agentbus2 server` only.
 

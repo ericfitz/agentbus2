@@ -49,7 +49,7 @@ The protocol stays `1.0.0`: the additions ship in `1.0.0` (Eric, 2026-10-27: "Pr
 
 ## Behavior
 
-- **Retention.** `status_history_count` (environment `AGENTBUS2_SERVER_STATUS_HISTORY_COUNT`), default 20, range 1 to 1000, counts the current status. Each write inserts the next revision and prunes to N in the same transaction, so history is bounded without a job and a failure between the two rolls back whole. The bound is identities times N rows of at most about 1.7 KB each (the 200-character limit counts runes, `rules.MaxLineRunes`, so text and problem can take 4 bytes per rune, plus the tag, session id and display name).
+- **Retention.** `status_history_count` (environment `AGENTBUS2_SERVER_STATUS_HISTORY_COUNT`), default 20, range 1 to 1000, counts the current status. Each write inserts the next revision and prunes to N in the same transaction, so history is bounded without a job and a failure between the two rolls back whole. The bound is identities times N rows of about 2 KB each at most (the 200-character limit counts runes, `rules.MaxLineRunes`, so text and problem can take 4 bytes per rune, plus the identity, tag, session id, display name and two timestamps). Status text and problem are not passed to the write-inspection webhook (ADR 0013); inspecting them is Eric's decision, not made here.
 - **Offline.** A read reports `offline` for an identity with no live session and keeps the last stored status: `listAgentStatuses` entries carry `live`, and `last_tag` (the stored tag). `since` is the stored status's `set_at`. Nothing is written at close or lapse.
 - **Pull only.** No wake and no push on a change; the TUI polls once per 5-second round. A push is a follow-up through issue #13.
 - **Rows go with the identity.** The `agent_statuses` rows are deleted when the identity is retired (`RetireIdentity` deletes the identity row, which cascades) and by `ResetRegistry` and `ResetData`; never by time and never at session close.
@@ -96,7 +96,7 @@ These are not Eric's decisions. The agents that wrote and implemented the plan s
 14. **Board history refresh:** while an agent's history is open the TUI refetches it once per 5-second status round. Marker: `internal/tui/agents_test.go`, `internal/tui/model.go`.
 15. **`Status` on `IdentityInfo` only**, not on `SessionInfo`: the status is keyed per identity, so a per-session copy would repeat it. Marker: `internal/bus/sessions.go`.
 
-Further agent choice (controller ruling 4, no marker): the capacity text lists "agent status history" with tombstones as never evicted, and the Postgres logical usage sum is not extended to `agent_statuses` (no `size_bytes` column; bounded by identities times N), so the Postgres budget undercounts at most about 1.7 KB times N per identity.
+Further agent choice (controller ruling 4, no marker): the capacity text lists "agent status history" with tombstones as never evicted, and the Postgres logical usage sum is not extended to `agent_statuses` (no `size_bytes` column; bounded by identities times N), so the Postgres budget undercounts at most about 2 KB times N per identity.
 
 ## Shared with agentbus v1 ADR 0026
 
