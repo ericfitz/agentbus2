@@ -18,7 +18,7 @@ const resetWord = "zyxwvuquux"
 var dataTables = []string{
 	"notices", "messages", "message_tags", "channels", "channel_acl", "subscriptions",
 	"tag_subscriptions", "tag_subscription_tags", "sessions", "session_cursors",
-	"memory_access", "receipts",
+	"memory_access", "receipts", "agent_statuses",
 }
 
 // resetFixtures fills every table ResetData or ResetRegistry touches and
@@ -57,6 +57,9 @@ func resetFixtures(t *testing.T, s ab2store.Store) (chID, maxSeq int64) {
 			return err
 		}
 		if err := tx.PutCursor(ctx, ab2store.Cursor{SessionID: "s1", ChannelID: chID, CursorSeq: 1}); err != nil {
+			return err
+		}
+		if _, err := tx.AppendAgentStatus(ctx, ab2store.AgentStatus{Identity: "pat", Tag: "planning", Text: "t", SetAt: fixedNow}); err != nil {
 			return err
 		}
 		if err := tx.PutReceipt(ctx, ab2store.Receipt{Identity: "pat", Key: "k", Fingerprint: "f", Result: []byte("1"), ExpiresAt: fixedNow + 10}); err != nil {

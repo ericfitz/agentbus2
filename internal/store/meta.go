@@ -19,7 +19,7 @@ type Meta interface {
 	// so SQLite's messages_ad trigger keeps messages_fts in step), channels
 	// (channel_acl, subscriptions, session_cursors, message_tags, embeddings
 	// and embed_failures cascade), subscriptions, tag_subscriptions
-	// (tag_subscription_tags cascades), sessions, memory_access and receipts.
+	// (tag_subscription_tags cascades), sessions, memory_access, receipts and agent_statuses.
 	// It keeps schema_meta, seq_counter, leases, signing_keys, identities,
 	// identity_keys, human_bindings, access_refs (the users and admins lists),
 	// enrollment_tokens, scopes, retired_identities, bridges, bridge_messages,
@@ -28,8 +28,8 @@ type Meta interface {
 	// (ErrReadOnly in Read). Safe to repeat.
 	ResetData(ctx context.Context) error
 	// ResetRegistry deletes every identities row except keep and slack-bridge (identity_keys
-	// cascades; keep "" deletes all; human_bindings cascade with their
-	// identities), every enrollment_tokens row, every users reference and
+	// cascades; keep "" deletes all; human_bindings and agent_statuses
+	// cascade with their identities), every enrollment_tokens row, every users reference and
 	// every admins reference except {admins, identity, "", keep}; it keeps
 	// signing_keys and everything else ResetData keeps (the core calls
 	// ResetData first). The Store adds no admins row for keep. ErrInvalid when keep fails TextRule. Write transactions only.

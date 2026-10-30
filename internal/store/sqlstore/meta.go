@@ -14,9 +14,10 @@ import (
 // parents whose cascades remove the rest. Foreign keys are on for both
 // engines (sqlite.DSN sets foreign_keys(1)). Port of the table wipe in v1
 // internal/bus/admin.go Reset, re-scoped to data (Milestone 5 item 1).
+// agent_statuses is listed because only an identity delete cascades to it.
 var resetDataTables = []string{
 	"notices", "messages", "channels", "subscriptions", "tag_subscriptions",
-	"sessions", "memory_access", "receipts",
+	"sessions", "memory_access", "receipts", "agent_statuses",
 }
 
 // ResetData: see store.Meta. It deletes an explicit list, so the scopes,

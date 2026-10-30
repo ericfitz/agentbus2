@@ -109,6 +109,19 @@ CREATE TABLE session_cursors (
   size_bytes BIGINT GENERATED ALWAYS AS (32 + octet_length(session_id)) STORED,
   PRIMARY KEY (session_id, channel_id)
 );
+-- open note: agent-status 12. The primary key (identity, revision) is the
+-- identity index; no CHECK on tag (the core validates it).
+CREATE TABLE agent_statuses (
+  identity TEXT NOT NULL REFERENCES identities(name) ON DELETE CASCADE,
+  revision BIGINT NOT NULL,
+  tag TEXT NOT NULL,
+  text TEXT NOT NULL,
+  problem TEXT NOT NULL DEFAULT '',
+  session_id TEXT NOT NULL,
+  display_name TEXT NOT NULL,
+  set_at BIGINT NOT NULL,
+  PRIMARY KEY (identity, revision)
+);
 CREATE TABLE messages (
   seq BIGINT PRIMARY KEY,
   channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,

@@ -60,7 +60,7 @@ type Scopes interface {
 	// RetireIdentity, in one transaction, deletes the name's channel_acl rows
 	// on every channel, its bound enrollment tokens and then the identity row
 	// (keys, subscriptions, tag subscriptions, sessions with their cursors and
-	// slack_users cascade), and records the name in retired_identities. It
+	// slack_users and agent_statuses cascade), and records the name in retired_identities. It
 	// reports false, nil when the row is already gone (also when an overlapping run removed it first), ErrInvalid for a reserved name. Messages stay.
 	RetireIdentity(ctx context.Context, name string, now int64) (bool, error)
 	// IdentityRetired reports whether the name is in retired_identities.

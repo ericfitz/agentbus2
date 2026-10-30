@@ -63,4 +63,5 @@ type Tx interface {
 	SigningKeys
 	AssertionReplays
 	References
+	AgentStatuses
 }
