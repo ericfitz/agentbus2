@@ -102,7 +102,9 @@ func TestSkillThreadReplies(t *testing.T) {
 // set_status and the seven settable tags, Park sets idle before it parks, and
 // Subagents do not set a status.
 func TestSkillStatusProtocol(t *testing.T) {
-	skill := string(SkillMD)
+	// A Windows checkout (core.autocrlf) embeds the skill with CRLF endings;
+	// the section anchors below match LF only.
+	skill := strings.ReplaceAll(string(SkillMD), "\r\n", "\n")
 	for _, want := range []string{"set_status", "needs-human", "`idle`", "`planning`", "`implementing`", "`reviewing`", "`waiting`", "`blocked`", "status_history_count", "`offline`"} {
 		if !strings.Contains(skill, want) {
 			t.Errorf("skill lacks %q", want)
