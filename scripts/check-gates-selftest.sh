@@ -1115,6 +1115,7 @@ block_m10_deps_rule_fires() {
 	m10_expect "$label" "a repeated leaf line in place of a missing one" 1 'mcponly=8'
 	m10_log "$tmp/m10.log"
 	sed 's/^ok  .*internal\/e2e.*$/FAIL\tgithub.com\/ericfitz\/agentbus2\/internal\/e2e\t25.000s/' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
+	m10_log "$tmp/m10.log"
 	grep -vF 'TestHelpExamples/verify' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
 	m10_expect "$label" "deleted help leaf line" 1 'help=5'
 	m10_log "$tmp/m10.log"

@@ -148,11 +148,13 @@ server's health and prints the register command to run next.
 
 How the pieces fit:
   - register creates the identity's key in the credential store
-    (credentials/PROFILE/NAME under AGENTBUS2_CONFIG_DIR, else under
-    agentbus2 in XDG_CONFIG_HOME, else ~/.config/agentbus2) and records the
-    server and identity in the default profile of config.json there. Later
-    commands then need no flags; the agent's entry from config names them
-    anyway.
+    (credentials/PROFILE/NAME in the configuration directory) and records the
+    server and identity in the default profile of config.json there. The
+    configuration directory is AGENTBUS2_CONFIG_DIR, else agentbus2 in
+    XDG_CONFIG_HOME, else ~/.config/agentbus2; on Windows it is
+    AGENTBUS2_CONFIG_DIR, else agentbus2 in %APPDATA%, else
+    AppData\Roaming\agentbus2 in your user profile directory. Later commands
+    then need no flags; the agent's entry from config names them anyway.
   - The agent's harness starts agentbus2-mcponly serve. serve speaks MCP on
     its standard input and output and signs in with the identity's key.
   - The key never leaves the machine. Only its public half goes to the server.
@@ -227,8 +229,11 @@ no server, so you may run it any number of times.
 Paste the "agentbus2" entry into the agent's MCP server configuration, or give
 the command line to the agent's add-MCP-server command. command is the full
 path of this binary, so the agent needs nothing on its PATH. The entry names
-the server and identity, so it does not depend on the agent's working
-directory or environment.
+the server and identity, but serve still reads AGENTBUS2_PROFILE, the nearest
+.local/agentbus2.json above its working directory and the configuration
+directory variables (see help connect) to choose the profile and find the key.
+Start the agent where those match what you checked; a profile that names a
+different server than the entry fails.
 
 With -credential FILE the entry carries the absolute path of the key file; with
 a profile other than default it carries -profile NAME.
@@ -249,7 +254,8 @@ const helpVerify = `agentbus2-mcponly help verify: the six steps of check
 check runs six steps, prints one line for each and stops at the first FAIL:
   reach       the server answers its discovery document
   health      the server's health endpoint answers
-  identity    an identity is chosen (-identity, AGENTBUS2_IDENTITY or the profile)
+  identity    an identity is chosen (-identity, AGENTBUS2_IDENTITY, the profile's
+              identity or the profile's only credential)
   credential  the identity's key loads (a key file must be readable by you alone)
   token       the key signs in: the server exchanges it for a bearer
   access      the bearer works: health answers at the identity tier
@@ -328,7 +334,8 @@ after you fix the URL or start the server.
 
 has no local mode (exit 2). No server is known, so the command fell back to
 the built-in local profile, which this binary cannot open. Pass -server URL,
-set AGENTBUS2_SERVER, or register first so the profile records the server.
+set AGENTBUS2_SERVER, or run register -server URL first so the profile records
+the server.
 
   $ agentbus2-mcponly check -identity my-agent
     > agentbus2-mcponly check: profile "default" is a local profile, and this binary has no local mode: pass -server URL, or use agentbus2
@@ -363,11 +370,11 @@ agentbus2 server admin reset-credential NAME first, and then you register.
     > agentbus2-mcponly: check: token failed
     (exit 1)
 
-not_registered. A call from the agent answers not_registered when the server
-no longer has the identity, for example an administrator removed it or the
-server's database was recreated, while the agent still holds a bearer for it.
-Register the identity again as for unauthenticated; check always asks for a new
-bearer, so it reports the same cause as unauthenticated at the token step.
+not_registered. A call from the agent answers not_registered when the
+identity's scope was retired while the agent still held a bearer that had not
+expired. Retiring a scope deletes its identities and their keys, so ask the
+administrator for an identity in a live scope. check asks for a new bearer,
+which the server refuses, so it reports unauthenticated at the token step.
 
 A key file readable by others. While other users can read a key file, check
 prints FAIL credential and no command signs in with it. On Linux and macOS run

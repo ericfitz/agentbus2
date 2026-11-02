@@ -19,11 +19,13 @@ server's health and prints the register command to run next.
 
 How the pieces fit:
   - register creates the identity's key in the credential store
-    (credentials/PROFILE/NAME under AGENTBUS2_CONFIG_DIR, else under
-    agentbus2 in XDG_CONFIG_HOME, else ~/.config/agentbus2) and records the
-    server and identity in the default profile of config.json there. Later
-    commands then need no flags; the agent's entry from config names them
-    anyway.
+    (credentials/PROFILE/NAME in the configuration directory) and records the
+    server and identity in the default profile of config.json there. The
+    configuration directory is AGENTBUS2_CONFIG_DIR, else agentbus2 in
+    XDG_CONFIG_HOME, else ~/.config/agentbus2; on Windows it is
+    AGENTBUS2_CONFIG_DIR, else agentbus2 in %APPDATA%, else
+    AppData\Roaming\agentbus2 in your user profile directory. Later commands
+    then need no flags; the agent's entry from config names them anyway.
   - The agent's harness starts agentbus2-mcponly serve. serve speaks MCP on
     its standard input and output and signs in with the identity's key.
   - The key never leaves the machine. Only its public half goes to the server.

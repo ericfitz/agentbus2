@@ -24,8 +24,11 @@ no server, so you may run it any number of times.
 Paste the "agentbus2" entry into the agent's MCP server configuration, or give
 the command line to the agent's add-MCP-server command. command is the full
 path of this binary, so the agent needs nothing on its PATH. The entry names
-the server and identity, so it does not depend on the agent's working
-directory or environment.
+the server and identity, but serve still reads AGENTBUS2_PROFILE, the nearest
+.local/agentbus2.json above its working directory and the configuration
+directory variables (see help connect) to choose the profile and find the key.
+Start the agent where those match what you checked; a profile that names a
+different server than the entry fails.
 
 With -credential FILE the entry carries the absolute path of the key file; with
 a profile other than default it carries -profile NAME.

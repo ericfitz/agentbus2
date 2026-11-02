@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"io/fs"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -363,7 +364,14 @@ func TestHelpExamples(t *testing.T) {
 					t.Fatalf("setup register: exit %d, stdout %q, stderr %q", r.code, r.stdout, r.err)
 				}
 			}
-			subst := strings.NewReplacer("https://agentbus.example.com", url, "my-agent", identity)
+			// The unreachable-server example names a port that was listening a moment ago.
+			ln, err := net.Listen("tcp", "127.0.0.1:0")
+			if err != nil {
+				t.Fatal(err)
+			}
+			closed := ln.Addr().String()
+			_ = ln.Close()
+			subst := strings.NewReplacer("https://agentbus.example.com", url, "my-agent", identity, "127.0.0.1:1", closed)
 			for _, ex := range examples {
 				line := subst.Replace(ex.line)
 				if strings.Contains(ex.line, "./enrollment-token") {
@@ -387,5 +395,30 @@ func TestHelpExamples(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestHelpPattern pins the matcher of the help examples: anchored, <...> is
+// any non-empty text and every other character is literal.
+func TestHelpPattern(t *testing.T) {
+	for _, c := range []struct {
+		want, line string
+		match      bool
+	}{
+		{"ok   reach: <x>", "ok   reach: http://h", true},
+		{"ok   reach: <x>", "ok   reach: ", false},
+		{"ok   reach: <x>", "ok   reach:", false},
+		{"ok", "xok", false},
+		{"ok", "okx", false},
+		{"a.c (b)", "a.c (b)", true},
+		{"a.c (b)", "abc (b)", false},
+		{"a+b[0]", "a+b[0]", true},
+		{"a+b[0]", "aab0", false},
+		{"x <a> y <b> z", "x 1 y 2 z", true},
+		{"x <a> y", "x  y", false},
+	} {
+		if got := helpPattern(c.want).MatchString(c.line); got != c.match {
+			t.Errorf("helpPattern(%q) on %q = %v, want %v", c.want, c.line, got, c.match)
+		}
 	}
 }

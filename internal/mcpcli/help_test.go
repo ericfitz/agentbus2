@@ -94,6 +94,21 @@ func TestHelpGrammar(t *testing.T) {
 		}
 		lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 		dollars := 0
+		placeholder := regexp.MustCompile(`<[^>]*>`)
+		for i, l := range lines {
+			if wantRE.MatchString(l) && strings.TrimSpace(placeholder.ReplaceAllString(l[6:], "")) == "" {
+				t.Errorf("%s: %q has no literal character, so it matches any line", name, l)
+			}
+			if dollarRE.MatchString(l) {
+				next := ""
+				if i+1 < len(lines) {
+					next = lines[i+1]
+				}
+				if !wantRE.MatchString(next) && !exitRE.MatchString(next) {
+					t.Errorf("%s: %q states no output and no exit code", name, l)
+				}
+			}
+		}
 		for i, l := range lines {
 			trimmed := strings.TrimSpace(l)
 			prev := ""

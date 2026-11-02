@@ -3,7 +3,8 @@ agentbus2-mcponly help verify: the six steps of check
 check runs six steps, prints one line for each and stops at the first FAIL:
   reach       the server answers its discovery document
   health      the server's health endpoint answers
-  identity    an identity is chosen (-identity, AGENTBUS2_IDENTITY or the profile)
+  identity    an identity is chosen (-identity, AGENTBUS2_IDENTITY, the profile's
+              identity or the profile's only credential)
   credential  the identity's key loads (a key file must be readable by you alone)
   token       the key signs in: the server exchanges it for a bearer
   access      the bearer works: health answers at the identity tier
