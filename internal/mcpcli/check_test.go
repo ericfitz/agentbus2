@@ -8,6 +8,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/fileacl"
+	"github.com/ericfitz/agentbus2/internal/version"
 )
 
 // writeFreshKey writes a new 0600 EdDSA key file and returns its path.
@@ -54,7 +55,7 @@ func TestCheckSteps(t *testing.T) {
 	code, out, errs := run([]string{"check", "-server", base}, environ)
 	got := lines(out)
 	if code != 0 || errs != "" || len(got) != 3 ||
-		!strings.HasPrefix(got[0], "ok   reach: "+base+" (server ") || !strings.Contains(got[0], ", protocol 1.0.0)") ||
+		!strings.HasPrefix(got[0], "ok   reach: "+base+" (server ") || !strings.Contains(got[0], ", protocol "+version.Protocol+")") ||
 		!strings.HasPrefix(got[1], "ok   health: ") || !strings.HasSuffix(got[1], " (probe tier)") ||
 		got[2] != "next: agentbus2-mcponly register -server "+base+" -identity NAME" {
 		t.Errorf("no identity: code %d, stdout %q, stderr %q", code, out, errs)
@@ -126,6 +127,52 @@ func TestCheckRejectsPositionalArguments(t *testing.T) {
 		code, out, errs := run([]string{c, "extra"}, nil)
 		if code != 2 || out != "" || !strings.Contains(errs, `unexpected argument "extra"`) {
 			t.Errorf("%s extra: code %d, stdout %q, stderr %q", c, code, out, errs)
+		}
+	}
+}
+
+// The token step exchanges every time: a bearer cached for pat by an earlier
+// check must not let another, unregistered key pass.
+func TestCheckTokenIgnoresCachedBearer(t *testing.T) {
+	t.Chdir(t.TempDir())
+	base := startServer(t)
+	environ, _ := testEnviron(t)
+	if code, out, errs := run([]string{"register", "-server", base, "-identity", "pat"}, environ); code != 0 {
+		t.Fatalf("register: %d %q %q", code, out, errs)
+	}
+	if code, out, errs := run([]string{"check"}, environ); code != 0 {
+		t.Fatalf("first check: %d %q %q", code, out, errs)
+	}
+	key := writeFreshKey(t, 0o600)
+	code, out, errs := run([]string{"check", "-identity", "pat", "-credential", key}, environ)
+	if code != 1 || !strings.Contains(out, "FAIL token: unauthenticated:") {
+		t.Errorf("other key: code %d, stdout %q, stderr %q", code, out, errs)
+	}
+}
+
+func TestCheckNoCredentialFix(t *testing.T) {
+	t.Chdir(t.TempDir())
+	base := startServer(t)
+	environ, _ := testEnviron(t)
+	code, out, errs := run([]string{"check", "-server", base, "-identity", "pat"}, environ)
+	got := lines(out)
+	if code != 1 || len(got) != 4 || !strings.HasPrefix(got[3], "FAIL credential: ") ||
+		!strings.HasSuffix(got[3], "fix: agentbus2-mcponly register -server "+base+" -identity pat") {
+		t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
+	}
+}
+
+func TestCheckServerDisagreesWithProfile(t *testing.T) {
+	t.Chdir(t.TempDir())
+	base := startServer(t)
+	environ, _ := testEnviron(t)
+	if code, out, errs := run([]string{"register", "-server", base, "-identity", "pat"}, environ); code != 0 {
+		t.Fatalf("register: %d %q %q", code, out, errs)
+	}
+	for _, c := range []string{"check", "config"} {
+		code, out, errs := run([]string{c, "-server", "http://127.0.0.1:1"}, environ)
+		if code != 2 || out != "" || !strings.Contains(errs, "disagrees") {
+			t.Errorf("%s: code %d, stdout %q, stderr %q", c, code, out, errs)
 		}
 	}
 }

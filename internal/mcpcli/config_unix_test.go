@@ -51,3 +51,22 @@ func TestConfigSnippet(t *testing.T) {
 		})
 	}
 }
+
+// A relative -credential becomes absolute: the harness starts the server from
+// another directory.
+func TestConfigCredentialAbsolute(t *testing.T) {
+	prev := executable
+	executable = func() (string, error) { return "/opt/bin/agentbus2-mcponly", nil }
+	t.Cleanup(func() { executable = prev })
+	environ, _ := testEnviron(t)
+	t.Chdir(t.TempDir())
+	wd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, out, errs := run([]string{"config", "-server", "http://h:1", "-identity", "pat", "-credential", "rel.pem"}, environ)
+	want := filepath.Join(wd, "rel.pem")
+	if code != 0 || !strings.Contains(out, `"`+want+`"`) || !strings.Contains(out, " -credential "+want+"\n") {
+		t.Errorf("code %d, stdout %q, stderr %q, want %s", code, out, errs, want)
+	}
+}

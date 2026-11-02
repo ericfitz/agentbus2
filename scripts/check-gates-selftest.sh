@@ -1091,6 +1091,11 @@ block_m10_deps_rule_fires() {
 	rc=0
 	bash "$wt/scripts/m10-exit-checks.sh" "$tmp/does-not-exist.log" >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 2 ]; then problem "$label" "missing log: exit $rc, expected 2"; fi
+	grep -qF "$tmp/does-not-exist.log" "$log" || problem "$label" "missing log: message does not name the path: $(tail -n 2 "$log" | tr '\n' ' ')"
+	: >"$tmp/empty10.log"
+	rc=0
+	bash "$wt/scripts/m10-exit-checks.sh" "$tmp/empty10.log" >"$log" 2>&1 || rc=$?
+	if [ "$rc" -ne 2 ]; then problem "$label" "empty log: exit $rc, expected 2"; fi
 	m10_log "$tmp/m10.log"
 	m10_expect "$label" "good log" 0 'mcponly=9'
 	grep -qF 'deps_ok=1' "$tmp/b33l.log" || problem "$label" "good log: no deps_ok=1"
@@ -1105,6 +1110,9 @@ block_m10_deps_rule_fires() {
 	m10_log "$tmp/m10.log"
 	sed 's/^ok  .*internal\/e2e.*$/FAIL\tgithub.com\/ericfitz\/agentbus2\/internal\/e2e\t25.000s/' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
 	m10_expect "$label" "a package FAIL with every leaf passing" 1 'pkg_ok=0'
+	m10_log "$tmp/m10.log"
+	printf 'FAIL\tgithub.com/ericfitz/agentbus2/internal/e2e\t25.000s\n' >>"$tmp/m10.log"
+	m10_expect "$label" "the ok line kept and a package FAIL line added" 1 'pkg_ok=0'
 	finish "$label"
 	revert
 }

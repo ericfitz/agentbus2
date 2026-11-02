@@ -97,8 +97,9 @@ func ownerOnlyFix(path string) string {
 // runCheck is `agentbus2-mcponly check [-server URL] [-identity I]
 // [-credential FILE] [-profile P]`: reach, health, identity, credential,
 // token and access, one line each, stopping at the first FAIL (exit 1). It
-// writes nothing local and creates no session; a second or overlapping run
-// does the same read-only work. Without an identity it stops after health with
+// creates no session and changes no configuration; the token step always
+// exchanges (never uses a cached bearer) and caches the new bearer in the data
+// directory, as serve does. A second or overlapping run does the same. Without an identity it stops after health with
 // the register command to run next (exit 0).
 func runCheck(ctx context.Context, args []string, environ []string, _ io.Reader, stdout, stderr io.Writer) int {
 	fs := newFlagSet("check", stderr)
@@ -173,7 +174,7 @@ func runCheck(ctx context.Context, args []string, environ []string, _ io.Reader,
 	if conn.Source == nil {
 		return rep.fail("token", "the connection has no token source", Binary+" help troubleshoot")
 	}
-	if _, err := conn.Source.Token(ctx); err != nil {
+	if _, err := conn.Source.Refresh(ctx); err != nil {
 		return rep.fail("token", codeDetail(err), busFix(err, server, identity))
 	}
 	rep.ok("token", "exchanged a bearer for %s", identity)
