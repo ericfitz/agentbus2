@@ -427,7 +427,7 @@ download_archives() {
     done
     gh release download "$TAG" --repo "$GH_REPO" --dir "$DIST" --clobber "${patterns[@]}" \
         || fail "could not download the archives of $TAG; rerun the workflow"
-    for b in agentbus2 agentbus2-mcponly; do
+    for b in agentbus2 agentbus2-mcponly; do # keep equal to BIN_NAMES (m9-exit-checks.sh pins both)
         for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do
             [[ -f "$DIST/${b}-${TAG}-$a" ]] || fail "release $TAG lacks ${b}-${TAG}-$a; rerun the workflow"
             ARCHIVES+=("${b}-${TAG}-$a")

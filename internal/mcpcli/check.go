@@ -13,6 +13,8 @@ import (
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/credential"
+	"github.com/ericfitz/agentbus2/internal/fileacl"
+	"github.com/ericfitz/agentbus2/internal/mcpserver"
 	"github.com/ericfitz/agentbus2/internal/profile"
 )
 
@@ -86,10 +88,19 @@ func busFix(err error, server, identity string) string {
 	return Binary + " help troubleshoot"
 }
 
+// resolveFix is the fix for a resolution error of the identity step, by cause;
+// an unrecognized error points at the troubleshooting topic.
+func resolveFix(err error) string {
+	if errors.Is(err, client.ErrCredentialProcessConflict) {
+		return "drop -credential, or remove credential_process from the profile in config.json"
+	}
+	return Binary + " help troubleshoot"
+}
+
 // ownerOnlyFix is the command that makes a key file owner-only.
 func ownerOnlyFix(path string) string {
 	if runtime.GOOS == "windows" {
-		return fmt.Sprintf(`icacls "%s" /inheritance:r /grant:r "%%USERNAME%%:F"`, path)
+		return fileacl.WindowsFix(path)
 	}
 	return "chmod 600 " + path
 }
@@ -142,9 +153,13 @@ func runCheck(ctx context.Context, args []string, environ []string, _ io.Reader,
 			_, _ = fmt.Fprintf(stdout, "next: %s register -server %s -identity NAME\n", Binary, server)
 			return 0
 		}
-		return rep.fail("identity", err.Error(), "pass -identity NAME or set AGENTBUS2_IDENTITY")
+		return rep.fail("identity", err.Error(), resolveFix(err))
 	}
 	identity := r.Identity
+	// Decision 16: serve exits 1 for the OS login name, so check says so first.
+	if err := mcpserver.IdentityGuard(o, osUserName(), Binary+" serve"); err != nil {
+		return rep.fail("identity", err.Error(), fmt.Sprintf("register another name, not the OS login name, with %s register -server %s -identity NAME, and use that name in the harness's MCP config", Binary, server))
+	}
 	rep.ok("identity", "%s (%s)", identity, r.IdentitySource)
 
 	registerFix := fmt.Sprintf("%s register -server %s -identity %s", Binary, server, identity)

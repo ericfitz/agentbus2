@@ -155,10 +155,9 @@ func TestMCPOnly(t *testing.T) {
 			t.Fatalf("snippet is not JSON: %v\n%s", err, r.stdout)
 		}
 		e := doc.MCPServers["agentbus2"]
-		want, err := filepath.EvalSymlinks(mcpOnlyBin)
-		if err != nil {
-			t.Fatal(err)
-		}
+		// Ruling 24: the path as the OS reports it, symlinks not resolved (a
+		// Homebrew Cellar path would not survive an upgrade).
+		want := mcpOnlyBin
 		if e.Command != want || !slices.Equal(e.Args, []string{"serve", "-server", url, "-identity", "quinn"}) {
 			t.Fatalf("entry = %+v, want command %s", e, want)
 		}

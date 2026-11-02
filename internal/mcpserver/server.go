@@ -58,6 +58,29 @@ type server struct {
 	havePrimary bool
 }
 
+// Serve is the command that runs this edition's MCP server, as its log and
+// guard messages name it; empty for an unknown edition.
+func (e Edition) Serve() string {
+	switch e {
+	case EditionFull:
+		return "agentbus2 mcp"
+	case EditionMCPOnly:
+		return "agentbus2-mcponly serve"
+	}
+	return ""
+}
+
+// Register is the command that registers a key in this edition's binary.
+func (e Edition) Register() string {
+	switch e {
+	case EditionFull:
+		return "agentbus2 register"
+	case EditionMCPOnly:
+		return "agentbus2-mcponly register"
+	}
+	return ""
+}
+
 // NewServer builds the MCP server with every tool registered. The Conn is
 // opened by the first tool call, so a profile or identity that cannot be
 // resolved does not stop the server: every tool answers the problem as
@@ -71,6 +94,9 @@ func NewServer(ctx context.Context, o Options) (*mcp.Server, func() error, error
 		instructions, steps = MCPOnlyInstructions, MCPOnlyRegisterSteps
 	default:
 		return nil, nil, fmt.Errorf("mcpserver: unknown edition %d", o.Edition)
+	}
+	if o.Client.RegisterCommand == "" {
+		o.Client.RegisterCommand = o.Edition.Register()
 	}
 	s := &server{o: o, ctx: ctx, log: o.Log, self: o.Self, tbl: o.Table, files: map[string]sessionstate.File{}}
 	if s.log == nil {

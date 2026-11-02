@@ -33,7 +33,11 @@ func openServer(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 		signer = k
 	} else if len(p.CredentialProcess) == 0 {
 		if !r.Credentials.Exists(r.Identity) {
-			return nil, resolveErr(fmt.Errorf("no credential for %q in profile %q: run agentbus2 register", r.Identity, p.Name))
+			reg := o.RegisterCommand
+			if reg == "" {
+				reg = "agentbus2 register"
+			}
+			return nil, resolveErr(fmt.Errorf("no credential for %q in profile %q: run %s", r.Identity, p.Name, reg))
 		}
 		k, _, err := r.Credentials.Load(r.Identity)
 		if err != nil {

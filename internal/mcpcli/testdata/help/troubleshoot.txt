@@ -54,9 +54,10 @@ which the server refuses, so it reports unauthenticated at the token step.
 
 A key file readable by others. While other users can read a key file, check
 prints FAIL credential and no command signs in with it. On Linux and macOS run
-chmod 600 FILE. On Windows run icacls "FILE" /inheritance:r /grant:r
-"%USERNAME%:F" so that only you have access. The fix line of check names the
-right one for your system.
+chmod 600 FILE. On Windows, in PowerShell run icacls "FILE" /inheritance:r
+/grant:r "${env:USERNAME}:F", or in cmd.exe run icacls "FILE" /inheritance:r
+/grant:r "%USERNAME%:F", so that only you have access. The fix line of check
+names the right one for your system.
 
 Anything else. Run agentbus2-mcponly check and follow the first FAIL line's
 fix. Read agentbus2-mcponly help verify for what each step proves.

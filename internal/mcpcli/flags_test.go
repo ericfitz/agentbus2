@@ -40,15 +40,20 @@ func TestEnrollmentTokenSources(t *testing.T) {
 	if _, err := enrollmentToken("abe_flag", write("abe_file"), env); err == nil {
 		t.Error("both flags: want an error")
 	}
-	for name, p := range map[string]string{
-		"empty":     write("  \n"),
-		"directory": dir,
-		"too big":   write(strings.Repeat("A", 4097)),
-		"missing":   filepath.Join(dir, "nope"),
+	// write reuses one path, so the empty case gets a file of its own.
+	emptyFile := filepath.Join(dir, "empty")
+	if err := os.WriteFile(emptyFile, []byte("  \n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]struct{ path, msg string }{
+		"empty":     {emptyFile, "is empty"},
+		"directory": {dir, ""},
+		"too big":   {write(strings.Repeat("A", 4097)), ""},
+		"missing":   {filepath.Join(dir, "nope"), ""},
 	} {
-		_, err := enrollmentToken("", p, env)
-		if err == nil || !strings.Contains(err.Error(), p) {
-			t.Errorf("%s: err %v, want one naming %s", name, err, p)
+		_, err := enrollmentToken("", c.path, env)
+		if err == nil || !strings.Contains(err.Error(), c.path) || !strings.Contains(err.Error(), c.msg) {
+			t.Errorf("%s: err %v, want one naming %s containing %q", name, err, c.path, c.msg)
 		}
 	}
 	if got, err := enrollmentToken("", write(strings.Repeat("A", 4096)), nil); err != nil || len(got) != 4096 {

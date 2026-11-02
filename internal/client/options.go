@@ -65,6 +65,9 @@ type Options struct {
 	// is a private key file that signs instead of the profile's credential
 	// store. open note: mcp-only-client 3, 4
 	Server, Credential string
+	// RegisterCommand is the command the missing-credential error tells the
+	// operator to run; empty: "agentbus2 register" (the full binary's).
+	RegisterCommand string
 	// HTTP is the server-mode base client; nil: a client with no Timeout.
 	HTTP *http.Client
 }
@@ -189,6 +192,17 @@ func resolveProfile(cfg profile.Config, name, server string) (profile.Profile, e
 	return p, nil
 }
 
+// ErrCredentialProcessConflict matches (errors.Is) the resolution error for
+// -credential on a profile that sets credential_process.
+var ErrCredentialProcessConflict = errors.New("-credential conflicts with credential_process")
+
+type credentialProcessConflict struct{ msg string }
+
+func (e credentialProcessConflict) Error() string { return e.msg }
+func (e credentialProcessConflict) Is(target error) bool {
+	return target == ErrCredentialProcessConflict
+}
+
 // checkCredentialFlag refuses -credential where it has no meaning: a local
 // profile, a credential_process profile and a human sign-in. open note:
 // mcp-only-client 4 (the flag's key file is read-only; see Options.Credential).
@@ -200,7 +214,7 @@ func checkCredentialFlag(o Options, p profile.Profile) error {
 	case p.Mode == profile.ModeLocal:
 		return resolveErr(fmt.Errorf("-credential applies to server profiles; profile %q is local", p.Name))
 	case len(p.CredentialProcess) > 0:
-		return resolveErr(fmt.Errorf("profile %q sets credential_process; -credential cannot be combined with it", p.Name))
+		return resolveErr(credentialProcessConflict{fmt.Sprintf("profile %q sets credential_process; -credential cannot be combined with it", p.Name)})
 	case o.HumanSignIn:
 		return resolveErr(errors.New("-credential does not apply to a human sign-in"))
 	}

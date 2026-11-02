@@ -6,20 +6,17 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/client"
 )
 
-// executable is the path of this binary; tests replace the whole variable.
-var executable = func() (string, error) {
-	p, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	return filepath.EvalSymlinks(p)
-}
+// executable is the path of this binary as the OS reports it; tests replace
+// the whole variable. Symlinks are not resolved (Ruling 24): a package
+// manager's stable link (Homebrew's bin) survives an upgrade, its versioned
+// target does not.
+var executable = os.Executable
 
 // shellQuote quotes arg for a POSIX shell: unchanged when every byte is in
 // [A-Za-z0-9_@%+=:,./-], else single-quoted with each ' written as '\”.
@@ -28,6 +25,35 @@ func shellQuote(arg string) string {
 		return arg
 	}
 	return "'" + strings.ReplaceAll(arg, "'", `'\''`) + "'"
+}
+
+// powershellQuote quotes arg for PowerShell, the default Windows shell:
+// unchanged when every byte is in [A-Za-z0-9_@%+=:,./\\-], else single-quoted
+// with each ' doubled. cmd.exe does not read single quotes, so on Windows the
+// command line is a PowerShell line (help configure says so).
+func powershellQuote(arg string) string {
+	if arg != "" && !strings.ContainsFunc(arg, func(r rune) bool { return r != '\\' && needsQuote(r) }) {
+		return arg
+	}
+	return "'" + strings.ReplaceAll(arg, "'", "''") + "'"
+}
+
+// commandLine is exe and args as one line for the shell of goos: PowerShell
+// on windows (a quoted program is called with &), POSIX elsewhere.
+func commandLine(goos, exe string, args []string) string {
+	quote, prefix := shellQuote, ""
+	if goos == "windows" {
+		quote = powershellQuote
+		if q := quote(exe); q != exe {
+			prefix = "& "
+		}
+	}
+	parts := make([]string, 0, len(args)+1)
+	parts = append(parts, prefix+quote(exe))
+	for _, a := range args {
+		parts = append(parts, quote(a))
+	}
+	return strings.Join(parts, " ")
 }
 
 func needsQuote(r rune) bool {
@@ -92,10 +118,6 @@ func runConfig(_ context.Context, args []string, environ []string, _ io.Reader, 
 	if err != nil {
 		return fail(stderr, err)
 	}
-	quoted := make([]string, len(snippetArgs))
-	for i, a := range snippetArgs {
-		quoted[i] = shellQuote(a)
-	}
-	_, _ = fmt.Fprintf(stdout, "%s\n\ncommand line: %s %s\n", doc, shellQuote(exe), strings.Join(quoted, " "))
+	_, _ = fmt.Fprintf(stdout, "%s\n\ncommand line: %s\n", doc, commandLine(runtime.GOOS, exe, snippetArgs))
 	return 0
 }

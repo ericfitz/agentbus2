@@ -205,6 +205,9 @@ check_pipeline_selftest() {
 
 FORLINE='for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do'
 BINLINE='for b in agentbus2 agentbus2-mcponly; do'
+# release.sh's download_archives keeps BINLINE literal (the anchor above); this
+# one pins BIN_NAMES to the same two names so the loops cannot drift apart.
+BINNAMESLINE='BIN_NAMES=(agentbus2 agentbus2-mcponly)'
 
 # anchors_missing WORKFLOW: prints each literal anchor missing from WORKFLOW
 # (a copy of release-build.yml) and from the two scripts of the repository
@@ -229,6 +232,7 @@ anchors_missing() {
 	grep -qF -- '-linux-${goarch}.tar.gz' "$ROOT/release/build-archive.sh" || echo 'build-archive.sh lacks: -linux-${goarch}.tar.gz'
 	grep -qF -- "$BINLINE" "$ROOT/release/release.sh" || echo "release.sh download_archives lacks: $BINLINE"
 	grep -qF -- "$FORLINE" "$ROOT/release/release.sh" || echo "release.sh download_archives lacks: $FORLINE"
+	grep -qF -- "$BINNAMESLINE" "$ROOT/release/release.sh" || echo "release.sh lacks: $BINNAMESLINE (download_archives loops over the same two names)"
 }
 
 # checkout_offenders FILE...: prints FILE:LINE of every actions/checkout step

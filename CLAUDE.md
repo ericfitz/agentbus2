@@ -4,7 +4,7 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 
 ## Commands
 
-- Build: `make build` (`CGO_ENABLED=0`; SQLite is `modernc.org/sqlite`, Postgres is `pgx`); `make build-mcponly` builds `agentbus2-mcponly` (`cmd/agentbus2-mcponly`, commands in `internal/mcpcli`: `serve`, `register`, `check`, `config`, `help [topic]`, `version`; no local mode; ADR 0015; ADR 0015).
+- Build: `make build` (`CGO_ENABLED=0`; SQLite is `modernc.org/sqlite`, Postgres is `pgx`); `make build-mcponly` builds `agentbus2-mcponly` (`cmd/agentbus2-mcponly`, commands in `internal/mcpcli`: `serve`, `register`, `check`, `config`, `help [topic]`, `version`; no local mode; ADR 0015).
 - Tests: `make test`; `make test-race` for the race detector.
 - Lint: `make lint` (golangci-lint v2), `make vet`, `make fmt-check`.
 - Done gate: `make verify` (build, `build-mcponly`, the m10 dependency rule, vet, gofmt, lint, `tidy-check`, `generate-check`, unit tests, the Store and Bus conformance suites against both SQLite and Postgres, and `check-gates`; `release-check` is not part of it and runs as its own CI job). Postgres for the suites comes from testcontainers unless `AGENTBUS2_TEST_POSTGRES_DSN` names a reachable server (an empty value counts as unset). `make verify` needs Docker either way, because `check-gates` runs the suite binaries in a `busybox` container to prove the no-Docker path. A run that skips the Postgres suites is not a pass. Work is done only when `ci.yml` and `windows.yml` are green on the pushed commit (including the `release-check` job); a red `windows.yml` is fixed first.

@@ -94,6 +94,8 @@ To tell whether a Windows binary is signed, run `Get-AuthenticodeSignature .\age
 
 The scripts take the same environment variables as above and do the same checks on `agentbus2-mcponly-<tag>-linux-<arch>.tar.gz` or `agentbus2-mcponly-<tag>-windows-<arch>.zip`. Rerunning upgrades; a second run at the same version prints `reinstalled: agentbus2-mcponly <version> was already installed`. The scripts print `next: agentbus2-mcponly help (connect this agent to an agentbus2 server)`; run `agentbus2-mcponly help` after installing.
 
+`agentbus2-mcponly config` prints the agent's MCP entry with the path of the binary exactly as the operating system reports it (symlinks are not resolved). Rerun it and replace the entry after an upgrade or after moving the binary, as `agentbus2 init --global` is rerun for the full binary; where a package manager keeps a stable link (Homebrew's `$(brew --prefix)/bin`), start the binary through that link when you run `config`. On Windows the `command line:` it prints is a PowerShell line; the JSON entry is the same everywhere.
+
 ## Where agentbus2 keeps things
 
 | | macOS and Linux | Windows |

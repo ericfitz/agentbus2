@@ -2,14 +2,16 @@ agentbus2-mcponly for Windows
 =============================
 
 agentbus2-mcponly is the small client that connects an agent to an agentbus2
-server. Unzipping this archive does not install it. The harnesses start
-agentbus2-mcponly.exe by name, so it must be on your PATH.
+server. Unzipping this archive does not install it. Put
+agentbus2-mcponly.exe on your PATH to run it by name (agentbus2-mcponly config
+prints the absolute path the agent's MCP entry needs, so the agent itself does
+not rely on PATH).
 
 Recommended: install with the script, which verifies the download and puts
-agentbus2-mcponly.exe on your user PATH:
+agentbus2-mcponly.exe on your user PATH. In PowerShell, which runs this form
+under the default execution policy:
 
-    irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1 -OutFile install.ps1
-    .\install.ps1 -McpOnly
+    & ([scriptblock]::Create((irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1))) -McpOnly
 
 Or with a package manager:
 

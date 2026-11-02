@@ -51,7 +51,7 @@ func OwnerOnly(path string) error {
 }
 
 // CheckOwnerOnly refuses a file whose DACL is NULL or holds an access-allowed
-// entry for a SID other than the current user, LocalSystem (S-1-5-18) and
+// entry (any allow type; types it cannot read fail closed) for a SID other than the current user, LocalSystem (S-1-5-18) and
 // BUILTIN\Administrators (S-1-5-32-544), Windows' root, which reads a 0600
 // file on Unix too. It follows a symlink to its target. Only those two
 // refusals match ErrExposed; any other failure (a missing file, a token or
@@ -81,21 +81,24 @@ func CheckOwnerOnly(path string) error {
 		return err
 	}
 	if dacl == nil {
-		return exposedError(fmt.Sprintf("%s has a NULL DACL, which grants access to everyone; restrict it to the current user: icacls \"%s\" /inheritance:r /grant:r \"%%USERNAME%%:F\"", path, path))
+		return exposedError(fmt.Sprintf("%s has a NULL DACL, which grants access to everyone; restrict it to the current user: %s", path, WindowsFix(path)))
 	}
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
 		var ace *windows.ACCESS_ALLOWED_ACE
 		if err := windows.GetAce(dacl, i, &ace); err != nil {
 			return err
 		}
-		if ace.Header.AceType != windows.ACCESS_ALLOWED_ACE_TYPE {
+		switch classifyACE(ace.Header.AceType) {
+		case aceIgnore:
 			continue
+		case aceOpaqueGrant, aceUnknown:
+			return exposedError(fmt.Sprintf("%s has an access entry of type %#x that this check cannot read, which may grant access to other principals; restrict it to the current user: %s", path, ace.Header.AceType, WindowsFix(path)))
 		}
 		sid := (*windows.SID)(unsafe.Pointer(&ace.SidStart))
 		if sid.Equals(user.User.Sid) || sid.Equals(system) || sid.Equals(admins) {
 			continue
 		}
-		return exposedError(fmt.Sprintf("%s grants access to %s; restrict it to the current user: icacls \"%s\" /inheritance:r /grant:r \"%%USERNAME%%:F\"", path, sid.String(), path))
+		return exposedError(fmt.Sprintf("%s grants access to %s; restrict it to the current user: %s", path, sid.String(), WindowsFix(path)))
 	}
 	return nil
 }

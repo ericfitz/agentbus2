@@ -69,7 +69,7 @@ func Run(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	log.Info("agentbus2 mcp started", "version", version.Version, "data", dataDir)
+	log.Info(o.Edition.Serve()+" started", "version", version.Version, "data", dataDir)
 	err = srv.Run(ctx, &mcp.StdioTransport{})
 	if cerr := closeServer(); cerr != nil {
 		log.Warn("closing the bus failed", "err", cerr)

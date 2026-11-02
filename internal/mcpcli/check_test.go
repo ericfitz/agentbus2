@@ -2,6 +2,7 @@ package mcpcli
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -174,5 +175,69 @@ func TestCheckServerDisagreesWithProfile(t *testing.T) {
 		if code != 2 || out != "" || !strings.Contains(errs, "disagrees") {
 			t.Errorf("%s: code %d, stdout %q, stderr %q", c, code, out, errs)
 		}
+	}
+}
+
+// Decision 16: an identity equal to the OS login name fails the identity step
+// with the guard's text, because serve would exit 1 on it.
+func TestCheckIdentityGuard(t *testing.T) {
+	prev := currentUser
+	currentUser = func() (*user.User, error) { return &user.User{Username: "pat"}, nil }
+	t.Cleanup(func() { currentUser = prev })
+	t.Chdir(t.TempDir())
+	base := startServer(t)
+	environ, _ := testEnviron(t)
+	if code, out, errs := run([]string{"register", "-server", base, "-identity", "pat"}, environ); code != 0 {
+		t.Fatalf("register: %d %q %q", code, out, errs)
+	}
+	code, out, errs := run([]string{"check"}, environ)
+	got := lines(out)
+	if code != 1 || len(got) != 3 || !strings.HasPrefix(got[2], "FAIL identity: ") ||
+		!strings.Contains(got[2], "is the OS login name") || !strings.Contains(got[2], "fix: ") ||
+		strings.TrimSpace(errs) != "agentbus2-mcponly: check: identity failed" {
+		t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
+	}
+	// Another login name passes the step.
+	currentUser = func() (*user.User, error) { return &user.User{Username: "eric"}, nil }
+	if code, out, errs := run([]string{"check"}, environ); code != 0 {
+		t.Errorf("other login: code %d, stdout %q, stderr %q", code, out, errs)
+	}
+}
+
+// A resolution error gets the fix for its cause, not "pass -identity".
+func TestCheckResolveErrorFixes(t *testing.T) {
+	t.Chdir(t.TempDir())
+	base := startServer(t)
+	environ, configDir := testEnviron(t)
+	if err := os.MkdirAll(configDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg := `{"profiles":{"lab":{"mode":"server","server":"` + base + `","credential_process":["true"]}}}`
+	if err := os.WriteFile(filepath.Join(configDir, "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	key := writeFreshKey(t, 0o600)
+
+	code, out, errs := run([]string{"check", "-profile", "lab", "-identity", "pat", "-credential", key}, environ)
+	got := lines(out)
+	if code != 1 || len(got) != 3 || !strings.HasPrefix(got[2], "FAIL identity: ") ||
+		!strings.Contains(got[2], "fix: drop -credential, or remove credential_process") || strings.Contains(got[2], "pass -identity") {
+		t.Errorf("credential_process: code %d, stdout %q, stderr %q", code, out, errs)
+	}
+
+	// An unrecognized resolution error points at the troubleshooting topic.
+	code, out, errs = run([]string{"check", "-profile", "lab", "-identity", "a/b"}, environ)
+	got = lines(out)
+	if code != 1 || len(got) != 3 || !strings.HasSuffix(got[2], "fix: agentbus2-mcponly help troubleshoot") {
+		t.Errorf("bad identity: code %d, stdout %q, stderr %q", code, out, errs)
+	}
+}
+
+// The Windows fix names PowerShell and cmd.exe; it is one text for check and
+// CheckOwnerOnly.
+func TestOwnerOnlyFixWindowsText(t *testing.T) {
+	got := fileacl.WindowsFix(`C:\k`)
+	if !strings.Contains(got, "${env:USERNAME}") || !strings.Contains(got, "%USERNAME%") {
+		t.Errorf("WindowsFix = %q", got)
 	}
 }

@@ -228,7 +228,12 @@ no server, so you may run it any number of times.
 
 Paste the "agentbus2" entry into the agent's MCP server configuration, or give
 the command line to the agent's add-MCP-server command. command is the full
-path of this binary, so the agent needs nothing on its PATH. The entry names
+path of this binary as the operating system reports it (symlinks are not
+resolved), so the agent needs nothing on its PATH. After an upgrade or a move
+of the binary, run agentbus2-mcponly config again and replace the entry; to
+keep a package manager's stable link (such as Homebrew's bin directory) in the
+entry, start config through that link. On Windows the command line is for
+PowerShell; the JSON entry is the same everywhere. The entry names
 the server and identity, but serve still reads AGENTBUS2_PROFILE, the nearest
 .local/agentbus2.json above its working directory and the configuration
 directory variables (see help connect) to choose the profile and find the key.
@@ -378,9 +383,10 @@ which the server refuses, so it reports unauthenticated at the token step.
 
 A key file readable by others. While other users can read a key file, check
 prints FAIL credential and no command signs in with it. On Linux and macOS run
-chmod 600 FILE. On Windows run icacls "FILE" /inheritance:r /grant:r
-"%USERNAME%:F" so that only you have access. The fix line of check names the
-right one for your system.
+chmod 600 FILE. On Windows, in PowerShell run icacls "FILE" /inheritance:r
+/grant:r "${env:USERNAME}:F", or in cmd.exe run icacls "FILE" /inheritance:r
+/grant:r "%USERNAME%:F", so that only you have access. The fix line of check
+names the right one for your system.
 
 Anything else. Run agentbus2-mcponly check and follow the first FAIL line's
 fix. Read agentbus2-mcponly help verify for what each step proves.

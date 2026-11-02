@@ -243,6 +243,16 @@ func TestServerStaleCacheRefreshes(t *testing.T) {
 	_ = c.Close()
 }
 
+// The register command in the missing-credential error is the caller's.
+func TestServerOpenWithoutCredentialNamesCaller(t *testing.T) {
+	e := newEnv(t)
+	e.save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
+	_, err := Open(context.Background(), Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat", RegisterCommand: "agentbus2-mcponly register"})
+	if err == nil || !strings.Contains(err.Error(), "run agentbus2-mcponly register") || strings.Contains(err.Error(), "run agentbus2 register") {
+		t.Fatalf("err %v", err)
+	}
+}
+
 func TestServerOpenWithoutCredential(t *testing.T) {
 	e := newEnv(t)
 	e.save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
