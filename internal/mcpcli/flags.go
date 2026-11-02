@@ -63,6 +63,14 @@ func enrollmentToken(flagValue, file string, environ []string) (string, error) {
 }
 
 func readTokenFile(path string) (string, error) {
+	// Check before opening: opening a FIFO with no writer blocks forever.
+	pre, err := os.Stat(path)
+	if err != nil {
+		return "", fmt.Errorf("enrollment token file %s: %w", path, errors.Unwrap(err))
+	}
+	if !pre.Mode().IsRegular() {
+		return "", fmt.Errorf("enrollment token file %s is not a regular file", path)
+	}
 	f, err := os.Open(path)
 	if err != nil {
 		return "", fmt.Errorf("enrollment token file %s: %w", path, errors.Unwrap(err))

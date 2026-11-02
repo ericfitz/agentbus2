@@ -45,6 +45,13 @@ func Main(ctx context.Context, args []string, environ []string, stdin io.Reader,
 		return 2
 	}
 	switch args[0] {
+	case "help", "-h", "--help", "version", "-v", "--version":
+		if len(args) > 1 {
+			_, _ = fmt.Fprintf(stderr, "%s %s: unexpected argument %q\n%s\n", Binary, args[0], args[1], usageLine)
+			return 2
+		}
+	}
+	switch args[0] {
 	case "help", "-h", "--help":
 		_, _ = fmt.Fprintln(stdout, usageLine)
 		return 0

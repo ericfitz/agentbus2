@@ -99,8 +99,13 @@ while IFS= read -r m; do
 	fi
 done <"$tmp/modules.txt"
 
+count="$(grep -c . "$tmp/modules.txt" || true)"
+if [ "$count" -ne "${#ALLOWED_MODULES[@]}" ]; then
+	echo "m10-exit-checks: the binary links $count modules, want ${#ALLOWED_MODULES[@]}" >&2
+	violations=$((violations + 1))
+fi
 if [ "$violations" -ne 0 ]; then
 	exit 1
 fi
 echo "deps_ok=1"
-echo "modules=$(grep -c . "$tmp/modules.txt" || true)"
+echo "modules=$count"

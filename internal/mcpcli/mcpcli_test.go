@@ -43,6 +43,24 @@ func TestMainDispatch(t *testing.T) {
 	}
 }
 
+func TestHelpVersionRejectExtraArguments(t *testing.T) {
+	for _, args := range [][]string{{"help", "x"}, {"-h", "x"}, {"--help", "x"}, {"version", "x"}, {"-v", "x"}, {"--version", "x"}} {
+		code, out, errs := run(args, nil)
+		if code != 2 || out != "" || !strings.Contains(errs, "unexpected argument") || !strings.Contains(errs, usageLine) {
+			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
+		}
+	}
+}
+
+func TestUnknownFlagsExit2(t *testing.T) {
+	for _, c := range []string{"serve", "register"} {
+		code, out, errs := run([]string{c, "-bogus"}, nil)
+		if code != 2 || out != "" || !strings.Contains(errs, "bogus") {
+			t.Errorf("%s -bogus: code %d, stdout %q, stderr %q", c, code, out, errs)
+		}
+	}
+}
+
 // open note: mcp-only-client 14
 func TestOnlyMCPCommands(t *testing.T) {
 	want := []string{"help", "register", "serve", "version"}
