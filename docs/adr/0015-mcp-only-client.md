@@ -1,6 +1,6 @@
 # ADR 0015: The MCP-only client
 
-Status: Accepted (Eric, 2026-10-27, decisions 1 to 6 below). The "Settled open notes" and the "Controller rulings" are settled by the agents that wrote and implemented the plan and are not Eric's decisions; each open note carries an `open note: mcp-only-client N` marker at its code site so Eric can reverse it with one findable edit (`rg -n 'open note: mcp-only-client' .`).
+Status: Accepted (Eric, 2026-10-27, decisions 1 to 6 below). The "Settled open notes" and the "Controller rulings" are settled by the agents that wrote and implemented the plan and are not Eric's decisions; each open note carries an `open note: mcp-only-client N` marker at a code site (a production file or, where the note is about tests, a test file) so Eric can reverse it with one findable edit (`rg --hidden -n 'open note: mcp-only-client' .`).
 
 Covers issue #12 (ericfitz/agentbus2#12). The design is `docs/superpowers/specs/2026-10-27-mcp-only-client-design.md` (section 4 holds Eric's decisions); the plan is `docs/superpowers/plans/2026-10-27-mcp-only-client.md`; the user-facing text is `agentbus2-mcponly help`, `docs/install.md` ("The MCP-only client") and `docs/release.md`.
 
@@ -8,7 +8,7 @@ Adds one source to ADR 0002 (the `-credential` file; see that record's addendum 
 
 ## Context
 
-Issue #12 asked for a second, small binary whose only job is to connect an agent to an agentbus2 server over stdio MCP, so that unknown or custom agents (not Claude Code, Codex or Grok) can set it up correctly. The full binary links the core, the server, the SQLite engine, kin-openapi and the TUI because `client.Open` could reach local mode at run time: 27.0 MB and 53 modules (linux/amd64, stripped). The measured MCP-only build is 11.0 MB and 13 modules (spec section 3.6).
+Issue #12 asked for a second, small binary whose only job is to connect an agent to an agentbus2 server over stdio MCP, so that unknown or custom agents (not Claude Code, Codex or Grok) can set it up correctly. The full binary links the core, the server, the SQLite engine, kin-openapi and the TUI because `client.Open` could reach local mode at run time: 27.0 MB and 53 modules (linux/amd64, stripped). The measured MCP-only build is about 11 MB and 13 modules (spec section 3.6).
 
 ## Decisions (Eric, 2026-10-27)
 
@@ -48,7 +48,7 @@ Each is the agents' choice where the brief left one open. Eric may reverse any o
 6. **Decision 16 applies to `serve`.** The OS-login guard moved to `mcpserver.IdentityGuard`, and both binaries call it; the message names the command (`agentbus2 mcp` or `agentbus2-mcponly serve`). <!-- open note: mcp-only-client 6 -->
 7. **Tool schemas are shared.** Both editions serve the same 26 tools with the same descriptions (the `wait_seconds` and `set_status` descriptions keep their sentences about `agentbus2 wait` and `agentbus2 park`, which say what they replace, not what to run); only `Instructions`, the register steps and the `init` prompt differ by edition. An edition-aware description is the alternative Eric may choose. <!-- open note: mcp-only-client 7 -->
 8. **`check` without an identity** runs `reach` and `health`, prints `next: agentbus2-mcponly register -server URL -identity NAME` and exits 0; with one it runs six steps (`reach`, `health`, `identity`, `credential`, `token`, `access`) and stops at the first `FAIL` (exit 1), each `FAIL` naming the command that fixes it. The `token` step always exchanges a fresh bearer and caches it as `serve` does. <!-- open note: mcp-only-client 8 -->
-9. **Gates.** `scripts/m10-exit-checks.sh --deps-only` runs inside `make verify` (Docker-free, seconds), unlike the m4 to m8 `--deps-only` runs, which stay in the `gates-selftest` job; the e2e additions are new tests, so the m6 counts (13 sequence steps, 11 exit-code cells) do not change. <!-- open note: mcp-only-client 9 -->
+9. **Gates.** `scripts/m10-exit-checks.sh --deps-only` runs inside `make verify` (Docker-free), unlike the m4 to m8 `--deps-only` runs, which stay in the `gates-selftest` job; the e2e additions are new tests, so the m6 counts (13 sequence steps, 11 exit-code cells) do not change. <!-- open note: mcp-only-client 9 -->
 10. **Installers.** `--mcp-only` and `-McpOnly` stay flags (decision 3). Both binaries install into the same directory (`~/.local/bin`, `%LocalAppData%\Programs\agentbus2`); the Windows `.old-*` sweep is per binary name. <!-- open note: mcp-only-client 10 -->
 11. **Second Windows README.** `release/windows-zip-README-mcponly.txt` ships in the MCP-only zips; the existing one tells the reader to run `agentbus2 init`. The marker is the comment on `package-windows`'s sparse checkout in `.github/workflows/release-build.yml`, because a README is shipped text. <!-- open note: mcp-only-client 11 -->
 12. **Help example format.** Example lines are `  $ agentbus2-mcponly ...`, expected output lines `    > ...` (a `<...>` token matches any non-empty text), an expected non-zero exit `    (exit N)`; one grammar that the e2e test parses. <!-- open note: mcp-only-client 12 -->

@@ -12,6 +12,7 @@ import (
 // the command the message tells the operator to configure (`agentbus2 mcp` or
 // `agentbus2-mcponly serve`). With no known login name there is nothing to
 // compare, and a resolution failure is left for the server to report.
+// open note: mcp-only-client 6 (one guard for both binaries).
 func IdentityGuard(o client.Options, login, command string) error {
 	if login == "" {
 		return nil

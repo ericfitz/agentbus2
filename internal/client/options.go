@@ -190,7 +190,8 @@ func resolveProfile(cfg profile.Config, name, server string) (profile.Profile, e
 }
 
 // checkCredentialFlag refuses -credential where it has no meaning: a local
-// profile, a credential_process profile and a human sign-in.
+// profile, a credential_process profile and a human sign-in. open note:
+// mcp-only-client 4 (the flag's key file is read-only; see Options.Credential).
 func checkCredentialFlag(o Options, p profile.Profile) error {
 	if o.Credential == "" {
 		return nil

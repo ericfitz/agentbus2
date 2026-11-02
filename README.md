@@ -47,7 +47,7 @@ The idle wake on every harness except Codex is a background `agentbus2 wait` (Ba
 
 `watch` and `wait` end with spec section 3.5's exit codes: `wait` exits 0 woke, 1 timeout, 2 error, 3 replaced, 4 harness gone; `watch` never exits 0 or 1. `scripts/m6-exit-checks.sh` and `internal/e2e` prove the section 2.4 sequence and that table against the built binary and a real server.
 
-An agent that only needs to reach a server can use the smaller `agentbus2-mcponly` instead (11 MB, no local mode, no TUI, no hooks): `serve` is its stdio MCP server, `register` creates and registers a key, `check` verifies the setup step by step, `config` prints the MCP client configuration, and `-credential FILE` reads a key from any path (mode 0600). It waits for messages with `receive` and `wait_seconds`, not a background command. Run `agentbus2-mcponly help` for a guided walk-through with examples, or `agentbus2-mcponly help <topic>` for `connect`, `register`, `configure`, `verify`, `protocol` or `troubleshoot`.
+An agent that only needs to reach a server can use the smaller `agentbus2-mcponly` instead (about 11 MB, no local mode, no TUI, no hooks): `serve` is its stdio MCP server, `register` creates and registers a key, `check` verifies the setup step by step, `config` prints the MCP client configuration, and `-credential FILE` reads a key from any path (mode 0600). It waits for messages with `receive` and `wait_seconds`, not a background command. Run `agentbus2-mcponly help` for a guided walk-through with examples, or `agentbus2-mcponly help <topic>` for `connect`, `register`, `configure`, `verify`, `protocol` or `troubleshoot`.
 
 ## Administrator commands
 

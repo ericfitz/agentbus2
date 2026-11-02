@@ -32,7 +32,8 @@ type Options struct {
 
 // Edition selects the agent-facing text: the full client's (wake by a
 // background agentbus2 wait) or the MCP-only binary's (wake by receive with
-// wait_seconds). The tool schemas are the same in both.
+// wait_seconds). The tool schemas are the same in both (open note:
+// mcp-only-client 7).
 type Edition int
 
 const (
