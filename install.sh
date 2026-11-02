@@ -1,6 +1,9 @@
 #!/bin/sh
 # install.sh: install agentbus2 on Linux into ~/.local/bin without root.
 #   curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh
+# The MCP-only client (agentbus2-mcponly: serve, register and version; no local
+# mode) installs the same way beside the full binary, which it never touches:
+#   curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh -s -- --mcp-only
 # Environment:
 #   AGENTBUS2_VERSION        vX.Y.Z to install (default: the latest release)
 #   AGENTBUS2_INSTALL_DIR    absolute directory (default: $HOME/.local/bin)
@@ -8,7 +11,9 @@
 #   AGENTBUS2_SKIP_SIGNATURE 1 skips the OpenSSL signature check (the checksum is still checked)
 # Downloads the tarball, SHA256SUMS and SHA256SUMS.sig, verifies the Ed25519
 # signature with the public key below and the tarball's checksum, then
-# replaces <dir>/agentbus2 atomically. Never runs sudo or agentbus2 init.
+# replaces <dir>/agentbus2 (or <dir>/agentbus2-mcponly) atomically. Never runs
+# sudo or agentbus2 init.
+# open note: mcp-only-client 10
 set -eu
 
 # BEGIN agentbus2 release public key
@@ -19,13 +24,14 @@ MCowBQYDK2VwAyEAXQGv11CrEIzH0muqwxbbXZPyNtPzt/5dRekDooj2eRk=
 
 BASE_URL="${AGENTBUS2_BASE_URL:-https://github.com/ericfitz/agentbus2}"
 while [ "${BASE_URL%/}" != "$BASE_URL" ]; do BASE_URL="${BASE_URL%/}"; done
+BIN=agentbus2 SH_ARGS=""
 ARCH="" TAG="" ASSET="" OPENSSL="" OLD_OPENSSL="" SHA_CMD="" SKIP_SIG=0 INSTALL_DIR="" TMP="" UPGRADE=0 OLD_VERSION=""
 
 die() { printf 'agentbus2 install: %s\n' "$*" >&2; exit 1; }
 
 cleanup() {
     [ -n "$TMP" ] && rm -rf "$TMP"
-    [ -n "$INSTALL_DIR" ] && rm -f "$INSTALL_DIR/.agentbus2.tmp.$$"
+    [ -n "$INSTALL_DIR" ] && rm -f "$INSTALL_DIR/.$BIN.tmp.$$"
     return 0
 }
 trap cleanup EXIT
@@ -36,7 +42,7 @@ need_tool() { command -v "$1" >/dev/null 2>&1 || die "$1 is required but not ins
 detect_platform() {
     case "$(uname -s)" in
         Linux) ;;
-        Darwin) die "this script is for Linux; on macOS run: brew install ericfitz/tap/agentbus2" ;;
+        Darwin) die "this script is for Linux; on macOS run: brew install ericfitz/tap/$BIN" ;;
         *) die "unsupported operating system: $(uname -s)" ;;
     esac
     case "$(uname -m)" in
@@ -113,7 +119,7 @@ resolve_version() {
     case "$TAG" in *"
 "*) die "version must look like vX.Y.Z, got a value containing a newline" ;; esac
     printf '%s\n' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' || die "version must look like vX.Y.Z, got '$TAG'"
-    ASSET="agentbus2-$TAG-linux-$ARCH.tar.gz"
+    ASSET="$BIN-$TAG-linux-$ARCH.tar.gz"
 }
 
 # fetch <remote-name> <local-name>. A 404 on the release archive means the tag
@@ -156,31 +162,35 @@ verify_checksum() {
 install_binary() {
     mkdir -p "$INSTALL_DIR" 2>/dev/null || true
     if [ ! -d "$INSTALL_DIR" ] || [ ! -w "$INSTALL_DIR" ]; then
-        die "cannot write to $INSTALL_DIR. Rerun with AGENTBUS2_INSTALL_DIR=<a writable directory>, or for a system-wide install: curl -fsSL $BASE_URL/releases/latest/download/install.sh | sudo env AGENTBUS2_INSTALL_DIR=/usr/local/bin sh"
+        die "cannot write to $INSTALL_DIR. Rerun with AGENTBUS2_INSTALL_DIR=<a writable directory>, or for a system-wide install: curl -fsSL $BASE_URL/releases/latest/download/install.sh | sudo env AGENTBUS2_INSTALL_DIR=/usr/local/bin sh$SH_ARGS"
     fi
-    [ ! -d "$INSTALL_DIR/agentbus2" ] || die "$INSTALL_DIR/agentbus2 is a directory; remove it or choose another AGENTBUS2_INSTALL_DIR"
-    if [ -x "$INSTALL_DIR/agentbus2" ]; then
+    [ ! -d "$INSTALL_DIR/$BIN" ] || die "$INSTALL_DIR/$BIN is a directory; remove it or choose another AGENTBUS2_INSTALL_DIR"
+    if [ -x "$INSTALL_DIR/$BIN" ]; then
         UPGRADE=1
         # A binary that does not run counts as an upgrade with an unknown old version.
-        OLD_VERSION="$("$INSTALL_DIR/agentbus2" version 2>/dev/null)" || OLD_VERSION=""
+        OLD_VERSION="$("$INSTALL_DIR/$BIN" version 2>/dev/null)" || OLD_VERSION=""
     fi
-    tar -xzf "$TMP/$ASSET" -C "$TMP" agentbus2 || die "could not extract $ASSET"
-    cp "$TMP/agentbus2" "$INSTALL_DIR/.agentbus2.tmp.$$"
-    chmod 755 "$INSTALL_DIR/.agentbus2.tmp.$$"
-    mv -f "$INSTALL_DIR/.agentbus2.tmp.$$" "$INSTALL_DIR/agentbus2"
+    tar -xzf "$TMP/$ASSET" -C "$TMP" "$BIN" || die "could not extract $ASSET"
+    cp "$TMP/$BIN" "$INSTALL_DIR/.$BIN.tmp.$$"
+    chmod 755 "$INSTALL_DIR/.$BIN.tmp.$$"
+    mv -f "$INSTALL_DIR/.$BIN.tmp.$$" "$INSTALL_DIR/$BIN"
 }
 
 report() {
-    v="$("$INSTALL_DIR/agentbus2" version)" || die "$INSTALL_DIR/agentbus2 does not run"
-    echo "installed agentbus2 $v to $INSTALL_DIR/agentbus2"
+    v="$("$INSTALL_DIR/$BIN" version)" || die "$INSTALL_DIR/$BIN does not run"
+    echo "installed $BIN $v to $INSTALL_DIR/$BIN"
     case ":${PATH:-}:" in
         *":$INSTALL_DIR:"*) ;;
         *) echo "note: $INSTALL_DIR is not on your PATH; add this to your shell profile: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
     esac
-    echo "next: agentbus2 init --global (once per machine), then agentbus2 init inside each repository"
+    if [ "$BIN" = agentbus2-mcponly ]; then
+        echo "next: agentbus2-mcponly help (connect this agent to an agentbus2 server)"
+    else
+        echo "next: agentbus2 init --global (once per machine), then agentbus2 init inside each repository"
+    fi
     if [ "$UPGRADE" = 1 ]; then
         if [ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" = "$v" ]; then
-            echo "reinstalled: agentbus2 $v was already installed"
+            echo "reinstalled: $BIN $v was already installed"
         elif [ -n "$OLD_VERSION" ]; then
             echo "upgraded from $OLD_VERSION: restart every harness session and the TUI to pick up the new binary"
         else
@@ -191,7 +201,11 @@ report() {
 }
 
 main() {
-    [ $# -eq 0 ] || die "this script takes no arguments; configure it with AGENTBUS2_VERSION, AGENTBUS2_INSTALL_DIR, AGENTBUS2_BASE_URL, AGENTBUS2_SKIP_SIGNATURE"
+    case "$#:${1:-}" in
+        0:) ;;
+        1:--mcp-only) BIN=agentbus2-mcponly SH_ARGS=" -s -- --mcp-only" ;;
+        *) die "usage: install.sh [--mcp-only]; configure it with AGENTBUS2_VERSION, AGENTBUS2_INSTALL_DIR, AGENTBUS2_BASE_URL, AGENTBUS2_SKIP_SIGNATURE" ;;
+    esac
     detect_platform
     [ "$SKIP_SIG" = 1 ] || find_openssl
     resolve_version

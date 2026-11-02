@@ -1,5 +1,10 @@
 # install.ps1: install agentbus2 on Windows into %LocalAppData%\Programs\agentbus2.
 #   irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1 | iex
+# The MCP-only client (agentbus2-mcponly.exe: serve, register and version; no
+# local mode) installs the same way into the same directory, beside
+# agentbus2.exe, which it never touches. -McpOnly is the one argument, so the
+# piped form becomes:
+#   & ([scriptblock]::Create((irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1))) -McpOnly
 # Windows PowerShell 5.1 and PowerShell 7. Environment:
 #   AGENTBUS2_VERSION        vX.Y.Z to install (default: the latest release)
 #   AGENTBUS2_INSTALL_DIR    absolute directory (default: %LocalAppData%\Programs\agentbus2)
@@ -8,11 +13,13 @@
 #   AGENTBUS2_TEST_OSARCH    test hook: pretend the OS architecture is this value
 # Downloads the zip, SHA256SUMS and SHA256SUMS.sig, verifies the Ed25519
 # signature with OpenSSL 3 (Git for Windows ships one) and the public key
-# below, verifies the zip's hash, runs the new agentbus2.exe once in the
+# below, verifies the zip's hash, runs the new agentbus2.exe (or
+# agentbus2-mcponly.exe) once in the
 # temporary directory, then swaps it into place (whatever is there, running or
 # not, is renamed aside, never overwritten) and adds the directory to the user
 # PATH. Never runs agentbus2 init. A refusal throws, so a piped `iex` leaves the
 # session open; `powershell -File install.ps1` exits 1.
+# open note: mcp-only-client 10
 #Requires -Version 5.1
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
@@ -179,7 +186,7 @@ function Test-Hash([string]$Dir, [string]$Asset) {
     if ($got -ne $want) { throw "agentbus2 install: checksum mismatch for $Asset" }
 }
 
-# Install-Binary extracts agentbus2.exe, runs it once where it was extracted
+# Install-Binary extracts $Bin.exe, runs it once where it was extracted
 # (a download that does not run never replaces a working install), records
 # the version the current binary reports, swaps the new one into place and
 # returns the new version.
@@ -193,11 +200,11 @@ function Test-Hash([string]$Dir, [string]$Asset) {
 # is not part of the loop: the version check already happened on the
 # extracted copy, so a target renamed aside by the other installer at the
 # wrong moment cannot fail this one.
-function Install-Binary([string]$Dir, [string]$Asset, [string]$InstallDir) {
+function Install-Binary([string]$Dir, [string]$Asset, [string]$InstallDir, [string]$Bin) {
     $extract = Join-Path $Dir 'extract'
     Expand-Archive -LiteralPath (Join-Path $Dir $Asset) -DestinationPath $extract -Force
-    $new = Join-Path $extract 'agentbus2.exe'
-    if (-not (Test-Path -LiteralPath $new)) { throw "agentbus2 install: $Asset does not contain agentbus2.exe" }
+    $new = Join-Path $extract "$Bin.exe"
+    if (-not (Test-Path -LiteralPath $new)) { throw "agentbus2 install: $Asset does not contain $Bin.exe" }
     $version = Get-InstalledVersion $new
     try {
         New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
@@ -205,7 +212,7 @@ function Install-Binary([string]$Dir, [string]$Asset, [string]$InstallDir) {
         try { [IO.File]::WriteAllText($probe, 'x') }
         finally { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue }
     } catch { throw "agentbus2 install: cannot write to $InstallDir. Set AGENTBUS2_INSTALL_DIR to a writable directory" }
-    $target = Join-Path $InstallDir 'agentbus2.exe'
+    $target = Join-Path $InstallDir "$Bin.exe"
     if (Test-Path -LiteralPath $target -PathType Container) { throw "agentbus2 install: $target is a directory; remove it or choose another AGENTBUS2_INSTALL_DIR" }
     $script:Upgrade = Test-Path -LiteralPath $target
     $script:OldVersion = $null
@@ -224,7 +231,7 @@ function Install-Binary([string]$Dir, [string]$Asset, [string]$InstallDir) {
         } catch { Start-Sleep -Milliseconds 300 }
     }
     if (-not $placed) { throw "agentbus2 install: could not replace $target (another installer or a scanner kept it busy); rerun the installer" }
-    Get-ChildItem -LiteralPath $InstallDir -Filter 'agentbus2.exe.old-*' | ForEach-Object {
+    Get-ChildItem -LiteralPath $InstallDir -Filter "$Bin.exe.old-*" | ForEach-Object {
         try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch { } # still running: a later run removes it
     }
     return $version
@@ -253,7 +260,7 @@ function Add-UserPath([string]$Dir) {
     Write-Host "added $Dir to your user PATH; new terminals pick it up"
 }
 
-# Get-InstalledVersion runs an agentbus2.exe (the extracted one before the swap,
+# Get-InstalledVersion runs an agentbus2.exe or agentbus2-mcponly.exe (the extracted one before the swap,
 # the installed one for its old version) and returns the version it prints,
 # or throws. The output is collected whole (not piped to Select-Object -First
 # 1, which stops the pipeline before the native exit code is recorded), stderr
@@ -269,7 +276,11 @@ function Get-InstalledVersion([string]$Exe) {
 }
 
 function Main {
-    if ($args.Count -gt 0) { throw 'agentbus2 install: this script takes no arguments; configure it with AGENTBUS2_VERSION, AGENTBUS2_INSTALL_DIR, AGENTBUS2_BASE_URL, AGENTBUS2_SKIP_SIGNATURE' }
+    # No argument, or exactly -McpOnly (any case); anything else, a repeat
+    # included, is the usage text.
+    $bin = 'agentbus2'
+    if ($args.Count -eq 1 -and "$($args[0])" -ieq '-McpOnly') { $bin = 'agentbus2-mcponly' }
+    elseif ($args.Count -gt 0) { throw 'agentbus2 install: usage: install.ps1 [-McpOnly]; configure it with AGENTBUS2_VERSION, AGENTBUS2_INSTALL_DIR, AGENTBUS2_BASE_URL, AGENTBUS2_SKIP_SIGNATURE' }
     $base = if ($env:AGENTBUS2_BASE_URL) { $env:AGENTBUS2_BASE_URL.TrimEnd('/', '\') } else { 'https://github.com/ericfitz/agentbus2' }
     $skip = $false
     switch ("$env:AGENTBUS2_SKIP_SIGNATURE") {
@@ -285,7 +296,7 @@ function Main {
     $arch = Get-Arch
     $openssl = if ($skip) { $null } else { Find-OpenSsl }
     $tag = Resolve-Tag $base
-    $asset = "agentbus2-$tag-windows-$arch.zip"
+    $asset = "$bin-$tag-windows-$arch.zip"
     $tmp = Join-Path ([IO.Path]::GetTempPath()) ('agentbus2-install-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
@@ -297,12 +308,13 @@ function Main {
             Test-Signature $openssl $tmp $base
         }
         Test-Hash $tmp $asset
-        $v = Install-Binary $tmp $asset $installDir
+        $v = Install-Binary $tmp $asset $installDir $bin
         Add-UserPath $installDir
-        Write-Host "installed agentbus2 $v to $installDir\agentbus2.exe"
-        Write-Host 'next: agentbus2 init --global (once per machine), then agentbus2 init inside each repository'
+        Write-Host "installed $bin $v to $installDir\$bin.exe"
+        if ($bin -eq 'agentbus2-mcponly') { Write-Host 'next: agentbus2-mcponly help (connect this agent to an agentbus2 server)' }
+        else { Write-Host 'next: agentbus2 init --global (once per machine), then agentbus2 init inside each repository' }
         if ($script:Upgrade) {
-            if ($script:OldVersion -and $script:OldVersion -eq $v) { Write-Host "reinstalled: agentbus2 $v was already installed" }
+            if ($script:OldVersion -and $script:OldVersion -eq $v) { Write-Host "reinstalled: $bin $v was already installed" }
             elseif ($script:OldVersion) { Write-Host "upgraded from $($script:OldVersion): restart every harness session and the TUI to pick up the new binary" }
             else { Write-Host 'upgraded: restart every harness session and the TUI to pick up the new binary' }
         }

@@ -136,6 +136,8 @@ build_fixture() {
     rm -f "$FX"/no-archive/v9.0.1/agentbus2-*.tar.gz
     append_byte "$FX/tampered-tarball/v9.0.1/agentbus2-v9.0.1-linux-amd64.tar.gz"
     append_byte "$FX/tampered-tarball/v9.0.1/agentbus2-v9.0.1-linux-arm64.tar.gz"
+    append_byte "$FX/tampered-tarball/v9.0.1/agentbus2-mcponly-v9.0.1-linux-amd64.tar.gz"
+    append_byte "$FX/tampered-tarball/v9.0.1/agentbus2-mcponly-v9.0.1-linux-arm64.tar.gz"
     # First hex digit of the first hash changed (f -> E, anything else -> f), so it always differs.
     sed '1s/^f/E/; 1s/^[0-9a-e]/f/' "$FX/tampered-sums/v9.0.1/SHA256SUMS" > "$FX/tampered-sums/v9.0.1/SHA256SUMS.new"
     mv "$FX/tampered-sums/v9.0.1/SHA256SUMS.new" "$FX/tampered-sums/v9.0.1/SHA256SUMS"
@@ -146,18 +148,21 @@ build_fixture() {
     "$OPENSSL" pkeyutl -sign -rawin -inkey "$WORK/key.pem" -in "$FX/missing-entry/v9.0.1/SHA256SUMS" -out "$FX/missing-entry/v9.0.1/SHA256SUMS.sig"
 }
 
-# make_release <variant> <tag> <version>: stub agentbus2 (a sh script printing
-# the version), both tarballs, install.sh, SHA256SUMS and its signature.
+# make_release <variant> <tag> <version>: stubs agentbus2 and agentbus2-mcponly
+# (sh scripts printing the version), the tarballs of both per architecture,
+# install.sh, SHA256SUMS and its signature.
 make_release() {
     local tag="$2" version="$3" d="$FX/$1/$2" arch
     mkdir -p "$d/bin"
     printf '#!/bin/sh\necho %s\n' "$version" > "$d/bin/agentbus2"; chmod 755 "$d/bin/agentbus2"
+    printf '#!/bin/sh\necho %s\n' "$version" > "$d/bin/agentbus2-mcponly"; chmod 755 "$d/bin/agentbus2-mcponly"
     for arch in amd64 arm64; do
         tar -C "$d/bin" -czf "$d/agentbus2-$tag-linux-$arch.tar.gz" agentbus2
+        tar -C "$d/bin" -czf "$d/agentbus2-mcponly-$tag-linux-$arch.tar.gz" agentbus2-mcponly
     done
     rm -r "${d:?}/bin"
     cp "$FX/install.sh" "$d/install.sh"
-    (cd "$d" && shasum -a 256 "agentbus2-$tag-linux-amd64.tar.gz" "agentbus2-$tag-linux-arm64.tar.gz" install.sh > SHA256SUMS)
+    (cd "$d" && shasum -a 256 "agentbus2-$tag-linux-amd64.tar.gz" "agentbus2-$tag-linux-arm64.tar.gz" "agentbus2-mcponly-$tag-linux-amd64.tar.gz" "agentbus2-mcponly-$tag-linux-arm64.tar.gz" install.sh > SHA256SUMS)
     "$OPENSSL" pkeyutl -sign -rawin -inkey "$WORK/key.pem" -in "$d/SHA256SUMS" -out "$d/SHA256SUMS.sig"
 }
 
@@ -347,6 +352,22 @@ darwin_case() {
     printf '#!/bin/sh\nif [ "$1" = -s ]; then echo Darwin; else exec %s "$@"; fi\n' "$real" > "$d/uname"
     chmod 755 "$d/uname"
     check darwin-refused 1 "brew install ericfitz/tap/agentbus2" -- env PATH="$d:$PATH" HOME="$WORK" AGENTBUS2_BASE_URL=http://127.0.0.1:1 sh "$REPO_ROOT/install.sh"
+    check darwin-refused-mcponly 1 "brew install ericfitz/tap/agentbus2-mcponly" -- env PATH="$d:$PATH" HOME="$WORK" AGENTBUS2_BASE_URL=http://127.0.0.1:1 sh "$REPO_ROOT/install.sh" --mcp-only
+}
+
+# argument_cases: install.sh accepts no argument or exactly --mcp-only; anything
+# else dies with the usage text before it touches the network or HOME. The
+# refusal is the first thing main does, so these run on any OS.
+argument_cases() {
+    local usage='usage: install.sh [--mcp-only]; configure it with AGENTBUS2_VERSION, AGENTBUS2_INSTALL_DIR, AGENTBUS2_BASE_URL, AGENTBUS2_SKIP_SIGNATURE' arg
+    mkdir -p "$WORK/args-home"
+    for arg in --bogus extra -mcp-only --MCP-ONLY --mcp-only=1 ''; do
+        check "bad-argument [$arg]" 1 "$usage" -- env HOME="$WORK/args-home" AGENTBUS2_BASE_URL=http://127.0.0.1:1 sh "$REPO_ROOT/install.sh" "$arg"
+    done
+    check "bad-argument [--mcp-only --mcp-only]" 1 "$usage" -- env HOME="$WORK/args-home" AGENTBUS2_BASE_URL=http://127.0.0.1:1 sh "$REPO_ROOT/install.sh" --mcp-only --mcp-only
+    check "bad-argument [--mcp-only x]" 1 "$usage" -- env HOME="$WORK/args-home" AGENTBUS2_BASE_URL=http://127.0.0.1:1 sh "$REPO_ROOT/install.sh" --mcp-only x
+    check "bad-argument [x --mcp-only]" 1 "$usage" -- env HOME="$WORK/args-home" AGENTBUS2_BASE_URL=http://127.0.0.1:1 sh "$REPO_ROOT/install.sh" x --mcp-only
+    assert "bad-argument: nothing created" '[[ -z "$(find "$WORK/args-home" -mindepth 1)" ]]'
 }
 
 self_test() {
@@ -358,8 +379,12 @@ self_test() {
         return 1
     fi
     build_fixture
-    assert "sums list three files" "[[ \$(wc -l < '$FX/valid/v9.0.1/SHA256SUMS') -eq 3 ]]"
+    assert "sums list five files" "[[ \$(wc -l < '$FX/valid/v9.0.1/SHA256SUMS') -eq 5 ]]"
     assert "sums name both tarballs" "grep -q ' agentbus2-v9.0.1-linux-amd64.tar.gz$' '$FX/valid/v9.0.1/SHA256SUMS' && grep -q ' agentbus2-v9.0.1-linux-arm64.tar.gz$' '$FX/valid/v9.0.1/SHA256SUMS'"
+    assert "sums name both mcponly tarballs" "grep -q ' agentbus2-mcponly-v9.0.1-linux-amd64.tar.gz$' '$FX/valid/v9.0.1/SHA256SUMS' && grep -q ' agentbus2-mcponly-v9.0.1-linux-arm64.tar.gz$' '$FX/valid/v9.0.1/SHA256SUMS'"
+    assert "mcponly stub prints its version" "[[ \$(tar -xzOf '$FX/valid/v9.0.0/agentbus2-mcponly-v9.0.0-linux-amd64.tar.gz' agentbus2-mcponly | sh) == 9.0.0 ]]"
+    assert "mcponly tarball holds only agentbus2-mcponly" "[[ \$(tar -tzf '$FX/valid/v9.0.0/agentbus2-mcponly-v9.0.0-linux-amd64.tar.gz') == agentbus2-mcponly ]]"
+    assert "tampered-tarball differs in the mcponly tarballs too" "! cmp -s '$FX/valid/v9.0.1/agentbus2-mcponly-v9.0.1-linux-amd64.tar.gz' '$FX/tampered-tarball/v9.0.1/agentbus2-mcponly-v9.0.1-linux-amd64.tar.gz'"
     assert "valid signature verifies" "'$OPENSSL' pkeyutl -verify -rawin -pubin -inkey '$WORK/key.pub' -in '$FX/valid/v9.0.1/SHA256SUMS' -sigfile '$FX/valid/v9.0.1/SHA256SUMS.sig' >/dev/null 2>&1"
     assert "tampered-sig does not verify" "! '$OPENSSL' pkeyutl -verify -rawin -pubin -inkey '$WORK/key.pub' -in '$FX/tampered-sig/v9.0.1/SHA256SUMS' -sigfile '$FX/tampered-sig/v9.0.1/SHA256SUMS.sig' >/dev/null 2>&1"
     assert "tampered-sums does not verify" "! '$OPENSSL' pkeyutl -verify -rawin -pubin -inkey '$WORK/key.pub' -in '$FX/tampered-sums/v9.0.1/SHA256SUMS' -sigfile '$FX/tampered-sums/v9.0.1/SHA256SUMS.sig' >/dev/null 2>&1"
@@ -394,6 +419,7 @@ self_test() {
     embed_cases
     truncated_cases
     darwin_case
+    argument_cases
     start_server
     assert "server redirects latest" "[[ \$(curl -sI -o /dev/null -w '%{redirect_url}' http://127.0.0.1:$PORT/valid/releases/latest) == */valid/releases/tag/v9.0.1 ]]"
     assert "server serves SHA256SUMS" "curl -fsS http://127.0.0.1:$PORT/valid/releases/download/v9.0.1/SHA256SUMS | cmp -s - '$FX/valid/v9.0.1/SHA256SUMS'"
@@ -443,7 +469,10 @@ cases() {
     run_case version-prerelease "$d" "$a" 1 "version must look like vX.Y.Z" 'AGENTBUS2_VERSION=v1.2.3-rc1 sh /fixture/install.sh'
     run_case version-newline "$d" "$a" 1 "containing a newline" 'AGENTBUS2_VERSION="v9.0.0
 v9.0.1" sh /fixture/install.sh'
-    run_case positional-argument "$d" "$a" 1 "takes no arguments" 'sh /fixture/install.sh extra'
+    run_case positional-argument "$d" "$a" 1 "usage: install.sh [--mcp-only]" 'sh /fixture/install.sh extra'
+    run_case bad-argument "$d" "$a" 1 "usage: install.sh [--mcp-only]" 'sh /fixture/install.sh --bogus'
+    run_case bad-argument-repeated "$d" "$a" 1 "usage: install.sh [--mcp-only]" 'sh /fixture/install.sh --mcp-only --mcp-only'
+    run_case bad-argument-extra "$d" "$a" 1 "usage: install.sh [--mcp-only]" 'sh /fixture/install.sh --mcp-only x'
     run_case no-embedded-key "$d" "$a" 1 "no embedded release key" 'sh /fixture/install-nokey.sh'
     run_case latest-unparsable "$d" "$a" 1 "could not determine the latest release" 'AGENTBUS2_BASE_URL=$BASE/nope sh /fixture/install.sh'
     run_case tampered-tarball "$d" "$a" 1 "checksum mismatch" 'AGENTBUS2_BASE_URL=$BASE/tampered-tarball sh /fixture/install.sh'
@@ -475,6 +504,24 @@ v9.0.1" sh /fixture/install.sh'
     run_case leftover-tmp "$d" "$a" 0 "installed agentbus2 9.0.1" 'mkdir -p ~/.local/bin && echo junk > ~/.local/bin/.agentbus2.tmp.12345 && sh /fixture/install.sh && [ -f ~/.local/bin/.agentbus2.tmp.12345 ]'
     # The fake tar is installed in its own statement so that `&` backgrounds
     # install.sh itself and $! is its pid (not a wrapper list's).
+    run_case mcponly-install "$d" "$a" 0 "installed agentbus2-mcponly 9.0.1 to /root/.local/bin/agentbus2-mcponly" 'sh /fixture/install.sh --mcp-only && [ "$(~/.local/bin/agentbus2-mcponly version)" = 9.0.1 ] && [ ! -e ~/.local/bin/agentbus2 ]'
+    run_case mcponly-prints-next-step "$d" "$a" 0 "next: agentbus2-mcponly help (connect this agent to an agentbus2 server)" 'sh /fixture/install.sh --mcp-only'
+    run_case mcponly-no-init-hint "$d" "$a" 0 "installed agentbus2-mcponly" 'out=$(sh /fixture/install.sh --mcp-only 2>&1) && echo "$out" && case "$out" in *"agentbus2 init"*) echo "unexpected init hint"; exit 9 ;; esac'
+    run_case mcponly-piped "$d" "$a" 0 "installed agentbus2-mcponly 9.0.1" 'cat /fixture/install.sh | sh -s -- --mcp-only && ~/.local/bin/agentbus2-mcponly version'
+    run_case mcponly-pinned-version "$d" "$a" 0 "installed agentbus2-mcponly 9.0.0" 'AGENTBUS2_VERSION=v9.0.0 sh /fixture/install.sh --mcp-only'
+    run_case mcponly-beside-full "$d" "$a" 0 "installed agentbus2-mcponly 9.0.1" 'sh /fixture/install.sh >/dev/null && before=$(cksum < ~/.local/bin/agentbus2) && out=$(sh /fixture/install.sh --mcp-only 2>&1) && echo "$out" && case "$out" in *upgraded*|*reinstalled*) echo "unexpected upgrade line"; exit 9 ;; esac; [ "$(cksum < ~/.local/bin/agentbus2)" = "$before" ] && [ "$(~/.local/bin/agentbus2 version)" = 9.0.1 ] && [ "$(~/.local/bin/agentbus2-mcponly version)" = 9.0.1 ]'
+    run_case full-beside-mcponly "$d" "$a" 0 "installed agentbus2 9.0.1" 'sh /fixture/install.sh --mcp-only >/dev/null && before=$(cksum < ~/.local/bin/agentbus2-mcponly) && out=$(sh /fixture/install.sh 2>&1) && echo "$out" && case "$out" in *upgraded*|*reinstalled*) echo "unexpected upgrade line"; exit 9 ;; esac; [ "$(cksum < ~/.local/bin/agentbus2-mcponly)" = "$before" ]'
+    run_case mcponly-rerun "$d" "$a" 0 "reinstalled: agentbus2-mcponly 9.0.1 was already installed" 'sh /fixture/install.sh --mcp-only >/dev/null && out=$(sh /fixture/install.sh --mcp-only 2>&1) && echo "$out" && case "$out" in *upgraded*) echo "unexpected upgraded line"; exit 9 ;; esac'
+    run_case mcponly-upgrade "$d" "$a" 0 "upgraded from 9.0.0: restart" 'AGENTBUS2_VERSION=v9.0.0 sh /fixture/install.sh --mcp-only >/dev/null && sh /fixture/install.sh --mcp-only && [ "$(~/.local/bin/agentbus2-mcponly version)" = 9.0.1 ]'
+    run_case mcponly-broken-old-binary "$d" "$a" 0 "upgraded: restart" 'mkdir -p ~/.local/bin && printf "#!/bin/sh\nexit 3\n" > ~/.local/bin/agentbus2-mcponly && chmod 755 ~/.local/bin/agentbus2-mcponly && sh /fixture/install.sh --mcp-only && [ "$(~/.local/bin/agentbus2-mcponly version)" = 9.0.1 ]'
+    run_case mcponly-tampered-tarball "$d" "$a" 1 "checksum mismatch for agentbus2-mcponly-v9.0.1-linux-$a.tar.gz" 'AGENTBUS2_BASE_URL=$BASE/tampered-tarball sh /fixture/install.sh --mcp-only'
+    run_case mcponly-sums-missing-entry "$d" "$a" 1 "SHA256SUMS has no entry for agentbus2-mcponly-v9.0.1-linux-$a.tar.gz" 'AGENTBUS2_BASE_URL=$BASE/missing-entry sh /fixture/install.sh --mcp-only'
+    run_case mcponly-without-linux-build "$d" "$a" 1 "release v9.0.1 has no Linux build: agentbus2-mcponly-v9.0.1-linux-$a.tar.gz" 'AGENTBUS2_BASE_URL=$BASE/no-archive sh /fixture/install.sh --mcp-only'
+    run_case mcponly-unwritable-dir-hint "$d" "$a" 1 "sudo env AGENTBUS2_INSTALL_DIR=/usr/local/bin sh -s -- --mcp-only" 'AGENTBUS2_INSTALL_DIR=/proc/agentbus2 sh /fixture/install.sh --mcp-only'
+    run_case mcponly-install-dir-is-directory "$d" "$a" 1 "/opt/x/agentbus2-mcponly is a directory" 'mkdir -p /opt/x/agentbus2-mcponly; AGENTBUS2_INSTALL_DIR=/opt/x sh /fixture/install.sh --mcp-only'
+    run_case mcponly-leftover-tmp "$d" "$a" 0 "installed agentbus2-mcponly 9.0.1" 'mkdir -p ~/.local/bin && echo junk > ~/.local/bin/.agentbus2-mcponly.tmp.12345 && sh /fixture/install.sh --mcp-only && [ -f ~/.local/bin/.agentbus2-mcponly.tmp.12345 ]'
+    run_case mcponly-concurrent "$d" "$a" 0 "9.0.1" 'sh /fixture/install.sh --mcp-only >/dev/null & p1=$!; sh /fixture/install.sh --mcp-only >/dev/null & p2=$!; wait $p1 && wait $p2 && ~/.local/bin/agentbus2-mcponly version'
+    run_case mcponly-killed-mid-install "$d" "$a" 0 "clean" "mkdir -p /tmp/t && $(fake tar)true; TMPDIR=/tmp/t sh /fixture/install.sh --mcp-only & p=\$!; sleep 2; kill -TERM \$p; wait \$p; [ -z \"\$(ls -A /tmp/t)\" ] && [ -z \"\$(ls -A ~/.local/bin 2>/dev/null)\" ] && echo clean"
     run_case killed-mid-install "$d" "$a" 0 "clean" "mkdir -p /tmp/t && $(fake tar)true; TMPDIR=/tmp/t sh /fixture/install.sh & p=\$!; sleep 2; kill -TERM \$p; wait \$p; [ -z \"\$(ls -A /tmp/t)\" ] && [ -z \"\$(ls -A ~/.local/bin 2>/dev/null)\" ] && echo clean"
 }
 

@@ -27,7 +27,7 @@ Installs `agentbus2` into `~/.local/bin` without root, for x86_64 and aarch64. T
 | `AGENTBUS2_BASE_URL` | A mirror of `https://github.com/ericfitz/agentbus2`. |
 | `AGENTBUS2_SKIP_SIGNATURE` | `1` skips only the signature check (for hosts with OpenSSL 1.1); the checksum is still verified. Any other value is rejected. |
 
-The script stops with a message instead of guessing when it is given positional arguments, an `AGENTBUS2_VERSION` that is not exactly `vX.Y.Z`, a relative `AGENTBUS2_INSTALL_DIR`, no `HOME` and no `AGENTBUS2_INSTALL_DIR`, a copy without an embedded release key, or when `<dir>/agentbus2` is a directory. It is also safe against a truncated download: a partial script does nothing.
+The script stops with a message instead of guessing when it is given any argument other than `--mcp-only` (a repeated or extra one included; it prints `usage: install.sh [--mcp-only]`), an `AGENTBUS2_VERSION` that is not exactly `vX.Y.Z`, a relative `AGENTBUS2_INSTALL_DIR`, no `HOME` and no `AGENTBUS2_INSTALL_DIR`, a copy without an embedded release key, or when `<dir>/agentbus2` (`<dir>/agentbus2-mcponly` with `--mcp-only`) is a directory. It is also safe against a truncated download: a partial script does nothing.
 
 Verifying a download by hand, with the public key from [`release/agentbus2-release-ed25519.pub`](../release/agentbus2-release-ed25519.pub) (committed at the 2.0.0 release; see `docs/release.md`):
 
@@ -64,7 +64,7 @@ The release zips also carry a `README.txt`, but unzipping one does not install a
 | `AGENTBUS2_BASE_URL` | A mirror of `https://github.com/ericfitz/agentbus2`. |
 | `AGENTBUS2_SKIP_SIGNATURE` | `1` skips only the signature check; the hash is still verified. Unset is the default; any other value is rejected. |
 
-As on Linux, the script stops with a message instead of guessing when it is given positional arguments, an `AGENTBUS2_VERSION` that is not exactly `vX.Y.Z`, a relative `AGENTBUS2_INSTALL_DIR`, no `LocalAppData` and no `AGENTBUS2_INSTALL_DIR`, a copy without an embedded release key, or when `<dir>\agentbus2.exe` is a directory. It also stops when the target directory is not writable, and it runs the downloaded `agentbus2.exe version` before replacing anything, so a binary that does not run never replaces a working install. A refusal throws, so a piped `iex` leaves your session open.
+As on Linux, the script stops with a message instead of guessing when it is given any argument other than `-McpOnly` (a repeated or extra one included; it prints `usage: install.ps1 [-McpOnly]`), an `AGENTBUS2_VERSION` that is not exactly `vX.Y.Z`, a relative `AGENTBUS2_INSTALL_DIR`, no `LocalAppData` and no `AGENTBUS2_INSTALL_DIR`, a copy without an embedded release key, or when `<dir>\agentbus2.exe` (`<dir>\agentbus2-mcponly.exe` with `-McpOnly`) is a directory. It also stops when the target directory is not writable, and it runs the downloaded `agentbus2.exe version` before replacing anything, so a binary that does not run never replaces a working install. A refusal throws, so a piped `iex` leaves your session open.
 
 Package managers:
 
@@ -79,6 +79,20 @@ The winget command works once the winget package is published (the first submiss
 Stop agentbus2 sessions (MCP servers, `agentbus2 wait`, `agentbus2 watch`, the TUI) before `scoop update agentbus2` or `winget upgrade ericfitz.agentbus2`: neither can replace the files of a running program.
 
 To tell whether a Windows binary is signed, run `Get-AuthenticodeSignature .\agentbus2.exe`: a signed binary reports `Status` `Valid` and the expected signer (the maintainer, through Microsoft Artifact Signing). A release whose notes say its Windows binaries are not Authenticode-signed is unsigned; it is still covered by the signed `SHA256SUMS` and the build attestations. See [release-signing.md](release-signing.md).
+
+## The MCP-only client
+
+`agentbus2-mcponly` is a smaller binary for a machine whose agents only connect to an agentbus2 server: its commands are `serve` (the stdio MCP server), `register`, `check`, `config`, `help` and `version`, and it has no local mode. It installs beside `agentbus2` (same directory, same `PATH` entry) and replaces nothing of it; each installer touches only its own binary, and the Windows installer sweeps only its own `.old-*` leftovers.
+
+| Platform | Command |
+|---|---|
+| macOS | `brew install ericfitz/tap/agentbus2-mcponly` |
+| Linux | `curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh \| sh -s -- --mcp-only` |
+| Windows | `& ([scriptblock]::Create((irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1))) -McpOnly` |
+| Windows (Scoop) | `scoop install agentbus2-mcponly` |
+| Windows (winget) | `winget install ericfitz.agentbus2-mcponly` |
+
+The scripts take the same environment variables as above and do the same checks on `agentbus2-mcponly-<tag>-linux-<arch>.tar.gz` or `agentbus2-mcponly-<tag>-windows-<arch>.zip`. Rerunning upgrades; a second run at the same version prints `reinstalled: agentbus2-mcponly <version> was already installed`. The scripts print `next: agentbus2-mcponly help (connect this agent to an agentbus2 server)`; run `agentbus2-mcponly help` after installing.
 
 ## Where agentbus2 keeps things
 

@@ -85,7 +85,7 @@ function Cleanup {
         $script:Server = $null
     }
     # Only stubs started from this run's work directory: never the user's real agentbus2 sessions (the VM runs them).
-    Get-Process -Name agentbus2 -ErrorAction SilentlyContinue | Where-Object { $p = $_.Path; $p -and ($p -like "$Work*") } | Stop-Process -Force -ErrorAction SilentlyContinue
+    Get-Process -Name agentbus2, agentbus2-mcponly -ErrorAction SilentlyContinue | Where-Object { $p = $_.Path; $p -and ($p -like "$Work*") } | Stop-Process -Force -ErrorAction SilentlyContinue
     foreach ($i in 1..5) {
         if (-not (Test-Path -LiteralPath $Work)) { break }
         Remove-Item -LiteralPath $Work -Recurse -Force -ErrorAction SilentlyContinue
@@ -129,10 +129,10 @@ function Set-KeyBlock([string]$Script, [string]$Pem) {
 
 function Add-Byte([string]$Path) { $s = [IO.File]::Open($Path, 'Append'); try { $s.WriteByte(0) } finally { $s.Close() } }
 
-# Write-Sums writes SHA256SUMS for the two zips and install.ps1 in a release
-# directory and signs it with the throwaway key.
+# Write-Sums writes SHA256SUMS for the four zips (agentbus2 and
+# agentbus2-mcponly, per architecture) and install.ps1 in a release directory and signs it with the throwaway key.
 function Write-Sums([string]$Dir, [string]$Tag) {
-    $sums = foreach ($f in "agentbus2-$Tag-windows-amd64.zip", "agentbus2-$Tag-windows-arm64.zip", 'install.ps1') {
+    $sums = foreach ($f in "agentbus2-$Tag-windows-amd64.zip", "agentbus2-$Tag-windows-arm64.zip", "agentbus2-mcponly-$Tag-windows-amd64.zip", "agentbus2-mcponly-$Tag-windows-arm64.zip", 'install.ps1') {
         (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Dir $f)).Hash.ToLower() + '  ' + $f
     }
     [IO.File]::WriteAllText((Join-Path $Dir 'SHA256SUMS'), ($sums -join "`n") + "`n")
@@ -163,8 +163,9 @@ function Get-HostArch {
     }
 }
 
-# New-Release writes one release directory. The zip for this machine's
-# architecture holds a stub reporting $Version; the other zip's stub reports
+# New-Release writes one release directory: the zips of agentbus2 and of
+# agentbus2-mcponly per architecture. The zip for this machine's architecture
+# holds a stub reporting $Version; the other zip's stub reports
 # WRONGARCH-$Version, so installing the wrong asset fails every case that
 # checks the version.
 function New-Release([string]$Variant, [string]$Tag, [string]$Version) {
@@ -176,6 +177,8 @@ function New-Release([string]$Variant, [string]$Tag, [string]$Version) {
         New-Item -ItemType Directory -Force -Path $bin | Out-Null
         New-Stub $(if ($a -eq $hostArch) { $Version } else { "WRONGARCH-$Version" }) (Join-Path $bin 'agentbus2.exe')
         Compress-Archive -LiteralPath (Join-Path $bin 'agentbus2.exe') -DestinationPath (Join-Path $d "agentbus2-$Tag-windows-$a.zip") -Force
+        New-Stub $(if ($a -eq $hostArch) { $Version } else { "WRONGARCH-$Version" }) (Join-Path $bin 'agentbus2-mcponly.exe')
+        Compress-Archive -LiteralPath (Join-Path $bin 'agentbus2-mcponly.exe') -DestinationPath (Join-Path $d "agentbus2-mcponly-$Tag-windows-$a.zip") -Force
         Remove-Item -Recurse -Force $bin
     }
     Copy-Item (Join-Path $Fx 'install.ps1') (Join-Path $d 'install.ps1')
@@ -232,8 +235,14 @@ function Build-Fixture {
         Copy-Item -Recurse (Join-Path $Fx 'valid/v9.0.1') (Join-Path $Fx "$v/v9.0.1")
         Set-Content -LiteralPath (Join-Path $Fx "$v/latest") -Value 'v9.0.1'
     }
-    foreach ($a in 'amd64', 'arm64') { Add-Byte (Join-Path $Fx "tampered-zip/v9.0.1/agentbus2-v9.0.1-windows-$a.zip") }
-    foreach ($a in 'amd64', 'arm64') { Remove-Item -LiteralPath (Join-Path $Fx "no-windows-build/v9.0.1/agentbus2-v9.0.1-windows-$a.zip") -Force }
+    foreach ($a in 'amd64', 'arm64') {
+        Add-Byte (Join-Path $Fx "tampered-zip/v9.0.1/agentbus2-v9.0.1-windows-$a.zip")
+        Add-Byte (Join-Path $Fx "tampered-zip/v9.0.1/agentbus2-mcponly-v9.0.1-windows-$a.zip")
+    }
+    foreach ($a in 'amd64', 'arm64') {
+        Remove-Item -LiteralPath (Join-Path $Fx "no-windows-build/v9.0.1/agentbus2-v9.0.1-windows-$a.zip") -Force
+        Remove-Item -LiteralPath (Join-Path $Fx "no-windows-build/v9.0.1/agentbus2-mcponly-v9.0.1-windows-$a.zip") -Force
+    }
     Remove-Item -LiteralPath (Join-Path $Fx 'no-sums/v9.0.1/SHA256SUMS') -Force
     $sums = Join-Path $Fx 'tampered-sums/v9.0.1/SHA256SUMS'
     $lines = Get-Content -LiteralPath $sums
@@ -243,12 +252,17 @@ function Build-Fixture {
     $me = Join-Path $Fx 'missing-entry/v9.0.1'
     [IO.File]::WriteAllText((Join-Path $me 'SHA256SUMS'), ((Get-Content -LiteralPath (Join-Path $me 'SHA256SUMS') | Where-Object { $_ -match ' install.ps1$' }) -join "`n") + "`n")
     Invoke-Ssl @('pkeyutl', '-sign', '-rawin', '-inkey', (Join-Path $Work 'key.pem'), '-in', (Join-Path $me 'SHA256SUMS'), '-out', (Join-Path $me 'SHA256SUMS.sig'))
-    # broken-exe: correctly hashed and signed, but agentbus2.exe is text.
+    # broken-exe: correctly hashed and signed, but agentbus2.exe and
+    # agentbus2-mcponly.exe are text.
     $be = Join-Path $Fx 'broken-exe/v9.0.1'
     $junk = Join-Path $Work 'junk'
     New-Item -ItemType Directory -Force -Path $junk | Out-Null
     Set-Content -LiteralPath (Join-Path $junk 'agentbus2.exe') -Value 'this is not an executable'
-    foreach ($a in 'amd64', 'arm64') { Compress-Archive -LiteralPath (Join-Path $junk 'agentbus2.exe') -DestinationPath (Join-Path $be "agentbus2-v9.0.1-windows-$a.zip") -Force }
+    Copy-Item -LiteralPath (Join-Path $junk 'agentbus2.exe') -Destination (Join-Path $junk 'agentbus2-mcponly.exe')
+    foreach ($a in 'amd64', 'arm64') {
+        Compress-Archive -LiteralPath (Join-Path $junk 'agentbus2.exe') -DestinationPath (Join-Path $be "agentbus2-v9.0.1-windows-$a.zip") -Force
+        Compress-Archive -LiteralPath (Join-Path $junk 'agentbus2-mcponly.exe') -DestinationPath (Join-Path $be "agentbus2-mcponly-v9.0.1-windows-$a.zip") -Force
+    }
     Write-Sums $be 'v9.0.1'
 }
 
@@ -317,6 +331,8 @@ function ConvertTo-EncodedCommand([string]$Text) { return [Convert]::ToBase64Str
 #   iex-dot    the same inside . { ... }
 #   iex-catch  the same inside try/catch: prints THROWN: <message> and exits 7,
 #              which proves a refusal is a throw and not an exit.
+#   scriptblock  & ([scriptblock]::Create((Get-Content -Raw <script>))) <args>,
+#              the documented form for passing arguments to a piped install.
 # iex modes use -EncodedCommand so $PSCommandPath is empty, as in a pasted
 # or piped run.
 function Get-ChildArgs([string]$Mode, [string]$ScriptPath, [string[]]$ScriptArgs) {
@@ -327,6 +343,7 @@ function Get-ChildArgs([string]$Mode, [string]$ScriptPath, [string[]]$ScriptArgs
         'iex'       { $cmd = $load }
         'iex-dot'   { $cmd = ". { $load }" }
         'iex-catch' { $cmd = "try { $load } catch { Write-Output ('THROWN: ' + `$_.Exception.Message); exit 7 }" }
+        'scriptblock' { $cmd = "& ([scriptblock]::Create((Get-Content -Raw -LiteralPath '$q'))) " + (@($ScriptArgs) -join ' ') }
         default     { throw "test-install.ps1: unknown run mode '$Mode'" }
     }
     return @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', (ConvertTo-EncodedCommand $cmd))
@@ -443,7 +460,9 @@ function Invoke-SelfTest {
     }
     Build-Fixture
     $v = Join-Path $Fx 'valid/v9.0.1'
-    Assert 'self: sums list three files' (@(Get-Content -LiteralPath (Join-Path $v 'SHA256SUMS')).Count -eq 3)
+    Assert 'self: sums list five files' (@(Get-Content -LiteralPath (Join-Path $v 'SHA256SUMS')).Count -eq 5)
+    Assert 'self: sums name the mcponly zips' ((@(Get-Content -LiteralPath (Join-Path $v 'SHA256SUMS')) | Where-Object { $_ -match ' agentbus2-mcponly-v9\.0\.1-windows-(amd64|arm64)\.zip$' }).Count -eq 2)
+    Assert 'self: tampered-zip differs from valid in the mcponly zip too' ((Get-FileHash -LiteralPath (Join-Path $v 'agentbus2-mcponly-v9.0.1-windows-amd64.zip')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $Fx 'tampered-zip/v9.0.1/agentbus2-mcponly-v9.0.1-windows-amd64.zip')).Hash)
     Assert 'self: valid signature verifies' (Test-Verify $v)
     Assert 'self: tampered-sig fails' (-not (Test-Verify (Join-Path $Fx 'tampered-sig/v9.0.1')))
     Assert 'self: tampered-sums fails' (-not (Test-Verify (Join-Path $Fx 'tampered-sums/v9.0.1')))
@@ -456,7 +475,7 @@ function Invoke-SelfTest {
     $nwb = Join-Path $Fx 'no-windows-build/v9.0.1'
     Assert 'self: no-windows-build keeps SHA256SUMS and its signature but has no zip' ((Test-Verify $nwb) -and (@(Get-ChildItem -LiteralPath $nwb -Filter '*.zip').Count -eq 0))
     $ns = Join-Path $Fx 'no-sums/v9.0.1'
-    Assert 'self: no-sums keeps the zips but has no SHA256SUMS' ((@(Get-ChildItem -LiteralPath $ns -Filter '*.zip').Count -eq 2) -and -not (Test-Path -LiteralPath (Join-Path $ns 'SHA256SUMS')))
+    Assert 'self: no-sums keeps the four zips but has no SHA256SUMS' ((@(Get-ChildItem -LiteralPath $ns -Filter '*.zip').Count -eq 4) -and -not (Test-Path -LiteralPath (Join-Path $ns 'SHA256SUMS')))
     $pem = Get-Content -LiteralPath (Join-Path $Work 'key.pub')
     Assert 'self: install.ps1 copy carries the throwaway key' ((Get-Content -LiteralPath (Join-Path $Fx 'install.ps1') -Raw).Contains($pem[1]))
     $ph = Get-Content -LiteralPath (Join-Path $Fx 'install-placeholder.ps1') -Raw
@@ -471,6 +490,9 @@ function Invoke-SelfTest {
     $other = if ((Get-HostArch) -eq 'amd64') { 'arm64' } else { 'amd64' }
     Expand-Archive -LiteralPath (Join-Path $Fx "valid/v9.0.0/agentbus2-v9.0.0-windows-$other.zip") -DestinationPath (Join-Path $Work 'y') -Force
     if (-not $IsWin) { & chmod +x (Join-Path $Work 'y/agentbus2.exe') }
+    Expand-Archive -LiteralPath (Join-Path $Fx "valid/v9.0.0/agentbus2-mcponly-v9.0.0-windows-$(Get-HostArch).zip") -DestinationPath (Join-Path $Work 'm') -Force
+    if (-not $IsWin) { & chmod +x (Join-Path $Work 'm/agentbus2-mcponly.exe') }
+    Assert 'self: mcponly zip holds only agentbus2-mcponly.exe, which prints its version' ((@(Get-ChildItem -LiteralPath (Join-Path $Work 'm') | ForEach-Object { $_.Name }) -join ',') -eq 'agentbus2-mcponly.exe' -and ((& (Join-Path $Work 'm/agentbus2-mcponly.exe') version) -eq '9.0.0'))
     Assert 'self: the non-host-arch zip holds a stub that reports WRONGARCH' ((& (Join-Path $Work 'y/agentbus2.exe') version) -eq 'WRONGARCH-9.0.0')
     if ($IsWin) {
         $fake3 = Join-Path $Fx 'fakes3/openssl.cmd'
@@ -500,6 +522,10 @@ function Invoke-SelfTest {
     try {
         $r = Invoke-Child 'file' $probe @('a', 'b')
         Assert 'self: Invoke-Child file mode passes arguments and environment' (($r.Exit -eq 0) -and $r.Squashed.Contains('args=2v=v1.2.3'))
+        $r = Invoke-Child 'scriptblock' $probe @('-McpOnly')
+        Assert 'self: Invoke-Child scriptblock mode passes the argument to the script' (($r.Exit -eq 0) -and $r.Squashed.Contains('args=1v=v1.2.3'))
+        $r = Invoke-Child 'scriptblock' $probe @()
+        Assert 'self: Invoke-Child scriptblock mode runs the script with no arguments' (($r.Exit -eq 0) -and $r.Squashed.Contains('args=0v=v1.2.3'))
         foreach ($m in 'iex', 'iex-dot') {
             $r = Invoke-Child $m $probe @()
             Assert "self: Invoke-Child $m mode runs the script with no arguments" (($r.Exit -eq 0) -and $r.Squashed.Contains('args=0v=v1.2.3'))
@@ -533,6 +559,10 @@ function Invoke-SelfTest {
     Invoke-Case 'self: -File runs Main' 1 'AGENTBUS2_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTBUS2_SKIP_SIGNATURE' = 'yes' } '' $null $null
     Invoke-Case 'self: iex runs Main' 1 'AGENTBUS2_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTBUS2_SKIP_SIGNATURE' = 'yes' } '' $null $null 'iex'
     Invoke-Case 'self: . { iex } runs Main' 1 'AGENTBUS2_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTBUS2_SKIP_SIGNATURE' = 'yes' } '' $null $null 'iex-dot'
+    # The argument refusal fires first in Main, so it runs on any OS too.
+    Invoke-Case 'self: an unknown argument is refused with the usage text' 1 'usage: install.ps1 [-McpOnly]; configure it with AGENTBUS2_VERSION' @{} '' $null $null 'file' 'install.ps1' @('-Bogus')
+    Invoke-Case 'self: -McpOnly twice is refused with the usage text' 1 'usage: install.ps1 [-McpOnly]' @{} '' $null $null 'scriptblock' 'install.ps1' @('-McpOnly', '-McpOnly')
+    Invoke-Case 'self: -McpOnly reaches Main (the next refusal is the environment one)' 1 'AGENTBUS2_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTBUS2_SKIP_SIGNATURE' = 'yes' } '' $null $null 'scriptblock' 'install.ps1' @('-McpOnly') -WantNotOut 'usage:'
     Invoke-Case 'self: iex refusal is a throw' 7 'THROWN: agentbus2 install: AGENTBUS2_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTBUS2_SKIP_SIGNATURE' = 'yes' } '' $null $null 'iex-catch'
 
     # Find-OpenSsl with nothing on PATH and ProgramFiles unset must reach its
@@ -716,7 +746,78 @@ function Invoke-Cases {
     # Refusals and paths install.ps1 has beyond the plan.
     Invoke-Case 'version-suffix' 1 'version must look like vX.Y.Z' @{ 'AGENTBUS2_VERSION' = 'v9.0.0-rc1' } $dir $null $null
     Invoke-Case 'version-newline' 1 'a value containing a newline' @{ 'AGENTBUS2_VERSION' = "v9.0.0`n" } $dir $null $null
-    Invoke-Case 'positional-argument' 1 'this script takes no arguments' @{} $dir $null $null 'file' 'install.ps1' @('v9.0.0')
+    # Arguments: none or exactly -McpOnly. Anything else, repeated or extra
+    # included, dies with the usage text before anything is downloaded.
+    $usagePs = 'usage: install.ps1 [-McpOnly]; configure it with AGENTBUS2_VERSION, AGENTBUS2_INSTALL_DIR, AGENTBUS2_BASE_URL, AGENTBUS2_SKIP_SIGNATURE'
+    $dirArgs = Join-Path $Work 'bin-args'
+    Invoke-Case 'positional-argument' 1 $usagePs @{} $dirArgs $null { -not (Test-Path -LiteralPath $dirArgs) } 'file' 'install.ps1' @('v9.0.0')
+    Invoke-Case 'bad-argument' 1 $usagePs @{} $dirArgs $null { -not (Test-Path -LiteralPath $dirArgs) } 'file' 'install.ps1' @('-Bogus')
+    Invoke-Case 'bad-argument-double-dash' 1 $usagePs @{} $dirArgs $null { -not (Test-Path -LiteralPath $dirArgs) } 'file' 'install.ps1' @('--mcp-only')
+    Invoke-Case 'bad-argument-repeated' 1 $usagePs @{} $dirArgs $null { -not (Test-Path -LiteralPath $dirArgs) } 'file' 'install.ps1' @('-McpOnly', '-McpOnly')
+    Invoke-Case 'bad-argument-extra' 1 $usagePs @{} $dirArgs $null { -not (Test-Path -LiteralPath $dirArgs) } 'file' 'install.ps1' @('-McpOnly', 'x')
+    Invoke-Case 'bad-argument-extra-first' 1 $usagePs @{} $dirArgs $null { -not (Test-Path -LiteralPath $dirArgs) } 'file' 'install.ps1' @('x', '-McpOnly')
+    Invoke-Case 'bad-argument-scriptblock' 1 $usagePs @{} $dirArgs $null { -not (Test-Path -LiteralPath $dirArgs) } 'scriptblock' 'install.ps1' @('-Bogus')
+
+    # The MCP-only client: -McpOnly installs agentbus2-mcponly.exe into the
+    # same directory as agentbus2.exe and leaves agentbus2.exe alone.
+    $mcpDir = Join-Path $Work 'bin-mcp'
+    Invoke-Case -Name 'mcponly-install' -WantExit 0 -WantOut 'installed agentbus2-mcponly 9.0.1 to' -Env @{} -InstallDir $mcpDir -Before $null -After {
+        ((& (Join-Path $mcpDir 'agentbus2-mcponly.exe') version) -eq '9.0.1') -and -not (Test-Path -LiteralPath (Join-Path $mcpDir 'agentbus2.exe')) -and ((Get-UserPathEntries) -contains $mcpDir)
+    } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly') -WantNotOut 'agentbus2 init'
+    Invoke-Case -Name 'mcponly-prints-next-step' -WantExit 0 -WantOut 'next: agentbus2-mcponly help (connect this agent to an agentbus2 server)' -Env @{} -InstallDir $mcpDir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-rerun' -WantExit 0 -WantOut 'reinstalled: agentbus2-mcponly 9.0.1 was already installed' -Env @{} -InstallDir $mcpDir -Before $null -After {
+        (@(Get-UserPathEntries | Where-Object { $_ -eq $mcpDir }).Count -eq 1) -and (@(Get-ChildItem -LiteralPath $mcpDir -Filter 'agentbus2-mcponly.exe.old-*').Count -eq 0)
+    } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly') -WantNotOut 'upgraded'
+    Invoke-Case -Name 'mcponly-lowercase-flag' -WantExit 0 -WantOut 'installed agentbus2-mcponly 9.0.1 to' -Env @{} -InstallDir (Join-Path $Work 'bin-mcp2') -Before $null -After {
+        (& (Join-Path (Join-Path $Work 'bin-mcp2') 'agentbus2-mcponly.exe') version) -eq '9.0.1'
+    } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-mcponly')
+    Invoke-Case -Name 'mcponly-pinned-version' -WantExit 0 -WantOut 'installed agentbus2-mcponly 9.0.0 to' -Env @{ 'AGENTBUS2_VERSION' = 'v9.0.0' } -InstallDir (Join-Path $Work 'bin-mcp3') -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    # The documented piped form with an argument:
+    # & ([scriptblock]::Create((irm .../install.ps1))) -McpOnly
+    $mcpSb = Join-Path $Work 'bin-mcp-sb'
+    Invoke-Case -Name 'mcponly-scriptblock' -WantExit 0 -WantOut 'installed agentbus2-mcponly 9.0.1 to' -Env @{} -InstallDir $mcpSb -Before $null -After {
+        ((& (Join-Path $mcpSb 'agentbus2-mcponly.exe') version) -eq '9.0.1') -and -not (Test-Path -LiteralPath (Join-Path $mcpSb 'agentbus2.exe'))
+    } -Mode 'scriptblock' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'scriptblock-without-argument-installs-full' -WantExit 0 -WantOut 'installed agentbus2 9.0.1 to' -Env @{} -InstallDir (Join-Path $Work 'bin-sb-full') -Before $null -After {
+        (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin-sb-full') 'agentbus2.exe')) -and -not (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin-sb-full') 'agentbus2-mcponly.exe'))
+    } -Mode 'scriptblock' -ScriptName 'install.ps1'
+    # Upgrading agentbus2-mcponly.exe while it runs, beside a full install: the
+    # running file is renamed aside; agentbus2.exe (byte for byte) and a planted
+    # agentbus2.exe.old-1234abcd are untouched.
+    $besideDir = Join-Path $Work 'bin-beside'
+    $script:BesideHash = $null; $script:BesideRunning = $null
+    Invoke-Case -Name 'mcponly-upgrade-beside-full' -WantExit 0 -WantOut 'upgraded from 9.0.0: restart' -Env @{} -InstallDir $besideDir -Before {
+        New-Item -ItemType Directory -Force -Path $besideDir | Out-Null
+        New-Stub '1.0.0' (Join-Path $besideDir 'agentbus2.exe')
+        Set-Content -LiteralPath (Join-Path $besideDir 'agentbus2.exe.old-1234abcd') -Value 'planted'
+        New-Stub '9.0.0' (Join-Path $besideDir 'agentbus2-mcponly.exe')
+        $script:BesideHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $besideDir 'agentbus2.exe')).Hash
+        $script:BesideRunning = Start-Process -FilePath (Join-Path $besideDir 'agentbus2-mcponly.exe') -ArgumentList 'sleep' -PassThru @Hidden
+    } -After {
+        ((& (Join-Path $besideDir 'agentbus2-mcponly.exe') version) -eq '9.0.1') -and
+        (@(Get-ChildItem -LiteralPath $besideDir -Filter 'agentbus2-mcponly.exe.old-*').Count -eq 1) -and
+        ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $besideDir 'agentbus2.exe')).Hash -eq $script:BesideHash) -and
+        (Test-Path -LiteralPath (Join-Path $besideDir 'agentbus2.exe.old-1234abcd')) -and
+        ((Get-Content -LiteralPath (Join-Path $besideDir 'agentbus2.exe.old-1234abcd')) -eq 'planted')
+    } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    if ($script:BesideRunning) { Stop-Process -Id $script:BesideRunning.Id -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500 }
+    # The full installer, in turn, sweeps only agentbus2.exe.old-*: the leftover
+    # of the MCP-only client stays, and agentbus2-mcponly.exe is not replaced.
+    $script:McpBeforeHash = $null
+    Invoke-Case -Name 'full-install-leaves-mcponly-alone' -WantExit 0 -WantOut 'upgraded from 1.0.0: restart' -Env @{} -InstallDir $besideDir -Before {
+        $script:McpBeforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $besideDir 'agentbus2-mcponly.exe')).Hash
+    } -After {
+        ((& (Join-Path $besideDir 'agentbus2.exe') version) -eq '9.0.1') -and
+        ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $besideDir 'agentbus2-mcponly.exe')).Hash -eq $script:McpBeforeHash) -and
+        (@(Get-ChildItem -LiteralPath $besideDir -Filter 'agentbus2-mcponly.exe.old-*').Count -eq 1) -and
+        (-not (Test-Path -LiteralPath (Join-Path $besideDir 'agentbus2.exe.old-1234abcd')))
+    }
+    Invoke-Case -Name 'mcponly-tampered-zip' -WantExit 1 -WantOut 'checksum mismatch for agentbus2-mcponly-v9.0.1-windows-' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/tampered-zip" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-sums-missing-entry' -WantExit 1 -WantOut 'SHA256SUMS has no entry for agentbus2-mcponly-v9.0.1-windows-' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/missing-entry" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-without-windows-build' -WantExit 1 -WantOut 'release v9.0.1 has no Windows build: agentbus2-mcponly-v9.0.1-windows-' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/no-windows-build" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly') -WantNotOut 'download failed'
+    Invoke-Case -Name 'mcponly-binary-does-not-run' -WantExit 1 -WantOut 'agentbus2-mcponly.exe does not run' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/broken-exe" } -InstallDir (Join-Path $Work 'bin-mcp-broken') -Before $null -After { -not (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin-mcp-broken') 'agentbus2-mcponly.exe')) } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-install-path-is-directory' -WantExit 1 -WantOut 'agentbus2-mcponly.exe is a directory' -Env @{} -InstallDir (Join-Path $Work 'dirbin-mcp') -Before { New-Item -ItemType Directory -Force -Path (Join-Path (Join-Path $Work 'dirbin-mcp') 'agentbus2-mcponly.exe') | Out-Null } -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-failed-run-leaves-no-temp' -WantExit 1 -WantOut 'checksum mismatch' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/tampered-zip" } -InstallDir $dir -Before $null -After { @(Get-ChildItem ([IO.Path]::GetTempPath()) -Filter 'agentbus2-install-*' -Directory).Count -eq 0 } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
     Invoke-Case 'placeholder-key' 1 'no embedded release key' @{} $dir $null $null 'file' 'install-placeholder.ps1'
     Invoke-Case 'install-path-is-directory' 1 'agentbus2.exe is a directory' @{} (Join-Path $Work 'dirbin') { New-Item -ItemType Directory -Force -Path (Join-Path (Join-Path $Work 'dirbin') 'agentbus2.exe') | Out-Null } $null
     Invoke-Case 'trailing-backslash-installs' 0 'installed agentbus2 9.0.1 to' @{} "$Work\bin4\\\" $null {
