@@ -1,9 +1,11 @@
-.PHONY: build build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates check-gates-selftest verify docker-image docker-smoke vet-cross release-check release-lint release-install-check vet-tags
+.PHONY: build build-mcponly build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates check-gates-selftest verify docker-image docker-smoke vet-cross release-check release-lint release-install-check vet-tags
 export CGO_ENABLED=0
 PKGS_UNIT = $$(go list ./... | grep -v '^github.com/ericfitz/agentbus2/internal/conformance')
 
 build:       ## Build the agentbus2 binary (no cgo), as the release build will
 	go build -trimpath -o agentbus2 .
+build-mcponly: ## Build the agentbus2-mcponly binary (no cgo; the MCP-only client)
+	go build -trimpath -o agentbus2-mcponly ./cmd/agentbus2-mcponly
 build-all:   ## Compile every package
 	go build ./...
 vet:
@@ -62,6 +64,8 @@ release-install-check: ## The installer matrix in Docker (RELEASE_INSTALL_ARGS=-
 verify:      ## Done gate (CLAUDE.md): build, vet, gofmt, lint, tidy go.mod, generated-code freshness, unit tests, conformance suites on both engines, gate checks
 	$(MAKE) build
 	$(MAKE) build-all
+	$(MAKE) build-mcponly
+	bash scripts/m10-exit-checks.sh --deps-only
 	$(MAKE) vet
 	$(MAKE) fmt-check
 	$(MAKE) lint

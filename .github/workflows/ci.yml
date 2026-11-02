@@ -70,6 +70,7 @@ jobs:
       - run: bash scripts/m6-exit-checks.sh --deps-only
       - run: bash scripts/m7-exit-checks.sh --deps-only
       - run: bash scripts/m8-exit-checks.sh --deps-only
+      - run: bash scripts/m10-exit-checks.sh --deps-only
       - run: make check-gates-selftest
   m9-exit-selftest: # the release tooling's self-test: real-repo invariants plus four mutations in a throwaway worktree (minutes; builds Go; not part of verify)
     runs-on: ubuntu-latest

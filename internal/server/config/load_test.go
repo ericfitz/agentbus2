@@ -3,6 +3,7 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -204,5 +205,30 @@ func TestIssuerSubjectsRefused(t *testing.T) {
 	_, err := Load(writeFile(t, body), nil, nil)
 	if err == nil || !strings.Contains(err.Error(), `unknown field "subjects"`) {
 		t.Fatalf("Load = %v, want an unknown field \"subjects\"", err)
+	}
+}
+
+// TestLoadIgnoresClientServerVariable is a regression pin, not a RED test: it
+// passes before the MCP-only client exists, because the server reads only the
+// AGENTBUS2_SERVER_ prefix plus a setting name. AGENTBUS2_SERVER is the
+// client's variable (open note: mcp-only-client 9; Review Focus 5) and must
+// change nothing when it is in the server's environment.
+func TestLoadIgnoresClientServerVariable(t *testing.T) {
+	flags := Overrides{"sqlite": "/x.db"}
+	want, err := Load("", nil, flags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := Load("", []string{"AGENTBUS2_SERVER=http://h:1"}, flags)
+	if err != nil {
+		t.Fatalf("Load with AGENTBUS2_SERVER: %v", err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("AGENTBUS2_SERVER changed the configuration:\n got %+v\nwant %+v", got, want)
+	}
+	d := Default()
+	d.SQLite = "/x.db"
+	if !reflect.DeepEqual(got, d) {
+		t.Errorf("loaded settings differ from Default() plus sqlite:\n got %+v\nwant %+v", got, d)
 	}
 }

@@ -1043,6 +1043,33 @@ block_agent_status_rules_fire() {
 		./internal/conformance/bus/ '^TestAgentStatusAccess$/sqlite' TestAgentStatusAccess/sqlite/human_set_refused
 }
 
+# --- 33. m10-deps-rule-fires ----------------------------------------------------------
+# Docker-free. scripts/m10-exit-checks.sh --deps-only guards the MCP-only binary:
+# the clean tree passes with 13 modules, a probe that pulls local mode, a Store
+# engine or an unlisted module into the binary fails naming it, and the one
+# allowed core edge (internal/core/notify) stays allowed.
+# open note: mcp-only-client 9
+block_m10_deps_rule_fires() {
+	local label=m10-deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b33z.log" rc
+	begin
+	if bash "$wt/scripts/m10-exit-checks.sh" --deps-only >"$log" 2>&1; then
+		grep -qF 'deps_ok=1' "$log" || problem "$label" "clean tree: exit 0 without deps_ok=1"
+		grep -qF 'modules=13' "$log" || problem "$label" "clean tree: output lacks modules=13: $(tail -n 3 "$log" | tr '\n' ' ')"
+	else
+		problem "$label" "clean tree: expected exit 0: $(tail -n 3 "$log" | tr '\n' ' ')"
+	fi
+	deps_probe "$label" internal/mcpcli/probe_m10.go "$m/internal/client/localmode" "deps_violation=$m/internal/client/localmode [rule transitive]" m10-exit-checks.sh
+	deps_probe "$label" internal/client/probe_m10.go "$m/internal/store/sqlite" "deps_violation=$m/internal/store/sqlite [rule transitive]" m10-exit-checks.sh
+	deps_probe "$label" internal/mcpcli/probe_m10.go github.com/jmoiron/sqlx "module_violation=github.com/jmoiron/sqlx" m10-exit-checks.sh
+	printf 'package mcpcli\n\nimport _ "%s"\n' "$m/internal/core/notify" >"$wt/internal/mcpcli/probe_m10.go"
+	rc=0
+	bash "$wt/scripts/m10-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
+	if [ "$rc" -ne 0 ]; then problem "$label" "internal/core/notify probe: exit $rc, expected 0: $(tail -n 3 "$log" | tr '\n' ' ')"; fi
+	rm -f "$wt/internal/mcpcli/probe_m10.go"
+	finish "$label"
+	revert
+}
+
 block_skip_in_wiring
 block_unit_leak
 block_gen_edited
@@ -1075,6 +1102,7 @@ block_access_rule_sites_fires
 block_postgres_budget_physical_measure
 block_eviction_message_floor_removed
 block_agent_status_rules_fire
+block_m10_deps_rule_fires
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-gates-selftest: FAILED"
