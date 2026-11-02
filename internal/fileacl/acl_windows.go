@@ -53,7 +53,11 @@ func OwnerOnly(path string) error {
 // CheckOwnerOnly refuses a file whose DACL is NULL or holds an access-allowed
 // entry for a SID other than the current user, LocalSystem (S-1-5-18) and
 // BUILTIN\Administrators (S-1-5-32-544), Windows' root, which reads a 0600
-// file on Unix too. It follows a symlink to its target.
+// file on Unix too. It follows a symlink to its target. Only those two
+// refusals match ErrExposed; any other failure (a missing file, a token or
+// security-descriptor read error) is returned as is. The DACL is read by path
+// and the caller opens the file afterwards, a check-then-read window that is
+// acceptable for a file the user names.
 // open note: mcp-only-client 5
 func CheckOwnerOnly(path string) error {
 	user, err := windows.GetCurrentProcessToken().GetTokenUser()
@@ -77,7 +81,7 @@ func CheckOwnerOnly(path string) error {
 		return err
 	}
 	if dacl == nil {
-		return fmt.Errorf("%s has a NULL DACL, which grants access to everyone; restrict it to the current user: icacls \"%s\" /inheritance:r /grant:r \"%%USERNAME%%:F\"", path, path)
+		return exposedError(fmt.Sprintf("%s has a NULL DACL, which grants access to everyone; restrict it to the current user: icacls \"%s\" /inheritance:r /grant:r \"%%USERNAME%%:F\"", path, path))
 	}
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
 		var ace *windows.ACCESS_ALLOWED_ACE
@@ -91,7 +95,13 @@ func CheckOwnerOnly(path string) error {
 		if sid.Equals(user.User.Sid) || sid.Equals(system) || sid.Equals(admins) {
 			continue
 		}
-		return fmt.Errorf("%s grants access to %s; restrict it to the current user: icacls \"%s\" /inheritance:r /grant:r \"%%USERNAME%%:F\"", path, sid.String(), path)
+		return exposedError(fmt.Sprintf("%s grants access to %s; restrict it to the current user: icacls \"%s\" /inheritance:r /grant:r \"%%USERNAME%%:F\"", path, sid.String(), path))
 	}
 	return nil
 }
+
+// exposedError carries its message unchanged and matches ErrExposed.
+type exposedError string
+
+func (e exposedError) Error() string        { return string(e) }
+func (e exposedError) Is(target error) bool { return target == ErrExposed }

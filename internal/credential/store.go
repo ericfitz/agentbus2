@@ -90,29 +90,52 @@ func (e ownerOnlyError) Is(target error) bool { return target == ErrNotOwnerOnly
 // LoadFile reads the private key at path, a file the caller names (the MCP-only
 // binary's -credential): a symlink is followed, so a mounted secret works, and
 // the target must be a regular file that only its owner can read (Unix mode
-// 0600 or narrower; on Windows fileacl.CheckOwnerOnly).
+// 0600 or narrower; on Windows fileacl.CheckOwnerOnly, read by path before the
+// file is opened again, a window acceptable for a file the user names).
 func LoadFile(path string) (crypto.Signer, keys.Algorithm, error) {
+	// A missing or non-regular path gets the same text on every OS, before the
+	// owner-only check; only the check's policy refusals are ErrNotOwnerOnly.
+	f, _, err := openRegular(path)
+	if err != nil {
+		return nil, "", err
+	}
+	_ = f.Close()
 	if err := fileacl.CheckOwnerOnly(path); err != nil {
-		return nil, "", ownerOnlyError("credential: " + err.Error())
+		if errors.Is(err, fileacl.ErrExposed) {
+			return nil, "", ownerOnlyError("credential: " + err.Error())
+		}
+		return nil, "", fmt.Errorf("credential: check %s: %w", path, err)
 	}
 	return loadFile(path)
+}
+
+// openRegular opens path (following a symlink) and refuses anything that is
+// not a regular file; the errors are the same on every OS.
+func openRegular(path string) (*os.File, os.FileInfo, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("credential: open %s: %w", path, err)
+	}
+	fi, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, nil, fmt.Errorf("credential: stat %s: %w", path, err)
+	}
+	if !fi.Mode().IsRegular() {
+		_ = f.Close()
+		return nil, nil, fmt.Errorf("credential: %s is not a regular file", path)
+	}
+	return f, fi, nil
 }
 
 // loadFile reads and parses the private key at path, refusing a non-regular
 // file, a Unix mode wider than 0600 and an oversized or unparseable file.
 func loadFile(path string) (crypto.Signer, keys.Algorithm, error) {
-	f, err := os.Open(path)
+	f, fi, err := openRegular(path)
 	if err != nil {
-		return nil, "", fmt.Errorf("credential: open %s: %w", path, err)
+		return nil, "", err
 	}
 	defer func() { _ = f.Close() }()
-	fi, err := f.Stat()
-	if err != nil {
-		return nil, "", fmt.Errorf("credential: stat %s: %w", path, err)
-	}
-	if !fi.Mode().IsRegular() {
-		return nil, "", fmt.Errorf("credential: %s is not a regular file", path)
-	}
 	if runtime.GOOS != "windows" && fi.Mode().Perm()&^0o600 != 0 {
 		msg := fmt.Sprintf("credential: %s has mode %04o and must be mode 0600 (chmod 600 it)", path, fi.Mode().Perm())
 		return nil, "", ownerOnlyError(msg)

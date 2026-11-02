@@ -3,6 +3,7 @@
 package fileacl
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -74,7 +75,11 @@ func TestCheckOwnerOnly(t *testing.T) {
 		t.Fatal(err)
 	}
 	err = CheckOwnerOnly(path)
-	if err == nil || !strings.Contains(err.Error(), "S-1-1-0") {
+	if err == nil || !strings.Contains(err.Error(), "S-1-1-0") || !errors.Is(err, ErrExposed) {
 		t.Fatalf("with Everyone: %v", err)
+	}
+	// A failure to read the security of a missing file is not a policy refusal.
+	if err := CheckOwnerOnly(filepath.Join(filepath.Dir(path), "absent")); err == nil || errors.Is(err, ErrExposed) {
+		t.Fatalf("missing file: %v", err)
 	}
 }

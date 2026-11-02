@@ -106,3 +106,15 @@ func TestLoadFileRefusesEveryoneACL(t *testing.T) {
 		t.Fatalf("with Everyone: %v", err)
 	}
 }
+
+// TestLoadFileMissingNamesPath: a missing path and a directory get the Unix
+// text (the path is named) and are not ErrNotOwnerOnly.
+func TestLoadFileMissingNamesPath(t *testing.T) {
+	dir := t.TempDir()
+	for name, p := range map[string]string{"missing": filepath.Join(dir, "absent.pem"), "directory": dir} {
+		_, _, err := LoadFile(p)
+		if err == nil || !strings.Contains(err.Error(), p) || errors.Is(err, ErrNotOwnerOnly) {
+			t.Fatalf("%s: err %v, want an error naming %s that is not ErrNotOwnerOnly", name, err, p)
+		}
+	}
+}
