@@ -1053,12 +1053,17 @@ block_agent_status_rules_fire() {
 # open note: mcp-only-client 9
 M10_LEAVES=(1-check-reach 2-register-from-token-file 3-register-again 4-check-identity 5-config 6-serve-stdio 7-register-without-token 8-check-unregistered-key 9-no-local-mode)
 
-# m10_log FILE: a synthetic e2e log with the nine TestMCPOnly leaf lines.
+M10_HELP_LEAVES=(overview connect register configure verify troubleshoot)
+
+# m10_log FILE: a synthetic e2e log with the nine TestMCPOnly and the six
+# TestHelpExamples leaf lines.
 m10_log() {
 	local f="$1" n
 	: >"$f"
 	printf '=== RUN   TestMCPOnly\n--- PASS: TestMCPOnly (2.00s)\n' >>"$f"
 	for n in "${M10_LEAVES[@]}"; do printf '    --- PASS: TestMCPOnly/%s (0.00s)\n' "$n" >>"$f"; done
+	printf '=== RUN   TestHelpExamples\n--- PASS: TestHelpExamples (1.00s)\n' >>"$f"
+	for n in "${M10_HELP_LEAVES[@]}"; do printf '    --- PASS: TestHelpExamples/%s (0.00s)\n' "$n" >>"$f"; done
 	printf 'PASS\nok  \tgithub.com/ericfitz/agentbus2/internal/e2e\t25.000s\n' >>"$f"
 }
 
@@ -1098,6 +1103,7 @@ block_m10_deps_rule_fires() {
 	if [ "$rc" -ne 2 ]; then problem "$label" "empty log: exit $rc, expected 2"; fi
 	m10_log "$tmp/m10.log"
 	m10_expect "$label" "good log" 0 'mcponly=9'
+	grep -qF 'help=6' "$tmp/b33l.log" || problem "$label" "good log: no help=6"
 	grep -qF 'deps_ok=1' "$tmp/b33l.log" || problem "$label" "good log: no deps_ok=1"
 	grep -vF 'TestMCPOnly/5-config' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
 	m10_expect "$label" "deleted leaf line" 1 'mcponly=8'
@@ -1107,6 +1113,16 @@ block_m10_deps_rule_fires() {
 	m10_log "$tmp/m10.log"
 	sed 's/TestMCPOnly\/7-register-without-token /TestMCPOnly\/6-serve-stdio /' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
 	m10_expect "$label" "a repeated leaf line in place of a missing one" 1 'mcponly=8'
+	m10_log "$tmp/m10.log"
+	sed 's/^ok  .*internal\/e2e.*$/FAIL\tgithub.com\/ericfitz\/agentbus2\/internal\/e2e\t25.000s/' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
+	grep -vF 'TestHelpExamples/verify' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
+	m10_expect "$label" "deleted help leaf line" 1 'help=5'
+	m10_log "$tmp/m10.log"
+	sed 's/--- PASS: TestHelpExamples\/register/--- FAIL: TestHelpExamples\/register/' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
+	m10_expect "$label" "failed help leaf line" 1 'fail=1'
+	m10_log "$tmp/m10.log"
+	sed 's/TestHelpExamples\/connect /TestHelpExamples\/overview /' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
+	m10_expect "$label" "a repeated help leaf line in place of a missing one" 1 'help=5'
 	m10_log "$tmp/m10.log"
 	sed 's/^ok  .*internal\/e2e.*$/FAIL\tgithub.com\/ericfitz\/agentbus2\/internal\/e2e\t25.000s/' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
 	m10_expect "$label" "a package FAIL with every leaf passing" 1 'pkg_ok=0'

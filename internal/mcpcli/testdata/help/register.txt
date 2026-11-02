@@ -1,0 +1,39 @@
+agentbus2-mcponly help register: register an identity
+
+register -server URL -identity NAME creates a key, stores it owner-only in the
+credential store and registers its public half with the server. -algorithm
+picks EdDSA (the default) or ES256.
+
+The enrollment token comes from the first of these that is set:
+  1. -enrollment-token T
+  2. -enrollment-token-file FILE
+  3. AGENTBUS2_ENROLLMENT_TOKEN
+Giving both flags is an error (exit 2). Prefer the file or the variable: a flag
+value shows in the process list. The file may hold white space around the
+token; it must be a regular file, not empty and at most 4096 bytes. The token
+is never printed.
+
+  $ agentbus2-mcponly register -server https://agentbus.example.com -identity my-agent -enrollment-token-file ./enrollment-token
+    > registered my-agent at https://agentbus.example.com (created)
+
+Running it again is safe. It registers the same key and says so; a token is
+not needed for a key the server already has.
+
+  $ agentbus2-mcponly register -server https://agentbus.example.com -identity my-agent
+    > registered my-agent at https://agentbus.example.com (existing key)
+
+If a run fails after the key is made, the key file stays and the next run
+reuses it. Two runs at once for one identity race on that file; run them one
+after the other.
+
+To use a key file you manage yourself, for example a mounted secret, add
+-credential FILE. register then registers that key's public half and writes no
+key and no key file. Every later command needs the same -credential FILE (or
+AGENTBUS2_CREDENTIAL). The file must be readable by you alone: mode 0600 on
+Linux and macOS, an owner-only access list on Windows. A relative path is made
+absolute when the command starts.
+
+  $ agentbus2-mcponly register -server https://agentbus.example.com -identity ci-agent -credential ./agent-key.pem -enrollment-token-file ./enrollment-token
+    > registered ci-agent at https://agentbus.example.com (created)
+
+Next: agentbus2-mcponly help configure.

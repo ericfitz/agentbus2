@@ -6,9 +6,11 @@
 # non-empty (exit 2 naming the path). The script prints
 #   mcponly=<n>  the nine leaves with a `--- PASS: TestMCPOnly/<name> (` line,
 #                each name counted once
+#   help=<n>     the six leaves with a `--- PASS: TestHelpExamples/<name> (` line,
+#                each name counted once
 #   fail=<n>     every `--- FAIL` line
 #   pkg_ok=<0|1> 1 when the package's `ok` line is present and no `FAIL` line is
-# then runs --deps-only, and exits 1 unless mcponly=9, fail=0, pkg_ok=1 and the
+# then runs --deps-only, and exits 1 unless mcponly=9, help=6, fail=0, pkg_ok=1 and the
 # dependency rules hold.
 # open note: mcp-only-client 9: --deps-only runs inside `make verify` (seconds,
 # no Docker); the m4 to m8 --deps-only runs stay in the gates-selftest job.
@@ -51,6 +53,10 @@ ALLOWED_MODULES=(
 
 usage() { echo "usage: $0 <e2e.log> | --deps-only" >&2; }
 
+# The leaf names of internal/e2e's TestHelpExamples, one per help text with an
+# example (scripts/check-gates-selftest.sh block 33 keeps the same list).
+HELP_LEAVES=(overview connect register configure verify troubleshoot)
+
 # The leaf names of internal/e2e's TestMCPOnly (scripts/check-gates-selftest.sh
 # block 33 keeps the same list).
 LEAVES=(1-check-reach 2-register-from-token-file 3-register-again 4-check-identity 5-config 6-serve-stdio 7-register-without-token 8-check-unregistered-key 9-no-local-mode)
@@ -71,17 +77,24 @@ if [ "$1" != "--deps-only" ]; then
 			mcponly=$((mcponly + 1))
 		fi
 	done
+	help=0
+	for name in "${HELP_LEAVES[@]}"; do
+		if grep -qE "^[[:space:]]+--- PASS: TestHelpExamples/$name \\(" "$log"; then
+			help=$((help + 1))
+		fi
+	done
 	fail="$(grep -c -E '^[[:space:]]*--- FAIL' "$log" || true)"
 	pkg_ok=0
 	if grep -qE '^ok[[:space:]]+github\.com/ericfitz/agentbus2/internal/e2e([[:space:]]|$)' "$log" && ! grep -qE '^FAIL([[:space:]]|$)' "$log"; then
 		pkg_ok=1
 	fi
 	echo "mcponly=$mcponly"
+	echo "help=$help"
 	echo "fail=$fail"
 	echo "pkg_ok=$pkg_ok"
 	rc=0
-	if [ "$mcponly" -ne "${#LEAVES[@]}" ] || [ "$fail" -ne 0 ] || [ "$pkg_ok" -ne 1 ]; then
-		echo "m10-exit-checks: want mcponly=${#LEAVES[@]}, fail=0 and pkg_ok=1" >&2
+	if [ "$mcponly" -ne "${#LEAVES[@]}" ] || [ "$help" -ne "${#HELP_LEAVES[@]}" ] || [ "$fail" -ne 0 ] || [ "$pkg_ok" -ne 1 ]; then
+		echo "m10-exit-checks: want mcponly=${#LEAVES[@]}, help=${#HELP_LEAVES[@]}, fail=0 and pkg_ok=1" >&2
 		rc=1
 	fi
 	bash "${BASH_SOURCE[0]}" --deps-only || rc=1

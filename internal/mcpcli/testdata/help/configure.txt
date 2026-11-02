@@ -1,0 +1,41 @@
+agentbus2-mcponly help configure: the MCP server entry for the agent
+
+config prints the entry for the agent's MCP server configuration, then the same
+command as one shell line. It reads this machine's configuration and contacts
+no server, so you may run it any number of times.
+
+  $ agentbus2-mcponly config -server https://agentbus.example.com -identity my-agent
+    > {
+    >   "mcpServers": {
+    >     "agentbus2": {
+    >       "command": "<command>",
+    >       "args": [
+    >         "serve",
+    >         "-server",
+    >         "https://agentbus.example.com",
+    >         "-identity",
+    >         "my-agent"
+    >       ]
+    >     }
+    >   }
+    > }
+    > command line: <command> serve -server https://agentbus.example.com -identity my-agent
+
+Paste the "agentbus2" entry into the agent's MCP server configuration, or give
+the command line to the agent's add-MCP-server command. command is the full
+path of this binary, so the agent needs nothing on its PATH. The entry names
+the server and identity, so it does not depend on the agent's working
+directory or environment.
+
+With -credential FILE the entry carries the absolute path of the key file; with
+a profile other than default it carries -profile NAME.
+
+  $ agentbus2-mcponly config -server https://agentbus.example.com -identity my-agent -credential ./agent-key.pem
+    > command line: <command> serve -server https://agentbus.example.com -identity my-agent -credential <path>
+
+serve is what the agent runs; you do not run it by hand. It refuses an identity
+equal to your operating system login name (exit 1), and keeps standard output
+for the protocol. A problem with the server or identity shows up as an error on
+the register tool, not at start-up. Run check before you start the agent.
+
+Next: agentbus2-mcponly help verify.

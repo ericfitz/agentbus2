@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/version"
@@ -43,21 +44,17 @@ func commandNames() []string {
 // usage on stderr; help and version print to stdout and exit 0.
 func Main(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		_, _ = fmt.Fprintln(stderr, usageLine)
+		_, _ = fmt.Fprint(stderr, helpOverview)
 		return 2
 	}
 	switch args[0] {
-	case "help", "-h", "--help", "version", "-v", "--version":
+	case "help", "-h", "--help":
+		return runHelp(args, stdout, stderr)
+	case "version", "-v", "--version":
 		if len(args) > 1 {
 			_, _ = fmt.Fprintf(stderr, "%s %s: unexpected argument %q\n%s\n", Binary, args[0], args[1], usageLine)
 			return 2
 		}
-	}
-	switch args[0] {
-	case "help", "-h", "--help":
-		_, _ = fmt.Fprintln(stdout, usageLine)
-		return 0
-	case "version", "-v", "--version":
 		_, _ = fmt.Fprintln(stdout, version.Version)
 		return 0
 	}
@@ -69,9 +66,42 @@ func Main(ctx context.Context, args []string, environ []string, stdin io.Reader,
 	return run(ctx, args[1:], environ, stdin, stdout, stderr)
 }
 
+// runHelp prints the overview or one topic; more than one topic is exit 2 with
+// the usage, and an unknown topic (the empty string included) is exit 2 naming
+// the topics.
+func runHelp(args []string, stdout, stderr io.Writer) int {
+	if len(args) > 2 {
+		_, _ = fmt.Fprintf(stderr, "%s %s: unexpected argument %q\n%s\n", Binary, args[0], args[2], usageLine)
+		return 2
+	}
+	topic := ""
+	if len(args) == 2 {
+		topic = args[1]
+	}
+	text, ok := Help(topic)
+	if ok && len(args) == 2 && topic == "" {
+		ok = false
+	}
+	if !ok {
+		_, _ = fmt.Fprintf(stderr, "%s help: unknown topic %q; topics: %s\n", Binary, topic, strings.Join(topics, ", "))
+		return 2
+	}
+	_, _ = fmt.Fprint(stdout, text)
+	return 0
+}
+
+// newFlagSet is the flag set of command name. Its usage, printed for -h and for
+// a flag error, is the flags and then the help topic to read.
 func newFlagSet(name string, stderr io.Writer) *flag.FlagSet {
 	fs := flag.NewFlagSet(Binary+" "+name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
+	fs.Usage = func() {
+		_, _ = fmt.Fprintf(stderr, "usage: %s %s [flags]\n", Binary, name)
+		fs.PrintDefaults()
+		if topic, ok := seeTopic[name]; ok {
+			_, _ = fmt.Fprintf(stderr, "see: %s help %s\n", Binary, topic)
+		}
+	}
 	return fs
 }
 

@@ -5,6 +5,7 @@ import (
 	"context"
 	"os/user"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -21,18 +22,31 @@ func run(args []string, environ []string) (code int, stdout, stderr string) {
 func firstLine(s string) string { return strings.SplitN(s, "\n", 2)[0] }
 
 func TestMainDispatch(t *testing.T) {
-	code, out, errs := run(nil, nil)
-	if code != 2 || out != "" || firstLine(errs) != usageLine {
-		t.Errorf("no args: code %d, stdout %q, stderr %q", code, out, errs)
-	}
-	code, out, errs = run([]string{"bogus"}, nil)
+	code, out, errs := run([]string{"bogus"}, nil)
 	if code != 2 || out != "" || !strings.Contains(errs, `agentbus2-mcponly: unknown command "bogus"`) {
 		t.Errorf("bogus: code %d, stdout %q, stderr %q", code, out, errs)
 	}
+	overview, _ := Help("")
+	code, out, errs = run(nil, nil)
+	if code != 2 || out != "" || errs != overview {
+		t.Errorf("no args: code %d, stdout %q, stderr %q; want the overview on stderr", code, out, errs)
+	}
 	for _, a := range []string{"help", "-h", "--help"} {
 		code, out, errs = run([]string{a}, nil)
-		if code != 0 || firstLine(out) != usageLine || errs != "" {
+		if code != 0 || out != overview || errs != "" || firstLine(out) != usageLine {
 			t.Errorf("%s: code %d, stdout %q, stderr %q", a, code, out, errs)
+		}
+		verify, _ := Help("verify")
+		code, out, errs = run([]string{a, "verify"}, nil)
+		if code != 0 || out != verify || errs != "" {
+			t.Errorf("%s verify: code %d, stdout %q, stderr %q", a, code, out, errs)
+		}
+		for _, bad := range []string{"bogus", "", "overview"} {
+			code, out, errs = run([]string{a, bad}, nil)
+			want := "agentbus2-mcponly help: unknown topic " + strconv.Quote(bad) + "; topics: connect, register, configure, verify, protocol, troubleshoot\n"
+			if code != 2 || out != "" || errs != want {
+				t.Errorf("%s %q: code %d, stdout %q, stderr %q", a, bad, code, out, errs)
+			}
 		}
 	}
 	for _, a := range []string{"version", "-v", "--version"} {
@@ -44,9 +58,9 @@ func TestMainDispatch(t *testing.T) {
 }
 
 func TestHelpVersionRejectExtraArguments(t *testing.T) {
-	for _, args := range [][]string{{"help", "x"}, {"-h", "x"}, {"--help", "x"}, {"version", "x"}, {"-v", "x"}, {"--version", "x"}} {
+	for _, args := range [][]string{{"help", "verify", "x"}, {"-h", "verify", "x"}, {"--help", "bogus", "x"}, {"version", "x"}, {"-v", "x"}, {"--version", "x"}} {
 		code, out, errs := run(args, nil)
-		if code != 2 || out != "" || !strings.Contains(errs, "unexpected argument") || !strings.Contains(errs, usageLine) {
+		if code != 2 || out != "" || !strings.Contains(errs, "unexpected argument") || !strings.Contains(errs, `"x"`) || !strings.Contains(errs, usageLine) {
 			t.Errorf("%v: code %d, stdout %q, stderr %q", args, code, out, errs)
 		}
 	}

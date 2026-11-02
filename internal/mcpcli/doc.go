@@ -1,5 +1,5 @@
 // Package mcpcli holds the commands of agentbus2-mcponly: serve (the stdio MCP
-// server), register and version. It is vetted, linted and unit-tested like
+// server), register, check, config, help and version. It is vetted, linted and unit-tested like
 // internal/cli, and cmd/agentbus2-mcponly/main.go is the signal context and
 // os.Exit only.
 //

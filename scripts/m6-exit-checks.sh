@@ -134,6 +134,7 @@ words=(
 	internal/mcpserver/server.go
 	internal/cli/stophook.go
 	internal/cli/subagenthook.go
+	internal/mcpcli/help.go
 )
 hits=""
 for f in "${words[@]}"; do

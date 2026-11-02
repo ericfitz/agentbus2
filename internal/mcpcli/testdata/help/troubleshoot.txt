@@ -1,0 +1,61 @@
+agentbus2-mcponly help troubleshoot: each refusal and its fix
+
+The server cannot be reached. check prints FAIL reach and the command to retry
+after you fix the URL or start the server.
+
+  $ agentbus2-mcponly check -server http://127.0.0.1:1
+    > FAIL reach: <detail>; fix: check the URL and that the server is running, then agentbus2-mcponly check -server http://127.0.0.1:1
+    > agentbus2-mcponly: check: reach failed
+    (exit 1)
+
+has no local mode (exit 2). No server is known, so the command fell back to
+the built-in local profile, which this binary cannot open. Pass -server URL,
+set AGENTBUS2_SERVER, or register first so the profile records the server.
+
+  $ agentbus2-mcponly check -identity my-agent
+    > agentbus2-mcponly check: profile "default" is a local profile, and this binary has no local mode: pass -server URL, or use agentbus2
+    (exit 2)
+
+forbidden: registration requires an enrollment token (exit 1). The server only
+registers an identity that presents a token. Ask the administrator for one,
+save it in a file and name the file. The key made by the failed run is kept,
+so the second command registers it.
+
+  $ agentbus2-mcponly register -server https://agentbus.example.com -identity my-agent
+    > agentbus2-mcponly: forbidden: registration requires an enrollment token
+    (exit 1)
+
+  $ agentbus2-mcponly register -server https://agentbus.example.com -identity my-agent -enrollment-token-file ./enrollment-token
+    > registered my-agent at https://agentbus.example.com (created)
+
+Other forbidden texts: "enrollment token is invalid" means the token is wrong,
+expired, used up or bound to another name; ask for a new one. A text saying the
+identity "requires an enrollment token bound to it" or "is scoped" needs a
+token the administrator made for that exact name.
+
+unauthenticated at the token step (exit 1). The server does not know this key:
+the identity was never registered, or it is registered with another key. Run
+the register command the fix names (add -credential FILE if you use one). If
+the identity already holds another key, an administrator runs
+agentbus2 server admin reset-credential NAME first, and then you register.
+
+  $ agentbus2-mcponly check -server https://agentbus.example.com -identity ghost -credential ./agent-key.pem
+    > ok   credential: <path>
+    > FAIL token: unauthenticated: <message>; fix: agentbus2-mcponly register -server https://agentbus.example.com -identity ghost (if ghost already holds another key, an administrator runs agentbus2 server admin reset-credential ghost first)
+    > agentbus2-mcponly: check: token failed
+    (exit 1)
+
+not_registered. A call from the agent answers not_registered when the server
+no longer has the identity, for example an administrator removed it or the
+server's database was recreated, while the agent still holds a bearer for it.
+Register the identity again as for unauthenticated; check always asks for a new
+bearer, so it reports the same cause as unauthenticated at the token step.
+
+A key file readable by others. While other users can read a key file, check
+prints FAIL credential and no command signs in with it. On Linux and macOS run
+chmod 600 FILE. On Windows run icacls "FILE" /inheritance:r /grant:r
+"%USERNAME%:F" so that only you have access. The fix line of check names the
+right one for your system.
+
+Anything else. Run agentbus2-mcponly check and follow the first FAIL line's
+fix. Read agentbus2-mcponly help verify for what each step proves.

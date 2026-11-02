@@ -10,7 +10,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +20,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentbus2/internal/mcpcli"
 	"github.com/ericfitz/agentbus2/internal/mcpserver"
 )
 
@@ -250,4 +253,139 @@ func okLines(s string) int {
 		}
 	}
 	return n
+}
+
+// helpExample is one `$` line of a help text with the lines and exit code it
+// expects (open note: mcp-only-client 12).
+type helpExample struct {
+	line  string
+	wants []string
+	exit  int
+}
+
+// parseHelpExamples reads the example grammar of internal/mcpcli/help.go:
+// `  $ COMMAND`, then `    > OUTPUT` lines, then an optional `    (exit N)`.
+// A line that looks like an example but breaks the grammar fails the test.
+func parseHelpExamples(t *testing.T, text string) []helpExample {
+	t.Helper()
+	exitRE := regexp.MustCompile(`^    \(exit ([1-9][0-9]*)\)$`)
+	var out []helpExample
+	for _, l := range strings.Split(text, "\n") {
+		trimmed := strings.TrimSpace(l)
+		switch {
+		case strings.HasPrefix(l, "  $ "):
+			out = append(out, helpExample{line: strings.TrimSpace(l[4:])})
+		case strings.HasPrefix(l, "    > "):
+			if len(out) == 0 {
+				t.Fatalf("expected-output line before any example: %q", l)
+			}
+			e := &out[len(out)-1]
+			e.wants = append(e.wants, l[6:])
+		case exitRE.MatchString(l):
+			if len(out) == 0 {
+				t.Fatalf("exit line before any example: %q", l)
+			}
+			n, _ := strconv.Atoi(exitRE.FindStringSubmatch(l)[1])
+			out[len(out)-1].exit = n
+		case strings.HasPrefix(trimmed, "$") || strings.HasPrefix(trimmed, ">") || strings.HasPrefix(trimmed, "(exit"):
+			t.Fatalf("malformed example line: %q", l)
+		}
+	}
+	return out
+}
+
+// helpPattern turns an expected-output line into an anchored regexp: a <...>
+// token matches any non-empty text and everything else is literal.
+func helpPattern(want string) *regexp.Regexp {
+	tok := regexp.MustCompile(`<[^>]*>`)
+	var b strings.Builder
+	b.WriteString("^")
+	last := 0
+	for _, loc := range tok.FindAllStringIndex(want, -1) {
+		b.WriteString(regexp.QuoteMeta(want[last:loc[0]]))
+		b.WriteString(".+")
+		last = loc[1]
+	}
+	b.WriteString(regexp.QuoteMeta(want[last:]))
+	b.WriteString("$")
+	return regexp.MustCompile(b.String())
+}
+
+func writeFreshKey(t *testing.T, path string) {
+	t.Helper()
+	k, err := keys.Generate(keys.EdDSA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pemBytes, err := keys.EncodePrivatePEM(k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, pemBytes, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestHelpExamples runs every `$` line of the guided help against the e2e
+// server, each leaf in a fresh home, and requires the exit code and each `>`
+// line the text states. The leaf names are pinned by
+// scripts/m10-exit-checks.sh. The commands run with the home as their working
+// directory, so the repository's .local/agentbus2.json selects no profile.
+func TestHelpExamples(t *testing.T) {
+	url := fx.serverURL()
+	for _, leaf := range []string{"overview", "connect", "register", "configure", "verify", "troubleshoot"} {
+		t.Run(leaf, func(t *testing.T) {
+			topic := leaf
+			if leaf == "overview" {
+				topic = ""
+			}
+			text, ok := mcpcli.Help(topic)
+			if !ok {
+				t.Fatalf("no help text for %q", topic)
+			}
+			examples := parseHelpExamples(t, text)
+			if len(examples) == 0 {
+				t.Fatalf("%s has no example", leaf)
+			}
+			home := t.TempDir()
+			identity := "help-" + leaf
+			tokenFile := filepath.Join(home, "enrollment-token")
+			freshToken := func() {
+				if err := os.WriteFile(tokenFile, []byte(newEnrollmentToken(t)+"\n"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			writeFreshKey(t, filepath.Join(home, "agent-key.pem"))
+			if leaf == "configure" || leaf == "verify" {
+				freshToken()
+				r := runOnly(home, "register", "-server", url, "-identity", identity, "-enrollment-token-file", tokenFile)
+				if r.code != 0 {
+					t.Fatalf("setup register: exit %d, stdout %q, stderr %q", r.code, r.stdout, r.err)
+				}
+			}
+			subst := strings.NewReplacer("https://agentbus.example.com", url, "my-agent", identity)
+			for _, ex := range examples {
+				line := subst.Replace(ex.line)
+				if strings.Contains(ex.line, "./enrollment-token") {
+					freshToken() // a token registers once; every use of the file gets a new one
+				}
+				fields := strings.Fields(line)
+				if len(fields) < 2 || fields[0] != "agentbus2-mcponly" {
+					t.Fatalf("example %q does not start with agentbus2-mcponly", ex.line)
+				}
+				r := runOnly(home, fields[1:]...)
+				if r.code != ex.exit {
+					t.Errorf("$ %s: exit %d, want %d (stdout %q, stderr %q)", line, r.code, ex.exit, r.stdout, r.err)
+					continue
+				}
+				got := strings.Split(r.stdout+"\n"+r.err, "\n")
+				for _, w := range ex.wants {
+					re := helpPattern(subst.Replace(w))
+					if !slices.ContainsFunc(got, re.MatchString) {
+						t.Errorf("$ %s: no output line matches %q\nstdout %q\nstderr %q", line, w, r.stdout, r.err)
+					}
+				}
+			}
+		})
+	}
 }
