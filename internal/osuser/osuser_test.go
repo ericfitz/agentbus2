@@ -1,4 +1,4 @@
-package cli
+package osuser
 
 import (
 	"errors"
@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestOSUserName(t *testing.T) {
+func TestNameFrom(t *testing.T) {
 	tests := []struct {
 		name string
 		u    *user.User
@@ -21,9 +21,9 @@ func TestOSUserName(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got := osUserNameFrom(func() (*user.User, error) { return tc.u, tc.err })
+			got := NameFrom(func() (*user.User, error) { return tc.u, tc.err })
 			if got != tc.want {
-				t.Fatalf("osUserNameFrom = %q, want %q", got, tc.want)
+				t.Fatalf("NameFrom = %q, want %q", got, tc.want)
 			}
 		})
 	}

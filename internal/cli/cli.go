@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"path/filepath"
 
 	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/client/localmode"
@@ -94,7 +93,7 @@ func runMCP(ctx context.Context, args []string, environ []string, _ io.Reader, _
 		return 1
 	}
 	o.Local = localmode.Open
-	if err := mcpserver.Run(ctx, mcpserver.Options{Client: o}); err != nil {
+	if err := mcpserver.Run(ctx, mcpserver.Options{Client: o, Edition: mcpserver.EditionFull}); err != nil {
 		return fail(stderr, err)
 	}
 	return 0
@@ -105,14 +104,7 @@ func runMCP(ctx context.Context, args []string, environ []string, _ io.Reader, _
 // failure is left for mcpserver.Run to report; with no known login name there
 // is nothing to compare.
 func mcpIdentityGuard(o client.Options) error {
-	if osUserName() == "" {
-		return nil
-	}
-	r, err := client.Resolve(o)
-	if err != nil || !isOSLogin(r.Identity) {
-		return nil
-	}
-	return fmt.Errorf("agentbus2 mcp: identity %q is the OS login name, which is the human's; set the `identity` of profile %q in %s to another name, or pass -identity to `agentbus2 mcp` in the harness's MCP config", r.Identity, r.Profile.Name, filepath.Join(r.ConfigDir, "config.json"))
+	return mcpserver.IdentityGuard(o, osUserName(), "agentbus2 mcp")
 }
 
 // isOSLogin reports whether identity is the OS login name (Decision 16); with

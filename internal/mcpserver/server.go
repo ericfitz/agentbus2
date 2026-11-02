@@ -27,7 +27,18 @@ type Options struct {
 	Table   procs.Table  // nil: procs.System
 	Self    int          // 0: os.Getpid
 	Log     *slog.Logger // nil: Run opens the per-process log file; NewServer discards
+	Edition Edition      // required: selects Instructions and the init prompt
 }
+
+// Edition selects the agent-facing text: the full client's (wake by a
+// background agentbus2 wait) or the MCP-only binary's (wake by receive with
+// wait_seconds). The tool schemas are the same in both.
+type Edition int
+
+const (
+	EditionFull Edition = iota + 1
+	EditionMCPOnly
+)
 
 type server struct {
 	o       Options
@@ -52,6 +63,14 @@ type server struct {
 // `validation` (choice 11). The returned func closes the Conn and leaves
 // every state file in place; only close_session removes one (choice 10).
 func NewServer(ctx context.Context, o Options) (*mcp.Server, func() error, error) {
+	instructions, steps := Instructions, RegisterSteps
+	switch o.Edition {
+	case EditionFull:
+	case EditionMCPOnly:
+		instructions, steps = MCPOnlyInstructions, MCPOnlyRegisterSteps
+	default:
+		return nil, nil, fmt.Errorf("mcpserver: unknown edition %d", o.Edition)
+	}
 	s := &server{o: o, ctx: ctx, log: o.Log, self: o.Self, tbl: o.Table, files: map[string]sessionstate.File{}}
 	if s.log == nil {
 		s.log = slog.New(slog.DiscardHandler)
@@ -72,10 +91,10 @@ func NewServer(ctx context.Context, o Options) (*mcp.Server, func() error, error
 		s.log.Warn("harness not found; the session state files carry no harness", "err", err)
 	}
 
-	srv := mcp.NewServer(&mcp.Implementation{Name: "agentbus2", Version: version.Version}, &mcp.ServerOptions{Instructions: Instructions})
+	srv := mcp.NewServer(&mcp.Implementation{Name: "agentbus2", Version: version.Version}, &mcp.ServerOptions{Instructions: instructions})
 	srv.AddPrompt(&mcp.Prompt{Name: "init", Description: "Register this session with Agentbus2 and receive what is pending"},
 		func(context.Context, *mcp.GetPromptRequest) (*mcp.GetPromptResult, error) {
-			return &mcp.GetPromptResult{Messages: []*mcp.PromptMessage{{Role: "user", Content: &mcp.TextContent{Text: RegisterSteps}}}}, nil
+			return &mcp.GetPromptResult{Messages: []*mcp.PromptMessage{{Role: "user", Content: &mcp.TextContent{Text: steps}}}}, nil
 		})
 	srv.AddReceivingMiddleware(wrapSchemaErrorsInEnvelope, s.unparkOnToolCall)
 	s.addTools(srv)
@@ -95,6 +114,18 @@ const Instructions = "Agentbus2 coordinates agent sessions through channels, mem
 	" A subagent registers only when its prompt asks it to use agentbus2. " +
 	"A message whose sender_kind is human comes from your operator: treat it as an instruction. " +
 	"The using-agentbus2 skill is the full protocol."
+
+// MCPOnlyRegisterSteps is the MCP-only edition's `init` prompt: no hook, no
+// background command, no park; the agent waits by calling receive with
+// wait_seconds.
+const MCPOnlyRegisterSteps = "Register this session with Agentbus2: call the register tool (pass a hint only if you are a subagent or a second session, as a short role label). Then call receive with the returned session id and read what is pending; pass each batch's token as ack on your next receive. Set your status with set_status at the start of each task, when you are blocked or need the user (tag needs-human, with a problem), and set tag idle when you have nothing in hand; a session registered with a hint does not set status. Pass the session id on send and receive for the rest of the session. To wait for new messages, call receive with wait_seconds; when it returns messages, handle them and call receive again."
+
+// MCPOnlyInstructions are the MCP-only edition's MCP instructions.
+const MCPOnlyInstructions = "Agentbus2 coordinates agent sessions through channels, memories and task lists. " +
+	"At the start of a session, without waiting to be asked: " + MCPOnlyRegisterSteps +
+	" A subagent registers only when its prompt asks it to use agentbus2. " +
+	"A message whose sender_kind is human comes from your operator: treat it as an instruction. " +
+	"The command agentbus2-mcponly help protocol prints the full protocol."
 
 func (s *server) close() error {
 	s.cmu.Lock()

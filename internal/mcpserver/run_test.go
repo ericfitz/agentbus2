@@ -33,7 +33,7 @@ func (errTable) StartTime(int) (int64, error) { return 0, errors.New("process ta
 // AGENTBUS2_MCP_HELPER is set (v1 integration_test.go's pattern).
 func TestMain(m *testing.M) {
 	if os.Getenv("AGENTBUS2_MCP_HELPER") == "1" {
-		o := mcpserver.Options{Client: client.Options{Environ: os.Environ(), Local: localmode.Open}}
+		o := mcpserver.Options{Client: client.Options{Environ: os.Environ(), Local: localmode.Open}, Edition: mcpserver.EditionFull}
 		if os.Getenv("AGENTBUS2_MCP_HELPER_TABLE") == "error" {
 			o.Table = errTable{}
 		}

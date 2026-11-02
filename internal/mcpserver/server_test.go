@@ -3,6 +3,7 @@ package mcpserver_test
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -144,7 +145,7 @@ type running struct {
 // tune changes it) and connects an in-memory SDK client named clientName.
 func startServer(t *testing.T, e *testEnv, tbl *fakeTable, clientName string, tune ...func(*mcpserver.Options)) *running {
 	t.Helper()
-	o := mcpserver.Options{Client: e.clientOptions(), Table: tbl, Self: 42}
+	o := mcpserver.Options{Client: e.clientOptions(), Table: tbl, Self: 42, Edition: mcpserver.EditionFull}
 	for _, f := range tune {
 		f(&o)
 	}
@@ -221,17 +222,73 @@ func str(m map[string]any, k string) string { s, _ := m[k].(string); return s }
 
 func arr(m map[string]any, k string) []any { a, _ := m[k].([]any); return a }
 
-// TestInstructions: the initialize result carries the server's instructions,
-// which embed the register steps (Eric, 2026-10-24).
-func TestInstructions(t *testing.T) {
-	e := newTestEnv(t)
-	r := startServer(t, e, newFakeTable(), "test-client")
-	got := r.CS.InitializeResult().Instructions
-	if got != mcpserver.Instructions || !strings.Contains(got, mcpserver.RegisterSteps) || !strings.Contains(got, "without waiting to be asked") {
-		t.Fatalf("instructions = %q", got)
+// TestInstructionsByEdition: the initialize result carries the edition's
+// instructions, which embed that edition's register steps (Eric, 2026-10-24),
+// and the init prompt says the same steps. Both editions serve the same 26
+// tools with the same schemas.
+// open note: mcp-only-client 7 (the schemas are shared: wait_seconds keeps its
+// sentence on agentbus2 wait, set_status keeps its sentence on agentbus2 park;
+// both say what a tool replaces, not what to run; only Instructions and the
+// init prompt differ by edition).
+func TestInstructionsByEdition(t *testing.T) {
+	banned := []string{"agentbus2 wait", "agentbus2 watch", "agentbus2 park", "run_in_background", "agentbus2 init", "agentbus2 mcp", "stop-hook", "Bash", "Codex", "using-agentbus2"}
+	for _, tc := range []struct {
+		name         string
+		edition      mcpserver.Edition
+		instructions string
+		steps        string
+		mcpOnly      bool
+	}{
+		{"full", mcpserver.EditionFull, mcpserver.Instructions, mcpserver.RegisterSteps, false},
+		{"mcp-only", mcpserver.EditionMCPOnly, mcpserver.MCPOnlyInstructions, mcpserver.MCPOnlyRegisterSteps, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := newTestEnv(t)
+			r := startServer(t, e, newFakeTable(), "test-client", func(o *mcpserver.Options) { o.Edition = tc.edition })
+			got := r.CS.InitializeResult().Instructions
+			if got != tc.instructions || !strings.Contains(got, tc.steps) || !strings.Contains(got, "without waiting to be asked") {
+				t.Fatalf("instructions = %q", got)
+			}
+			p, err := r.CS.GetPrompt(context.Background(), &mcp.GetPromptParams{Name: "init"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(p.Messages) != 1 || p.Messages[0].Content.(*mcp.TextContent).Text != tc.steps {
+				t.Fatalf("init prompt = %+v, want %q", p.Messages, tc.steps)
+			}
+			tools, err := r.CS.ListTools(context.Background(), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(tools.Tools) != 26 {
+				t.Fatalf("%d tools, want 26", len(tools.Tools))
+			}
+			if tc.mcpOnly {
+				for _, w := range banned {
+					if strings.Contains(got, w) || strings.Contains(tc.steps, w) {
+						t.Errorf("MCP-only text contains %q", w)
+					}
+				}
+				for _, w := range []string{"wait_seconds", "agentbus2-mcponly help protocol", "set_status", "idle"} {
+					if !strings.Contains(got, w) {
+						t.Errorf("MCP-only instructions lack %q", w)
+					}
+				}
+				return
+			}
+			if !strings.Contains(mcpserver.RegisterSteps, "set_status") || !strings.Contains(mcpserver.RegisterSteps, "idle before agentbus2 park") {
+				t.Fatalf("RegisterSteps lacks the status sentence: %q", mcpserver.RegisterSteps)
+			}
+		})
 	}
-	if !strings.Contains(mcpserver.RegisterSteps, "set_status") || !strings.Contains(mcpserver.RegisterSteps, "idle before agentbus2 park") {
-		t.Fatalf("RegisterSteps lacks the status sentence: %q", mcpserver.RegisterSteps)
+}
+
+func TestNewServerRejectsUnknownEdition(t *testing.T) {
+	for _, ed := range []mcpserver.Edition{0, 3, -1} {
+		_, _, err := mcpserver.NewServer(context.Background(), mcpserver.Options{Edition: ed})
+		if err == nil || !strings.Contains(err.Error(), fmt.Sprintf("unknown edition %d", ed)) {
+			t.Errorf("edition %d: err = %v", ed, err)
+		}
 	}
 }
 
