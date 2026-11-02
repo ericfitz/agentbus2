@@ -1,8 +1,8 @@
 #!/bin/sh
 # install.sh: install agentbus2 on Linux into ~/.local/bin without root.
 #   curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh
-# The MCP-only client (agentbus2-mcponly: serve, register and version; no local
-# mode) installs the same way beside the full binary, which it never touches:
+# The MCP-only client (agentbus2-mcponly: serve, register, check, config and
+# version; no local mode) installs the same way beside the full binary, which it never touches:
 #   curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh -s -- --mcp-only
 # Environment:
 #   AGENTBUS2_VERSION        vX.Y.Z to install (default: the latest release)

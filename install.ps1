@@ -1,7 +1,7 @@
 # install.ps1: install agentbus2 on Windows into %LocalAppData%\Programs\agentbus2.
 #   irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1 | iex
-# The MCP-only client (agentbus2-mcponly.exe: serve, register and version; no
-# local mode) installs the same way into the same directory, beside
+# The MCP-only client (agentbus2-mcponly.exe: serve, register, check, config and
+# version; no local mode) installs the same way into the same directory, beside
 # agentbus2.exe, which it never touches. -McpOnly is the one argument, so the
 # piped form becomes:
 #   & ([scriptblock]::Create((irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1))) -McpOnly

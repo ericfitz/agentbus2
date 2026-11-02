@@ -801,17 +801,36 @@ function Invoke-Cases {
         ((Get-Content -LiteralPath (Join-Path $besideDir 'agentbus2.exe.old-1234abcd')) -eq 'planted')
     } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
     if ($script:BesideRunning) { Stop-Process -Id $script:BesideRunning.Id -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500 }
-    # The full installer, in turn, sweeps only agentbus2.exe.old-*: the leftover
-    # of the MCP-only client stays, and agentbus2-mcponly.exe is not replaced.
+    # The full installer, in turn, sweeps only agentbus2.exe.old-*: a planted,
+    # non-running agentbus2-mcponly.exe.old-deadbeef and agentbus2-mcponly.exe
+    # itself survive it (the case plants its own; it depends on no other case).
+    $fullDir = Join-Path $Work 'bin-full-beside'
     $script:McpBeforeHash = $null
-    Invoke-Case -Name 'full-install-leaves-mcponly-alone' -WantExit 0 -WantOut 'upgraded from 1.0.0: restart' -Env @{} -InstallDir $besideDir -Before {
-        $script:McpBeforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $besideDir 'agentbus2-mcponly.exe')).Hash
+    Invoke-Case -Name 'full-install-leaves-mcponly-alone' -WantExit 0 -WantOut 'upgraded from 1.0.0: restart' -Env @{} -InstallDir $fullDir -Before {
+        New-Item -ItemType Directory -Force -Path $fullDir | Out-Null
+        New-Stub '1.0.0' (Join-Path $fullDir 'agentbus2.exe')
+        New-Stub '9.0.0' (Join-Path $fullDir 'agentbus2-mcponly.exe')
+        Set-Content -LiteralPath (Join-Path $fullDir 'agentbus2-mcponly.exe.old-deadbeef') -Value 'planted'
+        Set-Content -LiteralPath (Join-Path $fullDir 'agentbus2.exe.old-1234abcd') -Value 'planted'
+        $script:McpBeforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fullDir 'agentbus2-mcponly.exe')).Hash
     } -After {
-        ((& (Join-Path $besideDir 'agentbus2.exe') version) -eq '9.0.1') -and
-        ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $besideDir 'agentbus2-mcponly.exe')).Hash -eq $script:McpBeforeHash) -and
-        (@(Get-ChildItem -LiteralPath $besideDir -Filter 'agentbus2-mcponly.exe.old-*').Count -eq 1) -and
-        (-not (Test-Path -LiteralPath (Join-Path $besideDir 'agentbus2.exe.old-1234abcd')))
+        ((& (Join-Path $fullDir 'agentbus2.exe') version) -eq '9.0.1') -and
+        ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fullDir 'agentbus2-mcponly.exe')).Hash -eq $script:McpBeforeHash) -and
+        (Test-Path -LiteralPath (Join-Path $fullDir 'agentbus2-mcponly.exe.old-deadbeef')) -and
+        (-not (Test-Path -LiteralPath (Join-Path $fullDir 'agentbus2.exe.old-1234abcd')))
     }
+    # And -McpOnly sweeps its own stale leftovers, not the full binary's.
+    $sweepDir = Join-Path $Work 'bin-mcp-sweep'
+    Invoke-Case -Name 'mcponly-sweeps-own-old-only' -WantExit 0 -WantOut 'upgraded from 9.0.0: restart' -Env @{} -InstallDir $sweepDir -Before {
+        New-Item -ItemType Directory -Force -Path $sweepDir | Out-Null
+        New-Stub '9.0.0' (Join-Path $sweepDir 'agentbus2-mcponly.exe')
+        Set-Content -LiteralPath (Join-Path $sweepDir 'agentbus2-mcponly.exe.old-cafe0001') -Value 'stale'
+        Set-Content -LiteralPath (Join-Path $sweepDir 'agentbus2.exe.old-1234abcd') -Value 'planted'
+    } -After {
+        ((& (Join-Path $sweepDir 'agentbus2-mcponly.exe') version) -eq '9.0.1') -and
+        (@(Get-ChildItem -LiteralPath $sweepDir -Filter 'agentbus2-mcponly.exe.old-*').Count -eq 0) -and
+        (Test-Path -LiteralPath (Join-Path $sweepDir 'agentbus2.exe.old-1234abcd'))
+    } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
     Invoke-Case -Name 'mcponly-tampered-zip' -WantExit 1 -WantOut 'checksum mismatch for agentbus2-mcponly-v9.0.1-windows-' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/tampered-zip" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
     Invoke-Case -Name 'mcponly-sums-missing-entry' -WantExit 1 -WantOut 'SHA256SUMS has no entry for agentbus2-mcponly-v9.0.1-windows-' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/missing-entry" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
     Invoke-Case -Name 'mcponly-without-windows-build' -WantExit 1 -WantOut 'release v9.0.1 has no Windows build: agentbus2-mcponly-v9.0.1-windows-' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/no-windows-build" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly') -WantNotOut 'download failed'
