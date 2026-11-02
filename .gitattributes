@@ -1,0 +1,10 @@
+# Fixtures that tests compare byte for byte, and files that run on Unix (or in
+# a Linux container), keep LF in a Windows checkout (core.autocrlf=true).
+# No tracked fixture is binary; a binary one needs `-text` here.
+internal/mcpcli/testdata/** text eol=lf
+internal/credential/testdata/** text eol=lf
+release/testdata/** text eol=lf
+*.sh text eol=lf
+*.py text eol=lf
+Dockerfile* text eol=lf
+release/*.tmpl text eol=lf
