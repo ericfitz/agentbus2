@@ -7,6 +7,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -16,8 +17,8 @@ func humanConn(t *testing.T, e *testEnv, email string) *client.Conn {
 	t.Helper()
 	ctx := context.Background()
 	boot := e.conn(t, "boot") // opening a Conn creates its identity as an agent, so create the human first
-	now := boot.Core.NowMs()
-	if err := boot.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+	now := localmode.Core(boot).NowMs()
+	if err := localmode.Core(boot).Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		return tx.CreateHuman(ctx, store.HumanBinding{Identity: email, ClaimType: store.ClaimEmail, Value: email}, now)
 	}); err != nil {
 		t.Fatal(err)

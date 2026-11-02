@@ -12,6 +12,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/profile"
 )
 
@@ -113,6 +114,7 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 	if err := bindProfile(&o, l); err != nil {
 		return hookResult{stage: "bind", err: err}
 	}
+	o.Local = localmode.Open
 	if testClientOptions != nil {
 		testClientOptions(&o)
 	}

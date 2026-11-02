@@ -16,6 +16,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/credential"
 	"github.com/ericfitz/agentbus2/internal/procs"
 	"github.com/ericfitz/agentbus2/internal/profile"
@@ -152,8 +153,8 @@ func TestOpenAppliesTestClientOptions(t *testing.T) {
 		t.Fatalf("code %d, stderr %q", code, stderr.String())
 	}
 	defer func() { _ = c.Close() }()
-	if seen.PollInterval != 50*time.Millisecond || c.Core.Cfg.WatchMergeSeconds != 0 {
-		t.Fatalf("seen %+v, WatchMergeSeconds %d", seen, c.Core.Cfg.WatchMergeSeconds)
+	if seen.PollInterval != 50*time.Millisecond || localmode.Core(c).Cfg.WatchMergeSeconds != 0 {
+		t.Fatalf("seen %+v, WatchMergeSeconds %d", seen, localmode.Core(c).Cfg.WatchMergeSeconds)
 	}
 
 	// With the hook nil the defaults hold.
@@ -163,8 +164,8 @@ func TestOpenAppliesTestClientOptions(t *testing.T) {
 		t.Fatalf("code %d, stderr %q", code, stderr.String())
 	}
 	defer func() { _ = c2.Close() }()
-	if c2.Core.Cfg.WatchMergeSeconds != 2 {
-		t.Fatalf("WatchMergeSeconds %d, want the default 2", c2.Core.Cfg.WatchMergeSeconds)
+	if localmode.Core(c2).Cfg.WatchMergeSeconds != 2 {
+		t.Fatalf("WatchMergeSeconds %d, want the default 2", localmode.Core(c2).Cfg.WatchMergeSeconds)
 	}
 }
 
@@ -303,7 +304,7 @@ func TestOpenCoreWarningsStayOffStderr(t *testing.T) {
 		t.Fatalf("open: code %d, stderr %q", code, errb.String())
 	}
 	defer func() { _ = c.Close() }()
-	c.Core.Log.Warn("maintenance job failed", "err", "boom")
+	localmode.Core(c).Log.Warn("maintenance job failed", "err", "boom")
 	if errb.Len() != 0 {
 		t.Fatalf("core warning reached stderr: %q", errb.String())
 	}

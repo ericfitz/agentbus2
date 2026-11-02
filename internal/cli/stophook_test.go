@@ -16,6 +16,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/credential"
 	"github.com/ericfitz/agentbus2/internal/profile"
 	"github.com/ericfitz/agentbus2/internal/sessionstate"
@@ -94,7 +95,7 @@ func TestStopHookPeeksWithoutSideEffects(t *testing.T) {
 	lease := func(c *client.Conn, id string) int64 {
 		t.Helper()
 		var until int64
-		err := c.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		err := localmode.Core(c).Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 			row, err := tx.Session(ctx, id)
 			until = row.LeaseExpiresAt
 			return err

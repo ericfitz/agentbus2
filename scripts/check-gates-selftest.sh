@@ -630,7 +630,8 @@ block_slackbridge_catchup_before_drain() {
 # --- 23. m6-exit-script-fires ----------------------------------------------------------
 # Docker-free and without running the e2e test. The Milestone 6 exit script:
 # the import rule per group (the leaf group's internal/core row, the consumer
-# group's internal/gen row and internal/store row), the log form's refusal of a
+# group's internal/gen row and internal/store row, the client group's
+# internal/core/channels and internal/store/sqlite rows), the log form's refusal of a
 # missing or empty log, its counts on a synthetic log (and a deleted or failed
 # line), and the word check.
 M6_SEQUENCE_STEPS=(0-server 1-register 2-token 3-open-session 4-watch 5-send-from-another-identity 6-wake 7-receive 8-ack 9-stale-bearer-refreshes 10-mcp-over-stdio 11-stop-hook 12-watch-ends-only-by-signal)
@@ -668,6 +669,8 @@ block_m6_exit_script_fires() {
 	deps_probe "$label" internal/profile/probe_m6.go "$m/internal/core" "deps_violation=$m/internal/profile imports $m/internal/core" m6-exit-checks.sh
 	deps_probe "$label" internal/mcpserver/probe_m6.go "$m/internal/gen" "deps_violation=$m/internal/mcpserver imports $m/internal/gen" m6-exit-checks.sh
 	deps_probe "$label" internal/cli/probe_m6.go "$m/internal/store/sqlite" "deps_violation=$m/internal/cli imports $m/internal/store/sqlite" m6-exit-checks.sh
+	deps_probe "$label" internal/client/probe_m6.go "$m/internal/core/channels" "deps_violation=$m/internal/client imports $m/internal/core/channels" m6-exit-checks.sh
+	deps_probe "$label" internal/client/probe_m6.go "$m/internal/store/sqlite" "deps_violation=$m/internal/client imports $m/internal/store/sqlite" m6-exit-checks.sh
 	deps_probe "$label" internal/oidcclient/probe_m6.go "$m/internal/bus" "deps_violation=$m/internal/oidcclient imports $m/internal/bus" m6-exit-checks.sh
 	deps_probe "$label" internal/oidctest/probe_m6.go "$m/internal/bus" "deps_violation=$m/internal/oidctest imports $m/internal/bus" m6-exit-checks.sh
 	rc=0

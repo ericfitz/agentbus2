@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -9,7 +10,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
 	"github.com/ericfitz/agentbus2/internal/credential"
 	"github.com/ericfitz/agentbus2/internal/profile"
@@ -53,12 +53,18 @@ type Options struct {
 
 	Notifier     notify.Notifier // tests only; nil: notify.NewPolling(PollInterval)
 	PollInterval time.Duration   // 0: 1 s (v1 WaitPollInterval)
-	// Config (local mode, tests only) replaces core.Defaults(); core.New
-	// validates it.
-	Config *core.Config
+	// Local opens a local profile; the full binary passes localmode.Open; nil:
+	// a local profile is a ResolveError (NoLocalModeError).
+	// open note: mcp-only-client 1
+	Local LocalOpener
 	// HTTP is the server-mode base client; nil: a client with no Timeout.
 	HTTP *http.Client
 }
+
+// LocalOpener builds the Conn of a local (SQLite) profile. It lives outside
+// this package so a binary that never opens a local profile links no core,
+// server or Store engine (internal/client/localmode is the one implementation).
+type LocalOpener func(ctx context.Context, o Options, r Resolved) (*Conn, error)
 
 // Flags registers -profile and -identity on fs, writing into o.
 func Flags(fs *flag.FlagSet, o *Options) {
@@ -75,6 +81,12 @@ func (e *ResolveError) Error() string { return e.Err.Error() }
 func (e *ResolveError) Unwrap() error { return e.Err }
 
 func resolveErr(err error) error { return &ResolveError{Err: err} }
+
+// NoLocalModeError is the ResolveError for a local profile in a binary that
+// has no local mode (Options.Local nil).
+func NoLocalModeError(profileName string) error {
+	return resolveErr(fmt.Errorf("profile %q is a local profile, and this binary has no local mode: pass -server URL, or use agentbus2", profileName))
+}
 
 // Resolved is the outcome of the selection rules.
 type Resolved struct {

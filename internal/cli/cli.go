@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/mcpserver"
 	"github.com/ericfitz/agentbus2/internal/version"
 )
@@ -92,6 +93,7 @@ func runMCP(ctx context.Context, args []string, environ []string, _ io.Reader, _
 		_, _ = fmt.Fprintln(stderr, err)
 		return 1
 	}
+	o.Local = localmode.Open
 	if err := mcpserver.Run(ctx, mcpserver.Options{Client: o}); err != nil {
 		return fail(stderr, err)
 	}

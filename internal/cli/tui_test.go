@@ -14,6 +14,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/profile"
 	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/tui"
@@ -352,7 +353,7 @@ func TestRunTUIOSUserWithKeys(t *testing.T) {
 	}
 	der, _ := keys.MarshalPublic(k.Public())
 	kid, _ := keys.KID(k.Public())
-	err = c.Core.Store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
+	err = localmode.Core(c).Store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
 		return tx.PutPublicKey(ctx, store.PublicKey{Identity: "eric", KID: kid, Algorithm: string(keys.EdDSA), Key: der, CreatedAt: 1})
 	})
 	if err != nil {

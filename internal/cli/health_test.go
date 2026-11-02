@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/version"
 )
@@ -41,7 +42,7 @@ func TestHealthPrintsDocument(t *testing.T) {
 		t.Fatalf("a non-administrator got maintenance: %s", out)
 	}
 
-	if err := (identities.Service{Core: pat.Core}).MakeAdmin(context.Background(), "pat", true); err != nil {
+	if err := (identities.Service{Core: localmode.Core(pat)}).MakeAdmin(context.Background(), "pat", true); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs = runHealth(t, e, "-identity", "pat")

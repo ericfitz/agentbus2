@@ -1,4 +1,4 @@
-package client
+package localmode
 
 import (
 	"context"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/bus/remote"
+	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/channels"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
@@ -29,19 +30,46 @@ import (
 // store for messages another process wrote (Decision 68).
 const defaultPollInterval = time.Second
 
+// Options are the opener's own settings (tests only).
+type Options struct {
+	// Config replaces core.Defaults(); core.New validates it. Nil: the defaults.
+	Config *core.Config
+}
+
+// state is what the Conn's Local field holds.
+type state struct{ core *core.Core }
+
+// Core returns the core a local opener built c over, or nil when c was not
+// built by one (a server-mode Conn).
+func Core(c *client.Conn) *core.Core {
+	if c == nil {
+		return nil
+	}
+	st, _ := c.Local.(*state)
+	if st == nil {
+		return nil
+	}
+	return st.core
+}
+
+// Open is the client.LocalOpener of the full binary: Opener(Options{}).
+func Open(ctx context.Context, o client.Options, r client.Resolved) (*client.Conn, error) {
+	return Opener(Options{})(ctx, o, r)
+}
+
+// Opener returns the client.LocalOpener for lo.
+func Opener(lo Options) client.LocalOpener {
+	return func(ctx context.Context, o client.Options, r client.Resolved) (*client.Conn, error) {
+		return openLocal(ctx, lo, o, r)
+	}
+}
+
 // openLocal composes the core, the HTTP handler and the in-process transport
-// over the profile's SQLite file (Decisions 35, 36, 68; Milestone 5 choice
-// 17). Every process over the file runs its own copy of this composition;
-// the polling notifier is how one sees another's writes. The notifier is
-// never the in-memory one in production, because its hints cannot cross
-// processes.
-//
-// State (Definition of Done D): a second Open over the same file finds the
-// migrations at their version, the identity and general present, and writes
-// nothing; two Opens at once are serialized by the Store's migration lock;
-// an Open after a crash finds the maintenance lease expired after twice the
-// interval.
-func openLocal(ctx context.Context, o Options, r Resolved) (*Conn, error) {
+// over the profile's SQLite file. Every process over the file runs its own copy
+// of this composition; the polling notifier is how one sees another's writes.
+// The notifier is never the in-memory one in production, because its hints
+// cannot cross processes.
+func openLocal(ctx context.Context, lo Options, o client.Options, r client.Resolved) (*client.Conn, error) {
 	if err := os.MkdirAll(r.DataDir, 0o700); err != nil {
 		return nil, fmt.Errorf("create %s: %w", r.DataDir, err)
 	}
@@ -67,8 +95,8 @@ func openLocal(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 	}()
 
 	cfg := core.Defaults()
-	if o.Config != nil {
-		cfg = *o.Config
+	if lo.Config != nil {
+		cfg = *lo.Config
 	}
 	n := o.Notifier
 	if n == nil {
@@ -111,16 +139,10 @@ func openLocal(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 		stop = startMaintenance(c, time.Duration(cfg.MaintenanceIntervalSeconds)*time.Second)
 	}
 	ok = true
-	return &Conn{
-		Bus:      remote.New(hc),
-		Resolved: r,
-		Client:   hc,
-		Core:     c,
-		close: func() error {
-			stop()
-			return st.Close()
-		},
-	}, nil
+	return client.NewConn(remote.New(hc), r, hc, &state{core: c}, func() error {
+		stop()
+		return st.Close()
+	}), nil
 }
 
 // humanRegisterError maps RegisterLocalHuman's failure: only the holds-keys
@@ -128,7 +150,7 @@ func openLocal(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 // error, a conflict left by exhausted reruns included, is reported as is.
 func humanRegisterError(name string, err error) error {
 	if errors.Is(err, identities.ErrHoldsKeys) {
-		return resolveErr(fmt.Errorf("identity %q holds keys, so it cannot be the TUI's human identity; pass -identity", name))
+		return &client.ResolveError{Err: fmt.Errorf("identity %q holds keys, so it cannot be the TUI's human identity; pass -identity", name)}
 	}
 	return fmt.Errorf("registering %q: %w", name, err)
 }

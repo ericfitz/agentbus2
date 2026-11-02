@@ -12,6 +12,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/procs"
 )
 
@@ -67,6 +68,7 @@ var testConn func(*client.Conn)
 // resolution error is a usage error: it prints through fail and returns exit
 // 2. Any other error returns exit 1. Nothing is dialed here in server mode.
 func open(ctx context.Context, o client.Options, stderr io.Writer) (*client.Conn, int) {
+	o.Local = localmode.Open
 	if testClientOptions != nil {
 		testClientOptions(&o)
 	}

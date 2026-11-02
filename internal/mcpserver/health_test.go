@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/store"
 	"github.com/ericfitz/agentbus2/internal/version"
 )
@@ -34,7 +35,7 @@ func TestHealthTool(t *testing.T) {
 
 	// Flag the identity administrator through the same database.
 	c := e.conn(t, "pat")
-	if err := c.Core.Store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
+	if err := localmode.Core(c).Store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
 		return tx.SetAdmin(ctx, "pat", true)
 	}); err != nil {
 		t.Fatal(err)

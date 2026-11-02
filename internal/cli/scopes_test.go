@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 )
 
@@ -15,7 +16,7 @@ func adminEnv(t *testing.T) *testEnv {
 	t.Helper()
 	e := newTestEnv(t)
 	pat := e.conn(t, "pat")
-	if err := (identities.Service{Core: pat.Core}).MakeAdmin(context.Background(), "pat", true); err != nil {
+	if err := (identities.Service{Core: localmode.Core(pat)}).MakeAdmin(context.Background(), "pat", true); err != nil {
 		t.Fatal(err)
 	}
 	return e
@@ -150,7 +151,7 @@ func TestScopesAndIdentitiesNonAdmin(t *testing.T) {
 	if code, _, er := runner(e, RunScopes)("create", "job1"); code != 0 {
 		t.Fatalf("scope: %d %s", code, er)
 	}
-	if err := (identities.Service{Core: e.conn(t, "pat").Core}).MakeAdmin(context.Background(), "pat", false); err != nil {
+	if err := (identities.Service{Core: localmode.Core(e.conn(t, "pat"))}).MakeAdmin(context.Background(), "pat", false); err != nil {
 		t.Fatal(err)
 	}
 	scopes := runner(e, RunScopes)
@@ -172,7 +173,7 @@ func TestScopesAndIdentitiesNonAdmin(t *testing.T) {
 		}
 	}
 	// The admin still sees the one scope.
-	if err := (identities.Service{Core: e.conn(t, "pat").Core}).MakeAdmin(context.Background(), "pat", true); err != nil {
+	if err := (identities.Service{Core: localmode.Core(e.conn(t, "pat"))}).MakeAdmin(context.Background(), "pat", true); err != nil {
 		t.Fatal(err)
 	}
 	_, out, _ := scopes("list")

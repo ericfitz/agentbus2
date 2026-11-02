@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
@@ -40,7 +41,7 @@ func TestStatusReport(t *testing.T) {
 		t.Errorf("a non-administrator sees the administrator lines:\n%s", out)
 	}
 
-	if err := (identities.Service{Core: pat.Core}).MakeAdmin(ctx, "pat", true); err != nil {
+	if err := (identities.Service{Core: localmode.Core(pat)}).MakeAdmin(ctx, "pat", true); err != nil {
 		t.Fatal(err)
 	}
 	code, out, errs = run("-identity", "pat")
@@ -62,7 +63,7 @@ func TestStatusMarksBridged(t *testing.T) {
 	e := newTestEnv(t)
 	ctx := context.Background()
 	pat := e.conn(t, "pat")
-	err := pat.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+	err := localmode.Core(pat).Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		if err := tx.CreateScope(ctx, "job1", 1); err != nil {
 			return err
 		}
@@ -101,7 +102,7 @@ func TestStatusMarksBridged(t *testing.T) {
 		t.Errorf("an unbridged channel is marked bridged:\n%s", out.String())
 	}
 	// The administrator's row carries the creator and then the mark.
-	if err := (identities.Service{Core: pat.Core}).MakeAdmin(ctx, "pat", true); err != nil {
+	if err := (identities.Service{Core: localmode.Core(pat)}).MakeAdmin(ctx, "pat", true); err != nil {
 		t.Fatal(err)
 	}
 	out.Reset()

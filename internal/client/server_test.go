@@ -147,7 +147,7 @@ func TestServerOpenExchangesAndCalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = c.Close() }()
-	if c.Resolved.Identity != "pat" || c.Resolved.IdentitySource != "credential" || c.Source == nil || c.Core != nil {
+	if c.Resolved.Identity != "pat" || c.Resolved.IdentitySource != "credential" || c.Source == nil || c.Local != nil {
 		t.Fatalf("resolved %+v", c.Resolved)
 	}
 	chs, err := c.Bus.ListChannels(ctx)

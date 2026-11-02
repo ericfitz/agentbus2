@@ -13,6 +13,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/core/maintenance"
 	"github.com/ericfitz/agentbus2/internal/filelock"
 	"github.com/ericfitz/agentbus2/internal/mcpserver"
@@ -207,14 +208,14 @@ func TestRegisterPastRetention(t *testing.T) {
 	clk := &clock{t: time.Now()}
 	cfg := pinned()
 	cfg.SessionRetentionHours = 1
-	tune := func(o *client.Options) { o.Config = cfg; o.Now = clk.now }
+	tune := func(o *client.Options) { o.Local = localmode.Opener(localmode.Options{Config: cfg}); o.Now = clk.now }
 	first := startServer(t, e, tbl, "claude-code", func(o *mcpserver.Options) { tune(&o.Client) })
 	sid := str(first.must(t, "register", nil), "session")
 	tbl.kill(42)
 
 	clk.advance(2 * time.Hour)
 	c := e.conn(t, "pat", tune)
-	maintenance.New(c.Core).Tick(context.Background())
+	maintenance.New(localmode.Core(c)).Tick(context.Background())
 
 	second := startServer(t, e, tbl, "claude-code", func(o *mcpserver.Options) { tune(&o.Client); o.Self = 43 })
 	got := second.must(t, "register", nil)
@@ -235,7 +236,7 @@ func TestSessionLapsedResumesOnce(t *testing.T) {
 	tbl := newFakeTable()
 	clk := &clock{t: time.Now()}
 	cfg := pinned()
-	tune := func(o *client.Options) { o.Config = cfg; o.Now = clk.now }
+	tune := func(o *client.Options) { o.Local = localmode.Opener(localmode.Options{Config: cfg}); o.Now = clk.now }
 	r := startServer(t, e, tbl, "claude-code", func(o *mcpserver.Options) { tune(&o.Client) })
 	sam := e.conn(t, "sam", tune)
 	ctx := context.Background()
@@ -277,7 +278,7 @@ func TestSessionOfAnEarlierServerIsFoundFromItsFile(t *testing.T) {
 	tbl := newFakeTable()
 	clk := &clock{t: time.Now()}
 	cfg := pinned()
-	tune := func(o *client.Options) { o.Config = cfg; o.Now = clk.now }
+	tune := func(o *client.Options) { o.Local = localmode.Opener(localmode.Options{Config: cfg}); o.Now = clk.now }
 	first := startServer(t, e, tbl, "claude-code", func(o *mcpserver.Options) { tune(&o.Client) })
 	sid := str(first.must(t, "register", nil), "session")
 	tbl.kill(42)
@@ -303,12 +304,12 @@ func TestSweptSessionIsReplacedOnUse(t *testing.T) {
 			clk := &clock{t: time.Now()}
 			cfg := pinned()
 			cfg.SessionRetentionHours = 1
-			tune := func(o *client.Options) { o.Config = cfg; o.Now = clk.now }
+			tune := func(o *client.Options) { o.Local = localmode.Opener(localmode.Options{Config: cfg}); o.Now = clk.now }
 			r := startServer(t, e, tbl, "claude-code", func(o *mcpserver.Options) { tune(&o.Client) })
 			sid := str(r.must(t, "register", nil), "session")
 			clk.advance(2 * time.Hour)
 			c := e.conn(t, "pat", tune)
-			maintenance.New(c.Core).Tick(context.Background())
+			maintenance.New(localmode.Core(c)).Tick(context.Background())
 
 			args := map[string]any{"session": sid}
 			if tool == "send" {
@@ -449,12 +450,12 @@ func TestCloseSweptSession(t *testing.T) {
 	clk := &clock{t: time.Now()}
 	cfg := pinned()
 	cfg.SessionRetentionHours = 1
-	tune := func(o *client.Options) { o.Config = cfg; o.Now = clk.now }
+	tune := func(o *client.Options) { o.Local = localmode.Opener(localmode.Options{Config: cfg}); o.Now = clk.now }
 	r := startServer(t, e, newFakeTable(), "claude-code", func(o *mcpserver.Options) { tune(&o.Client) })
 	sid := str(r.must(t, "register", nil), "session")
 	clk.advance(2 * time.Hour)
 	c := e.conn(t, "pat", tune)
-	maintenance.New(c.Core).Tick(context.Background())
+	maintenance.New(localmode.Core(c)).Tick(context.Background())
 	r.mustFail(t, "close_session", map[string]any{"session": sid}, bus.CodeNotFound)
 	files, err := sessionstate.List(e.DataDir)
 	if err != nil || len(files) != 0 {

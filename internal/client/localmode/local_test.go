@@ -1,4 +1,4 @@
-package client
+package localmode
 
 import (
 	"context"
@@ -12,6 +12,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/core/identities"
 	"github.com/ericfitz/agentbus2/internal/core/notify"
@@ -27,14 +28,26 @@ func noMerge() *core.Config {
 	return &c
 }
 
+// opts are the client.Options of a test plus the core.Config the opener runs
+// (nil: core.Defaults()).
+type opts struct {
+	client.Options
+	Config *core.Config
+}
+
+func (o opts) open(ctx context.Context) (*client.Conn, error) {
+	o.Local = Opener(Options{Config: o.Config})
+	return client.Open(ctx, o.Options)
+}
+
 // openAs opens the default (local) profile of e as identity.
-func (e *env) openAs(t *testing.T, identity string, tune ...func(*Options)) *Conn {
+func (e *env) openAs(t *testing.T, identity string, tune ...func(*opts)) *client.Conn {
 	t.Helper()
-	o := Options{Environ: e.environ, Cwd: t.TempDir(), Identity: identity, PollInterval: 50 * time.Millisecond, Config: noMerge()}
+	o := opts{Options: client.Options{Environ: e.environ, Cwd: t.TempDir(), Identity: identity, PollInterval: 50 * time.Millisecond}, Config: noMerge()}
 	for _, f := range tune {
 		f(&o)
 	}
-	c, err := Open(context.Background(), o)
+	c, err := o.open(context.Background())
 	if err != nil {
 		t.Fatalf("Open as %s: %v", identity, err)
 	}
@@ -104,7 +117,7 @@ func TestLocalOpenRegistersAndServes(t *testing.T) {
 
 // subscribed opens a session for c on a fresh channel "dev" subscription and
 // returns the session id.
-func subscribed(t *testing.T, c *Conn, create bool) string {
+func subscribed(t *testing.T, c *client.Conn, create bool) string {
 	t.Helper()
 	ctx := context.Background()
 	s, err := c.Bus.Open(ctx, ab2bus.OpenSessionInput{Hint: "w"})
@@ -128,7 +141,7 @@ type watchOut struct {
 	at  time.Time
 }
 
-func watchAsync(c *Conn, session string, timeout time.Duration) <-chan watchOut {
+func watchAsync(c *client.Conn, session string, timeout time.Duration) <-chan watchOut {
 	ch := make(chan watchOut, 1)
 	go func() {
 		r, err := c.Bus.Watch(context.Background(), ab2bus.WatchInput{Session: session, Timeout: timeout})
@@ -177,7 +190,7 @@ func TestLocalWatchWakesAcrossConns(t *testing.T) {
 func TestLocalWatchMemoryNotifierDoesNotCrossConns(t *testing.T) {
 	ctx := context.Background()
 	e := localEnv(t)
-	mem := func(o *Options) { o.Notifier = notify.NewMemory() }
+	mem := func(o *opts) { o.Notifier = notify.NewMemory() }
 	pat, sam := e.openAs(t, "pat", mem), e.openAs(t, "sam", mem)
 	session := subscribed(t, pat, true)
 	w := watchAsync(pat, session, time.Second)
@@ -222,10 +235,10 @@ func TestLocalMaintenanceRuns(t *testing.T) {
 	cfg := core.Defaults()
 	cfg.WatchMergeSeconds = 0
 	cfg.MaintenanceIntervalSeconds = 1
-	maint := func(o *Options) { o.Maintenance = true; o.Config = &cfg }
+	maint := func(o *opts) { o.Maintenance = true; o.Config = &cfg }
 	a := e.openAs(t, "pat", maint)
 	b := e.openAs(t, "sam", maint)
-	err := a.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+	err := Core(a).Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		return tx.PutReceipt(ctx, store.Receipt{Identity: "pat", Key: "k", Fingerprint: "f", Result: []byte("{}"), ExpiresAt: 1})
 	})
 	if err != nil {
@@ -234,7 +247,7 @@ func TestLocalMaintenanceRuns(t *testing.T) {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		var found bool
-		err := a.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		err := Core(a).Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 			var err error
 			_, found, err = tx.Receipt(ctx, "pat", "k", 0)
 			return err
@@ -252,12 +265,12 @@ func TestLocalMaintenanceRuns(t *testing.T) {
 	}
 	// Exactly one of the two holds the lease.
 	holders := 0
-	for _, c := range []*Conn{a, b} {
+	for _, c := range []*client.Conn{a, b} {
 		var held bool
 		now := time.Now().UnixMilli()
-		err := c.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		err := Core(c).Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 			var err error
-			held, err = tx.TryLease(ctx, "maintenance", c.Core.Owner, now, now+2000)
+			held, err = tx.TryLease(ctx, "maintenance", Core(c).Owner, now, now+2000)
 			return err
 		})
 		if err != nil {
@@ -277,8 +290,8 @@ func TestLocalNoMaintenanceByDefault(t *testing.T) {
 	e := localEnv(t)
 	cfg := core.Defaults()
 	cfg.MaintenanceIntervalSeconds = 1
-	a := e.openAs(t, "pat", func(o *Options) { o.Config = &cfg })
-	err := a.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+	a := e.openAs(t, "pat", func(o *opts) { o.Config = &cfg })
+	err := Core(a).Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		return tx.PutReceipt(ctx, store.Receipt{Identity: "pat", Key: "k", Fingerprint: "f", Result: []byte("{}"), ExpiresAt: 1})
 	})
 	if err != nil {
@@ -286,7 +299,7 @@ func TestLocalNoMaintenanceByDefault(t *testing.T) {
 	}
 	time.Sleep(2500 * time.Millisecond)
 	var found bool
-	_ = a.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+	_ = Core(a).Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		_, found, _ = tx.Receipt(ctx, "pat", "k", 0)
 		return nil
 	})
@@ -297,13 +310,19 @@ func TestLocalNoMaintenanceByDefault(t *testing.T) {
 
 func TestLocalConfigDefaultsWhenNil(t *testing.T) {
 	e := localEnv(t)
-	c := e.openAs(t, "pat", func(o *Options) { o.Config = nil })
-	if got, want := c.Core.Cfg.WatchMergeSeconds, core.Defaults().WatchMergeSeconds; got != want {
+	c := e.openAs(t, "pat", func(o *opts) { o.Config = nil })
+	if got, want := Core(c).Cfg.WatchMergeSeconds, core.Defaults().WatchMergeSeconds; got != want {
 		t.Fatalf("WatchMergeSeconds %d, want %d", got, want)
 	}
 	pinned := e.openAs(t, "sam")
-	if pinned.Core.Cfg.WatchMergeSeconds != 0 {
-		t.Fatalf("pinned WatchMergeSeconds %d", pinned.Core.Cfg.WatchMergeSeconds)
+	if Core(pinned).Cfg.WatchMergeSeconds != 0 {
+		t.Fatalf("pinned WatchMergeSeconds %d", Core(pinned).Cfg.WatchMergeSeconds)
+	}
+}
+
+func TestCoreOfServerConnIsNil(t *testing.T) {
+	if c := Core(client.NewConn(nil, client.Resolved{}, nil, nil, nil)); c != nil {
+		t.Fatalf("Core of a Conn no local opener built = %v, want nil", c)
 	}
 }
 
@@ -311,7 +330,7 @@ func TestLocalRejectsInvalidConfig(t *testing.T) {
 	e := localEnv(t)
 	bad := core.Defaults()
 	bad.SessionLeaseSeconds = -1
-	_, err := Open(context.Background(), Options{Environ: e.environ, Cwd: t.TempDir(), Identity: "pat", Config: &bad})
+	_, err := opts{Options: client.Options{Environ: e.environ, Cwd: t.TempDir(), Identity: "pat"}, Config: &bad}.open(context.Background())
 	if err == nil {
 		t.Fatal("Open accepted an invalid core config")
 	}
@@ -319,7 +338,7 @@ func TestLocalRejectsInvalidConfig(t *testing.T) {
 
 func TestLocalRejectsBadIdentityName(t *testing.T) {
 	e := localEnv(t)
-	_, err := Open(context.Background(), Options{Environ: e.environ, Cwd: t.TempDir(), Identity: "a/b"})
+	_, err := opts{Options: client.Options{Environ: e.environ, Cwd: t.TempDir(), Identity: "a/b"}}.open(context.Background())
 	if err == nil {
 		t.Fatal("Open accepted identity a/b")
 	}
@@ -332,7 +351,7 @@ func TestLocalSecondOpenAfterCrash(t *testing.T) {
 	e := localEnv(t)
 	cfg := core.Defaults()
 	cfg.MaintenanceIntervalSeconds = 1
-	crashed, err := Open(ctx, Options{Environ: e.environ, Cwd: t.TempDir(), Identity: "pat", Maintenance: true, Config: &cfg})
+	crashed, err := opts{Options: client.Options{Environ: e.environ, Cwd: t.TempDir(), Identity: "pat", Maintenance: true}, Config: &cfg}.open(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -355,8 +374,8 @@ func TestLocalMaintenanceReleasesLockOnClose(t *testing.T) {
 	cfg := core.Defaults()
 	cfg.WatchMergeSeconds = 0
 	cfg.MaintenanceIntervalSeconds = 1
-	a := e.openAs(t, "pat", func(o *Options) { o.Maintenance = true; o.Config = &cfg })
-	err := a.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+	a := e.openAs(t, "pat", func(o *opts) { o.Maintenance = true; o.Config = &cfg })
+	err := Core(a).Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		return tx.PutReceipt(ctx, store.Receipt{Identity: "pat", Key: "k", Fingerprint: "f", Result: []byte("{}"), ExpiresAt: 1})
 	})
 	if err != nil {
@@ -365,7 +384,7 @@ func TestLocalMaintenanceReleasesLockOnClose(t *testing.T) {
 	deadline := time.Now().Add(10 * time.Second)
 	for {
 		var found bool
-		err := a.Core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
+		err := Core(a).Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 			var err error
 			_, found, err = tx.Receipt(ctx, "pat", "k", 0)
 			return err
@@ -386,7 +405,7 @@ func TestLocalMaintenanceReleasesLockOnClose(t *testing.T) {
 	}
 	b := e.openAs(t, "sam")
 	now := time.Now().UnixMilli()
-	held, err := b.Core.Store.TryLock(ctx, "maintenance", "someone-else", now, now+60_000)
+	held, err := Core(b).Store.TryLock(ctx, "maintenance", "someone-else", now, now+60_000)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -395,10 +414,10 @@ func TestLocalMaintenanceReleasesLockOnClose(t *testing.T) {
 	}
 }
 
-func identityKind(t *testing.T, c *Conn, name string) store.IdentityKind {
+func identityKind(t *testing.T, c *client.Conn, name string) store.IdentityKind {
 	t.Helper()
 	var k store.IdentityKind
-	err := c.Core.Store.Read(context.Background(), func(ctx context.Context, tx store.Tx) error {
+	err := Core(c).Store.Read(context.Background(), func(ctx context.Context, tx store.Tx) error {
 		id, err := tx.Identity(ctx, name)
 		k = id.Kind
 		return err
@@ -411,7 +430,7 @@ func identityKind(t *testing.T, c *Conn, name string) store.IdentityKind {
 
 func TestOpenLocalMarksOSUserHuman(t *testing.T) {
 	e := localEnv(t)
-	human := func(o *Options) { o.Identity, o.FallbackIdentity, o.HumanIdentity = "", "eric", true }
+	human := func(o *opts) { o.Identity, o.FallbackIdentity, o.HumanIdentity = "", "eric", true }
 	for i := 0; i < 2; i++ { // a second open changes nothing
 		c := e.openAs(t, "", human)
 		if c.Resolved.IdentitySource != "os-user" {
@@ -422,12 +441,12 @@ func TestOpenLocalMarksOSUserHuman(t *testing.T) {
 		}
 	}
 	// A named identity is never turned human, even for the TUI.
-	c := e.openAs(t, "agentx", func(o *Options) { o.FallbackIdentity, o.HumanIdentity = "eric", true })
+	c := e.openAs(t, "agentx", func(o *opts) { o.FallbackIdentity, o.HumanIdentity = "eric", true })
 	if k := identityKind(t, c, "agentx"); k != store.IdentityAgent {
 		t.Fatalf("agentx kind = %q, want agent", k)
 	}
 	// Without HumanIdentity the fallback is an ordinary agent.
-	c = e.openAs(t, "", func(o *Options) { o.Identity, o.FallbackIdentity = "", "plain" })
+	c = e.openAs(t, "", func(o *opts) { o.Identity, o.FallbackIdentity = "", "plain" })
 	if k := identityKind(t, c, "plain"); k != store.IdentityAgent {
 		t.Fatalf("plain kind = %q, want agent", k)
 	}
@@ -442,16 +461,16 @@ func TestOpenLocalOSUserWithKeysRefused(t *testing.T) {
 	}
 	der, _ := keys.MarshalPublic(pub.Public())
 	kid, _ := keys.KID(pub.Public())
-	err = c.Core.Store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
+	err = Core(c).Store.Tx(context.Background(), func(ctx context.Context, tx store.Tx) error {
 		return tx.PutPublicKey(ctx, store.PublicKey{Identity: "eric", KID: kid, Algorithm: string(keys.EdDSA), Key: der, CreatedAt: 1})
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
 	_ = c.Close()
-	o := Options{Environ: e.environ, Cwd: t.TempDir(), FallbackIdentity: "eric", HumanIdentity: true, PollInterval: 50 * time.Millisecond, Config: noMerge()}
-	_, err = Open(context.Background(), o)
-	var re *ResolveError
+	o := opts{Options: client.Options{Environ: e.environ, Cwd: t.TempDir(), FallbackIdentity: "eric", HumanIdentity: true, PollInterval: 50 * time.Millisecond}, Config: noMerge()}
+	_, err = o.open(context.Background())
+	var re *client.ResolveError
 	if !errors.As(err, &re) || !strings.Contains(err.Error(), `identity "eric" holds keys`) || !strings.Contains(err.Error(), "pass -identity") {
 		t.Fatalf("Open = %v, want a ResolveError naming eric", err)
 	}
@@ -460,7 +479,7 @@ func TestOpenLocalOSUserWithKeysRefused(t *testing.T) {
 func TestHumanRegisterErrorMapping(t *testing.T) {
 	// The typed error, not message text, selects the mapping.
 	holds := fmt.Errorf("register: %w", identities.ErrHoldsKeys)
-	var re *ResolveError
+	var re *client.ResolveError
 	if err := humanRegisterError("eric", holds); !errors.As(err, &re) || !strings.Contains(err.Error(), "pass -identity") {
 		t.Fatalf("holds-keys = %v, want a ResolveError", err)
 	}

@@ -19,15 +19,19 @@
 #
 # The import rule is checked on the DIRECT imports of non-test code (`go list`
 # .Imports), each output line "<package> <import>" matched against the group's
-# forbidden list. A transitive check (`go list -deps`) is deliberately not used:
-# it would always find internal/gen and internal/store/sqlite under
-# internal/client and prove nothing.
+# forbidden list. A transitive check (`go list -deps`) is deliberately not used
+# for these groups; the MCP-only binary's transitive set is scripts/m10's.
 #   leaf group ./internal/profile ./internal/repoconfig ./internal/credential
 #              ./internal/procs ./internal/sessionstate
 #       must not import internal/core, internal/server, internal/bus/local or
 #       internal/store/{sqlite,postgres,sqlstore}
 #   consumer group ./internal/mcpserver ./internal/cli
 #       must not import internal/gen or internal/store (and below)
+#   client group ./internal/client (the package alone, not internal/client/localmode)
+#       must not import internal/core or below (except internal/core/notify, a
+#       leaf), internal/server, internal/bus/local or
+#       internal/store/{sqlite,postgres,sqlstore}: local mode is the injected
+#       Options.Local opener (open note: mcp-only-client 1)
 #   sign-in group ./internal/oidcclient ./internal/oidctest
 #       import no package of this module (oidcclient is stdlib-only and oidctest
 #       stdlib plus go-jose by convention: the direct-import check cannot tell a
@@ -47,16 +51,20 @@ CELLS=(wait-0-woke wait-1-timeout wait-2-error wait-3-replaced wait-3-signal wai
 
 violations=0
 
-# check_group "PACKAGES" "FORBIDDEN-ERE": lists every direct import of every
-# package and reports each import column that matches the anchored expression.
+# check_group "PACKAGES" "FORBIDDEN-ERE" ["ALLOWED-ERE"]: lists every direct
+# import of every package and reports each import column that matches the
+# anchored forbidden expression and not the allowed one.
 check_group() {
-	local patterns="$1" forbidden="$2" listing line pkg imp
+	local patterns="$1" forbidden="$2" allowed="${3:-}" listing line pkg imp
 	# shellcheck disable=SC2086,SC2016 # patterns is a space-separated package list; the template is for go list
 	listing="$(cd "$ROOT" && go list -f '{{$p := .ImportPath}}{{range .Imports}}{{$p}} {{.}}{{"\n"}}{{end}}' $patterns)"
 	while IFS= read -r line; do
 		[ -n "$line" ] || continue
 		pkg="${line%% *}"
 		imp="${line#* }"
+		if [ -n "$allowed" ] && printf '%s\n' "$imp" | grep -E -q -- "$allowed"; then
+			continue
+		fi
 		if printf '%s\n' "$imp" | grep -E -q -- "$forbidden"; then
 			echo "deps_violation=$pkg imports $imp"
 			violations=$((violations + 1))
@@ -69,6 +77,9 @@ import_check() {
 		"^$MOD/internal/(core|server)(/|\$)|^$MOD/internal/bus/local\$|^$MOD/internal/store/(sqlite|postgres|sqlstore)(/|\$)"
 	check_group './internal/mcpserver ./internal/cli' \
 		"^$MOD/internal/(gen|store)(/|\$)"
+	check_group './internal/client' \
+		"^$MOD/internal/(core|server)(/|\$)|^$MOD/internal/bus/local\$|^$MOD/internal/store/(sqlite|postgres|sqlstore)(/|\$)" \
+		"^$MOD/internal/core/notify\$"
 	check_group './internal/oidcclient ./internal/oidctest' "^$MOD/"
 	if [ "$violations" -ne 0 ]; then
 		return 1

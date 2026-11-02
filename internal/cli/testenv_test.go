@@ -17,6 +17,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/procs"
 	"github.com/ericfitz/agentbus2/internal/profile"
@@ -60,7 +61,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	prevOpts, prevPoll, prevTable, prevSelf := testClientOptions, procs.HarnessPollInterval, processTable, selfPID
 	testClientOptions = func(o *client.Options) {
 		o.PollInterval = 50 * time.Millisecond
-		o.Config = pinned()
+		o.Local = localmode.Opener(localmode.Options{Config: pinned()})
 	}
 	procs.HarnessPollInterval = 10 * time.Millisecond
 	tbl := newFakeTable()
@@ -78,7 +79,7 @@ func newTestEnv(t *testing.T) *testEnv {
 // testClientOptions, plus tune; it is closed in t.Cleanup.
 func (e *testEnv) conn(t *testing.T, identity string, tune ...func(*client.Options)) *client.Conn {
 	t.Helper()
-	o := client.Options{Environ: e.Environ, Cwd: e.Home, Identity: identity, PollInterval: 50 * time.Millisecond, Config: pinned()}
+	o := client.Options{Environ: e.Environ, Cwd: e.Home, Identity: identity, PollInterval: 50 * time.Millisecond, Local: localmode.Opener(localmode.Options{Config: pinned()})}
 	for _, f := range tune {
 		f(&o)
 	}

@@ -15,6 +15,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/mcpserver"
 	"github.com/ericfitz/agentbus2/internal/procs"
@@ -59,7 +60,7 @@ func newTestEnv(t *testing.T) *testEnv {
 
 // clientOptions are the client.Options every server and conn in a test use.
 func (e *testEnv) clientOptions() client.Options {
-	return client.Options{Environ: e.Environ, Cwd: e.Home, PollInterval: 50 * time.Millisecond, Config: pinned()}
+	return client.Options{Environ: e.Environ, Cwd: e.Home, PollInterval: 50 * time.Millisecond, Local: localmode.Opener(localmode.Options{Config: pinned()})}
 }
 
 // conn opens the default profile as identity, closed in t.Cleanup.

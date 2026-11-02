@@ -1,4 +1,4 @@
-package client
+package localmode
 
 import (
 	"context"
@@ -6,11 +6,31 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/profile"
 	"github.com/ericfitz/agentbus2/internal/storetest"
 )
+
+// lockedBuf is a mutex-guarded buffer a logger can write to from any goroutine.
+type lockedBuf struct {
+	mu sync.Mutex
+	b  strings.Builder
+}
+
+func (s *lockedBuf) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.Write(p)
+}
+
+func (s *lockedBuf) String() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.b.String()
+}
 
 // captureStderr points os.Stderr and the log package's output (the sink of
 // slog.Default) at a file until the returned func runs, which restores both
@@ -51,7 +71,7 @@ func TestLocalStoreLogger(t *testing.T) {
 	t.Run("logger", func(t *testing.T) {
 		e := scopedAdmin(t)
 		var logs lockedBuf
-		c := e.openAs(t, "pat", func(o *Options) { o.Logger = slog.New(slog.NewTextHandler(&logs, nil)) })
+		c := e.openAs(t, "pat", func(o *opts) { o.Logger = slog.New(slog.NewTextHandler(&logs, nil)) })
 		if _, err := c.Bus.ListChannels(ctx); err != nil {
 			t.Fatal(err)
 		}
@@ -64,8 +84,8 @@ func TestLocalStoreLogger(t *testing.T) {
 		e := scopedAdmin(t)
 		var term lockedBuf
 		done := captureStderr(t)
-		c, err := Open(ctx, Options{Environ: e.environ, Cwd: t.TempDir(), Identity: "pat", Config: noMerge(),
-			OpenLogger: slog.New(slog.NewTextHandler(&term, &slog.HandlerOptions{Level: slog.LevelWarn}))})
+		c, err := opts{Options: client.Options{Environ: e.environ, Cwd: t.TempDir(), Identity: "pat",
+			OpenLogger: slog.New(slog.NewTextHandler(&term, &slog.HandlerOptions{Level: slog.LevelWarn}))}, Config: noMerge()}.open(ctx)
 		if err == nil {
 			_, err = c.Bus.ListChannels(ctx)
 			_ = c.Close()

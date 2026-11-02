@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/client/localmode"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
 
@@ -95,7 +96,7 @@ func TestSendReceiveAck(t *testing.T) {
 	// The throwaway was opened with hint "cli" and closed: its row is pat/cli
 	// with a close time.
 	var rows []store.Session
-	if err := pat.Core.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+	if err := localmode.Core(pat).Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
 		var err error
 		rows, err = tx.ListSessions(ctx, "pat")
 		return err
