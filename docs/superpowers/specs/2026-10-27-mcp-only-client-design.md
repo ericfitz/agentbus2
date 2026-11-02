@@ -5,6 +5,7 @@
 - Draft of 2026-10-27, written by an agent.
 - Nothing in it is a decision until Eric marks it so.
 - **Eric reviewed this brief on 2026-10-27:** all 6 of its decisions are **decided** and none is open. Decisions 1, 2, 3, 5 and 6 are ratified as recommended; decision 4 (the binary name) was changed by Eric to `agentbus2-mcponly`, and the brief is renamed to match throughout.
+- **Implemented** by `docs/superpowers/plans/2026-10-27-mcp-only-client.md`; the record is `docs/adr/0015-mcp-only-client.md` (2026-11-02). Where this brief's section 7 differs from the plan, the plan stands.
 - Issue: #12 ("feat: mcp-only client build with simplified CLI, guided help and sidecar mode"). Related: #13 (MCP events).
 - **Eric's decision 2026-10-27:** the sidecar implementation is a separate issue with a separate spec that depends on this one, and it is postponed. Everything sidecar-specific moved to `2026-10-27-mcp-sidecar-design.md`; this brief covers the MCP-only binary, the simplified flags and the guided help.
 - Baseline: `main` at 9fc48e7. The measurements in section 3.6 were made on a copy of the tree in the scratchpad. The repository was not changed.

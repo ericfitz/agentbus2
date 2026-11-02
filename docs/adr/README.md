@@ -26,6 +26,7 @@ NNNN" to keep the two series apart.
 | [0012](0012-signing-key-rotation-and-key-providers.md) | Signing key rotation and key providers | Accepted (Eric, 2026-10-27); controller rulings pending his review |
 | [0013](0013-write-inspection.md) | Write inspection | Accepted (Eric, 2026-10-27) |
 | [0014](0014-agent-status.md) | Agent status and history | Accepted (Eric, 2026-10-27) |
+| [0015](0015-mcp-only-client.md) | The MCP-only client | Accepted (Eric, 2026-10-27); open notes are agent choices |
 
 Decisions 60 (TUI in a later milestone), 61 (release tooling in the
 final milestone) and 87 (Scoop and winget in that tooling) are scheduling

@@ -47,6 +47,8 @@ The idle wake on every harness except Codex is a background `agentbus2 wait` (Ba
 
 `watch` and `wait` end with spec section 3.5's exit codes: `wait` exits 0 woke, 1 timeout, 2 error, 3 replaced, 4 harness gone; `watch` never exits 0 or 1. `scripts/m6-exit-checks.sh` and `internal/e2e` prove the section 2.4 sequence and that table against the built binary and a real server.
 
+An agent that only needs to reach a server can use the smaller `agentbus2-mcponly` instead (11 MB, no local mode, no TUI, no hooks): `serve` is its stdio MCP server, `register` creates and registers a key, `check` verifies the setup step by step, `config` prints the MCP client configuration, and `-credential FILE` reads a key from any path (mode 0600). It waits for messages with `receive` and `wait_seconds`, not a background command. Run `agentbus2-mcponly help` for a guided walk-through with examples, or `agentbus2-mcponly help <topic>` for `connect`, `register`, `configure`, `verify`, `protocol` or `troubleshoot`.
+
 ## Administrator commands
 
 An administrator's client also has `agentbus2 scopes create [-key K] NAME | list | get NAME | done -retire with_bridge|normal [-key K] NAME`, `agentbus2 identities create [-scope S] NAME` (prints a one-time enrollment token for the new agent), `agentbus2 channels create [-scope S] ...` and `agentbus2 bridges create [-slack-name N] CHANNEL | list | get CHANNEL | remove CHANNEL` (Slack bridge; `forbidden` where none is configured) and `agentbus2 signing-keys list | rotate [-revoke-previous] [-key K]` (the server's token signing key set; `unavailable` on a local profile). The walk-through is in `docs/ops/admin-bootstrap.md`.
@@ -57,7 +59,7 @@ An administrator's client also has `agentbus2 scopes create [-key K] NAME | list
 
 ## Install
 
-macOS: `brew install ericfitz/tap/agentbus2`. Linux: `curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh`. Windows: `irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1 | iex`, or Scoop (`scoop bucket add ericfitz https://github.com/ericfitz/scoop-bucket`, `scoop install agentbus2`). These work from the first published release (2.0.0); until then build from source with `make build`. agentbus2 installs beside agentbus 1.x and touches nothing of it. Details, verification and the environment variables are in `docs/install.md`; cutting a release is `docs/release.md`.
+macOS: `brew install ericfitz/tap/agentbus2`. Linux: `curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh`. Windows: `irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1 | iex`, or Scoop (`scoop bucket add ericfitz https://github.com/ericfitz/scoop-bucket`, `scoop install agentbus2`). These work from the first published release (2.0.0); until then build from source with `make build`. agentbus2 installs beside agentbus 1.x and touches nothing of it. The MCP-only client installs the same ways under the name `agentbus2-mcponly` (`brew install ericfitz/tap/agentbus2-mcponly`, `install.sh --mcp-only`, `install.ps1 -McpOnly`, Scoop, winget). Details, verification and the environment variables are in `docs/install.md`; cutting a release is `docs/release.md`.
 
 ## Development
 

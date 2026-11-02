@@ -757,3 +757,12 @@ No departure from RFC 7521's client-assertion framing, RFC 7523 section 3
 validation (`iss`, `sub`, `aud`, `exp`, `jti`, signature), RFC 8693 section
 2.2 responses (`issued_token_type`, `token_type: Bearer`), RFC 9068 section
 2.2 required claims or RFC 8414 section 2 required members was found.
+
+## The `-credential` source (Eric's decision 2026-10-27)
+
+Eric's decision 2026-10-27 (ADR 0015, decision 2): the MCP-only binary `agentbus2-mcponly` (`-credential FILE`, or `AGENTBUS2_CREDENTIAL`) may read a private key from any path, such as a mounted secret. This adds one credential source next to item 8's `credentials/<profile>/<identity>`; item 8 holds for every other source.
+
+- The key is PKCS#8 PEM. `credential.LoadFile` follows a symlink (a Kubernetes-style secret mount works) and requires the target to be a regular file that only its owner can read: on Unix a mode with no bit outside 0600 (so 0400 and 0600 pass and 0644 is refused with a message naming the path and `chmod 600`), on Windows `fileacl.CheckOwnerOnly` (agent choice, ADR 0015 open note 5: it refuses a NULL DACL and any access-allowed entry for a SID other than the current user, LocalSystem and BUILTIN\Administrators). The refusal is `credential.ErrNotOwnerOnly`.
+- The path is never read from the repository file (item 8 holds: `.local/agentbus2.json` selects a profile only) and `config.json` has no field for it, so only the command line or the environment names it.
+- The file is read-only to agentbus2 (agent choice, ADR 0015 open note 4): `register -credential FILE` registers that key's public half and writes neither a credential file nor a pending file. It is refused with a `credential_process` profile, a local profile or a human sign-in.
+- The bearer cache is unchanged: `<data dir>/tokens/<profile>/<identity>.json`, used until 60 seconds before expiry, with one refresh on a 401.
