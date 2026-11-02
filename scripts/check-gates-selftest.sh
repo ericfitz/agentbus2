@@ -1047,8 +1047,30 @@ block_agent_status_rules_fire() {
 # Docker-free. scripts/m10-exit-checks.sh --deps-only guards the MCP-only binary:
 # the clean tree passes with 13 modules, a probe that pulls local mode, a Store
 # engine or an unlisted module into the binary fails naming it, and the one
-# allowed core edge (internal/core/notify) stays allowed.
+# allowed core edge (internal/core/notify) stays allowed. The log form refuses a
+# missing log, and its counts on a synthetic log (a deleted, failed or repeated
+# leaf line and a package FAIL) are checked.
 # open note: mcp-only-client 9
+M10_LEAVES=(1-check-reach 2-register-from-token-file 3-register-again 4-check-identity 5-config 6-serve-stdio 7-register-without-token 8-check-unregistered-key 9-no-local-mode)
+
+# m10_log FILE: a synthetic e2e log with the nine TestMCPOnly leaf lines.
+m10_log() {
+	local f="$1" n
+	: >"$f"
+	printf '=== RUN   TestMCPOnly\n--- PASS: TestMCPOnly (2.00s)\n' >>"$f"
+	for n in "${M10_LEAVES[@]}"; do printf '    --- PASS: TestMCPOnly/%s (0.00s)\n' "$n" >>"$f"; done
+	printf 'PASS\nok  \tgithub.com/ericfitz/agentbus2/internal/e2e\t25.000s\n' >>"$f"
+}
+
+# m10_expect LABEL WHAT WANT_RC PRESENT: runs the log form of the script on
+# $tmp/m10.log, matching its output with grep -qF.
+m10_expect() {
+	local label="$1" what="$2" want_rc="$3" present="$4" log="$tmp/b33l.log" rc=0
+	bash "$wt/scripts/m10-exit-checks.sh" "$tmp/m10.log" >"$log" 2>&1 || rc=$?
+	if [ "$rc" -ne "$want_rc" ]; then problem "$label" "$what: exit $rc, expected $want_rc: $(tail -n 3 "$log" | tr '\n' ' ')"; fi
+	grep -qF -- "$present" "$log" || problem "$label" "$what: output lacks '$present': $(tail -n 4 "$log" | tr '\n' ' ')"
+}
+
 block_m10_deps_rule_fires() {
 	local label=m10-deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b33z.log" rc
 	begin
@@ -1066,6 +1088,23 @@ block_m10_deps_rule_fires() {
 	bash "$wt/scripts/m10-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 0 ]; then problem "$label" "internal/core/notify probe: exit $rc, expected 0: $(tail -n 3 "$log" | tr '\n' ' ')"; fi
 	rm -f "$wt/internal/mcpcli/probe_m10.go"
+	rc=0
+	bash "$wt/scripts/m10-exit-checks.sh" "$tmp/does-not-exist.log" >"$log" 2>&1 || rc=$?
+	if [ "$rc" -ne 2 ]; then problem "$label" "missing log: exit $rc, expected 2"; fi
+	m10_log "$tmp/m10.log"
+	m10_expect "$label" "good log" 0 'mcponly=9'
+	grep -qF 'deps_ok=1' "$tmp/b33l.log" || problem "$label" "good log: no deps_ok=1"
+	grep -vF 'TestMCPOnly/5-config' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
+	m10_expect "$label" "deleted leaf line" 1 'mcponly=8'
+	m10_log "$tmp/m10.log"
+	sed 's/--- PASS: TestMCPOnly\/6-serve-stdio/--- FAIL: TestMCPOnly\/6-serve-stdio/' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
+	m10_expect "$label" "failed leaf line" 1 'fail=1'
+	m10_log "$tmp/m10.log"
+	sed 's/TestMCPOnly\/7-register-without-token /TestMCPOnly\/6-serve-stdio /' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
+	m10_expect "$label" "a repeated leaf line in place of a missing one" 1 'mcponly=8'
+	m10_log "$tmp/m10.log"
+	sed 's/^ok  .*internal\/e2e.*$/FAIL\tgithub.com\/ericfitz\/agentbus2\/internal\/e2e\t25.000s/' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
+	m10_expect "$label" "a package FAIL with every leaf passing" 1 'pkg_ok=0'
 	finish "$label"
 	revert
 }

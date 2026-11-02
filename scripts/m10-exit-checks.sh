@@ -1,7 +1,15 @@
 #!/usr/bin/env bash
 # Milestone 10 exit evidence: the MCP-only binary (issue #12).
-#   usage: m10-exit-checks.sh <e2e.log>     (Task 5 adds the e2e counts)
+#   usage: m10-exit-checks.sh <e2e.log>     the TestMCPOnly counts, then --deps-only
 #          m10-exit-checks.sh --deps-only   dependency rules alone (Docker-free)
+# <e2e.log> is a `go test -count=1 -v ./internal/e2e/` log. It must exist and be
+# non-empty (exit 2 naming the path). The script prints
+#   mcponly=<n>  the nine leaves with a `--- PASS: TestMCPOnly/<name> (` line,
+#                each name counted once
+#   fail=<n>     every `--- FAIL` line
+#   pkg_ok=<0|1> 1 when the package's `ok` line is present and no `FAIL` line is
+# then runs --deps-only, and exits 1 unless mcponly=9, fail=0, pkg_ok=1 and the
+# dependency rules hold.
 # open note: mcp-only-client 9: --deps-only runs inside `make verify` (seconds,
 # no Docker); the m4 to m8 --deps-only runs stay in the gates-selftest job.
 #
@@ -43,14 +51,41 @@ ALLOWED_MODULES=(
 
 usage() { echo "usage: $0 <e2e.log> | --deps-only" >&2; }
 
+# The leaf names of internal/e2e's TestMCPOnly (scripts/check-gates-selftest.sh
+# block 33 keeps the same list).
+LEAVES=(1-check-reach 2-register-from-token-file 3-register-again 4-check-identity 5-config 6-serve-stdio 7-register-without-token 8-check-unregistered-key 9-no-local-mode)
+
 if [ "$#" -ne 1 ]; then
 	usage
 	exit 2
 fi
 if [ "$1" != "--deps-only" ]; then
-	echo "m10-exit-checks: only --deps-only is implemented in this task" >&2
-	usage
-	exit 2
+	log="$1"
+	if [ ! -s "$log" ]; then
+		echo "m10-exit-checks: log '$log' is missing or empty" >&2
+		exit 2
+	fi
+	mcponly=0
+	for name in "${LEAVES[@]}"; do
+		if grep -qE "^[[:space:]]+--- PASS: TestMCPOnly/$name \\(" "$log"; then
+			mcponly=$((mcponly + 1))
+		fi
+	done
+	fail="$(grep -c -E '^[[:space:]]*--- FAIL' "$log" || true)"
+	pkg_ok=0
+	if grep -qE '^ok[[:space:]]+github\.com/ericfitz/agentbus2/internal/e2e([[:space:]]|$)' "$log" && ! grep -qE '^FAIL([[:space:]]|$)' "$log"; then
+		pkg_ok=1
+	fi
+	echo "mcponly=$mcponly"
+	echo "fail=$fail"
+	echo "pkg_ok=$pkg_ok"
+	rc=0
+	if [ "$mcponly" -ne "${#LEAVES[@]}" ] || [ "$fail" -ne 0 ] || [ "$pkg_ok" -ne 1 ]; then
+		echo "m10-exit-checks: want mcponly=${#LEAVES[@]}, fail=0 and pkg_ok=1" >&2
+		rc=1
+	fi
+	bash "${BASH_SOURCE[0]}" --deps-only || rc=1
+	exit "$rc"
 fi
 
 violations=0

@@ -15,7 +15,7 @@ import (
 // Binary is the executable's name, the prefix of every message.
 const Binary = "agentbus2-mcponly"
 
-const usageLine = "usage: agentbus2-mcponly <serve|register|help|version> [flags]"
+const usageLine = "usage: agentbus2-mcponly <serve|register|check|config|help|version> [flags]"
 
 // runFunc is the shape of every command.
 type runFunc func(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int
@@ -25,6 +25,8 @@ type runFunc func(ctx context.Context, args []string, environ []string, stdin io
 var commands = map[string]runFunc{
 	"serve":    runServe,
 	"register": runRegister,
+	"check":    runCheck,
+	"config":   runConfig,
 }
 
 // commandNames is every command, sorted.

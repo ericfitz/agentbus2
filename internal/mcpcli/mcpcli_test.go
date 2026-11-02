@@ -53,7 +53,7 @@ func TestHelpVersionRejectExtraArguments(t *testing.T) {
 }
 
 func TestUnknownFlagsExit2(t *testing.T) {
-	for _, c := range []string{"serve", "register"} {
+	for _, c := range []string{"serve", "register", "check", "config"} {
 		code, out, errs := run([]string{c, "-bogus"}, nil)
 		if code != 2 || out != "" || !strings.Contains(errs, "bogus") {
 			t.Errorf("%s -bogus: code %d, stdout %q, stderr %q", c, code, out, errs)
@@ -63,7 +63,7 @@ func TestUnknownFlagsExit2(t *testing.T) {
 
 // open note: mcp-only-client 14
 func TestOnlyMCPCommands(t *testing.T) {
-	want := []string{"help", "register", "serve", "version"}
+	want := []string{"check", "config", "help", "register", "serve", "version"}
 	if got := commandNames(); !slices.Equal(got, want) {
 		t.Fatalf("commandNames = %v, want %v", got, want)
 	}

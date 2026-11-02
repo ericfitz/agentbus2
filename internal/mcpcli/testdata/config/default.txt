@@ -1,0 +1,16 @@
+{
+  "mcpServers": {
+    "agentbus2": {
+      "command": "/opt/bin/agentbus2-mcponly",
+      "args": [
+        "serve",
+        "-server",
+        "http://h:1",
+        "-identity",
+        "pat"
+      ]
+    }
+  }
+}
+
+command line: /opt/bin/agentbus2-mcponly serve -server http://h:1 -identity pat

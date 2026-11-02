@@ -37,8 +37,9 @@ import (
 )
 
 var (
-	binPath string
-	fx      *fixture
+	binPath    string
+	mcpOnlyBin string
+	fx         *fixture
 )
 
 // syncBuf is a bytes.Buffer safe for a writer and a reader on two goroutines.
@@ -149,6 +150,14 @@ func runMain(m *testing.M) int {
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "e2e: go build failed: %v\n%s", err, out)
+		return 1
+	}
+	mcpOnlyBin = filepath.Join(root, "agentbus2-mcponly")
+	buildOnly := exec.Command("go", "build", "-trimpath", "-o", mcpOnlyBin, "./cmd/agentbus2-mcponly")
+	buildOnly.Dir = filepath.Join("..", "..")
+	buildOnly.Env = append(os.Environ(), "CGO_ENABLED=0")
+	if out, err := buildOnly.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "e2e: go build agentbus2-mcponly failed: %v\n%s", err, out)
 		return 1
 	}
 	fx, err = startFixture(root)
