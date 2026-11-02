@@ -741,12 +741,12 @@ block_replaced_exit_ignored() {
 	revert
 	# 2. A local Watch that cannot see another connection's send: the in-process
 	# notifier replaces the polling one.
-	if mutate_file "$label" internal/client/local.go 'n = notify.NewPolling(poll)' 'n, _ = notify.NewMemory(), poll'; then
-		if [ "$(grep -c 'notify.NewMemory()' "$wt/internal/client/local.go")" -ne 1 ]; then
-			problem "$label" "local.go: notify.NewMemory() count is not 1"
+	if mutate_file "$label" internal/client/localmode/localmode.go 'n = notify.NewPolling(poll)' 'n, _ = notify.NewMemory(), poll'; then
+		if [ "$(grep -c 'notify.NewMemory()' "$wt/internal/client/localmode/localmode.go")" -ne 1 ]; then
+			problem "$label" "localmode.go: notify.NewMemory() count is not 1"
 		else
 			log="$tmp/b24b.log"
-			(cd "$wt" && go test -count=1 -run '^TestLocalWatchWakesAcrossConns$' ./internal/client/ >"$log" 2>&1) || true
+			(cd "$wt" && go test -count=1 -run '^TestLocalWatchWakesAcrossConns$' ./internal/client/localmode/ >"$log" 2>&1) || true
 			grep -qF -- '--- FAIL' "$log" || problem "$label" "polling mutation: log lacks '--- FAIL': $(tail -n 3 "$log" | tr '\n' ' ')"
 		fi
 	fi
