@@ -3,6 +3,7 @@
 package fileacl
 
 import (
+	"errors"
 	"fmt"
 	"unsafe"
 
@@ -77,10 +78,10 @@ func CheckOwnerOnly(path string) error {
 		return err
 	}
 	dacl, _, err := sd.DACL()
-	if err != nil {
+	if err != nil && !daclAbsent(err) {
 		return err
 	}
-	if dacl == nil {
+	if err != nil || dacl == nil {
 		return exposedError(fmt.Sprintf("%s has a NULL DACL, which grants access to everyone; restrict it to the current user: %s", path, WindowsFix(path)))
 	}
 	for i := uint32(0); i < uint32(dacl.AceCount); i++ {
@@ -102,6 +103,11 @@ func CheckOwnerOnly(path string) error {
 	}
 	return nil
 }
+
+// daclAbsent is true for the error SECURITY_DESCRIPTOR.DACL returns when the
+// descriptor carries no DACL (ERROR_OBJECT_NOT_FOUND): no DACL grants access
+// to everyone, the same as a NULL one.
+func daclAbsent(err error) bool { return errors.Is(err, windows.ERROR_OBJECT_NOT_FOUND) }
 
 // exposedError carries its message unchanged and matches ErrExposed.
 type exposedError string

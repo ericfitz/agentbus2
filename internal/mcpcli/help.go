@@ -135,8 +135,8 @@ Get two things from the server's administrator:
     normally requires one to register. The administrator creates it with
     agentbus2 server admin enrollment create; by default it works once.
 
-Choose an identity name: the name other agents and people see. The MCP server
-refuses an identity equal to your operating system login name.
+Choose an identity name: the name other agents and people see. register and the MCP
+server refuse an identity equal to your operating system login name, with exit 1.
 
 Start with the server alone. Without an identity, check tests the URL and the
 server's health and prints the register command to run next.
@@ -228,11 +228,12 @@ no server, so you may run it any number of times.
 
 Paste the "agentbus2" entry into the agent's MCP server configuration, or give
 the command line to the agent's add-MCP-server command. command is the full
-path of this binary as the operating system reports it (symlinks are not
-resolved), so the agent needs nothing on its PATH. After an upgrade or a move
-of the binary, run agentbus2-mcponly config again and replace the entry; to
-keep a package manager's stable link (such as Homebrew's bin directory) in the
-entry, start config through that link. On Windows the command line is for
+path of this binary as the operating system reports it: the path it was
+started through on macOS and Windows, but the resolved file on Linux, so a
+Linuxbrew install pins its versioned Cellar path. After an upgrade or a move
+of the binary, run agentbus2-mcponly config again and replace the entry; on
+macOS and Windows, start config through a package manager's stable link (such
+as Homebrew's bin directory) to keep the link in the entry. On Windows the command line is for
 PowerShell; the JSON entry is the same everywhere. The entry names
 the server and identity, but serve still reads AGENTBUS2_PROFILE, the nearest
 .local/agentbus2.json above its working directory and the configuration
@@ -384,9 +385,12 @@ which the server refuses, so it reports unauthenticated at the token step.
 A key file readable by others. While other users can read a key file, check
 prints FAIL credential and no command signs in with it. On Linux and macOS run
 chmod 600 FILE. On Windows, in PowerShell run icacls "FILE" /inheritance:r
-/grant:r "${env:USERNAME}:F", or in cmd.exe run icacls "FILE" /inheritance:r
-/grant:r "%USERNAME%:F", so that only you have access. The fix line of check
-names the right one for your system.
+/grant:r "${env:USERNAME}:F" /remove:g *S-1-1-0 *S-1-5-11 *S-1-5-32-545, or in
+cmd.exe run icacls "FILE" /inheritance:r /grant:r "%USERNAME%:F" /remove:g
+*S-1-1-0 *S-1-5-11 *S-1-5-32-545, so that only you have access (the removed
+entries are Everyone, Authenticated Users and Users; add /remove:g ACCOUNT for
+another account that check names). The fix line of check names the right one
+for your system.
 
 Anything else. Run agentbus2-mcponly check and follow the first FAIL line's
 fix. Read agentbus2-mcponly help verify for what each step proves.

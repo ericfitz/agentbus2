@@ -2,6 +2,7 @@ package mcpcli
 
 import (
 	"os"
+	"os/user"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -102,5 +103,25 @@ func TestRegisterCredentialAndRerun(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(configDir, "credentials")); !os.IsNotExist(err) {
 		t.Errorf("credentials directory exists (err %v): -credential writes no credential or pending file", err)
+	}
+}
+
+// Decision 16: register refuses the OS login name and creates nothing.
+func TestRegisterRefusesOSLoginName(t *testing.T) {
+	prev := currentUser
+	currentUser = func() (*user.User, error) { return &user.User{Username: "pat"}, nil }
+	t.Cleanup(func() { currentUser = prev })
+	t.Chdir(t.TempDir())
+	base := startServer(t)
+	environ, configDir := testEnviron(t)
+	code, out, errs := run([]string{"register", "-server", base, "-identity", "pat"}, environ)
+	if code != 1 || out != "" || !strings.Contains(errs, "is the OS login name") || !strings.Contains(errs, "agentbus2-mcponly register") {
+		t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
+	}
+	if _, err := os.Stat(filepath.Join(configDir, "credentials")); err == nil {
+		t.Error("a credentials directory was created")
+	}
+	if code, out, errs = run([]string{"register", "-server", base, "-identity", "other"}, environ); code != 0 {
+		t.Errorf("other name: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 }

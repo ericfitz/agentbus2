@@ -35,3 +35,22 @@ func TestCommandLine(t *testing.T) {
 		}
 	}
 }
+
+func TestPowershellQuote(t *testing.T) {
+	for in, want := range map[string]string{
+		`C:\a\b.exe`:     `C:\a\b.exe`,
+		"a@b":            "a@b",
+		"@file":          "'@file'",
+		"a,b":            "'a,b'",
+		"100%":           "'100%'",
+		"it's":           "'it''s'",
+		"\u2018x\u2019":  "'\u2018\u2018x\u2019\u2019'",
+		"a\u201a\u201bb": "'a\u201a\u201a\u201b\u201bb'",
+		"a$b":            "'a$b'",
+		"":               "''",
+	} {
+		if got := powershellQuote(in); got != want {
+			t.Errorf("powershellQuote(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

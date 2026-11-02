@@ -10,6 +10,7 @@ import (
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentbus2/internal/mcpserver"
 )
 
 // runRegister is `agentbus2-mcponly register [-server URL] [-identity I]
@@ -52,6 +53,12 @@ func runRegister(ctx context.Context, args []string, environ []string, _ io.Read
 			algExplicit = true
 		}
 	})
+	// Decision 16: a key for the OS login name could never serve, so refuse it
+	// before anything is created. (The full binary's register has no such guard.)
+	if err := mcpserver.IdentityGuard(o, osUserName(), Binary+" register"); err != nil {
+		_, _ = fmt.Fprintln(stderr, err)
+		return 1
+	}
 	out, err := client.RegisterIdentity(ctx, client.RegisterRequest{Options: o, EnrollmentToken: tok, Algorithm: keys.Algorithm(algName), AlgorithmExplicit: algExplicit})
 	if err != nil {
 		var re *client.ResolveError

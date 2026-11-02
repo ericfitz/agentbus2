@@ -83,3 +83,22 @@ func TestCheckOwnerOnly(t *testing.T) {
 		t.Fatalf("missing file: %v", err)
 	}
 }
+
+// A descriptor with no DACL, and a NULL one, are exposed (they grant access to
+// everyone); other errors are not.
+func TestDACLAbsentIsExposed(t *testing.T) {
+	if !daclAbsent(windows.ERROR_OBJECT_NOT_FOUND) || daclAbsent(windows.ERROR_ACCESS_DENIED) || daclAbsent(nil) {
+		t.Fatal("daclAbsent classifies the wrong errors")
+	}
+	path := filepath.Join(t.TempDir(), "k")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckOwnerOnly(path); !errors.Is(err, ErrExposed) {
+		t.Fatalf("NULL DACL: %v", err)
+	}
+}

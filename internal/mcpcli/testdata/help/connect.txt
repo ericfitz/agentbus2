@@ -6,8 +6,8 @@ Get two things from the server's administrator:
     normally requires one to register. The administrator creates it with
     agentbus2 server admin enrollment create; by default it works once.
 
-Choose an identity name: the name other agents and people see. The MCP server
-refuses an identity equal to your operating system login name.
+Choose an identity name: the name other agents and people see. register and the MCP
+server refuse an identity equal to your operating system login name, with exit 1.
 
 Start with the server alone. Without an identity, check tests the URL and the
 server's health and prints the register command to run next.

@@ -2,7 +2,6 @@ package fileacl
 
 import (
 	"errors"
-	"fmt"
 )
 
 // ErrExposed marks CheckOwnerOnly's policy refusals (a NULL DACL, an entry for
@@ -12,10 +11,18 @@ var ErrExposed = errors.New("fileacl: the file is accessible to other principals
 // WindowsFix is the one source of the Windows fix text for an exposed key file:
 // the icacls command in both shells, because %USERNAME% expands only in
 // cmd.exe and ${env:USERNAME} only in PowerShell (the default Windows shell).
-// It is pure text and builds on every OS, so check, CheckOwnerOnly and the
-// help share it and a test can pin it anywhere.
+// /inheritance:r drops the inherited entries, /grant:r gives the current user
+// full control, and /remove:g drops the explicit entries CheckOwnerOnly does
+// not allow and a key file most often has: Everyone (S-1-1-0), Authenticated
+// Users (S-1-5-11) and Users (S-1-5-32-545). Another account that check still
+// names is removed with /remove:g ACCOUNT. SYSTEM and Administrators stay, as
+// CheckOwnerOnly allows them. It is pure text and builds on every OS, so
+// check, CheckOwnerOnly and the help share it and a test pins it anywhere.
 func WindowsFix(path string) string {
-	return fmt.Sprintf(`in PowerShell run icacls "%[1]s" /inheritance:r /grant:r "${env:USERNAME}:F"; in cmd.exe run icacls "%[1]s" /inheritance:r /grant:r "%%USERNAME%%:F"`, path)
+	cmd := func(user string) string {
+		return `icacls "` + path + `" /inheritance:r /grant:r "` + user + `:F" /remove:g *S-1-1-0 *S-1-5-11 *S-1-5-32-545`
+	}
+	return "in PowerShell run " + cmd("${env:USERNAME}") + "; in cmd.exe run " + cmd("%USERNAME%") + "; if check still names another account, add /remove:g ACCOUNT"
 }
 
 // aceKind classifies a DACL entry type for CheckOwnerOnly.

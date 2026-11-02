@@ -28,14 +28,35 @@ func shellQuote(arg string) string {
 }
 
 // powershellQuote quotes arg for PowerShell, the default Windows shell:
-// unchanged when every byte is in [A-Za-z0-9_@%+=:,./\\-], else single-quoted
-// with each ' doubled. cmd.exe does not read single quotes, so on Windows the
-// command line is a PowerShell line (help configure says so).
+// unchanged when every character is in [A-Za-z0-9_+=:./\\-] or is an @ that is
+// not first, else single-quoted with each single quote doubled (PowerShell
+// reads the typographic quotes U+2018 to U+201B as single quotes too). A comma
+// (array operator), a percent sign and a leading @ (splatting) therefore force
+// quoting. cmd.exe does not read single quotes, so on Windows the command line
+// is a PowerShell line (help configure says so).
 func powershellQuote(arg string) string {
-	if arg != "" && !strings.ContainsFunc(arg, func(r rune) bool { return r != '\\' && needsQuote(r) }) {
+	safe := arg != ""
+	for i, r := range arg {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', strings.ContainsRune("_+=:./\\-", r):
+		case r == '@' && i > 0:
+		default:
+			safe = false
+		}
+	}
+	if safe {
 		return arg
 	}
-	return "'" + strings.ReplaceAll(arg, "'", "''") + "'"
+	var b strings.Builder
+	b.WriteByte('\'')
+	for _, r := range arg {
+		if r == '\'' || (r >= '\u2018' && r <= '\u201b') {
+			b.WriteRune(r)
+		}
+		b.WriteRune(r)
+	}
+	b.WriteByte('\'')
+	return b.String()
 }
 
 // commandLine is exe and args as one line for the shell of goos: PowerShell

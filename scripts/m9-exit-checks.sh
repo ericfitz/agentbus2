@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Milestone 9 exit checks: the automated half of the release exit. Part 1 reads
 # the real repository (installers, workflows, templates, the shared helpers);
-# part 2 applies five mutations in a throwaway worktree of HEAD and proves the
+# part 2 applies six mutations in a throwaway worktree of HEAD and proves the
 # check each one targets fires. It is the self-test of the release tooling
 # (Definition of Done C) and runs as the m9-exit-selftest CI job.
 #   usage: m9-exit-checks.sh [--real-only]     (--real-only skips the mutations)
@@ -209,12 +209,12 @@ BINLINE='for b in agentbus2 agentbus2-mcponly; do'
 # one pins BIN_NAMES to the same two names so the loops cannot drift apart.
 BINNAMESLINE='BIN_NAMES=(agentbus2 agentbus2-mcponly)'
 
-# anchors_missing WORKFLOW: prints each literal anchor missing from WORKFLOW
+# anchors_missing WORKFLOW [ROOT]: prints each literal anchor missing from WORKFLOW
 # (a copy of release-build.yml) and from the two scripts of the repository
 # (the workflow and release.sh both loop over the two binaries and the four
 # platforms of each).
 anchors_missing() {
-	local wf="$1" a
+	local wf="$1" a root="${2:-$ROOT}"
 	for a in \
 		'run-name: release-build ${{ inputs.tag }}' \
 		'pattern: archive-*' \
@@ -229,10 +229,10 @@ anchors_missing() {
 		"$FORLINE"; do
 		grep -qF -- "$a" "$wf" || echo "release-build.yml lacks: $a"
 	done
-	grep -qF -- '-linux-${goarch}.tar.gz' "$ROOT/release/build-archive.sh" || echo 'build-archive.sh lacks: -linux-${goarch}.tar.gz'
-	grep -qF -- "$BINLINE" "$ROOT/release/release.sh" || echo "release.sh download_archives lacks: $BINLINE"
-	grep -qF -- "$FORLINE" "$ROOT/release/release.sh" || echo "release.sh download_archives lacks: $FORLINE"
-	grep -qF -- "$BINNAMESLINE" "$ROOT/release/release.sh" || echo "release.sh lacks: $BINNAMESLINE (download_archives loops over the same two names)"
+	grep -qF -- '-linux-${goarch}.tar.gz' "$root/release/build-archive.sh" || echo 'build-archive.sh lacks: -linux-${goarch}.tar.gz'
+	grep -qF -- "$BINLINE" "$root/release/release.sh" || echo "release.sh download_archives lacks: $BINLINE"
+	grep -qF -- "$FORLINE" "$root/release/release.sh" || echo "release.sh download_archives lacks: $FORLINE"
+	grep -qF -- "$BINNAMESLINE" "$root/release/release.sh" || echo "release.sh lacks: $BINNAMESLINE (download_archives loops over the same two names)"
 }
 
 # checkout_offenders FILE...: prints FILE:LINE of every actions/checkout step
@@ -404,6 +404,16 @@ extra "__UNFILLED__"'; then
 	if mutate mutation-wrong-binary release/build-archive.sh 's#pkg=./cmd/agentbus2-mcponly#pkg=.#'; then
 		run_capture "$out" bash "$wt/release/build-archive.sh" --self-test
 		expect mutation-wrong-binary 1 "$out" 'holds the wrong binary'
+	fi
+	revert
+
+	# (6) BIN_NAMES gains a name: the anchor that pins it to download_archives'
+	# literal loop must fire (the anchors are read from the worktree)
+	if mutate mutation-bin-names release/release.sh 's#^BIN_NAMES=(agentbus2 agentbus2-mcponly)#BIN_NAMES=(agentbus2 agentbus2-mcponly agentbus2-extra)#'; then
+		anchors_missing "$wt/.github/workflows/release-build.yml" "$wt" >"$out"
+		rc=0
+		if [ -s "$out" ]; then rc=1; fi # output means an anchor fired (1); none means the mutation was missed (0)
+		expect mutation-bin-names 1 "$out" 'BIN_NAMES=(agentbus2 agentbus2-mcponly)'
 	fi
 	revert
 }

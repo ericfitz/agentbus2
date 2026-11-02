@@ -344,6 +344,10 @@ func TestResolveCredentialFlag(t *testing.T) {
 			if !errors.As(err, &re) || err.Error() != c.want {
 				t.Fatalf("err %v, want a ResolveError %q", err, c.want)
 			}
+			// Only the credential_process case matches the sentinel.
+			if got := errors.Is(err, ErrCredentialProcessConflict); got != (c.name == "credential_process") {
+				t.Fatalf("errors.Is(err, ErrCredentialProcessConflict) = %v for %s", got, c.name)
+			}
 		})
 	}
 	t.Run("server profile resolves without a credential directory read", func(t *testing.T) {

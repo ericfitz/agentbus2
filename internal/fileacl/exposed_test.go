@@ -8,7 +8,7 @@ import (
 // The Windows fix names both shells; %USERNAME% alone fails in PowerShell.
 func TestWindowsFixNamesBothShells(t *testing.T) {
 	got := WindowsFix(`C:\k\id`)
-	for _, want := range []string{`"${env:USERNAME}:F"`, `"%USERNAME%:F"`, `icacls "C:\k\id" /inheritance:r /grant:r`, "PowerShell", "cmd.exe"} {
+	for _, want := range []string{`"${env:USERNAME}:F"`, `"%USERNAME%:F"`, `icacls "C:\k\id" /inheritance:r /grant:r`, `/remove:g ACCOUNT`, "PowerShell", "cmd.exe", "/remove:g *S-1-1-0 *S-1-5-11 *S-1-5-32-545"} {
 		if !strings.Contains(got, want) {
 			t.Errorf("WindowsFix missing %q in %q", want, got)
 		}

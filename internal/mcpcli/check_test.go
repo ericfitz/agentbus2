@@ -182,7 +182,7 @@ func TestCheckServerDisagreesWithProfile(t *testing.T) {
 // with the guard's text, because serve would exit 1 on it.
 func TestCheckIdentityGuard(t *testing.T) {
 	prev := currentUser
-	currentUser = func() (*user.User, error) { return &user.User{Username: "pat"}, nil }
+	currentUser = func() (*user.User, error) { return &user.User{Username: "eric"}, nil }
 	t.Cleanup(func() { currentUser = prev })
 	t.Chdir(t.TempDir())
 	base := startServer(t)
@@ -190,6 +190,7 @@ func TestCheckIdentityGuard(t *testing.T) {
 	if code, out, errs := run([]string{"register", "-server", base, "-identity", "pat"}, environ); code != 0 {
 		t.Fatalf("register: %d %q %q", code, out, errs)
 	}
+	currentUser = func() (*user.User, error) { return &user.User{Username: "pat"}, nil }
 	code, out, errs := run([]string{"check"}, environ)
 	got := lines(out)
 	if code != 1 || len(got) != 3 || !strings.HasPrefix(got[2], "FAIL identity: ") ||
