@@ -2,12 +2,14 @@ package client
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/core/notify"
@@ -57,6 +59,12 @@ type Options struct {
 	// a local profile is a ResolveError (NoLocalModeError).
 	// open note: mcp-only-client 1
 	Local LocalOpener
+	// Server and Credential are the MCP-only binary's -server and -credential;
+	// the full binary sets neither. Server names the server of an undefined
+	// profile (nothing is written) or must agree with a defined one; Credential
+	// is a private key file that signs instead of the profile's credential
+	// store. open note: mcp-only-client 3, 4
+	Server, Credential string
 	// HTTP is the server-mode base client; nil: a client with no Timeout.
 	HTTP *http.Client
 }
@@ -124,13 +132,16 @@ func Resolve(o Options) (Resolved, error) {
 	if err != nil {
 		return Resolved{}, resolveErr(err)
 	}
-	if r.Profile, err = cfg.Resolve(name); err != nil {
-		return Resolved{}, resolveErr(err)
+	if r.Profile, err = resolveProfile(cfg, name, o.Server); err != nil {
+		return Resolved{}, err
+	}
+	if err := checkCredentialFlag(o, r.Profile); err != nil {
+		return Resolved{}, err
 	}
 	r.ProfileSource = src
 	r.Credentials = credential.Store{Dir: profile.CredentialDir(r.ConfigDir, r.Profile.Name)}
 	var creds []string
-	if r.Profile.Mode == profile.ModeServer && !o.HumanSignIn {
+	if r.Profile.Mode == profile.ModeServer && !o.HumanSignIn && o.Credential == "" {
 		if creds, err = r.Credentials.List(); err != nil {
 			return Resolved{}, resolveErr(err)
 		}
@@ -148,4 +159,49 @@ func Resolve(o Options) (Resolved, error) {
 		return Resolved{}, resolveErr(err)
 	}
 	return r, nil
+}
+
+// resolveProfile is Config.Resolve plus the -server flag: with server set, an
+// undefined name (the built-in default included) is an in-memory server
+// profile, a defined server profile must name the same server, and a defined
+// local profile is refused.
+func resolveProfile(cfg profile.Config, name, server string) (profile.Profile, error) {
+	if server == "" {
+		p, err := cfg.Resolve(name)
+		if err != nil {
+			return profile.Profile{}, resolveErr(err)
+		}
+		return p, nil
+	}
+	want := strings.TrimSuffix(server, "/")
+	p, defined := cfg.Profiles[name]
+	switch {
+	case !defined:
+		p = profile.Profile{Name: name, Mode: profile.ModeServer, Server: want}
+		if err := p.Validate(); err != nil {
+			return profile.Profile{}, resolveErr(fmt.Errorf("profile %q: %w", name, err))
+		}
+	case p.Mode == profile.ModeLocal:
+		return profile.Profile{}, resolveErr(fmt.Errorf("profile %q is a local profile; -server applies to server profiles", name))
+	case p.Server != want:
+		return profile.Profile{}, resolveErr(fmt.Errorf("profile %q uses server %s; -server %s disagrees", name, p.Server, server))
+	}
+	return p, nil
+}
+
+// checkCredentialFlag refuses -credential where it has no meaning: a local
+// profile, a credential_process profile and a human sign-in.
+func checkCredentialFlag(o Options, p profile.Profile) error {
+	if o.Credential == "" {
+		return nil
+	}
+	switch {
+	case p.Mode == profile.ModeLocal:
+		return resolveErr(fmt.Errorf("-credential applies to server profiles; profile %q is local", p.Name))
+	case len(p.CredentialProcess) > 0:
+		return resolveErr(fmt.Errorf("profile %q sets credential_process; -credential cannot be combined with it", p.Name))
+	case o.HumanSignIn:
+		return resolveErr(errors.New("-credential does not apply to a human sign-in"))
+	}
+	return nil
 }

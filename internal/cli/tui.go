@@ -41,7 +41,7 @@ func RunTUI(ctx context.Context, args []string, environ []string, stdin io.Reade
 	// OS login name; on a server profile it is the human who signs in through
 	// the profile's corporate provider (spec 5.3), and the agent identity
 	// selection does not apply.
-	sel, err := selectProfile(o)
+	sel, err := client.SelectProfile(o)
 	if err != nil {
 		fail(stderr, err)
 		return 2

@@ -3,6 +3,7 @@ package client
 import (
 	"bytes"
 	"context"
+	"crypto"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -18,8 +19,10 @@ import (
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/bus/remote"
 	"github.com/ericfitz/agentbus2/internal/credential"
+	"github.com/ericfitz/agentbus2/internal/fileacl"
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/profile"
 	"github.com/ericfitz/agentbus2/internal/server/cmd"
@@ -330,5 +333,82 @@ func TestServerTokenEndpoint401IsNotRetried(t *testing.T) {
 	}
 	if n := others.Load(); n != 0 {
 		t.Fatalf("%d bearer requests were sent without a token", n)
+	}
+}
+
+// writeKeyFile writes k as a PEM file at t.TempDir()/agent.pem and restricts it
+// to its owner (Windows: keys.WriteFile sets no DACL, Ruling 12).
+func writeKeyFile(t *testing.T, k keys.Algorithm) (path string, signer interface{ Public() crypto.PublicKey }) {
+	t.Helper()
+	s, err := keys.Generate(k)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pemb, err := keys.EncodePrivatePEM(s)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path = filepath.Join(t.TempDir(), "agent.pem")
+	if err := keys.WriteFile(path, pemb); err != nil {
+		t.Fatal(err)
+	}
+	if err := fileacl.OwnerOnly(path); err != nil {
+		t.Fatal(err)
+	}
+	return path, s
+}
+
+// TestServerOpenWithCredentialFile: -credential signs with the named file and
+// leaves the credential store alone.
+func TestServerOpenWithCredentialFile(t *testing.T) {
+	ctx := context.Background()
+	base := startServer(t)
+	e := newEnv(t)
+	path, signer := writeKeyFile(t, keys.EdDSA)
+	gc, err := gen.NewClientWithResponses(base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := remote.Register(ctx, gc, "pat", signer.Public(), ""); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Open(ctx, Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat", Server: base, Credential: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	h, err := c.Bus.Health(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if h.Tier != bus.TierIdentity {
+		t.Fatalf("tier %q, want identity", h.Tier)
+	}
+	if _, err := os.Stat(filepath.Join(e.config, "credentials", "lab")); !os.IsNotExist(err) {
+		t.Fatalf("credentials/lab exists: %v", err)
+	}
+}
+
+// TestServerOpenCredentialFileRefusals: a missing file and a wide-mode file are
+// ResolveErrors; the latter wraps credential.ErrNotOwnerOnly.
+func TestServerOpenCredentialFileRefusals(t *testing.T) {
+	e := newEnv(t)
+	o := Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat", Server: "http://127.0.0.1:1"}
+	o.Credential = filepath.Join(t.TempDir(), "absent.pem")
+	_, err := Open(context.Background(), o)
+	var re *ResolveError
+	if !errors.As(err, &re) || !strings.Contains(err.Error(), o.Credential) {
+		t.Fatalf("missing: %v", err)
+	}
+	if runtime.GOOS != "windows" {
+		path, _ := writeKeyFile(t, keys.EdDSA)
+		if err := os.Chmod(path, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		o.Credential = path
+		_, err := Open(context.Background(), o)
+		if !errors.As(err, &re) || !errors.Is(err, credential.ErrNotOwnerOnly) {
+			t.Fatalf("wide: %v", err)
+		}
 	}
 }

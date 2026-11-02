@@ -77,6 +77,27 @@ func (s Store) Load(identity string) (crypto.Signer, keys.Algorithm, error) {
 	return loadFile(s.Path(identity))
 }
 
+// ErrNotOwnerOnly is wrapped by the refusal of a key file other users can read
+// (a Unix mode wider than 0600; on Windows, LoadFile's DACL check).
+var ErrNotOwnerOnly = errors.New("credential: the key file is readable by others")
+
+// ownerOnlyError carries its message unchanged and matches ErrNotOwnerOnly.
+type ownerOnlyError string
+
+func (e ownerOnlyError) Error() string        { return string(e) }
+func (e ownerOnlyError) Is(target error) bool { return target == ErrNotOwnerOnly }
+
+// LoadFile reads the private key at path, a file the caller names (the MCP-only
+// binary's -credential): a symlink is followed, so a mounted secret works, and
+// the target must be a regular file that only its owner can read (Unix mode
+// 0600 or narrower; on Windows fileacl.CheckOwnerOnly).
+func LoadFile(path string) (crypto.Signer, keys.Algorithm, error) {
+	if err := fileacl.CheckOwnerOnly(path); err != nil {
+		return nil, "", ownerOnlyError("credential: " + err.Error())
+	}
+	return loadFile(path)
+}
+
 // loadFile reads and parses the private key at path, refusing a non-regular
 // file, a Unix mode wider than 0600 and an oversized or unparseable file.
 func loadFile(path string) (crypto.Signer, keys.Algorithm, error) {
@@ -93,7 +114,8 @@ func loadFile(path string) (crypto.Signer, keys.Algorithm, error) {
 		return nil, "", fmt.Errorf("credential: %s is not a regular file", path)
 	}
 	if runtime.GOOS != "windows" && fi.Mode().Perm()&^0o600 != 0 {
-		return nil, "", fmt.Errorf("credential: %s has mode %04o and must be mode 0600 (chmod 600 it)", path, fi.Mode().Perm())
+		msg := fmt.Sprintf("credential: %s has mode %04o and must be mode 0600 (chmod 600 it)", path, fi.Mode().Perm())
+		return nil, "", ownerOnlyError(msg)
 	}
 	b, err := io.ReadAll(io.LimitReader(f, maxKeyFile+1))
 	if err != nil {

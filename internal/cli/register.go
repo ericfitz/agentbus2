@@ -2,62 +2,14 @@ package cli
 
 import (
 	"context"
-	"crypto"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
-	"path/filepath"
-	"strings"
 
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/profile"
 )
-
-// selectedProfile is the profile a command works on, before any identity
-// resolution: the config file, the name and its source, and the profile (the
-// built-in local profile for an undefined "default").
-type selectedProfile struct {
-	Config    profile.Config
-	ConfigDir string
-	Name      string
-	Defined   bool // the name has an entry in config.json
-	Profile   profile.Profile
-}
-
-// selectProfile applies Decision 21's selection order and loads config.json.
-// An undefined name other than "default" is returned with Defined false and a
-// zero Profile, so register can create it; callers that cannot create it turn
-// that into an error with errUndefined.
-func selectProfile(o client.Options) (selectedProfile, error) {
-	var s selectedProfile
-	var err error
-	if s.ConfigDir, err = profile.ConfigDir(o.Environ); err != nil {
-		return s, &client.ResolveError{Err: err}
-	}
-	if s.Config, err = profile.Load(filepath.Join(s.ConfigDir, "config.json")); err != nil {
-		return s, &client.ResolveError{Err: err}
-	}
-	cwd := o.Cwd
-	if cwd == "" {
-		cwd = "."
-	}
-	env, _ := profile.Getenv(o.Environ, "AGENTBUS2_PROFILE")
-	if s.Name, _, err = profile.SelectName(profile.Selection{Flag: o.Profile, Env: env, Cwd: cwd}); err != nil {
-		return s, &client.ResolveError{Err: err}
-	}
-	if p, ok := s.Config.Profiles[s.Name]; ok {
-		s.Defined, s.Profile = true, p
-		return s, nil
-	}
-	if p, err := s.Config.Resolve(s.Name); err == nil {
-		s.Profile = p // the built-in default
-	}
-	return s, nil
-}
 
 // RunRegister is `agentbus2 register [-profile P] [-identity I] [-server URL]
 // [-enrollment-token T] [-algorithm EdDSA|ES256]` (Milestone 6 choice 14;
@@ -87,118 +39,32 @@ func RunRegister(ctx context.Context, args []string, environ []string, stdin io.
 		return 2
 	}
 	alg := keys.Algorithm(algName)
-	if alg != keys.EdDSA && alg != keys.ES256 {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 register: -algorithm must be EdDSA or ES256, got %q\n", algName)
-		return 2
-	}
 	algExplicit := false
 	fs.Visit(func(f *flag.Flag) {
 		if f.Name == "algorithm" {
 			algExplicit = true
 		}
 	})
-	usage := func(err error) int {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 register: %v\n", err)
-		return 2
-	}
-
-	sel, err := selectProfile(o)
-	if err != nil {
-		return usage(err)
-	}
-	p := sel.Profile
-	creating := false
-	switch {
-	case !sel.Defined && server != "":
-		p = profile.Profile{Name: sel.Name, Mode: profile.ModeServer, Server: strings.TrimSuffix(server, "/")}
-		creating = true
-	case !sel.Defined && sel.Name != "default":
-		return usage(fmt.Errorf("profile %q is not defined in %s; pass -server to create it", sel.Name, sel.Config.Path))
-	case p.Mode == profile.ModeLocal:
-		return usage(errors.New("register applies to server profiles only; a local profile needs no registration"))
-	case server != "" && strings.TrimSuffix(server, "/") != p.Server:
-		return usage(fmt.Errorf("profile %q uses server %s; -server %s disagrees", p.Name, p.Server, server))
-	}
-	if err := p.Validate(); err != nil {
-		return usage(fmt.Errorf("profile %q: %w", p.Name, err))
-	}
-	cs := credential.Store{Dir: profile.CredentialDir(sel.ConfigDir, p.Name)}
-	var have []string
-	if !creating {
-		if have, err = cs.List(); err != nil {
-			return usage(err)
-		}
-	}
-	envID, _ := profile.Getenv(environ, "AGENTBUS2_IDENTITY")
-	identity, _, err := p.ResolveIdentity(profile.IdentitySelection{Flag: o.Identity, Env: envID, Credentials: have})
-	if err != nil {
-		return usage(err)
-	}
-
-	// Key choice: the saved credential, else the pending key a failed run left,
-	// else a new one written to the pending file before the request. A crash or
-	// a lost 201 after the server committed then keeps the key, and the retry
-	// registers the same key, which the server answers idempotently without
-	// consulting the (now used) enrollment token.
-	var signer crypto.Signer
-	fromPending := false
-	if cs.Exists(identity) {
-		k, have, err := cs.Load(identity)
-		if err != nil {
-			return usage(err)
-		}
-		if algExplicit && have != alg {
-			return usage(fmt.Errorf("the saved credential for %q is %s, not %s; remove %s to register a new key", identity, have, alg, cs.Path(identity)))
-		}
-		signer = k
-		// A credential wins over a pending key left by an earlier run.
-		if err := cs.DiscardPending(identity); err != nil {
-			return fail(stderr, err)
-		}
-	} else if k, have, ok, err := cs.LoadPending(identity); err != nil {
-		return usage(err)
-	} else if ok {
-		if algExplicit && have != alg {
-			return usage(fmt.Errorf("the pending key for %q is %s, not %s; remove %s to register a new key", identity, have, alg, cs.PendingPath(identity)))
-		}
-		signer, fromPending = k, true
-	} else {
-		if signer, err = keys.Generate(alg); err != nil {
-			return fail(stderr, err)
-		}
-		if err := cs.SavePending(identity, signer); err != nil {
-			return fail(stderr, err)
-		}
-		fromPending = true
-	}
-	res, err := client.Register(ctx, nil, p.Server, identity, signer.Public(), token)
+	o.Server = server
+	out, err := client.RegisterIdentity(ctx, client.RegisterRequest{Options: o, EnrollmentToken: token, Algorithm: alg, AlgorithmExplicit: algExplicit})
 	if err != nil {
 		var re *client.ResolveError
 		if errors.As(err, &re) {
-			return usage(err)
+			_, _ = fmt.Fprintf(stderr, "agentbus2 register: %v\n", err)
+			return 2
 		}
-		if fromPending && bus.CodeOf(err) == bus.CodeConflict {
-			code := fail(stderr, err)
-			_, _ = fmt.Fprintf(stderr, "agentbus2 register: the pending key %s differs from the key the server holds: remove it, or ask an administrator to reset the credential for %q\n", cs.PendingPath(identity), identity)
+		var pc *client.PendingConflictError
+		if errors.As(err, &pc) {
+			code := fail(stderr, pc.Err)
+			_, _ = fmt.Fprintf(stderr, "agentbus2 register: %s\n", pc.Hint())
 			return code
 		}
 		return fail(stderr, err)
 	}
-	if fromPending {
-		if err := cs.CommitPending(identity, signer); err != nil {
-			return fail(stderr, err)
-		}
-	}
-	if creating {
-		sel.Config.Profiles[p.Name] = profile.Profile{Name: p.Name, Mode: profile.ModeServer, Server: p.Server, Identity: identity}
-		if err := sel.Config.Save(); err != nil {
-			return fail(stderr, err)
-		}
-	}
 	state := "existing key"
-	if res.Created {
+	if out.Created {
 		state = "created"
 	}
-	_, _ = fmt.Fprintf(stdout, "registered %s at %s (%s)\n", res.Identity, p.Server, state)
+	_, _ = fmt.Fprintf(stdout, "registered %s at %s (%s)\n", out.Identity, out.Server, state)
 	return 0
 }

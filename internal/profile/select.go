@@ -1,12 +1,17 @@
 package profile
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
 	"github.com/ericfitz/agentbus2/internal/repoconfig"
 	"github.com/ericfitz/agentbus2/internal/store"
 )
+
+// ErrIdentityRequired is wrapped by ResolveIdentity's final error: no source
+// named an identity.
+var ErrIdentityRequired = errors.New("identity is required")
 
 // Selection holds the inputs of the profile selection order (Decision 21).
 type Selection struct {
@@ -85,5 +90,5 @@ func (p Profile) ResolveIdentity(sel IdentitySelection) (identity, source string
 	case sel.Fallback != "" && slices.Contains(sel.Credentials, sel.Fallback):
 		return pick(sel.Fallback, "os-user")
 	}
-	return "", "", fmt.Errorf("identity is required: pass -identity, set AGENTBUS2_IDENTITY, or set identity in profile %q", p.Name)
+	return "", "", fmt.Errorf("%w: pass -identity, set AGENTBUS2_IDENTITY, or set identity in profile %q", ErrIdentityRequired, p.Name)
 }

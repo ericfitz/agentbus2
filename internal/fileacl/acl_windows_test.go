@@ -5,7 +5,10 @@ package fileacl
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
+
+	"golang.org/x/sys/windows"
 
 	"github.com/ericfitz/agentbus2/internal/fileacl/acltest"
 )
@@ -27,5 +30,51 @@ func TestOwnerOnlySetsOwnerOnlyACL(t *testing.T) {
 func TestOwnerOnlyMissingFile(t *testing.T) {
 	if err := OwnerOnly(filepath.Join(t.TempDir(), "absent")); err == nil {
 		t.Fatal("OwnerOnly on a missing file succeeded")
+	}
+}
+
+// open note: mcp-only-client 5
+func TestCheckOwnerOnly(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "k")
+	if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := OwnerOnly(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckOwnerOnly(path); err != nil {
+		t.Fatalf("after OwnerOnly: %v", err)
+	}
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	everyone, err := windows.StringToSid("S-1-1-0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := func(sid *windows.SID) windows.EXPLICIT_ACCESS {
+		return windows.EXPLICIT_ACCESS{
+			AccessPermissions: windows.GENERIC_READ,
+			AccessMode:        windows.GRANT_ACCESS,
+			Inheritance:       windows.NO_INHERITANCE,
+			Trustee: windows.TRUSTEE{
+				TrusteeForm:  windows.TRUSTEE_IS_SID,
+				TrusteeType:  windows.TRUSTEE_IS_UNKNOWN,
+				TrusteeValue: windows.TrusteeValueFromSID(sid),
+			},
+		}
+	}
+	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{entry(user.User.Sid), entry(everyone)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil); err != nil {
+		t.Fatal(err)
+	}
+	err = CheckOwnerOnly(path)
+	if err == nil || !strings.Contains(err.Error(), "S-1-1-0") {
+		t.Fatalf("with Everyone: %v", err)
 	}
 }

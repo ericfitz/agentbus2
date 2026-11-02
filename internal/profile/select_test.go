@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -120,5 +121,21 @@ func TestResolveIdentityOrder(t *testing.T) {
 				t.Fatalf("ResolveIdentity = %q, %q, %v", id, src, err)
 			}
 		})
+	}
+}
+
+// TestResolveIdentityRequiredIsSentinel: the final error wraps
+// ErrIdentityRequired and keeps its text.
+func TestResolveIdentityRequiredIsSentinel(t *testing.T) {
+	p := Profile{Name: "lab", Mode: ModeServer, Server: "https://h"}
+	_, _, err := p.ResolveIdentity(IdentitySelection{})
+	if !errors.Is(err, ErrIdentityRequired) {
+		t.Fatalf("err %v does not wrap ErrIdentityRequired", err)
+	}
+	if err.Error() != `identity is required: pass -identity, set AGENTBUS2_IDENTITY, or set identity in profile "lab"` {
+		t.Fatalf("text %q", err)
+	}
+	if _, _, err := p.ResolveIdentity(IdentitySelection{Flag: "../x"}); errors.Is(err, ErrIdentityRequired) {
+		t.Fatalf("an invalid identity is not a missing one: %v", err)
 	}
 }

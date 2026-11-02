@@ -116,6 +116,9 @@ func TestResolveOrder(t *testing.T) {
 		if !errors.As(err, &re) {
 			t.Fatalf("err %T is not a *ResolveError", err)
 		}
+		if !errors.Is(err, profile.ErrIdentityRequired) {
+			t.Fatalf("err %v does not wrap profile.ErrIdentityRequired", err)
+		}
 	})
 
 	t.Run("fallback identity", func(t *testing.T) {
@@ -267,4 +270,87 @@ func TestResolveHumanIdentityServerRepo(t *testing.T) {
 	if err != nil || r.Identity != "efitz" || r.IdentitySource != "os-user" {
 		t.Fatalf("with an efitz credential: %q (%s), %v", r.Identity, r.IdentitySource, err)
 	}
+}
+
+// open note: mcp-only-client 3
+func TestResolveServerFlag(t *testing.T) {
+	lab := profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://h:1"}
+	loc := profile.Profile{Name: "loc", Mode: profile.ModeLocal}
+	cases := []struct {
+		name      string
+		saved     []profile.Profile
+		profile   string
+		server    string
+		wantName  string
+		wantSrv   string
+		wantInErr string
+	}{
+		{"undefined name", nil, "lab", "http://h:1/", "lab", "http://h:1", ""},
+		{"undefined default", nil, "", "http://h:1/", "default", "http://h:1", ""},
+		{"defined, same server", []profile.Profile{lab}, "lab", "http://h:1/", "lab", "http://h:1", ""},
+		{"defined, other server", []profile.Profile{lab}, "lab", "http://h:2", "", "", "disagrees"},
+		{"defined local", []profile.Profile{loc}, "loc", "http://h:1", "", "", "-server applies to server profiles"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := newEnv(t)
+			if c.saved != nil {
+				e.save(t, c.saved...)
+			}
+			r, err := Resolve(Options{Environ: e.environ, Cwd: t.TempDir(), Profile: c.profile, Identity: "pat", Server: c.server})
+			if c.wantInErr != "" {
+				var re *ResolveError
+				if !errors.As(err, &re) || !strings.Contains(err.Error(), c.wantInErr) {
+					t.Fatalf("err %v (%T), want a ResolveError containing %q", err, err, c.wantInErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if r.Profile.Name != c.wantName || r.Profile.Mode != profile.ModeServer || r.Profile.Server != c.wantSrv {
+				t.Fatalf("profile %+v", r.Profile)
+			}
+			if c.saved == nil {
+				if _, err := os.Stat(filepath.Join(e.config, "config.json")); !os.IsNotExist(err) {
+					t.Fatalf("config.json exists after a -server resolve: %v", err)
+				}
+			}
+		})
+	}
+}
+
+// open note: mcp-only-client 4
+func TestResolveCredentialFlag(t *testing.T) {
+	proc := profile.Profile{Name: "proc", Mode: profile.ModeServer, Server: "http://h:1", CredentialProcess: []string{"x"}}
+	loc := profile.Profile{Name: "loc", Mode: profile.ModeLocal}
+	oidc := profile.Profile{Name: "oidc", Mode: profile.ModeServer, Server: "http://h:1", OIDC: &profile.OIDC{Issuer: "https://i", ClientID: "c", RedirectPort: 8123, Scopes: []string{"openid"}}}
+	cases := []struct {
+		name  string
+		p     profile.Profile
+		human bool
+		want  string
+	}{
+		{"local", loc, false, `-credential applies to server profiles; profile "loc" is local`},
+		{"credential_process", proc, false, `profile "proc" sets credential_process; -credential cannot be combined with it`},
+		{"human sign-in", oidc, true, "-credential does not apply to a human sign-in"},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e := newEnv(t)
+			e.save(t, c.p)
+			_, err := Resolve(Options{Environ: e.environ, Cwd: t.TempDir(), Profile: c.p.Name, Identity: "pat", Credential: "/k.pem", HumanSignIn: c.human})
+			var re *ResolveError
+			if !errors.As(err, &re) || err.Error() != c.want {
+				t.Fatalf("err %v, want a ResolveError %q", err, c.want)
+			}
+		})
+	}
+	t.Run("server profile resolves without a credential directory read", func(t *testing.T) {
+		e := newEnv(t)
+		r, err := Resolve(Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", Server: "http://h:1", Identity: "pat", Credential: "/k.pem"})
+		if err != nil || r.Identity != "pat" {
+			t.Fatalf("%+v, %v", r, err)
+		}
+	})
 }

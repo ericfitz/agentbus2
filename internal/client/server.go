@@ -25,7 +25,13 @@ func openServer(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 	}
 	p := r.Profile
 	var signer crypto.Signer
-	if len(p.CredentialProcess) == 0 {
+	if o.Credential != "" {
+		k, _, err := credential.LoadFile(o.Credential)
+		if err != nil {
+			return nil, resolveErr(err)
+		}
+		signer = k
+	} else if len(p.CredentialProcess) == 0 {
 		if !r.Credentials.Exists(r.Identity) {
 			return nil, resolveErr(fmt.Errorf("no credential for %q in profile %q: run agentbus2 register", r.Identity, p.Name))
 		}

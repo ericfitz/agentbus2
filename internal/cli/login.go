@@ -35,7 +35,7 @@ func RunLogin(ctx context.Context, args []string, environ []string, stdin io.Rea
 	}
 	// Check the mode before resolving the identity, so a local profile gets the
 	// mode message even when it has no identity.
-	sel, err := selectProfile(o)
+	sel, err := client.SelectProfile(o)
 	if err != nil {
 		fail(stderr, err)
 		return 2
