@@ -100,7 +100,7 @@ Further agent choice (controller ruling 4, no marker): the capacity text lists "
 
 ## Shared with agentbus v1 ADR 0026
 
-Decisions 3 (offline derived at read), 6 (the tag set), 8 (retention, N default 20), 13 (pull only, push a follow-up) and 15 (`problem` optional), and the protocol text, are shared with the v1 ADR. The protocol text, verbatim from the "Status" section of `internal/cli/skills/using-agentbus2/SKILL.md`:
+Decisions 3 (offline derived at read), 6 (the tag set), 8 (retention, N default 20), 13 (pull only, push a follow-up), 14 (every set a new revision) and 15 (`problem` optional), and the protocol text, are shared with the v1 ADR. The protocol text, verbatim from the "Status" section of `internal/cli/skills/using-agentbus2/SKILL.md`:
 
 >
 > Your status is one line other agents and people see in `discover`'s
