@@ -1,5 +1,5 @@
-# Builds the Linux and Windows release archives on runners of their own OS
-# and architecture, runs each binary, attests build provenance, and uploads
+# Builds the Linux and Windows release archives of both binaries (agentbus2 and
+# agentbus2-mcponly) on runners of their own OS and architecture, runs each binary, attests build provenance, and uploads
 # the archives to the draft release for the tag. Dispatched by
 # release/release.sh on the tag itself (gh workflow run --ref <tag>), so the
 # checked-out source and this file are the tag's. macOS is built locally.
@@ -54,17 +54,20 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
+        binary: [agentbus2, agentbus2-mcponly]
+        platform: [linux-amd64, linux-arm64, windows-amd64, windows-arm64]
         include:
-          - { runner: ubuntu-latest, goos: linux, goarch: amd64 }
-          - { runner: ubuntu-24.04-arm, goos: linux, goarch: arm64 }
-          - { runner: windows-latest, goos: windows, goarch: amd64 }
-          - { runner: windows-11-arm, goos: windows, goarch: arm64 }
+          - { platform: linux-amd64, runner: ubuntu-latest, goos: linux, goarch: amd64 }
+          - { platform: linux-arm64, runner: ubuntu-24.04-arm, goos: linux, goarch: arm64 }
+          - { platform: windows-amd64, runner: windows-latest, goos: windows, goarch: amd64 }
+          - { platform: windows-arm64, runner: windows-11-arm, goos: windows, goarch: arm64 }
     runs-on: ${{ matrix.runner }}
     env:
       TAG: ${{ inputs.tag }}
       VERSION: ${{ needs.validate.outputs.version }}
       GOOS: ${{ matrix.goos }}
       GOARCH: ${{ matrix.goarch }}
+      BINARY: ${{ matrix.binary }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -77,20 +80,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash release/build-archive.sh "$TAG" "$GOOS" "$GOARCH" out
+          bash release/build-archive.sh "$BINARY" "$TAG" "$GOOS" "$GOARCH" out
       - id: upload
         if: matrix.goos == 'linux'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: archive-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: out/agentbus2-${{ inputs.tag }}-linux-${{ matrix.goarch }}.tar.gz
+          name: archive-${{ matrix.binary }}-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: out/${{ matrix.binary }}-${{ inputs.tag }}-linux-${{ matrix.goarch }}.tar.gz
           if-no-files-found: error
       - id: upload-exe
         if: matrix.goos == 'windows'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: exe-windows-${{ matrix.goarch }}
-          path: out/agentbus2.exe
+          name: exe-${{ matrix.binary }}-windows-${{ matrix.goarch }}
+          path: out/${{ matrix.binary }}.exe
           if-no-files-found: error
   package-windows:
     needs: [validate, build]
@@ -106,13 +109,16 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          sparse-checkout: release/windows-zip-README.txt
+          # open note: mcp-only-client 11
+          sparse-checkout: |
+            release/windows-zip-README.txt
+            release/windows-zip-README-mcponly.txt
           sparse-checkout-cone-mode: false
           persist-credentials: false
       - id: download-exe
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
-          pattern: exe-windows-*
+          pattern: exe-*
           path: exe
       - id: check-vars
         if: inputs.windows_signing == 'on'
@@ -168,7 +174,7 @@ jobs:
           AUTHENTICODE_SIGNER: ${{ vars.AUTHENTICODE_SIGNER }}
         run: |
           $ErrorActionPreference = 'Stop'
-          foreach ($f in 'exe\exe-windows-amd64\agentbus2.exe', 'exe\exe-windows-arm64\agentbus2.exe') {
+          foreach ($f in 'exe\exe-agentbus2-windows-amd64\agentbus2.exe', 'exe\exe-agentbus2-windows-arm64\agentbus2.exe', 'exe\exe-agentbus2-mcponly-windows-amd64\agentbus2-mcponly.exe', 'exe\exe-agentbus2-mcponly-windows-arm64\agentbus2-mcponly.exe') {
             $s = Get-AuthenticodeSignature -FilePath $f
             if ($s.Status -ne 'Valid') { Write-Host "::error::$f signature status is $($s.Status) ($($s.StatusMessage))"; exit 1 }
             $cn = $s.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
@@ -176,25 +182,44 @@ jobs:
             if (-not $s.TimeStamperCertificate) { Write-Host "::error::$f has no timestamp countersignature; the signature would expire with the certificate"; exit 1 }
             Write-Host "$f signed by $cn, timestamped by $($s.TimeStamperCertificate.Subject)"
           }
-          $v = (& .\exe\exe-windows-amd64\agentbus2.exe version | Select-Object -First 1)
-          if ($v -ne $env:VERSION) { Write-Host "::error::signed agentbus2 version printed '$v', want $env:VERSION"; exit 1 }
+          foreach ($f in 'exe\exe-agentbus2-windows-amd64\agentbus2.exe', 'exe\exe-agentbus2-mcponly-windows-amd64\agentbus2-mcponly.exe') {
+            $v = (& ".\$f" version | Select-Object -First 1)
+            if ($v -ne $env:VERSION) { Write-Host "::error::signed $f version printed '$v', want $env:VERSION"; exit 1 }
+          }
       - id: package
         shell: pwsh
         run: |
-          Copy-Item -LiteralPath release\windows-zip-README.txt -Destination README.txt
-          Compress-Archive -LiteralPath exe\exe-windows-amd64\agentbus2.exe, README.txt -DestinationPath "agentbus2-$env:TAG-windows-amd64.zip"
-          Compress-Archive -LiteralPath exe\exe-windows-arm64\agentbus2.exe, README.txt -DestinationPath "agentbus2-$env:TAG-windows-arm64.zip"
+          # Each zip holds its binary and its own README, named README.txt inside.
+          New-Item -ItemType Directory -Force -Path readme-agentbus2, readme-agentbus2-mcponly | Out-Null
+          Copy-Item -LiteralPath release\windows-zip-README.txt -Destination readme-agentbus2\README.txt
+          Copy-Item -LiteralPath release\windows-zip-README-mcponly.txt -Destination readme-agentbus2-mcponly\README.txt
+          Compress-Archive -LiteralPath exe\exe-agentbus2-windows-amd64\agentbus2.exe, readme-agentbus2\README.txt -DestinationPath "agentbus2-$env:TAG-windows-amd64.zip"
+          Compress-Archive -LiteralPath exe\exe-agentbus2-windows-arm64\agentbus2.exe, readme-agentbus2\README.txt -DestinationPath "agentbus2-$env:TAG-windows-arm64.zip"
+          Compress-Archive -LiteralPath exe\exe-agentbus2-mcponly-windows-amd64\agentbus2-mcponly.exe, readme-agentbus2-mcponly\README.txt -DestinationPath "agentbus2-mcponly-$env:TAG-windows-amd64.zip"
+          Compress-Archive -LiteralPath exe\exe-agentbus2-mcponly-windows-arm64\agentbus2-mcponly.exe, readme-agentbus2-mcponly\README.txt -DestinationPath "agentbus2-mcponly-$env:TAG-windows-arm64.zip"
       - id: upload-amd64
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: archive-windows-amd64
+          name: archive-agentbus2-windows-amd64
           path: agentbus2-${{ inputs.tag }}-windows-amd64.zip
           if-no-files-found: error
       - id: upload-arm64
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: archive-windows-arm64
+          name: archive-agentbus2-windows-arm64
           path: agentbus2-${{ inputs.tag }}-windows-arm64.zip
+          if-no-files-found: error
+      - id: upload-mcponly-amd64
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: archive-agentbus2-mcponly-windows-amd64
+          path: agentbus2-mcponly-${{ inputs.tag }}-windows-amd64.zip
+          if-no-files-found: error
+      - id: upload-mcponly-arm64
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: archive-agentbus2-mcponly-windows-arm64
+          path: agentbus2-mcponly-${{ inputs.tag }}-windows-arm64.zip
           if-no-files-found: error
   publish:
     needs: [validate, build, package-windows]
@@ -212,13 +237,15 @@ jobs:
           pattern: archive-*
           merge-multiple: true
           path: archives
-      - name: Require all four archives
+      - name: Require all eight archives
         shell: bash
         run: |
           set -euo pipefail
           ls -l archives
-          for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do
-            [[ -f "archives/agentbus2-$TAG-$a" ]] || { echo "::error::missing archives/agentbus2-$TAG-$a"; exit 1; }
+          for b in agentbus2 agentbus2-mcponly; do
+            for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do
+              [[ -f "archives/$b-$TAG-$a" ]] || { echo "::error::missing archives/$b-$TAG-$a"; exit 1; }
+            done
           done
       - id: attest
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2

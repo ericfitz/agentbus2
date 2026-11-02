@@ -45,7 +45,8 @@ done
 if grep -qE '^[[:space:]]*on_(macos|linux|intel|arm)[[:space:]]+do' "$WORK/agentbus2.rb"; then echo "FAIL formula uses on_* blocks for url"; FAIL=1; fi
 if grep -q 'depends_on :macos' "$WORK/agentbus2.rb"; then echo "FAIL formula still macOS only"; FAIL=1; fi
 # Decision 32: nothing of v1 leaks into the v2 templates.
-if grep -hE '(^|[^a-z0-9])agentbus([^2a-z]|$)' "$HERE"/agentbus2.rb.tmpl "$HERE"/agentbus2.scoop.json.tmpl "$HERE"/agentbus2.winget.*.yaml.tmpl | grep -vE 'agentbus2' >/dev/null; then
+if grep -hE '(^|[^a-z0-9])agentbus([^2a-z]|$)' "$HERE"/agentbus2.rb.tmpl "$HERE"/agentbus2.scoop.json.tmpl "$HERE"/agentbus2.winget.*.yaml.tmpl \
+    "$HERE"/agentbus2-mcponly.rb.tmpl "$HERE"/agentbus2-mcponly.scoop.json.tmpl "$HERE"/agentbus2-mcponly.winget.*.yaml.tmpl | grep -vE 'agentbus2' >/dev/null; then
     echo "FAIL a template names the v1 product (agentbus without the 2)"; FAIL=1
 else
     echo "PASS templates name only agentbus2"
@@ -138,6 +139,55 @@ has_line "winget locale PackageUrl" "$LOC" 'PackageUrl: https://github.com/ericf
 has_line "winget locale ManifestType" "$LOC" 'ManifestType: defaultLocale'
 desc="$(sed -n 's/^  desc "\(.*\)"$/\1/p' "$WORK/agentbus2.rb")"
 has_line "winget ShortDescription equals the formula desc" "$LOC" "ShortDescription: $desc"
+
+# agentbus2-mcponly: the same five templates, the second package of each manager.
+M2=agentbus2-mcponly
+render_check "$HERE/$M2.rb.tmpl" $M2.rb ruby -c -- \
+    MACOS_URL=$BASE/$M2-v1.2.3-macos-universal.tar.gz MACOS_SHA256="$(H64 1)" \
+    LINUX_AMD64_URL=$BASE/$M2-v1.2.3-linux-amd64.tar.gz LINUX_AMD64_SHA256="$(H64 2)" \
+    LINUX_ARM64_URL=$BASE/$M2-v1.2.3-linux-arm64.tar.gz LINUX_ARM64_SHA256="$(H64 3)"
+for want in 'class Agentbus2Mcponly < Formula' 'bin.install "agentbus2-mcponly"' 'elsif OS.linux? && Hardware::CPU.intel?' \
+    'elsif OS.linux? && Hardware::CPU.arm?' 'Run agentbus2-mcponly help to connect an agent to an agentbus2 server.' \
+    'shell_output("#{bin}/agentbus2-mcponly version")'; do
+    grep -qF "$want" "$WORK/$M2.rb" || { echo "FAIL mcponly formula lacks: $want"; FAIL=1; }
+done
+if grep -qE '^[[:space:]]*on_(macos|linux|intel|arm)[[:space:]]+do' "$WORK/$M2.rb"; then echo "FAIL mcponly formula uses on_* blocks for url"; FAIL=1; fi
+if grep -q 'class Agentbus2 <' "$WORK/$M2.rb" || grep -q 'bin.install "agentbus2"' "$WORK/$M2.rb"; then echo "FAIL mcponly formula installs the full binary"; FAIL=1; else echo "PASS mcponly formula names only the mcponly binary"; fi
+
+render_check "$HERE/$M2.scoop.json.tmpl" $M2.json python3 -I -m json.tool -- \
+    VERSION=1.2.3 AMD64_URL=$BASE/a.zip AMD64_SHA256=aaaa ARM64_URL=$BASE/r.zip ARM64_SHA256=bbbb
+if python3 -I -c "
+import json, sys
+m = json.load(open(sys.argv[1]))
+assert m['version'] == '1.2.3'
+assert m['bin'] == 'agentbus2-mcponly.exe'
+assert m['architecture']['64bit']['hash'] == 'aaaa'
+assert m['architecture']['arm64']['hash'] == 'bbbb'
+assert m['checkver']['github'] == 'https://github.com/ericfitz/agentbus2'
+a = m['autoupdate']
+assert a['architecture']['64bit']['url'] == 'https://github.com/ericfitz/agentbus2/releases/download/v\$version/agentbus2-mcponly-v\$version-windows-amd64.zip'
+assert a['architecture']['arm64']['url'].endswith('agentbus2-mcponly-v\$version-windows-arm64.zip')
+assert a['hash']['url'].endswith('/SHA256SUMS')
+assert m['notes'].startswith('Stop agentbus2-mcponly serve processes before')
+" "$WORK/$M2.json"; then echo "PASS mcponly scoop fields"; else echo "FAIL mcponly scoop fields"; FAIL=1; fi
+
+VER2="$WORK/v2.yaml"; INS2="$WORK/i2.yaml"; LOC2="$WORK/l2.yaml"
+render_check "$HERE/$M2.winget.version.yaml.tmpl" v2.yaml cat -- VERSION=1.2.3
+render_check "$HERE/$M2.winget.installer.yaml.tmpl" i2.yaml cat -- \
+    VERSION=1.2.3 AMD64_URL=$BASE/a.zip AMD64_SHA256=AAAA ARM64_URL=$BASE/r.zip ARM64_SHA256=BBBB
+render_check "$HERE/$M2.winget.locale.en-US.yaml.tmpl" l2.yaml cat -- VERSION=1.2.3
+for f in "$VER2" "$INS2" "$LOC2"; do
+    has_line "mcponly winget $(basename "$f") identifier" "$f" 'PackageIdentifier: ericfitz.agentbus2-mcponly'
+    has_line "mcponly winget $(basename "$f") version" "$f" 'PackageVersion: 1.2.3'
+    if grep -q '__' "$f"; then echo "FAIL mcponly winget $(basename "$f") holds a __ placeholder"; FAIL=1; fi
+done
+has_line "mcponly winget installer relative path" "$INS2" '- RelativeFilePath: agentbus2-mcponly.exe'
+has_line "mcponly winget installer alias" "$INS2" '  PortableCommandAlias: agentbus2-mcponly'
+has_line "mcponly winget installer x64 hash" "$INS2" '  InstallerSha256: AAAA'
+has_line "mcponly winget installer arm64 hash" "$INS2" '  InstallerSha256: BBBB'
+has_line "mcponly winget locale PackageName" "$LOC2" 'PackageName: agentbus2-mcponly'
+desc2="$(sed -n 's/^  desc "\(.*\)"$/\1/p' "$WORK/$M2.rb")"
+has_line "mcponly winget ShortDescription equals the formula desc" "$LOC2" "ShortDescription: $desc2"
 
 # A template with an extra placeholder must fail (render_template's guard).
 printf 'x __UNFILLED__\n' > "$WORK/bad.tmpl"

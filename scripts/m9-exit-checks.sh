@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Milestone 9 exit checks: the automated half of the release exit. Part 1 reads
 # the real repository (installers, workflows, templates, the shared helpers);
-# part 2 applies four mutations in a throwaway worktree of HEAD and proves the
+# part 2 applies five mutations in a throwaway worktree of HEAD and proves the
 # check each one targets fires. It is the self-test of the release tooling
 # (Definition of Done C) and runs as the m9-exit-selftest CI job.
 #   usage: m9-exit-checks.sh [--real-only]     (--real-only skips the mutations)
@@ -204,23 +204,30 @@ check_pipeline_selftest() {
 }
 
 FORLINE='for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do'
+BINLINE='for b in agentbus2 agentbus2-mcponly; do'
 
 # anchors_missing WORKFLOW: prints each literal anchor missing from WORKFLOW
-# (a copy of release-build.yml) and from the two scripts of the repository.
+# (a copy of release-build.yml) and from the two scripts of the repository
+# (the workflow and release.sh both loop over the two binaries and the four
+# platforms of each).
 anchors_missing() {
 	local wf="$1" a
 	for a in \
 		'run-name: release-build ${{ inputs.tag }}' \
 		'pattern: archive-*' \
-		'name: archive-windows-amd64' \
-		'name: archive-windows-arm64' \
-		'name: archive-${{ matrix.goos }}-${{ matrix.goarch }}' \
+		'name: archive-agentbus2-windows-amd64' \
+		'name: archive-agentbus2-windows-arm64' \
+		'name: archive-agentbus2-mcponly-windows-amd64' \
+		'name: archive-agentbus2-mcponly-windows-arm64' \
+		'name: archive-${{ matrix.binary }}-${{ matrix.goos }}-${{ matrix.goarch }}' \
 		'-windows-amd64.zip"' \
 		'-windows-arm64.zip"' \
+		"$BINLINE" \
 		"$FORLINE"; do
 		grep -qF -- "$a" "$wf" || echo "release-build.yml lacks: $a"
 	done
 	grep -qF -- '-linux-${goarch}.tar.gz' "$ROOT/release/build-archive.sh" || echo 'build-archive.sh lacks: -linux-${goarch}.tar.gz'
+	grep -qF -- "$BINLINE" "$ROOT/release/release.sh" || echo "release.sh download_archives lacks: $BINLINE"
 	grep -qF -- "$FORLINE" "$ROOT/release/release.sh" || echo "release.sh download_archives lacks: $FORLINE"
 }
 
@@ -273,7 +280,7 @@ check_no_v1_names() {
 			return
 		fi
 	done
-	for f in install.sh install.ps1 release/*.sh release/*.tmpl release/windows-zip-README.txt \
+	for f in install.sh install.ps1 release/*.sh release/*.tmpl release/windows-zip-README.txt release/windows-zip-README-mcponly.txt \
 		.github/workflows/release-build.yml .github/workflows/windows.yml .github/workflows/publish-image.yml; do
 		if [ -e "$ROOT/$f" ]; then files+=("$ROOT/$f"); fi
 	done
@@ -386,6 +393,13 @@ extra "__UNFILLED__"'; then
 	if mutate mutation-version-var release/build-archive.sh 's#internal/version\.Version#internal/version.Nope#g'; then
 		run_capture "$out" bash "$wt/release/test-pipeline.sh"
 		expect mutation-version-var 1 "$out" 'version mismatch'
+	fi
+	revert
+
+	# (5) the mcponly archive builds the wrong package: build-archive.sh must see it
+	if mutate mutation-wrong-binary release/build-archive.sh 's#pkg=./cmd/agentbus2-mcponly#pkg=.#'; then
+		run_capture "$out" bash "$wt/release/build-archive.sh" --self-test
+		expect mutation-wrong-binary 1 "$out" 'holds the wrong binary'
 	fi
 	revert
 }

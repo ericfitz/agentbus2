@@ -294,24 +294,29 @@ check draft-garbage-stdout-fails 1 "unexpected output" -- with_stub ": > '$WORK/
 check draft-reuse-no-create 0 "" -- with_stub ": > '$WORK/gh.log'; GH_VIEW=true ensure_draft; ! grep -q 'release create' '$WORK/gh.log'"
 check draft-already-published 0 "already published" -- with_stub "GH_VIEW=false ensure_draft && [[ \$PUBLISHED == 1 ]]"
 check watch-fails-with-url 1 "actions/runs/102" -- with_stub "RUN_ID=102 GH_RC=1 watch_run"
-mkdir -p "$WORK/adist" && for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip; do : > "$WORK/adist/agentbus2-v1.2.3-$a"; done
+mkdir -p "$WORK/adist" && for b in agentbus2 agentbus2-mcponly; do for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do : > "$WORK/adist/$b-v1.2.3-$a"; done; done; rm "$WORK/adist/agentbus2-mcponly-v1.2.3-windows-arm64.zip"
 with_dist() { with_stub "DIST='$WORK/adist'; $1"; }
-check download-requires-four 1 "agentbus2-v1.2.3-windows-arm64.zip" -- with_dist "download_archives"
+check download-requires-eight 1 "agentbus2-mcponly-v1.2.3-windows-arm64.zip" -- with_dist "download_archives"
+check download-requires-agentbus2-too 1 "agentbus2-v1.2.3-linux-arm64.tar.gz" -- with_dist "rm -rf '$WORK/adist2'; cp -R '$WORK/adist' '$WORK/adist2'; rm '$WORK/adist2/agentbus2-v1.2.3-linux-arm64.tar.gz'; DIST='$WORK/adist2'; download_archives"
+check bin-names-pinned 0 "" -- bash -c "source '$HERE/release.sh'; [[ \"\${BIN_NAMES[*]}\" == 'agentbus2 agentbus2-mcponly' && \${#MACOS_ARCHIVES[@]} == 0 ]]"
 check download-failure-message 1 "could not download the archives of v1.2.3; rerun the workflow" -- with_dist "GH_RC=1 download_archives"
-: > "$WORK/adist/agentbus2-v1.2.3-windows-arm64.zip"
-check download-ok 0 "" -- with_dist "download_archives && [[ \${#ARCHIVES[@]} == 4 ]]"
-check download-keeps-macos-first 0 "" -- with_dist "ARCHIVES=(agentbus2-v1.2.3-macos-universal.tar.gz); download_archives && [[ \${#ARCHIVES[@]} == 5 && \${ARCHIVES[0]} == agentbus2-v1.2.3-macos-universal.tar.gz ]]"
-check attest-ok 0 "" -- with_dist ": > '$WORK/gh.log'; download_archives && verify_attestations && [[ \$(grep -c 'gh attestation verify' '$WORK/gh.log') == 4 ]] && grep -q -- '--repo ericfitz/agentbus2' '$WORK/gh.log' && [[ \$(grep -c -- '--signer-workflow ericfitz/agentbus2/.github/workflows/release-build.yml --source-ref refs/tags/v1.2.3' '$WORK/gh.log') == 4 ]]"
+: > "$WORK/adist/agentbus2-mcponly-v1.2.3-windows-arm64.zip"
+check download-ok 0 "" -- with_dist "download_archives && [[ \${#ARCHIVES[@]} == 8 && \${ARCHIVES[0]} == agentbus2-v1.2.3-linux-amd64.tar.gz && \${ARCHIVES[3]} == agentbus2-v1.2.3-windows-arm64.zip && \${ARCHIVES[4]} == agentbus2-mcponly-v1.2.3-linux-amd64.tar.gz && \${ARCHIVES[7]} == agentbus2-mcponly-v1.2.3-windows-arm64.zip ]]"
+check download-patterns 0 "" -- with_dist ": > '$WORK/gh.log'; download_archives && grep -q -- '--pattern agentbus2-v1.2.3-linux-\*.tar.gz --pattern agentbus2-v1.2.3-windows-\*.zip --pattern agentbus2-mcponly-v1.2.3-linux-\*.tar.gz --pattern agentbus2-mcponly-v1.2.3-windows-\*.zip' '$WORK/gh.log'"
+check download-keeps-macos-first 0 "" -- with_dist "ARCHIVES=(agentbus2-v1.2.3-macos-universal.tar.gz agentbus2-mcponly-v1.2.3-macos-universal.tar.gz); download_archives && [[ \${#ARCHIVES[@]} == 10 && \${ARCHIVES[0]} == agentbus2-v1.2.3-macos-universal.tar.gz && \${ARCHIVES[1]} == agentbus2-mcponly-v1.2.3-macos-universal.tar.gz ]]"
+check attest-ok 0 "" -- with_dist ": > '$WORK/gh.log'; download_archives && verify_attestations && [[ \$(grep -c 'gh attestation verify' '$WORK/gh.log') == 8 ]] && grep -q -- '--repo ericfitz/agentbus2' '$WORK/gh.log' && [[ \$(grep -c -- '--signer-workflow ericfitz/agentbus2/.github/workflows/release-build.yml --source-ref refs/tags/v1.2.3' '$WORK/gh.log') == 8 ]]"
 check attest-fails 1 "attestation" -- with_dist "download_archives; GH_RC=1 verify_attestations"
-check attest-skips-macos 0 "" -- with_dist ": > '$WORK/gh.log'; MACOS_ARCHIVE=agentbus2-v1.2.3-macos-universal.tar.gz; ARCHIVES=(\$MACOS_ARCHIVE); download_archives; verify_attestations && ! grep -q macos '$WORK/gh.log' && [[ \$(grep -c 'gh attestation verify' '$WORK/gh.log') == 4 ]]"
+check attest-skips-macos 0 "" -- with_dist ": > '$WORK/gh.log'; MACOS_ARCHIVES=(agentbus2-v1.2.3-macos-universal.tar.gz agentbus2-mcponly-v1.2.3-macos-universal.tar.gz); ARCHIVES=(\"\${MACOS_ARCHIVES[@]}\"); download_archives; verify_attestations && ! grep -q macos '$WORK/gh.log' && [[ \$(grep -c 'gh attestation verify' '$WORK/gh.log') == 8 ]]"
 
 # --- render_formula, render_scoop, render_winget and --no-publish ------------
 h() { printf '%s%0*d' "$1" $((64 - ${#1})) "$2"; } # h <hex-prefix> <n>: 64 hex chars
 M="$(h 1a 1)"; LA="$(h 2b 2)"; LR="$(h 3c 3)"; WA="$(h abcdef 4)"; WR="$(h fedcba 5)"; S1="$(h 6d 6)"; S2="$(h 7e 7)"
+M2="$(h 1b 11)"; LA2="$(h 2c 12)"; LR2="$(h 3d 13)"; WA2="$(h abcdee 14)"; WR2="$(h fedcbb 15)"
+WA2_UPPER="$(printf '%s' "$WA2" | tr 'a-f' 'A-F')"
 WA_UPPER="$(printf '%s' "$WA" | tr 'a-f' 'A-F')" # not ${WA^^}: the harness runs under macOS bash 3.2 too
 mkdir -p "$WORK/rdist" "$WORK/rroot/release"
-printf '%s  agentbus2-v1.2.3-macos-universal.tar.gz\n%s  agentbus2-v1.2.3-linux-amd64.tar.gz\n%s  agentbus2-v1.2.3-linux-arm64.tar.gz\n%s  agentbus2-v1.2.3-windows-amd64.zip\n%s  agentbus2-v1.2.3-windows-arm64.zip\n%s  install.sh\n%s  install.ps1\n' "$M" "$LA" "$LR" "$WA" "$WR" "$S1" "$S2" > "$WORK/rdist/SHA256SUMS"
-cp "$HERE"/agentbus2.rb.tmpl "$HERE"/agentbus2.scoop.json.tmpl "$HERE"/agentbus2.winget.*.yaml.tmpl "$WORK/rroot/release/"
+printf '%s  agentbus2-v1.2.3-macos-universal.tar.gz\n%s  agentbus2-mcponly-v1.2.3-macos-universal.tar.gz\n%s  agentbus2-v1.2.3-linux-amd64.tar.gz\n%s  agentbus2-v1.2.3-linux-arm64.tar.gz\n%s  agentbus2-v1.2.3-windows-amd64.zip\n%s  agentbus2-v1.2.3-windows-arm64.zip\n%s  agentbus2-mcponly-v1.2.3-linux-amd64.tar.gz\n%s  agentbus2-mcponly-v1.2.3-linux-arm64.tar.gz\n%s  agentbus2-mcponly-v1.2.3-windows-amd64.zip\n%s  agentbus2-mcponly-v1.2.3-windows-arm64.zip\n%s  install.sh\n%s  install.ps1\n' "$M" "$M2" "$LA" "$LR" "$WA" "$WR" "$LA2" "$LR2" "$WA2" "$WR2" "$S1" "$S2" > "$WORK/rdist/SHA256SUMS"
+cp "$HERE"/agentbus2.rb.tmpl "$HERE"/agentbus2.scoop.json.tmpl "$HERE"/agentbus2.winget.*.yaml.tmpl "$HERE"/agentbus2-mcponly.rb.tmpl "$HERE"/agentbus2-mcponly.scoop.json.tmpl "$HERE"/agentbus2-mcponly.winget.*.yaml.tmpl "$WORK/rroot/release/"
 # The tap and bucket paths do not exist, so a regression past the --no-publish
 # gate would clone from GitHub: git clone, pull, push and fetch, and komac,
 # refuse here instead.
@@ -320,17 +325,34 @@ git() { local a; for a in "$@"; do case "$a" in clone | pull | push | fetch) ech
 komac() { echo "test: refused komac (network)" >&2; return 97; }
 EOF
 with_render() { with_stub "source '$WORK/net-guard.sh'; DIST='$WORK/rdist'; REPO_ROOT='$WORK/rroot'; TAP_DIR='$WORK/no-tap'; SCOOP_DIR='$WORK/no-scoop'; KOMAC_KEY_FILE='$WORK/no-komac-key'; $1"; }
-FORMULA_CHECK="ruby -c \"\$DIST/agentbus2.rb\" >/dev/null && grep -q '^class Agentbus2 < Formula' \"\$DIST/agentbus2.rb\" && [[ \$(grep -c 'sha256 \"' \"\$DIST/agentbus2.rb\") == 3 ]] && grep -q 'sha256 \"$M\"' \"\$DIST/agentbus2.rb\" && grep -q 'sha256 \"$LA\"' \"\$DIST/agentbus2.rb\" && grep -q 'sha256 \"$LR\"' \"\$DIST/agentbus2.rb\""
-check no-publish-renders-formula 0 "rendered: $WORK/rdist/agentbus2.rb" -- with_render "NO_PUBLISH=1 publish_release && $FORMULA_CHECK"
-SCOOP_CHECK="python3 -I -m json.tool \"\$DIST/agentbus2.scoop.json\" >/dev/null && python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert m['version']=='1.2.3' and m['bin']=='agentbus2.exe' and m['architecture']['64bit']['hash']=='$WA' and m['architecture']['arm64']['hash']=='$WR' and m['architecture']['arm64']['url']=='https://github.com/ericfitz/agentbus2/releases/download/v1.2.3/agentbus2-v1.2.3-windows-arm64.zip' and 'checkver' in m and 'autoupdate' in m\" \"\$DIST/agentbus2.scoop.json\""
-check no-publish-renders-scoop 0 "rendered: $WORK/rdist/agentbus2.scoop.json" -- with_render "NO_PUBLISH=1 publish_release && $SCOOP_CHECK"
-WINGET_CHECK="w=\"\$DIST/winget\"; for f in ericfitz.agentbus2.yaml ericfitz.agentbus2.installer.yaml ericfitz.agentbus2.locale.en-US.yaml; do grep -qx 'PackageVersion: 1.2.3' \"\$w/\$f\" || { echo \"no PackageVersion in \$f\"; exit 1; }; done
+# formula_check <binary> <class> <macos-sha> <amd64-sha> <arm64-sha>
+formula_check() {
+    local b="$1" c="$2" f="\$DIST/$1.rb"
+    echo "ruby -c \"$f\" >/dev/null && grep -q '^class $c < Formula' \"$f\" && grep -q 'bin.install \"$b\"' \"$f\" && [[ \$(grep -c 'sha256 \"' \"$f\") == 3 ]] && grep -q 'sha256 \"$3\"' \"$f\" && grep -q 'sha256 \"$4\"' \"$f\" && grep -q 'sha256 \"$5\"' \"$f\" && grep -q 'url \"https://github.com/ericfitz/agentbus2/releases/download/v1.2.3/$b-v1.2.3-macos-universal.tar.gz\"' \"$f\""
+}
+scoop_check() { # <binary> <amd64-sha> <arm64-sha>
+    echo "python3 -I -m json.tool \"\$DIST/$1.scoop.json\" >/dev/null && python3 -I -c \"import json,sys; m=json.load(open(sys.argv[1])); assert m['version']=='1.2.3' and m['bin']=='$1.exe' and m['architecture']['64bit']['hash']=='$2' and m['architecture']['arm64']['hash']=='$3' and m['architecture']['arm64']['url']=='https://github.com/ericfitz/agentbus2/releases/download/v1.2.3/$1-v1.2.3-windows-arm64.zip' and 'checkver' in m and 'autoupdate' in m\" \"\$DIST/$1.scoop.json\""
+}
+winget_check() { # <binary> <amd64-sha> <arm64-sha> <amd64-sha-upper>
+    local id="ericfitz.$1"
+    printf '%s\n' "w=\"\$DIST/winget/$id\"; for f in $id.yaml $id.installer.yaml $id.locale.en-US.yaml; do grep -qx 'PackageVersion: 1.2.3' \"\$w/\$f\" || { echo \"no PackageVersion in \$f\"; exit 1; }; grep -qx 'PackageIdentifier: $id' \"\$w/\$f\" || { echo \"wrong PackageIdentifier in \$f\"; exit 1; }; done
     [[ \$(ls \"\$w\" | wc -l | tr -d ' ') == 3 ]] || { echo 'winget dir is not exactly three files'; exit 1; }
-    got=\$(grep '^  InstallerSha256:' \"\$w/ericfitz.agentbus2.installer.yaml\" | awk '{print \$2}' | tr 'A-F' 'a-f' | tr '\n' ' ')
-    [[ \"\$got\" == '$WA $WR ' ]] || { echo \"installer hashes: \$got\"; exit 1; }
-    grep -q '^  InstallerSha256: $WA_UPPER\$' \"\$w/ericfitz.agentbus2.installer.yaml\" || { echo 'hash not upper-cased'; exit 1; }"
-check no-publish-renders-winget 0 "rendered: $WORK/rdist/winget/ericfitz.agentbus2.locale.en-US.yaml" -- with_render "NO_PUBLISH=1 publish_release && $WINGET_CHECK"
-check no-publish-five-rendered-lines 0 "5" -- with_render "NO_PUBLISH=1 publish_release | grep -c '^rendered: '"
+    grep -qF 'RelativeFilePath: $1.exe' \"\$w/$id.installer.yaml\" || { echo 'wrong RelativeFilePath'; exit 1; }
+    grep -qx '  PortableCommandAlias: $1' \"\$w/$id.installer.yaml\" || { echo 'wrong PortableCommandAlias'; exit 1; }
+    grep -qx '  InstallerUrl: https://github.com/ericfitz/agentbus2/releases/download/v1.2.3/$1-v1.2.3-windows-amd64.zip' \"\$w/$id.installer.yaml\" || { echo 'wrong amd64 url'; exit 1; }
+    got=\$(grep '^  InstallerSha256:' \"\$w/$id.installer.yaml\" | awk '{print \$2}' | tr 'A-F' 'a-f' | tr '\n' ' ')
+    [[ \"\$got\" == '$2 $3 ' ]] || { echo \"installer hashes: \$got\"; exit 1; }
+    grep -q '^  InstallerSha256: $4\$' \"\$w/$id.installer.yaml\" || { echo 'hash not upper-cased'; exit 1; }"
+}
+check no-publish-renders-formula 0 "rendered: $WORK/rdist/agentbus2.rb" -- with_render "NO_PUBLISH=1 publish_release && $(formula_check agentbus2 Agentbus2 "$M" "$LA" "$LR")"
+check no-publish-renders-formula-mcponly 0 "rendered: $WORK/rdist/agentbus2-mcponly.rb" -- with_render "NO_PUBLISH=1 publish_release && $(formula_check agentbus2-mcponly Agentbus2Mcponly "$M2" "$LA2" "$LR2")"
+check no-publish-renders-scoop 0 "rendered: $WORK/rdist/agentbus2.scoop.json" -- with_render "NO_PUBLISH=1 publish_release && $(scoop_check agentbus2 "$WA" "$WR")"
+check no-publish-renders-scoop-mcponly 0 "rendered: $WORK/rdist/agentbus2-mcponly.scoop.json" -- with_render "NO_PUBLISH=1 publish_release && $(scoop_check agentbus2-mcponly "$WA2" "$WR2")"
+check no-publish-renders-winget 0 "rendered: $WORK/rdist/winget/ericfitz.agentbus2/ericfitz.agentbus2.locale.en-US.yaml" -- with_render "NO_PUBLISH=1 publish_release && $(winget_check agentbus2 "$WA" "$WR" "$WA_UPPER")"
+check no-publish-renders-winget-mcponly 0 "rendered: $WORK/rdist/winget/ericfitz.agentbus2-mcponly/ericfitz.agentbus2-mcponly.locale.en-US.yaml" -- with_render "NO_PUBLISH=1 publish_release && $(winget_check agentbus2-mcponly "$WA2" "$WR2" "$WA2_UPPER")"
+# komac submit takes one directory per package: the tree is exactly the two id directories.
+check winget-tree-two-id-directories 0 "" -- with_render "NO_PUBLISH=1 publish_release >/dev/null && [[ \$(ls \"\$DIST/winget\" | tr '\n' ' ') == 'ericfitz.agentbus2 ericfitz.agentbus2-mcponly ' && -z \$(find \"\$DIST/winget\" -maxdepth 1 -type f) && \$(find \"\$DIST/winget\" -type f | wc -l | tr -d ' ') == 6 ]]"
+check no-publish-ten-rendered-lines 0 "10" -- with_render "NO_PUBLISH=1 publish_release | grep -c '^rendered: '"
 check no-publish-stops 0 "stopping before publish" -- with_render ": > '$WORK/gh.log'; update_tap() { echo TAP; }; NO_PUBLISH=1 publish_release && ! grep -q 'release edit' '$WORK/gh.log'"
 check no-publish-says-draft 0 "draft: https://github.com/ericfitz/agentbus2/releases/tag/v1.2.3" -- with_render "NO_PUBLISH=1 publish_release"
 check no-publish-rerun-says-release 0 "release: https://github.com/ericfitz/agentbus2/releases/tag/v1.2.3" -- with_render "NO_PUBLISH=1 PUBLISHED=1 publish_release"
@@ -338,20 +360,29 @@ check no-publish-skips-packagers 0 "" -- with_render "update_tap() { echo TAP; }
 # --no-publish touches nothing outside the repository and its dist: no gh call,
 # no tap or bucket clone, no komac, nothing created at the paths it would use.
 check no-publish-no-side-effects 0 "" -- with_render ": > '$WORK/gh.log'; NO_PUBLISH=1 publish_release >/dev/null && [[ ! -s '$WORK/gh.log' && ! -e '$WORK/no-tap' && ! -e '$WORK/no-scoop' ]]"
-mkdir -p "$WORK/rdist-short"; grep -v linux-arm64 "$WORK/rdist/SHA256SUMS" > "$WORK/rdist-short/SHA256SUMS"
-check render-formula-missing-sum 1 "no SHA256SUMS entry for agentbus2-v1.2.3-linux-arm64.tar.gz" -- with_render "DIST='$WORK/rdist-short'; render_formula"
-check render-formula-missing-sum-renders-nothing 0 "" -- with_render "DIST='$WORK/rdist-short'; (render_formula) >/dev/null 2>&1 || true; [[ ! -f \"\$DIST/agentbus2.rb\" ]]"
-check render-scoop-missing-sum 1 "no SHA256SUMS entry for agentbus2-v1.2.3-windows-arm64.zip" -- with_render "grep -v windows-arm64 '$WORK/rdist/SHA256SUMS' > '$WORK/rdist-short/SHA256SUMS'; DIST='$WORK/rdist-short'; render_scoop"
-check render-winget-missing-sum 1 "no SHA256SUMS entry for agentbus2-v1.2.3-windows-amd64.zip" -- with_render "grep -v windows-amd64 '$WORK/rdist/SHA256SUMS' > '$WORK/rdist-short/SHA256SUMS'; DIST='$WORK/rdist-short'; render_winget"
-check publish-undrafts-then-packagers 0 "TAP SCOOP WINGET" -- with_render ": > '$WORK/gh.log'; update_tap() { echo TAP >> '$WORK/order'; }; update_scoop() { echo SCOOP >> '$WORK/order'; }; submit_winget() { echo WINGET >> '$WORK/order'; }; : > '$WORK/order'; publish_release >/dev/null && grep -q 'gh release edit v1.2.3 --repo ericfitz/agentbus2 --draft=false' '$WORK/gh.log' && echo \$(cat '$WORK/order')"
-check publish-renders-before-packagers 0 "" -- with_render "rm -f \"\$DIST/agentbus2.rb\" \"\$DIST/agentbus2.scoop.json\"; update_tap() { [[ -f \"\$DIST/agentbus2.rb\" ]] || exit 9; }; update_scoop() { [[ -f \"\$DIST/agentbus2.scoop.json\" ]] || exit 9; }; submit_winget() { :; }; publish_release >/dev/null"
+mkdir -p "$WORK/rdist-short"; grep -v 'agentbus2-v1.2.3-linux-arm64' "$WORK/rdist/SHA256SUMS" > "$WORK/rdist-short/SHA256SUMS"
+check render-formula-missing-sum 1 "no SHA256SUMS entry for agentbus2-v1.2.3-linux-arm64.tar.gz" -- with_render "DIST='$WORK/rdist-short'; render_formula agentbus2"
+mkdir -p "$WORK/rdist-short2"
+check render-formula-mcponly-missing-sum 1 "no SHA256SUMS entry for agentbus2-mcponly-v1.2.3-linux-arm64.tar.gz" -- with_render "grep -v 'agentbus2-mcponly-v1.2.3-linux-arm64' '$WORK/rdist/SHA256SUMS' > '$WORK/rdist-short2/SHA256SUMS'; DIST='$WORK/rdist-short2'; render_formula agentbus2-mcponly"
+check render-formula-unknown-binary 1 "unknown binary 'bogus'" -- with_render "render_formula bogus"
+check render-scoop-unknown-binary 1 "unknown binary 'agentbus2.exe'" -- with_render "render_scoop agentbus2.exe"
+check render-winget-unknown-binary 1 "unknown binary ''" -- with_render "render_winget"
+check render-formula-missing-sum-renders-nothing 0 "" -- with_render "DIST='$WORK/rdist-short'; (render_formula agentbus2) >/dev/null 2>&1 || true; [[ ! -f \"\$DIST/agentbus2.rb\" ]]"
+check render-scoop-missing-sum 1 "no SHA256SUMS entry for agentbus2-v1.2.3-windows-arm64.zip" -- with_render "grep -v 'agentbus2-v1.2.3-windows-arm64' '$WORK/rdist/SHA256SUMS' > '$WORK/rdist-short/SHA256SUMS'; DIST='$WORK/rdist-short'; render_scoop agentbus2"
+check render-scoop-mcponly-missing-sum 1 "no SHA256SUMS entry for agentbus2-mcponly-v1.2.3-windows-arm64.zip" -- with_render "grep -v 'agentbus2-mcponly-v1.2.3-windows-arm64' '$WORK/rdist/SHA256SUMS' > '$WORK/rdist-short/SHA256SUMS'; DIST='$WORK/rdist-short'; render_scoop agentbus2-mcponly"
+check render-winget-missing-sum 1 "no SHA256SUMS entry for agentbus2-v1.2.3-windows-amd64.zip" -- with_render "grep -v 'agentbus2-v1.2.3-windows-amd64' '$WORK/rdist/SHA256SUMS' > '$WORK/rdist-short/SHA256SUMS'; DIST='$WORK/rdist-short'; render_winget agentbus2"
+check render-winget-mcponly-missing-sum 1 "no SHA256SUMS entry for agentbus2-mcponly-v1.2.3-windows-amd64.zip" -- with_render "grep -v 'agentbus2-mcponly-v1.2.3-windows-amd64' '$WORK/rdist/SHA256SUMS' > '$WORK/rdist-short/SHA256SUMS'; DIST='$WORK/rdist-short'; render_winget agentbus2-mcponly"
+check publish-undrafts-then-packagers 0 "TAP SCOOP WINGET:agentbus2 WINGET:agentbus2-mcponly" -- with_render ": > '$WORK/gh.log'; update_tap() { echo TAP >> '$WORK/order'; }; update_scoop() { echo SCOOP >> '$WORK/order'; }; submit_winget() { echo WINGET:\$1 >> '$WORK/order'; }; : > '$WORK/order'; publish_release >/dev/null && grep -q 'gh release edit v1.2.3 --repo ericfitz/agentbus2 --draft=false' '$WORK/gh.log' && echo \$(cat '$WORK/order')"
+check publish-renders-before-packagers 0 "" -- with_render "rm -f \"\$DIST/agentbus2.rb\" \"\$DIST/agentbus2-mcponly.rb\" \"\$DIST/agentbus2.scoop.json\" \"\$DIST/agentbus2-mcponly.scoop.json\"; update_tap() { [[ -f \"\$DIST/agentbus2.rb\" && -f \"\$DIST/agentbus2-mcponly.rb\" ]] || exit 9; }; update_scoop() { [[ -f \"\$DIST/agentbus2.scoop.json\" && -f \"\$DIST/agentbus2-mcponly.scoop.json\" ]] || exit 9; }; submit_winget() { [[ -d \"\$DIST/winget/ericfitz.\$1\" ]] || exit 9; }; publish_release >/dev/null"
 check publish-rerun-skips-edit 0 "" -- with_render ": > '$WORK/gh.log'; update_tap() { :; }; update_scoop() { :; }; submit_winget() { :; }; PUBLISHED=1 publish_release >/dev/null && ! grep -q 'release edit' '$WORK/gh.log'"
 check publish-edit-failure-stops 1 "could not publish v1.2.3; the draft stays" -- with_render "update_tap() { echo TAP; }; GH_RC=1 publish_release"
-check publish-closing-line 0 "brew install ericfitz/tap/agentbus2; curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh; irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1 | iex" -- with_render "update_tap() { :; }; update_scoop() { :; }; submit_winget() { :; }; publish_release"
+check publish-closing-line 0 "brew install ericfitz/tap/agentbus2; brew install ericfitz/tap/agentbus2-mcponly; curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh; irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1 | iex" -- with_render "update_tap() { :; }; update_scoop() { :; }; submit_winget() { :; }; publish_release"
 check update-tap-needs-render 1 "is not rendered" -- with_render "rm -f \"\$DIST/agentbus2.rb\"; TAP_DIR='$WORK/rp-seed'; update_tap"
+check update-tap-needs-render-mcponly 1 "agentbus2-mcponly.rb is not rendered" -- with_render "render_formula agentbus2; render_formula agentbus2-mcponly; rm -f \"\$DIST/agentbus2-mcponly.rb\"; TAP_DIR='$WORK/rp-seed'; update_tap"
 check update-scoop-needs-render 1 "is not rendered" -- with_render "rm -f \"\$DIST/agentbus2.scoop.json\"; SCOOP_DIR='$WORK/rp-seed'; update_scoop"
+check update-scoop-needs-render-mcponly 1 "agentbus2-mcponly.scoop.json is not rendered" -- with_render "render_scoop agentbus2; render_scoop agentbus2-mcponly; rm -f \"\$DIST/agentbus2-mcponly.scoop.json\"; SCOOP_DIR='$WORK/rp-seed'; update_scoop"
 
-check upload-assets 0 "" -- with_stub ": > '$WORK/gh.log'; mkdir -p '$WORK/udist'; MACOS_ARCHIVE=agentbus2-v1.2.3-macos-universal.tar.gz; DIST='$WORK/udist'; upload_assets && grep -q 'gh release upload v1.2.3 --repo ericfitz/agentbus2 --clobber agentbus2-v1.2.3-macos-universal.tar.gz install.sh install.ps1 SHA256SUMS SHA256SUMS.sig' '$WORK/gh.log'"
+check upload-assets 0 "" -- with_stub ": > '$WORK/gh.log'; mkdir -p '$WORK/udist'; MACOS_ARCHIVES=(agentbus2-v1.2.3-macos-universal.tar.gz agentbus2-mcponly-v1.2.3-macos-universal.tar.gz); DIST='$WORK/udist'; upload_assets && grep -q 'gh release upload v1.2.3 --repo ericfitz/agentbus2 --clobber agentbus2-v1.2.3-macos-universal.tar.gz agentbus2-mcponly-v1.2.3-macos-universal.tar.gz install.sh install.ps1 SHA256SUMS SHA256SUMS.sig' '$WORK/gh.log'"
 check gh-auth-fails 1 "gh is not authenticated" -- with_stub "GH_RC=1 check_gh"
 check gh-attest-missing 1 "cannot verify attestations" -- with_stub "GH_RC_ATTEST=1 check_gh"
 check gh-workflow-not-on-default 1 "release-build.yml is not on the default branch of ericfitz/agentbus2; merge it to main first" -- with_stub "GH_RC_WORKFLOW=1 check_gh"
@@ -366,20 +397,22 @@ mkdir -p "$WORK/rp-seed/Formula" "$WORK/rp-seed/bucket"
 touch "$WORK/rp-seed/Formula/.keep" "$WORK/rp-seed/bucket/.keep"
 git -C "$WORK/rp-seed" add Formula/.keep bucket/.keep && git -C "$WORK/rp-seed" -c user.email=t@t -c user.name=t commit -q -m seed && git -C "$WORK/rp-seed" push -q origin HEAD
 mkdir -p "$WORK/rp-dist"
-printf '1111  agentbus2-v1.0.0-macos-universal.tar.gz\n2222  agentbus2-v1.0.0-linux-amd64.tar.gz\n3333  agentbus2-v1.0.0-linux-arm64.tar.gz\n4444  agentbus2-v1.0.0-windows-amd64.zip\n5555  agentbus2-v1.0.0-windows-arm64.zip\n' > "$WORK/rp-dist/SHA256SUMS"
+printf '1111  agentbus2-v1.0.0-macos-universal.tar.gz\n2222  agentbus2-v1.0.0-linux-amd64.tar.gz\n3333  agentbus2-v1.0.0-linux-arm64.tar.gz\n4444  agentbus2-v1.0.0-windows-amd64.zip\n5555  agentbus2-v1.0.0-windows-arm64.zip\n6666  agentbus2-mcponly-v1.0.0-macos-universal.tar.gz\n7777  agentbus2-mcponly-v1.0.0-linux-amd64.tar.gz\n8888  agentbus2-mcponly-v1.0.0-linux-arm64.tar.gz\n9999  agentbus2-mcponly-v1.0.0-windows-amd64.zip\naaaa  agentbus2-mcponly-v1.0.0-windows-arm64.zip\n' > "$WORK/rp-dist/SHA256SUMS"
 rerun_push_case() { # <render-function> <function> <dir-var> <name>
     local render="$1" fn="$2" var="$3" name="$4" clone="$WORK/rp-$4"
     git clone -q "$WORK/rp-origin.git" "$clone" 2>/dev/null
     printf '#!/bin/sh\nexit 1\n' > "$WORK/rp-origin.git/hooks/pre-receive"; chmod +x "$WORK/rp-origin.git/hooks/pre-receive"
     local run="source '$HERE/release.sh'; REPO_ROOT='$HERE/..'; DIST='$WORK/rp-dist'; TAG=v1.0.0; VERSION=1.0.0; $var='$clone'; export GIT_AUTHOR_NAME=t GIT_AUTHOR_EMAIL=t@t GIT_COMMITTER_NAME=t GIT_COMMITTER_EMAIL=t@t; $render; $fn"
     check "$name-first-push-fails" 1 "" -- bash -c "$run"
-    check "$name-commit-stranded" 0 "" -- bash -c "[[ \$(git -C '$clone' rev-list --count @{u}..HEAD) == 1 ]]"
+    check "$name-commit-stranded" 0 "" -- bash -c "[[ \$(git -C '$clone' rev-list --count @{u}..HEAD) == 2 ]]"
     rm -f "$WORK/rp-origin.git/hooks/pre-receive"
     check "$name-rerun-pushes" 0 "" -- bash -c "$run"
-    check "$name-pushed" 0 "" -- bash -c "[[ \$(git -C '$clone' rev-list --count @{u}..HEAD) == 0 && \$(git -C '$WORK/rp-origin.git' log --oneline | wc -l) -ge 2 ]]"
+    check "$name-pushed" 0 "" -- bash -c "[[ \$(git -C '$clone' rev-list --count @{u}..HEAD) == 0 && \$(git -C '$WORK/rp-origin.git' log --oneline | wc -l) -ge 3 ]]"
+    check "$name-commit-per-binary" 0 "" -- bash -c "[[ \$(git -C '$WORK/rp-origin.git' log -n2 --format=%s | tr '\n' ' ') == 'agentbus2-mcponly 1.0.0 agentbus2 1.0.0 ' ]]"
+    check "$name-second-run-no-new-commits" 0 "" -- bash -c "$run && [[ \$(git -C '$clone' rev-list --count @{u}..HEAD) == 0 && \$(git -C '$WORK/rp-origin.git' log --oneline | wc -l) == \$(git -C '$clone' log --oneline | wc -l) ]]"
 }
-rerun_push_case render_formula update_tap TAP_DIR tap
-rerun_push_case render_scoop update_scoop SCOOP_DIR scoop
+rerun_push_case "render_formula agentbus2; render_formula agentbus2-mcponly" update_tap TAP_DIR tap
+rerun_push_case "render_scoop agentbus2; render_scoop agentbus2-mcponly" update_scoop SCOOP_DIR scoop
 
 # --- submit_winget (gh and komac stubbed; the key file is a temp file) -------
 printf "export KOMAC_GITHUB_KEY='not-a-real-token'\n" > "$WORK/komac-key"
@@ -387,12 +420,20 @@ cat > "$WORK/komac-stub.sh" <<'EOF'
 komac() { printf 'komac %s token=%s\n' "$*" "${GITHUB_TOKEN:-}" >> "$KOMAC_LOG"; return "${KOMAC_RC:-0}"; }
 EOF
 with_komac() { with_stub "source '$WORK/komac-stub.sh'; export KOMAC_LOG='$WORK/komac.log'; : > '$WORK/komac.log'; KOMAC_KEY_FILE='$WORK/komac-key'; $1"; }
-WURLS="https://github.com/ericfitz/agentbus2/releases/download/v1.2.3/agentbus2-v1.2.3-windows-amd64.zip https://github.com/ericfitz/agentbus2/releases/download/v1.2.3/agentbus2-v1.2.3-windows-arm64.zip"
-check winget-runs-komac 0 "" -- with_komac "submit_winget >/dev/null && [[ \$(cat '$WORK/komac.log') == 'komac update ericfitz.agentbus2 --version 1.2.3 --urls $WURLS --submit token=not-a-real-token' ]]"
-check winget-token-not-exported 0 "" -- with_komac "submit_winget >/dev/null; [[ -z \${GITHUB_TOKEN:-} ]]"
-check winget-open-pr-skips 0 "an open pull request for 1.2.3 exists" -- with_komac "GH_PR_OPEN=42 submit_winget && [[ ! -s '$WORK/komac.log' ]]"
-check winget-pr-list-fails 1 "could not list open pull requests" -- with_komac "GH_PR_FAIL=1 submit_winget"
-check winget-komac-failure-keeps-release 0 "komac failed; the release stands. Rerun:" -- with_komac "KOMAC_RC=1 submit_winget"
+wurls() { # <binary>
+    echo "https://github.com/ericfitz/agentbus2/releases/download/v1.2.3/$1-v1.2.3-windows-amd64.zip https://github.com/ericfitz/agentbus2/releases/download/v1.2.3/$1-v1.2.3-windows-arm64.zip"
+}
+for b in agentbus2 agentbus2-mcponly; do
+check "winget-runs-komac-$b" 0 "" -- with_komac "submit_winget $b >/dev/null && [[ \$(cat '$WORK/komac.log') == 'komac update ericfitz.$b --version 1.2.3 --urls $(wurls $b) --submit token=not-a-real-token' ]]"
+check "winget-token-not-exported-$b" 0 "" -- with_komac "submit_winget $b >/dev/null; [[ -z \${GITHUB_TOKEN:-} ]]"
+check "winget-open-pr-skips-$b" 0 "an open pull request for 1.2.3 exists" -- with_komac "GH_PR_OPEN=42 submit_winget $b && [[ ! -s '$WORK/komac.log' ]]"
+check "winget-searches-its-own-id-$b" 0 "" -- with_komac ": > '$WORK/gh.log'; submit_winget $b >/dev/null && grep -qF '\"ericfitz.$b version 1.2.3\" in:title' '$WORK/gh.log'"
+check "winget-pr-list-fails-$b" 1 "could not list open pull requests" -- with_komac "GH_PR_FAIL=1 submit_winget $b"
+check "winget-komac-failure-keeps-release-$b" 0 "komac failed; the release stands. Rerun:" -- with_komac "KOMAC_RC=1 submit_winget $b"
+done
+check winget-unknown-binary 1 "unknown binary 'bogus'" -- with_komac "submit_winget bogus"
+check winget-no-binary 1 "unknown binary ''" -- with_komac "submit_winget"
+check winget-never-komac-new 1 "" -- grep -q 'komac new' "$HERE/release.sh"
 
 # --- build_macos with every signing tool stubbed -----------------------------
 # The fake build script writes a shell-script "binary" that prints the version;
@@ -401,11 +442,11 @@ mkdir -p "$WORK/bm/src/release"
 cat > "$WORK/bm/src/release/build-archive.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-tag="$1" goos="$2" goarch="$3" out="$4"
+binary="$1" tag="$2" goos="$3" goarch="$4" out="$5"
 mkdir -p "$out"
-printf '#!/bin/sh\necho %s\n' "${tag#v}" > "$out/agentbus2"
-chmod +x "$out/agentbus2"
-printf 'build-archive %s %s %s\n' "$tag" "$goos" "$goarch" >> "$BM_LOG"
+printf '#!/bin/sh\necho %s\n' "${tag#v}" > "$out/$binary"
+chmod +x "$out/$binary"
+printf 'build-archive %s %s %s %s\n' "$binary" "$tag" "$goos" "$goarch" >> "$BM_LOG"
 EOF
 cat > "$WORK/bm-stubs.sh" <<'EOF'
 lipo() { printf 'lipo %s\n' "$*" >> "$BM_LOG"; if [[ "$1" == -create ]]; then cp "$4" "$3"; fi; }
@@ -414,9 +455,11 @@ ditto() { printf 'ditto %s\n' "$*" >> "$BM_LOG"; : > "${!#}"; }
 xcrun() { printf 'xcrun %s\n' "$*" >> "$BM_LOG"; echo "status: ${BM_NOTARY_STATUS:-Accepted}"; }
 EOF
 bm_run() { bash -c "source '$HERE/release.sh'; source '$WORK/bm-stubs.sh'; export BM_LOG='$WORK/bm.log'; : > '$WORK/bm.log'; TAG=v1.2.3; VERSION=1.2.3; SRC='$WORK/bm/src'; DIST='$WORK/bm/dist'; rm -rf \"\$DIST\"; mkdir -p \"\$DIST\"; $1"; }
-check build-macos-ok 0 "" -- bm_run "build_macos >/dev/null && [[ -f \"\$DIST/agentbus2-v1.2.3-macos-universal.tar.gz\" && -f \"\$DIST/notary.log\" && ! -e \"\$DIST/notarize.zip\" && \$MACOS_ARCHIVE == agentbus2-v1.2.3-macos-universal.tar.gz && \${ARCHIVES[0]} == \$MACOS_ARCHIVE ]] && tar -tzf \"\$DIST/agentbus2-v1.2.3-macos-universal.tar.gz\" | grep -qx agentbus2"
-check build-macos-calls 0 "" -- bm_run "build_macos >/dev/null; grep -q '^build-archive v1.2.3 darwin arm64\$' \$BM_LOG && grep -q '^build-archive v1.2.3 darwin amd64\$' \$BM_LOG && grep -q '^codesign --force --timestamp --options runtime --sign ' \$BM_LOG && grep -q '^xcrun notarytool submit .* --keychain-profile sqdist-notary --wait' \$BM_LOG"
-check build-macos-notarization-rejected 1 "notarization not accepted" -- bm_run "BM_NOTARY_STATUS=Invalid build_macos"
+check build-macos-ok 0 "" -- bm_run "build_macos >/dev/null && [[ -f \"\$DIST/agentbus2-v1.2.3-macos-universal.tar.gz\" && -f \"\$DIST/agentbus2-mcponly-v1.2.3-macos-universal.tar.gz\" && -f \"\$DIST/notary-agentbus2.log\" && -f \"\$DIST/notary-agentbus2-mcponly.log\" && ! -e \"\$DIST/notary.log\" && ! -e \"\$DIST/notarize.zip\" && \${#MACOS_ARCHIVES[@]} == 2 && \${MACOS_ARCHIVES[0]} == agentbus2-v1.2.3-macos-universal.tar.gz && \${MACOS_ARCHIVES[1]} == agentbus2-mcponly-v1.2.3-macos-universal.tar.gz && \${ARCHIVES[0]} == \${MACOS_ARCHIVES[0]} && \${ARCHIVES[1]} == \${MACOS_ARCHIVES[1]} && \${#ARCHIVES[@]} == 2 ]] && tar -tzf \"\$DIST/agentbus2-v1.2.3-macos-universal.tar.gz\" | grep -qx agentbus2 && tar -tzf \"\$DIST/agentbus2-mcponly-v1.2.3-macos-universal.tar.gz\" | grep -qx agentbus2-mcponly"
+check build-macos-calls 0 "" -- bm_run "build_macos >/dev/null; for b in agentbus2 agentbus2-mcponly; do grep -q \"^build-archive \$b v1.2.3 darwin arm64\\$\" \$BM_LOG && grep -q \"^build-archive \$b v1.2.3 darwin amd64\\$\" \$BM_LOG || exit 1; done; [[ \$(grep -c '^codesign --force --timestamp --options runtime --sign ' \$BM_LOG) == 2 && \$(grep -c '^xcrun notarytool submit .* --keychain-profile sqdist-notary --wait' \$BM_LOG) == 2 && \$(grep -c '^lipo -create' \$BM_LOG) == 2 ]]"
+check build-macos-codesigns-each-binary 0 "" -- bm_run "build_macos >/dev/null; grep '^codesign --force' \$BM_LOG | grep -q 'macos/agentbus2\$' && grep '^codesign --force' \$BM_LOG | grep -q 'macos/agentbus2-mcponly\$'"
+check build-macos-rerun-over-leftovers 0 "" -- bm_run "build_macos >/dev/null; ls \"\$DIST\" | tr '\\n' ' ' > '$WORK/bm-first.ls'; ARCHIVES=(); MACOS_ARCHIVES=(); build_macos >/dev/null; [[ \$(ls \"\$DIST\" | tr '\\n' ' ') == \$(cat '$WORK/bm-first.ls') && \${#ARCHIVES[@]} == 2 ]]"
+check build-macos-notarization-rejected 1 "notarization of agentbus2 not accepted" -- bm_run "BM_NOTARY_STATUS=Invalid build_macos"
 
 # main runs the steps in the order the spec pins; every step is replaced by a
 # recorder so nothing builds, dispatches or publishes.

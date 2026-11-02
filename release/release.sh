@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Build, sign and publish a release of agentbus2, then update Homebrew, Scoop
-# and winget. macOS is built, codesigned and notarized here; the Linux and
+# Build, sign and publish a release of agentbus2 and agentbus2-mcponly, then
+# update Homebrew, Scoop and winget (three packages per binary). macOS is built, codesigned and notarized here; the Linux and
 # Windows archives are built, run and attested by .github/workflows/
 # release-build.yml on native runners, dispatched on the tag. Every archive
 # is listed in SHA256SUMS, signed with the Ed25519 release key.
@@ -19,12 +19,11 @@
 # push) is called by name, so a test can shadow it with a shell function.
 set -euo pipefail
 
-BIN_NAME="agentbus2"
+BIN_NAMES=(agentbus2 agentbus2-mcponly) # the release binaries, in SHA256SUMS order
 GH_REPO="ericfitz/agentbus2"
 TAP_DIR="${TAP_DIR:-$HOME/Projects/homebrew-tap}" # SSH clone of ericfitz/homebrew-tap
 SCOOP_DIR="${SCOOP_DIR:-$HOME/Projects/scoop-bucket}" # SSH clone of ericfitz/scoop-bucket
 KOMAC_KEY_FILE="$HOME/.keys/KOMAC_GITHUB_KEY"           # `export KOMAC_GITHUB_KEY='<PAT with public_repo>'`
-WINGET_ID="ericfitz.agentbus2"
 SIGN_IDENTITY="Developer ID Application: Robert Fitzgerald (796T45968D)"
 NOTARY_PROFILE="sqdist-notary" # team-level credential, shared across projects
 SIGNING_KEY="${AGENTBUS2_SIGNING_KEY:-$HOME/.keys/agentbus2-release-ed25519.pem}"
@@ -34,7 +33,7 @@ DIST="${REPO_ROOT}/dist"
 OPENSSL=""  # an OpenSSL 3 binary, set by require_tools
 TAG="" VERSION="" SRC=""
 ARCHIVES=() # archive file names under $DIST, in SHA256SUMS order
-MACOS_ARCHIVE=""   # file name of the macOS tarball under $DIST
+MACOS_ARCHIVES=()  # file names of the macOS tarballs under $DIST, one per binary
 NO_PUBLISH=0       # --no-publish: stop after signing, leave the draft
 PUBLISHED=0        # set when the release for $TAG is already public (rerun)
 RUN_ID=""          # the release-build.yml run this release used
@@ -198,16 +197,37 @@ checkout_tag() {
     rm -rf "$DIST" && mkdir -p "$DIST"
 }
 
-# build_macos builds both architectures with the tag's own build script,
-# joins them with lipo, codesigns and notarizes the universal binary.
-build_macos() {
-    local bin="$DIST/macos/$BIN_NAME" arch
-    mkdir -p "$DIST/macos"
-    echo "==> Building universal binary $VERSION from $TAG"
-    for arch in arm64 amd64; do
-        (cd "$SRC" && bash "$BUILD_SCRIPT" "$TAG" darwin "$arch" "$DIST/macos-$arch")
+# valid_binary <name> dies unless <name> is one of BIN_NAMES.
+valid_binary() {
+    local b
+    for b in "${BIN_NAMES[@]}"; do
+        [[ "${1:-}" == "$b" ]] && return 0
     done
-    lipo -create -output "$bin" "$DIST/macos-arm64/$BIN_NAME" "$DIST/macos-amd64/$BIN_NAME"
+    fail "unknown binary '${1:-}' (want one of: ${BIN_NAMES[*]})"
+}
+
+# build_macos builds, signs and notarizes the universal binary of each release
+# binary, one notarization submission each.
+build_macos() {
+    local b
+    for b in "${BIN_NAMES[@]}"; do
+        build_macos_binary "$b"
+    done
+}
+
+# build_macos_binary <binary> builds both architectures with the tag's own
+# build script, joins them with lipo, codesigns and notarizes the universal
+# binary. A rerun replaces $DIST (checkout_tag) or overwrites these outputs.
+build_macos_binary() {
+    local b="$1" arch bin
+    valid_binary "$b"
+    bin="$DIST/macos/$b"
+    mkdir -p "$DIST/macos"
+    echo "==> Building universal $b $VERSION from $TAG"
+    for arch in arm64 amd64; do
+        (cd "$SRC" && bash "$BUILD_SCRIPT" "$b" "$TAG" darwin "$arch" "$DIST/macos-$arch")
+    done
+    lipo -create -output "$bin" "$DIST/macos-arm64/$b" "$DIST/macos-amd64/$b"
     lipo -info "$bin"
     # The universal binary runs only on a Mac; elsewhere the dry run checks the
     # Linux archive instead (build-archive.sh already ran each native build).
@@ -224,16 +244,16 @@ build_macos() {
     if command -v ditto >/dev/null 2>&1; then
         ditto -c -k --keepParent "$bin" "$zip"
     else
-        (cd "$DIST/macos" && zip -q -j "$zip" "$BIN_NAME")
+        (cd "$DIST/macos" && zip -q -j "$zip" "$b")
     fi
-    xcrun notarytool submit "$zip" --keychain-profile "$NOTARY_PROFILE" --wait | tee "$DIST/notary.log"
-    grep -q 'status: Accepted' "$DIST/notary.log" || fail "notarization not accepted"
+    xcrun notarytool submit "$zip" --keychain-profile "$NOTARY_PROFILE" --wait | tee "$DIST/notary-$b.log"
+    grep -q 'status: Accepted' "$DIST/notary-$b.log" || fail "notarization of $b not accepted"
     rm -f "$zip"
 
-    local archive="${BIN_NAME}-${TAG}-macos-universal.tar.gz"
-    tar -C "$DIST/macos" -czf "$DIST/$archive" "$BIN_NAME"
+    local archive="${b}-${TAG}-macos-universal.tar.gz"
+    tar -C "$DIST/macos" -czf "$DIST/$archive" "$b"
     ARCHIVES+=("$archive")
-    MACOS_ARCHIVE="$archive"
+    MACOS_ARCHIVES+=("$archive")
 }
 
 # copy_scripts puts the installer(s) from the tag's worktree into $DIST so
@@ -397,17 +417,21 @@ watch_run() {
         || fail "$WORKFLOW failed; the draft stays for a rerun: https://github.com/$GH_REPO/actions/runs/$RUN_ID"
 }
 
-# download_archives fetches the four attested archives the workflow uploaded
-# to the draft and requires every one of them.
+# download_archives fetches the eight attested archives the workflow uploaded
+# to the draft (four per binary) and requires every one of them.
 download_archives() {
     echo "==> Downloading the Linux and Windows archives"
-    gh release download "$TAG" --repo "$GH_REPO" --dir "$DIST" --clobber \
-        --pattern "${BIN_NAME}-${TAG}-linux-*.tar.gz" --pattern "${BIN_NAME}-${TAG}-windows-*.zip" \
+    local patterns=() b a
+    for b in "${BIN_NAMES[@]}"; do
+        patterns+=(--pattern "${b}-${TAG}-linux-*.tar.gz" --pattern "${b}-${TAG}-windows-*.zip")
+    done
+    gh release download "$TAG" --repo "$GH_REPO" --dir "$DIST" --clobber "${patterns[@]}" \
         || fail "could not download the archives of $TAG; rerun the workflow"
-    local a
-    for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do
-        [[ -f "$DIST/${BIN_NAME}-${TAG}-$a" ]] || fail "release $TAG lacks ${BIN_NAME}-${TAG}-$a; rerun the workflow"
-        ARCHIVES+=("${BIN_NAME}-${TAG}-$a")
+    for b in agentbus2 agentbus2-mcponly; do
+        for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do
+            [[ -f "$DIST/${b}-${TAG}-$a" ]] || fail "release $TAG lacks ${b}-${TAG}-$a; rerun the workflow"
+            ARCHIVES+=("${b}-${TAG}-$a")
+        done
     done
 }
 
@@ -415,20 +439,24 @@ download_archives() {
 # downloaded archive against this repository before anything is signed.
 verify_attestations() {
     echo "==> Verifying build attestations"
-    local a
+    local a m skip
     for a in "${ARCHIVES[@]}"; do
-        [[ "$a" == "$MACOS_ARCHIVE" ]] && continue
+        skip=0
+        for m in ${MACOS_ARCHIVES[@]+"${MACOS_ARCHIVES[@]}"}; do
+            [[ "$a" == "$m" ]] && skip=1
+        done
+        [[ "$skip" == 1 ]] && continue
         gh attestation verify "$DIST/$a" --repo "$GH_REPO" \
             --signer-workflow "$GH_REPO/.github/workflows/$WORKFLOW" --source-ref "refs/tags/$TAG" >/dev/null \
             || fail "attestation of $a does not verify against $GH_REPO"
     done
 }
 
-# upload_assets adds what only this machine has to the draft; the four
+# upload_assets adds what only this machine has to the draft; the eight
 # archives are already there, uploaded by the workflow.
 upload_assets() {
-    echo "==> Uploading the macOS tarball, the install scripts and SHA256SUMS"
-    (cd "$DIST" && gh release upload "$TAG" --repo "$GH_REPO" --clobber "$MACOS_ARCHIVE" install.sh install.ps1 SHA256SUMS SHA256SUMS.sig)
+    echo "==> Uploading the macOS tarballs, the install scripts and SHA256SUMS"
+    (cd "$DIST" && gh release upload "$TAG" --repo "$GH_REPO" --clobber "${MACOS_ARCHIVES[@]}" install.sh install.ps1 SHA256SUMS SHA256SUMS.sig)
 }
 
 # render_template <tmpl> <out> KEY=VALUE... replaces every __KEY__ and fails
@@ -452,59 +480,69 @@ sum_of() {
     printf '%s\n' "$h"
 }
 
-# render_formula renders the Homebrew formula to $DIST/agentbus2.rb from the
-# macOS and Linux archives listed in SHA256SUMS. It touches nothing else.
+# render_formula <binary> renders the Homebrew formula to $DIST/<binary>.rb
+# from the macOS and Linux archives listed in SHA256SUMS. It touches nothing else.
 render_formula() {
+    local b="${1:-}"
+    valid_binary "$b"
     local base="https://github.com/${GH_REPO}/releases/download/${TAG}"
-    local m="${BIN_NAME}-${TAG}-macos-universal.tar.gz" la="${BIN_NAME}-${TAG}-linux-amd64.tar.gz" lr="${BIN_NAME}-${TAG}-linux-arm64.tar.gz"
+    local m="${b}-${TAG}-macos-universal.tar.gz" la="${b}-${TAG}-linux-amd64.tar.gz" lr="${b}-${TAG}-linux-arm64.tar.gz"
     # Each hash is its own assignment: a failed $( ) inside an argument list
     # would not stop the script and would render an empty sha256.
     local hm hla hlr
     hm="$(sum_of "$m")" || exit 1; hla="$(sum_of "$la")" || exit 1; hlr="$(sum_of "$lr")" || exit 1
-    render_template "$REPO_ROOT/release/${BIN_NAME}.rb.tmpl" "$DIST/${BIN_NAME}.rb" \
+    render_template "$REPO_ROOT/release/${b}.rb.tmpl" "$DIST/${b}.rb" \
         "MACOS_URL=$base/$m" "MACOS_SHA256=$hm" \
         "LINUX_AMD64_URL=$base/$la" "LINUX_AMD64_SHA256=$hla" \
         "LINUX_ARM64_URL=$base/$lr" "LINUX_ARM64_SHA256=$hlr"
 }
 
-# render_scoop renders the Scoop manifest to $DIST/agentbus2.scoop.json.
+# render_scoop <binary> renders the Scoop manifest to $DIST/<binary>.scoop.json.
 render_scoop() {
+    local b="${1:-}"
+    valid_binary "$b"
     local base="https://github.com/${GH_REPO}/releases/download/${TAG}"
-    local wa="${BIN_NAME}-${TAG}-windows-amd64.zip" wr="${BIN_NAME}-${TAG}-windows-arm64.zip"
+    local wa="${b}-${TAG}-windows-amd64.zip" wr="${b}-${TAG}-windows-arm64.zip"
     local ha hr
     ha="$(sum_of "$wa")" || exit 1; hr="$(sum_of "$wr")" || exit 1
-    render_template "$REPO_ROOT/release/${BIN_NAME}.scoop.json.tmpl" "$DIST/${BIN_NAME}.scoop.json" \
+    render_template "$REPO_ROOT/release/${b}.scoop.json.tmpl" "$DIST/${b}.scoop.json" \
         "VERSION=$VERSION" "AMD64_URL=$base/$wa" "AMD64_SHA256=$ha" \
         "ARM64_URL=$base/$wr" "ARM64_SHA256=$hr"
 }
 
-# render_winget renders komac's three-file layout under $DIST/winget/, so
-# `komac submit "$DIST/winget"` takes the directory as is. winget writes its
-# hashes in upper case.
+# render_winget <binary> renders komac's three-file layout under
+# $DIST/winget/ericfitz.<binary>/, so `komac submit "$DIST/winget/ericfitz.<binary>"`
+# takes the directory as is. winget writes its hashes in upper case.
 render_winget() {
-    local base="https://github.com/${GH_REPO}/releases/download/${TAG}"
-    local wa="${BIN_NAME}-${TAG}-windows-amd64.zip" wr="${BIN_NAME}-${TAG}-windows-arm64.zip"
-    local out="$DIST/winget" ha hr
+    local b="${1:-}"
+    valid_binary "$b"
+    local id="ericfitz.${b}" base="https://github.com/${GH_REPO}/releases/download/${TAG}"
+    local wa="${b}-${TAG}-windows-amd64.zip" wr="${b}-${TAG}-windows-arm64.zip"
+    local out="$DIST/winget/$id" ha hr
     ha="$(sum_of "$wa" | tr 'a-f' 'A-F')" || exit 1
     hr="$(sum_of "$wr" | tr 'a-f' 'A-F')" || exit 1
     mkdir -p "$out"
-    render_template "$REPO_ROOT/release/${BIN_NAME}.winget.version.yaml.tmpl" "$out/${WINGET_ID}.yaml" "VERSION=$VERSION"
-    render_template "$REPO_ROOT/release/${BIN_NAME}.winget.installer.yaml.tmpl" "$out/${WINGET_ID}.installer.yaml" \
+    render_template "$REPO_ROOT/release/${b}.winget.version.yaml.tmpl" "$out/${id}.yaml" "VERSION=$VERSION"
+    render_template "$REPO_ROOT/release/${b}.winget.installer.yaml.tmpl" "$out/${id}.installer.yaml" \
         "VERSION=$VERSION" "AMD64_URL=$base/$wa" "AMD64_SHA256=$ha" "ARM64_URL=$base/$wr" "ARM64_SHA256=$hr"
-    render_template "$REPO_ROOT/release/${BIN_NAME}.winget.locale.en-US.yaml.tmpl" "$out/${WINGET_ID}.locale.en-US.yaml" "VERSION=$VERSION"
+    render_template "$REPO_ROOT/release/${b}.winget.locale.en-US.yaml.tmpl" "$out/${id}.locale.en-US.yaml" "VERSION=$VERSION"
 }
 
 # publish_release renders the formula, the Scoop manifest and the winget
-# manifests, then either stops with the draft in place (--no-publish) or makes
-# the draft public and updates the package managers.
+# manifests of each binary, then either stops with the draft in place
+# (--no-publish) or makes the draft public and updates the package managers.
 publish_release() {
-    render_formula
-    render_scoop
-    render_winget
-    local f
-    for f in "$DIST/${BIN_NAME}.rb" "$DIST/${BIN_NAME}.scoop.json" "$DIST/winget/${WINGET_ID}.yaml" \
-        "$DIST/winget/${WINGET_ID}.installer.yaml" "$DIST/winget/${WINGET_ID}.locale.en-US.yaml"; do
-        echo "rendered: $f"
+    local b f
+    for b in "${BIN_NAMES[@]}"; do
+        render_formula "$b"
+        render_scoop "$b"
+        render_winget "$b"
+    done
+    for b in "${BIN_NAMES[@]}"; do
+        for f in "$DIST/${b}.rb" "$DIST/${b}.scoop.json" "$DIST/winget/ericfitz.${b}/ericfitz.${b}.yaml" \
+            "$DIST/winget/ericfitz.${b}/ericfitz.${b}.installer.yaml" "$DIST/winget/ericfitz.${b}/ericfitz.${b}.locale.en-US.yaml"; do
+            echo "rendered: $f"
+        done
     done
     if [[ "$NO_PUBLISH" == 1 ]]; then
         local what=draft
@@ -519,61 +557,79 @@ publish_release() {
     fi
     update_tap
     update_scoop
-    submit_winget
-    echo "==> Released ${TAG}: brew install ericfitz/tap/${BIN_NAME}; curl -fsSL https://github.com/${GH_REPO}/releases/latest/download/install.sh | sh; irm https://github.com/${GH_REPO}/releases/latest/download/install.ps1 | iex"
+    for b in "${BIN_NAMES[@]}"; do
+        submit_winget "$b"
+    done
+    echo "==> Released ${TAG}: brew install ericfitz/tap/${BIN_NAMES[0]}; brew install ericfitz/tap/${BIN_NAMES[1]}; curl -fsSL https://github.com/${GH_REPO}/releases/latest/download/install.sh | sh; irm https://github.com/${GH_REPO}/releases/latest/download/install.ps1 | iex"
 }
 
-# update_tap copies the rendered formula into the tap clone, commits when it
-# changed and always pushes (a rerun after "commit ok, push failed" publishes
-# the stranded commit; the push is a no-op when up to date).
+# update_tap copies the rendered formulas into the tap clone, one commit per
+# changed formula, and always pushes (a rerun after "commit ok, push failed"
+# publishes the stranded commits; the push is a no-op when up to date). Both
+# formulas must be rendered before anything is copied.
 update_tap() {
     echo "==> Updating Homebrew tap"
-    [[ -f "$DIST/${BIN_NAME}.rb" ]] || fail "$DIST/${BIN_NAME}.rb is not rendered; run render_formula first"
+    local b
+    for b in "${BIN_NAMES[@]}"; do
+        [[ -f "$DIST/${b}.rb" ]] || fail "$DIST/${b}.rb is not rendered; run render_formula $b first"
+    done
     [[ -d "$TAP_DIR" ]] || git clone git@github.com:ericfitz/homebrew-tap.git "$TAP_DIR"
     git -C "$TAP_DIR" pull -q --ff-only
     mkdir -p "$TAP_DIR/Formula"
-    if cmp -s "$DIST/${BIN_NAME}.rb" "$TAP_DIR/Formula/${BIN_NAME}.rb"; then
-        echo "formula unchanged"
-    else
-        cp "$DIST/${BIN_NAME}.rb" "$TAP_DIR/Formula/${BIN_NAME}.rb"
-        git -C "$TAP_DIR" add "Formula/${BIN_NAME}.rb"
-        git -C "$TAP_DIR" commit -m "${BIN_NAME} ${VERSION}"
-    fi
+    for b in "${BIN_NAMES[@]}"; do
+        if cmp -s "$DIST/${b}.rb" "$TAP_DIR/Formula/${b}.rb"; then
+            echo "formula ${b} unchanged"
+        else
+            cp "$DIST/${b}.rb" "$TAP_DIR/Formula/${b}.rb"
+            git -C "$TAP_DIR" add "Formula/${b}.rb"
+            git -C "$TAP_DIR" commit -m "${b} ${VERSION}"
+        fi
+    done
     git -C "$TAP_DIR" push
 }
 
 # update_scoop is update_tap's twin for the Scoop bucket.
 update_scoop() {
     echo "==> Updating Scoop bucket"
-    [[ -f "$DIST/${BIN_NAME}.scoop.json" ]] || fail "$DIST/${BIN_NAME}.scoop.json is not rendered; run render_scoop first"
+    local b
+    for b in "${BIN_NAMES[@]}"; do
+        [[ -f "$DIST/${b}.scoop.json" ]] || fail "$DIST/${b}.scoop.json is not rendered; run render_scoop $b first"
+    done
     [[ -d "$SCOOP_DIR" ]] || git clone git@github.com:ericfitz/scoop-bucket.git "$SCOOP_DIR"
     git -C "$SCOOP_DIR" pull -q --ff-only
     mkdir -p "$SCOOP_DIR/bucket"
-    if cmp -s "$DIST/${BIN_NAME}.scoop.json" "$SCOOP_DIR/bucket/${BIN_NAME}.json"; then
-        echo "scoop manifest unchanged"
-    else
-        cp "$DIST/${BIN_NAME}.scoop.json" "$SCOOP_DIR/bucket/${BIN_NAME}.json"
-        git -C "$SCOOP_DIR" add "bucket/${BIN_NAME}.json"
-        git -C "$SCOOP_DIR" commit -m "${BIN_NAME} ${VERSION}"
-    fi
+    for b in "${BIN_NAMES[@]}"; do
+        if cmp -s "$DIST/${b}.scoop.json" "$SCOOP_DIR/bucket/${b}.json"; then
+            echo "scoop manifest ${b} unchanged"
+        else
+            cp "$DIST/${b}.scoop.json" "$SCOOP_DIR/bucket/${b}.json"
+            git -C "$SCOOP_DIR" add "bucket/${b}.json"
+            git -C "$SCOOP_DIR" commit -m "${b} ${VERSION}"
+        fi
+    done
     git -C "$SCOOP_DIR" push
 }
 
-# submit_winget opens the winget-pkgs pull request for this version with
-# komac. An open pull request for the version counts as done (rerun). A
-# komac failure does not fail the release: the exact rerun command is
-# printed. The token is scoped to the one command, because exporting
-# GITHUB_TOKEN would override gh's own auth for the rest of the run.
+# submit_winget <binary> opens the winget-pkgs pull request for this version
+# of one package with `komac update`, which needs the package to exist in
+# winget-pkgs already: its first submission is manual (docs/release.md). An
+# open pull request for the version counts as done (rerun). A komac failure
+# does not fail the release: the exact rerun command is printed. The token is
+# scoped to the one command, because exporting GITHUB_TOKEN would override
+# gh's own auth for the rest of the run.
 submit_winget() {
-    echo "==> Submitting ${WINGET_ID} ${VERSION} to winget"
+    local b="${1:-}"
+    valid_binary "$b"
+    local id="ericfitz.${b}"
+    echo "==> Submitting ${id} ${VERSION} to winget"
     local open
-    open="$(gh pr list --repo microsoft/winget-pkgs --state open --search "\"${WINGET_ID} version ${VERSION}\" in:title" --json number --jq '.[].number')" \
+    open="$(gh pr list --repo microsoft/winget-pkgs --state open --search "\"${id} version ${VERSION}\" in:title" --json number --jq '.[].number')" \
         || fail "could not list open pull requests in microsoft/winget-pkgs; rerun once gh works (an open pull request for ${VERSION} would make komac open a duplicate)"
     if [[ -n "$open" ]]; then
-        echo "winget: an open pull request for ${VERSION} exists; nothing to do"; return
+        echo "winget: ${id}: an open pull request for ${VERSION} exists; nothing to do"; return
     fi
     local base="https://github.com/${GH_REPO}/releases/download/${TAG}"
-    local cmd=(komac update "$WINGET_ID" --version "$VERSION" --urls "$base/${BIN_NAME}-${TAG}-windows-amd64.zip" "$base/${BIN_NAME}-${TAG}-windows-arm64.zip" --submit)
+    local cmd=(komac update "$id" --version "$VERSION" --urls "$base/${b}-${TAG}-windows-amd64.zip" "$base/${b}-${TAG}-windows-arm64.zip" --submit)
     if ! (
         # shellcheck disable=SC1090
         source "$KOMAC_KEY_FILE"

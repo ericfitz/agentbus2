@@ -36,7 +36,7 @@ Basic plan: $9.99 per month for up to 5,000 signatures, billed per account per m
 
 ## Releasing
 
-- `--windows-signing=on`: `package-windows` signs both executables (file digest SHA-256, timestamped by `http://timestamp.acs.microsoft.com` with SHA-256), verifies each signature's status, signer common name and timestamp countersignature, runs the signed amd64 binary, and only then are the zips attested and listed in `SHA256SUMS`. A failure in that job (lapsed subscription, expired validation, missing role or variable) fails the workflow; `release.sh` stops with the run URL and the draft stays for a rerun. Nothing is published unsigned when `on` was chosen.
+- `--windows-signing=on`: `package-windows` signs the executables of both binaries, `agentbus2.exe` and `agentbus2-mcponly.exe`, for both architectures (four files; file digest SHA-256, timestamped by `http://timestamp.acs.microsoft.com` with SHA-256), verifies each signature's status, signer common name and timestamp countersignature, runs both signed amd64 binaries, and only then are the zips attested and listed in `SHA256SUMS`. A failure in that job (lapsed subscription, expired validation, missing role or variable) fails the workflow; `release.sh` stops with the run URL and the draft stays for a rerun. Nothing is published unsigned when `on` was chosen.
 - `--windows-signing=off`: no Azure step runs, and `release.sh` ends the release notes with: "The Windows binaries in this release are not Authenticode-signed; they are covered by the signed SHA256SUMS and by build attestations." (`release/notes-vX.Y.Z.md` never holds that line.)
 - A rerun before publishing may change the choice (for example `off` after a lapsed subscription); every Windows asset is replaced and the notes line is added or removed to match. Do not flip the choice after publishing: a rerun then replaces the public zips and `SHA256SUMS`, and winget is not refreshed.
 
@@ -49,7 +49,7 @@ Resuming: repeat setup step 1 (reuse the identity validation if it is still vali
 ## Checking a release
 
 ```powershell
-Get-AuthenticodeSignature .\agentbus2.exe | Format-List Status, SignerCertificate, TimeStamperCertificate
+Get-AuthenticodeSignature .\agentbus2.exe, .\agentbus2-mcponly.exe | Format-List Path, Status, SignerCertificate, TimeStamperCertificate
 ```
 
 `Status` is `Valid` and the signer's subject names the maintainer's company. An unsigned release says so in its notes; its binaries are still covered by the signed `SHA256SUMS` and the build attestations.

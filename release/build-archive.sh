@@ -4,16 +4,18 @@
 # dry run (release/test-pipeline.sh). Ported from the inline build and
 # package steps of v1 .github/workflows/release-build.yml.
 #
-#   build-archive.sh <tag> <goos> <goarch> <outdir>
+#   build-archive.sh <binary> <tag> <goos> <goarch> <outdir>
 #   build-archive.sh --self-test
 #
-# Run it from the module root. Windows and darwin leave the bare binary in
-# <outdir>: the zip is packaged after signing (package-windows) and lipo runs
-# in release.sh.
+# <binary> is agentbus2 or agentbus2-mcponly. Run it from the module root.
+# Windows and darwin leave the bare binary in <outdir>: the zip is packaged
+# after signing (package-windows) and lipo runs in release.sh.
 set -euo pipefail
 
-USAGE='usage: build-archive.sh <tag> <goos> <goarch> <outdir> | --self-test'
+USAGE='usage: build-archive.sh <binary> <tag> <goos> <goarch> <outdir> | --self-test'
+MODULE='github.com/ericfitz/agentbus2'
 MODULE_VERSION_VAR='github.com/ericfitz/agentbus2/internal/version.Version'
+BINARIES=(agentbus2 agentbus2-mcponly)
 
 usage_fail() {
   echo "$USAGE" >&2
@@ -21,7 +23,21 @@ usage_fail() {
 }
 
 build() {
-  local tag="$1" goos="$2" goarch="$3" outdir="$4" version ext="" bin got hostos hostarch
+  local binary="$1" tag="$2" goos="$3" goarch="$4" outdir="$5" version ext="" bin got hostos hostarch pkg want path
+  case "$binary" in
+    agentbus2)
+      pkg=.
+      want="$MODULE"
+      ;;
+    agentbus2-mcponly)
+      pkg=./cmd/agentbus2-mcponly
+      want="$MODULE/cmd/agentbus2-mcponly"
+      ;;
+    *)
+      echo "build-archive.sh: binary must be agentbus2 or agentbus2-mcponly, got '$binary'" >&2
+      exit 2
+      ;;
+  esac
   [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
     echo "build-archive.sh: tag must look like vX.Y.Z, got '$tag'" >&2
     exit 2
@@ -36,11 +52,19 @@ build() {
   version="${tag#v}"
   [[ "$goos" == windows ]] && ext=".exe"
   mkdir -p "$outdir"
-  bin="$outdir/agentbus2$ext"
+  bin="$outdir/$binary$ext"
 
   # open note: signing-keys 1: release archives are built without a key-provider tag (lean)
   CGO_ENABLED=0 GOOS="$goos" GOARCH="$goarch" go build -trimpath \
-    -ldflags "-s -w -X ${MODULE_VERSION_VAR}=${version}" -o "$bin" .
+    -ldflags "-s -w -X ${MODULE_VERSION_VAR}=${version}" -o "$bin" "$pkg"
+
+  # The binary must be the package asked for, also in a cross build (nothing
+  # runs it there): the main package path is recorded in the build info.
+  path="$(go version -m "$bin" | awk '$1 == "path" { print $2; exit }')"
+  [[ "$path" == "$want" ]] || {
+    echo "build-archive.sh: $bin holds the wrong binary: path $path, want $want" >&2
+    exit 1
+  }
 
   hostos="$(go env GOHOSTOS)"
   hostarch="$(go env GOHOSTARCH)"
@@ -56,7 +80,7 @@ build() {
   fi
 
   if [[ "$goos" == linux ]]; then
-    tar -C "$outdir" -czf "$outdir/agentbus2-${tag}-linux-${goarch}.tar.gz" agentbus2
+    tar -C "$outdir" -czf "$outdir/${binary}-${tag}-linux-${goarch}.tar.gz" "$binary"
   fi
 }
 
@@ -81,7 +105,7 @@ expect_refusal() {
 }
 
 self_test() {
-  local hostos hostarch ext="" rc=0 out listing
+  local hostos hostarch ext="" rc=0 out listing b
   TMP_DIR="$(mktemp -d)"
   trap 'rm -rf "$TMP_DIR"' EXIT
   local tmp="$TMP_DIR"
@@ -89,51 +113,73 @@ self_test() {
   [[ "$SELF" == /* ]] || SELF="$PWD/$SELF"
 
   expect_refusal usage "$USAGE"
-  expect_refusal too-many-args "$USAGE" v0.0.1 linux amd64 "$tmp" extra
+  expect_refusal too-many-args "$USAGE" agentbus2 v0.0.1 linux amd64 "$tmp" extra
+  expect_refusal four-args "$USAGE" v0.0.1 linux amd64 "$tmp"
   expect_refusal bad-flag "$USAGE" --bogus
-  expect_refusal flag-in-position "$USAGE" v0.0.1 -linux amd64 "$tmp"
-  expect_refusal bad-tag "tag must look like vX.Y.Z" v1.2 linux amd64 "$tmp"
-  expect_refusal bad-tag-prerelease "tag must look like vX.Y.Z" v1.2.3-rc1 linux amd64 "$tmp"
-  expect_refusal bad-pair "plan9/amd64" v0.0.1 plan9 amd64 "$tmp"
-  expect_refusal bad-arch "linux/386" v0.0.1 linux 386 "$tmp"
+  expect_refusal flag-in-position "$USAGE" agentbus2 v0.0.1 -linux amd64 "$tmp"
+  expect_refusal flag-as-binary "$USAGE" -agentbus2 v0.0.1 linux amd64 "$tmp"
+  expect_refusal bad-binary "binary must be agentbus2 or agentbus2-mcponly" bogus v0.0.1 linux amd64 "$tmp"
+  expect_refusal bad-binary-path "binary must be agentbus2 or agentbus2-mcponly" ./agentbus2 v0.0.1 linux amd64 "$tmp"
+  expect_refusal bad-binary-exe "binary must be agentbus2 or agentbus2-mcponly" agentbus2.exe v0.0.1 windows amd64 "$tmp"
+  for b in "${BINARIES[@]}"; do
+    expect_refusal "bad-tag-$b" "tag must look like vX.Y.Z" "$b" v1.2 linux amd64 "$tmp"
+    expect_refusal "bad-tag-prerelease-$b" "tag must look like vX.Y.Z" "$b" v1.2.3-rc1 linux amd64 "$tmp"
+    expect_refusal "bad-pair-$b" "plan9/amd64" "$b" v0.0.1 plan9 amd64 "$tmp"
+    expect_refusal "bad-arch-$b" "linux/386" "$b" v0.0.1 linux 386 "$tmp"
+  done
 
   hostos="$(go env GOHOSTOS)"
   hostarch="$(go env GOHOSTARCH)"
   [[ "$hostos" == windows ]] && ext=".exe"
-  case "$hostos/$hostarch" in
-    linux/amd64 | linux/arm64 | windows/amd64 | windows/arm64 | darwin/amd64 | darwin/arm64)
-      out="$(bash "$SELF" v0.0.7 "$hostos" "$hostarch" "$tmp/native" 2>&1)" || rc=$?
-      if [[ "$rc" == 0 && "$(
-        "$tmp/native/agentbus2$ext" version
-      )" == "0.0.7" ]]; then
-        echo "PASS native-build"
-        SELF_PASS=$((SELF_PASS + 1))
-      else
-        echo "FAIL native-build: exit $rc: $out"
+  for b in "${BINARIES[@]}"; do
+    case "$hostos/$hostarch" in
+      linux/amd64 | linux/arm64 | windows/amd64 | windows/arm64 | darwin/amd64 | darwin/arm64)
+        rc=0
+        out="$(bash "$SELF" "$b" v0.0.7 "$hostos" "$hostarch" "$tmp/native" 2>&1)" || rc=$?
+        if [[ "$rc" == 0 && "$(
+          "$tmp/native/$b$ext" version
+        )" == "0.0.7" ]]; then
+          echo "PASS native-build-$b"
+          SELF_PASS=$((SELF_PASS + 1))
+        else
+          echo "FAIL native-build-$b: exit $rc: $out"
+          SELF_FAIL=$((SELF_FAIL + 1))
+        fi
+        ;;
+      *)
+        echo "FAIL native-build-$b: unsupported host $hostos/$hostarch"
         SELF_FAIL=$((SELF_FAIL + 1))
-      fi
-      ;;
-    *)
-      echo "FAIL native-build: unsupported host $hostos/$hostarch"
-      SELF_FAIL=$((SELF_FAIL + 1))
-      ;;
-  esac
+        ;;
+    esac
+  done
 
   # The archive binary is lean: no key-provider tag, so no sigstore module (and no cloud SDK behind one) is linked.
-  if [[ -f "$tmp/native/agentbus2$ext" ]]; then
-    local mods
-    if mods="$(go version -m "$tmp/native/agentbus2$ext" 2>&1)" && [[ "$mods" == *"agentbus2"* ]] \
-      && [[ "$mods" != *sigstore* ]]; then
-      echo "PASS archive-binary-links-no-sigstore"
-      SELF_PASS=$((SELF_PASS + 1))
+  # Each binary is the package asked for: the build info names it.
+  local mods want_path
+  for b in "${BINARIES[@]}"; do
+    want_path="$MODULE"
+    [[ "$b" == agentbus2-mcponly ]] && want_path="$MODULE/cmd/agentbus2-mcponly"
+    if [[ -f "$tmp/native/$b$ext" ]]; then
+      if mods="$(go version -m "$tmp/native/$b$ext" 2>&1)" && [[ "$mods" == *"agentbus2"* ]] \
+        && [[ "$mods" != *sigstore* ]]; then
+        echo "PASS archive-binary-links-no-sigstore-$b"
+        SELF_PASS=$((SELF_PASS + 1))
+      else
+        echo "FAIL archive-binary-links-no-sigstore-$b: $(printf '%s' "$mods" | grep -i sigstore | head -3)"
+        SELF_FAIL=$((SELF_FAIL + 1))
+      fi
+      if [[ "$(go version -m "$tmp/native/$b$ext" | awk '$1 == "path" { print $2; exit }')" == "$want_path" ]]; then
+        echo "PASS binary-path-$b"
+        SELF_PASS=$((SELF_PASS + 1))
+      else
+        echo "FAIL binary-path-$b: holds the wrong binary, want path $want_path"
+        SELF_FAIL=$((SELF_FAIL + 1))
+      fi
     else
-      echo "FAIL archive-binary-links-no-sigstore: $(printf '%s' "$mods" | grep -i sigstore | head -3)"
+      echo "FAIL archive-binary-links-no-sigstore-$b: no native binary at $tmp/native/$b$ext"
       SELF_FAIL=$((SELF_FAIL + 1))
     fi
-  else
-    echo "FAIL archive-binary-links-no-sigstore: no native binary at $tmp/native/agentbus2$ext"
-    SELF_FAIL=$((SELF_FAIL + 1))
-  fi
+  done
 
   # The linux tarball on any host: the native one on Linux, else a cross
   # build (not run here, so only the packaging is judged).
@@ -141,34 +187,38 @@ self_test() {
   if [[ "$hostos" != linux ]]; then
     tardir="$tmp/linux"
     tararch=amd64
-    rc=0
-    out="$(bash "$SELF" v0.0.7 linux amd64 "$tardir" 2>&1)" || rc=$?
-    if [[ "$rc" == 0 && "$out" == *"note: not run (host is $hostos/$hostarch)"* ]]; then
-      echo "PASS linux-cross-build"
+    for b in "${BINARIES[@]}"; do
+      rc=0
+      out="$(bash "$SELF" "$b" v0.0.7 linux amd64 "$tardir" 2>&1)" || rc=$?
+      if [[ "$rc" == 0 && "$out" == *"note: not run (host is $hostos/$hostarch)"* ]]; then
+        echo "PASS linux-cross-build-$b"
+        SELF_PASS=$((SELF_PASS + 1))
+      else
+        echo "FAIL linux-cross-build-$b: exit $rc: $out"
+        SELF_FAIL=$((SELF_FAIL + 1))
+      fi
+    done
+  fi
+  for b in "${BINARIES[@]}"; do
+    tarball="$tardir/${b}-v0.0.7-linux-${tararch}.tar.gz"
+    listing="$(tar -tzf "$tarball" 2>&1)" || true
+    if [[ "$listing" == "$b" ]]; then
+      echo "PASS linux-tar-lists-binary-$b"
       SELF_PASS=$((SELF_PASS + 1))
     else
-      echo "FAIL linux-cross-build: exit $rc: $out"
+      echo "FAIL linux-tar-lists-binary-$b: $listing"
       SELF_FAIL=$((SELF_FAIL + 1))
     fi
-  fi
-  tarball="$tardir/agentbus2-v0.0.7-linux-${tararch}.tar.gz"
-  listing="$(tar -tzf "$tarball" 2>&1)" || true
-  if [[ "$listing" == "agentbus2" ]]; then
-    echo "PASS linux-tar-lists-binary"
-    SELF_PASS=$((SELF_PASS + 1))
-  else
-    echo "FAIL linux-tar-lists-binary: $listing"
-    SELF_FAIL=$((SELF_FAIL + 1))
-  fi
-  # The packed binary is the one built, and executable.
-  if [[ -f "$tarball" ]] && tar -xzOf "$tarball" agentbus2 | cmp -s - "$tardir/agentbus2" \
-    && [[ "$(tar -tvzf "$tarball" | cut -c1-10)" == -rwx* ]]; then
-    echo "PASS linux-tar-holds-the-binary"
-    SELF_PASS=$((SELF_PASS + 1))
-  else
-    echo "FAIL linux-tar-holds-the-binary: $tarball"
-    SELF_FAIL=$((SELF_FAIL + 1))
-  fi
+    # The packed binary is the one built, and executable.
+    if [[ -f "$tarball" ]] && tar -xzOf "$tarball" "$b" | cmp -s - "$tardir/$b" \
+      && [[ "$(tar -tvzf "$tarball" | cut -c1-10)" == -rwx* ]]; then
+      echo "PASS linux-tar-holds-the-binary-$b"
+      SELF_PASS=$((SELF_PASS + 1))
+    else
+      echo "FAIL linux-tar-holds-the-binary-$b: $tarball"
+      SELF_FAIL=$((SELF_FAIL + 1))
+    fi
+  done
 
   if ((SELF_FAIL > 0)); then
     echo "build-archive self-test: $SELF_FAIL failed, $SELF_PASS passed" >&2
@@ -183,7 +233,7 @@ if (($# == 1)) && [[ "$1" == "--self-test" ]]; then
   self_test
   exit 0
 fi
-(($# == 4)) || usage_fail
+(($# == 5)) || usage_fail
 for arg in "$@"; do
   [[ "$arg" == -* ]] && usage_fail
 done

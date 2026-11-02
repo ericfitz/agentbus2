@@ -32,7 +32,7 @@ agentbus2: a Go CLI, local stdio MCP server and API server for coordinating agen
 - `scripts/m7-exit-checks.sh <replicas.log>` checks the `TestReplicas*` counts (`TestReplicasWake` 4 leaves on SQLite and 6 on Postgres, `TestReplicasMaintenanceExclusive` 2 per engine) and the Milestone 7 import rule; `--deps-only` runs the import rule alone.
 - `make check-gates-selftest` tests the gate scripts themselves (minutes; CI runs it as its own job).
 - `make release-check` (the release harnesses, the local dry run and `vet-cross`), `make release-lint` (`actionlint`, `shellcheck`) and `make release-install-check` (the installer matrix in Docker) are not part of `verify`; each runs as its own CI job. `release/release.sh <tag> --windows-signing=on|off [--no-publish]` is Eric's: it signs, notarizes and publishes (`docs/release.md`).
-- `scripts/m9-exit-checks.sh [--real-only]` checks the release tooling's invariants and, without `--real-only`, four mutations in a throwaway worktree (CI job `m9-exit-selftest`).
+- `scripts/m9-exit-checks.sh [--real-only]` checks the release tooling's invariants and, without `--real-only`, five mutations in a throwaway worktree (CI job `m9-exit-selftest`).
 
 ## Design
 

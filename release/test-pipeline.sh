@@ -57,6 +57,9 @@ USAGE='usage: test-pipeline.sh [--self-test]'
 TAG=v0.0.1
 VERSION=0.0.1
 UNSIGNED_NOTE="The Windows binaries in this release are not Authenticode-signed; they are covered by the signed SHA256SUMS and by build attestations."
+ARCHIVE_NAMES=("agentbus2-$TAG-macos-universal.tar.gz" "agentbus2-mcponly-$TAG-macos-universal.tar.gz"
+    "agentbus2-$TAG-linux-amd64.tar.gz" "agentbus2-$TAG-linux-arm64.tar.gz" "agentbus2-$TAG-windows-amd64.zip" "agentbus2-$TAG-windows-arm64.zip"
+    "agentbus2-mcponly-$TAG-linux-amd64.tar.gz" "agentbus2-mcponly-$TAG-linux-arm64.tar.gz" "agentbus2-mcponly-$TAG-windows-amd64.zip" "agentbus2-mcponly-$TAG-windows-arm64.zip")
 GUARDED=(curl wget ssh scp sftp nc ncat telnet ftp rsync gh komac)
 PASS=0
 FAILN=0
@@ -251,7 +254,7 @@ assert_hermetic() {
 }
 gh() {
     printf 'gh %s\n' "$*" >> "$GH_LOG"
-    local a="${1:-}" b="${2:-}" arg expr="" prev="" tag="" dir="" n id
+    local a="${1:-}" b="${2:-}" arg expr="" prev="" tag="" dir="" n id readme bin
     case "$a $b" in
         "auth status" | "workflow view" | "attestation verify" | "variable list" | "pr list") return 0 ;;
         "release view")
@@ -287,16 +290,20 @@ gh() {
                 prev="$arg"
             done
             [[ -n "$dir" ]] || { echo "gh stub: release download without --dir" >&2; return 99; }
-            for id in amd64 arm64; do
-                (cd "$SRC" && bash release/build-archive.sh "$tag" linux "$id" "$WORK/linux-$id") >&2 || return 1
-                mv "$WORK/linux-$id/agentbus2-$tag-linux-$id.tar.gz" "$dir/"
-            done
-            for id in amd64 arm64; do
-                (cd "$SRC" && bash release/build-archive.sh "$tag" windows "$id" "$WORK/win-$id") >&2 || return 1
-                rm -rf "$WORK/win-$id/stage"; mkdir -p "$WORK/win-$id/stage"
-                cp "$WORK/win-$id/agentbus2.exe" "$WORK/win-$id/stage/agentbus2.exe"
-                cp "$SRC/release/windows-zip-README.txt" "$WORK/win-$id/stage/README.txt"
-                (cd "$WORK/win-$id/stage" && python3 -I -m zipfile -c "$dir/agentbus2-$tag-windows-$id.zip" agentbus2.exe README.txt)
+            for bin in agentbus2 agentbus2-mcponly; do
+                for id in amd64 arm64; do
+                    (cd "$SRC" && bash release/build-archive.sh "$bin" "$tag" linux "$id" "$WORK/linux-$bin-$id") >&2 || return 1
+                    mv "$WORK/linux-$bin-$id/$bin-$tag-linux-$id.tar.gz" "$dir/"
+                done
+                readme="$SRC/release/windows-zip-README.txt"
+                [[ "$bin" == agentbus2 ]] || readme="$SRC/release/windows-zip-README-mcponly.txt"
+                for id in amd64 arm64; do
+                    (cd "$SRC" && bash release/build-archive.sh "$bin" "$tag" windows "$id" "$WORK/win-$bin-$id") >&2 || return 1
+                    rm -rf "$WORK/win-$bin-$id/stage"; mkdir -p "$WORK/win-$bin-$id/stage"
+                    cp "$WORK/win-$bin-$id/$bin.exe" "$WORK/win-$bin-$id/stage/$bin.exe"
+                    cp "$readme" "$WORK/win-$bin-$id/stage/README.txt"
+                    (cd "$WORK/win-$bin-$id/stage" && python3 -I -m zipfile -c "$dir/$bin-$tag-windows-$id.zip" "$bin.exe" README.txt)
+                done
             done
             return 0 ;;
     esac
@@ -458,14 +465,17 @@ self_test_cases() {
     out="$(probe "SRC='$WORK/src'; GH_LOG='$WORK/gh.log'; gh release download v0.0.1 --repo x/y --dir '$WORK/dl' --clobber --pattern a 2>&1")" || rc=$?
     local listing
     listing="$(find "$WORK/dl" -maxdepth 1 -type f -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ')"
-    if [[ "$rc" == 0 && "$listing" == "agentbus2-v0.0.1-linux-amd64.tar.gz agentbus2-v0.0.1-linux-arm64.tar.gz agentbus2-v0.0.1-windows-amd64.zip agentbus2-v0.0.1-windows-arm64.zip " && -z "$(find "$WORK/dl" -mindepth 1 -type d)" ]]; then
-        pass release-download-four-files
+    if [[ "$rc" == 0 && "$listing" == "agentbus2-mcponly-v0.0.1-linux-amd64.tar.gz agentbus2-mcponly-v0.0.1-linux-arm64.tar.gz agentbus2-mcponly-v0.0.1-windows-amd64.zip agentbus2-mcponly-v0.0.1-windows-arm64.zip agentbus2-v0.0.1-linux-amd64.tar.gz agentbus2-v0.0.1-linux-arm64.tar.gz agentbus2-v0.0.1-windows-amd64.zip agentbus2-v0.0.1-windows-arm64.zip " && -z "$(find "$WORK/dl" -mindepth 1 -type d)" ]]; then
+        pass release-download-eight-files
     else
-        bad release-download-four-files "exit $rc: $listing $out"
+        bad release-download-eight-files "exit $rc: $listing $out"
     fi
     local zl
     zl="$(python3 -I -m zipfile -l "$WORK/dl/agentbus2-v0.0.1-windows-arm64.zip" 2>&1)"
-    if [[ "$zl" == *agentbus2.exe* && "$zl" == *README.txt* ]]; then pass zip-listing; else bad zip-listing "$zl"; fi
+    if [[ "$zl" == *agentbus2.exe* && "$zl" == *README.txt* && "$zl" != *mcponly* ]]; then pass zip-listing; else bad zip-listing "$zl"; fi
+    zl="$(python3 -I -m zipfile -l "$WORK/dl/agentbus2-mcponly-v0.0.1-windows-arm64.zip" 2>&1)"
+    if [[ "$zl" == *agentbus2-mcponly.exe* && "$zl" == *README.txt* ]]; then pass zip-listing-mcponly; else bad zip-listing-mcponly "$zl"; fi
+    if [[ "$(python3 -I -m zipfile -e "$WORK/dl/agentbus2-mcponly-v0.0.1-windows-amd64.zip" "$WORK/zx" >/dev/null 2>&1; head -n1 "$WORK/zx/README.txt")" == "agentbus2-mcponly for Windows" ]]; then pass zip-readme-mcponly; else bad zip-readme-mcponly; fi
 
     # serve layout and fixture server
     printf 'sums\n' >"$WORK/dl/SHA256SUMS"
@@ -666,7 +676,8 @@ install_ps1_check() {
     fi
     rm -rf "$d"
     mkdir -p "$d"
-    cp "$dist/SHA256SUMS" "$dist/SHA256SUMS.sig" "$dist/agentbus2-$TAG-windows-amd64.zip" "$dist/agentbus2-$TAG-windows-arm64.zip" "$d/"
+    cp "$dist/SHA256SUMS" "$dist/SHA256SUMS.sig" "$dist/agentbus2-$TAG-windows-amd64.zip" "$dist/agentbus2-$TAG-windows-arm64.zip" \
+        "$dist/agentbus2-mcponly-$TAG-windows-amd64.zip" "$dist/agentbus2-mcponly-$TAG-windows-arm64.zip" "$d/"
     # shellcheck disable=SC2016 # PowerShell variables, expanded by pwsh
     out="$(cd "$d" && PS1_FILE="$dist/install.ps1" OSSL="$OSSL" D="$d" TAG="$TAG" PATH="$WORK/guardbin:$PATH" \
         POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
@@ -674,7 +685,7 @@ install_ps1_check() {
             $ErrorActionPreference = "Stop"
             . $env:PS1_FILE
             Test-Signature $env:OSSL $env:D "http://127.0.0.1:9"
-            foreach ($a in "amd64", "arm64") { Test-Hash $env:D "agentbus2-$($env:TAG)-windows-$a.zip" }
+            foreach ($a in "amd64", "arm64") { Test-Hash $env:D "agentbus2-$($env:TAG)-windows-$a.zip"; Test-Hash $env:D "agentbus2-mcponly-$($env:TAG)-windows-$a.zip" }
             "ps1-verified"
             Add-Content -LiteralPath (Join-Path $env:D "SHA256SUMS") -Value "0000000000000000000000000000000000000000000000000000000000000000  extra"
             try { Test-Signature $env:OSSL $env:D "http://127.0.0.1:9"; "ps1-tamper-accepted" } catch { "ps1-tamper-refused: $_" }
@@ -686,11 +697,60 @@ install_ps1_check() {
     fi
 }
 
-host_archive() { # <dist>: the archive that runs on this host
+host_archive() { # <dist> <binary>: the archive that runs on this host
     case "$(uname -s)" in
-        Darwin) echo "$1/agentbus2-$TAG-macos-universal.tar.gz" ;;
-        *) echo "$1/agentbus2-$TAG-linux-$(go env GOHOSTARCH).tar.gz" ;;
+        Darwin) echo "$1/$2-$TAG-macos-universal.tar.gz" ;;
+        *) echo "$1/$2-$TAG-linux-$(go env GOHOSTARCH).tar.gz" ;;
     esac
+}
+
+# check_formula <dist> <binary> <class>: the rendered formula of one package.
+check_formula() {
+    local dist="$1" b="$2" c="$3" f="$1/$2.rb" sm sla slr
+    sm="$(shasum -a 256 "$dist/$b-$TAG-macos-universal.tar.gz" | awk '{print $1}')"
+    sla="$(shasum -a 256 "$dist/$b-$TAG-linux-amd64.tar.gz" | awk '{print $1}')"
+    slr="$(shasum -a 256 "$dist/$b-$TAG-linux-arm64.tar.gz" | awk '{print $1}')"
+    if ruby -c "$f" >/dev/null 2>&1 && grep -qxF "class $c < Formula" "$f" && grep -qF "bin.install \"$b\"" "$f" \
+        && [[ "$(grep -c '^ *sha256 "' "$f")" == 3 ]] \
+        && grep -qF "sha256 \"$sm\"" "$f" && grep -qF "sha256 \"$sla\"" "$f" && grep -qF "sha256 \"$slr\"" "$f" \
+        && grep -qF "url \"https://github.com/ericfitz/agentbus2/releases/download/$TAG/$b-$TAG-macos-universal.tar.gz\"" "$f"; then
+        pass "A-formula-$b"
+    else
+        bad "A-formula-$b"
+    fi
+}
+
+# check_scoop <dist> <binary>
+check_scoop() {
+    local dist="$1" b="$2" f="$1/$2.scoop.json" wa wr
+    wa="$(awk -v f="$b-$TAG-windows-amd64.zip" '$2 == f {print $1}' "$dist/SHA256SUMS")"
+    wr="$(awk -v f="$b-$TAG-windows-arm64.zip" '$2 == f {print $1}' "$dist/SHA256SUMS")"
+    if python3 -I -m json.tool "$f" >/dev/null 2>&1 \
+        && [[ "$(jq -r '.version' "$f")" == "$VERSION" && "$(jq -r '.bin' "$f")" == "$b.exe" \
+        && "$(jq -r '.architecture."64bit".hash' "$f")" == "$wa" && "$(jq -r '.architecture.arm64.hash' "$f")" == "$wr" \
+        && "$(jq -r '.architecture.arm64.url' "$f")" == *"/$b-$TAG-windows-arm64.zip" ]]; then
+        pass "A-scoop-$b"
+    else
+        bad "A-scoop-$b"
+    fi
+}
+
+# check_winget <dist> <binary>: the three manifests under winget/ericfitz.<binary>/.
+check_winget() {
+    local dist="$1" b="$2" id="ericfitz.$2" wok=1 f up lo wa wr base="https://github.com/ericfitz/agentbus2/releases/download/$TAG"
+    wa="$(awk -v f="$b-$TAG-windows-amd64.zip" '$2 == f {print $1}' "$dist/SHA256SUMS")"
+    wr="$(awk -v f="$b-$TAG-windows-arm64.zip" '$2 == f {print $1}' "$dist/SHA256SUMS")"
+    for f in "$dist/winget/$id"/*; do
+        grep -qxF "PackageIdentifier: $id" "$f" && grep -qxF "PackageVersion: $VERSION" "$f" && ! grep -q '__' "$f" || wok=0
+    done
+    f="$dist/winget/$id/$id.installer.yaml"
+    grep -qxF 'InstallerType: zip' "$f" && grep -qxF 'NestedInstallerType: portable' "$f" && grep -qF "RelativeFilePath: $b.exe" "$f" \
+        && grep -qxF "  PortableCommandAlias: $b" "$f" \
+        && grep -qxF "  InstallerUrl: $base/$b-$TAG-windows-amd64.zip" "$f" && grep -qxF "  InstallerUrl: $base/$b-$TAG-windows-arm64.zip" "$f" || wok=0
+    up="$(tr 'a-f' 'A-F' <<<"$wa")"
+    lo="$(tr 'a-f' 'A-F' <<<"$wr")"
+    [[ "$(grep -c 'InstallerSha256:' "$f")" == 2 ]] && grep -qiF "InstallerSha256: $up" "$f" && grep -qiF "InstallerSha256: $lo" "$f" || wok=0
+    if [[ "$wok" == 1 ]]; then pass "A-winget-$b"; else bad "A-winget-$b"; fi
 }
 
 run_a() {
@@ -700,19 +760,22 @@ run_a() {
     if [[ "$RC" == 0 ]]; then pass A-exit; else bad A-exit "exit $RC: $(tail -n 20 "$log")"; return; fi
     run_guard_check A
 
-    want="$(printf '%s\n' "agentbus2-$TAG-macos-universal.tar.gz" "agentbus2-$TAG-linux-amd64.tar.gz" "agentbus2-$TAG-linux-arm64.tar.gz" \
-        "agentbus2-$TAG-windows-amd64.zip" "agentbus2-$TAG-windows-arm64.zip" install.sh install.ps1 SHA256SUMS SHA256SUMS.sig notes.md notary.log \
-        agentbus2.rb agentbus2.scoop.json | LC_ALL=C sort)"
+    want="$(printf '%s\n' "${ARCHIVE_NAMES[@]}" install.sh install.ps1 SHA256SUMS SHA256SUMS.sig notes.md notary-agentbus2.log notary-agentbus2-mcponly.log \
+        agentbus2.rb agentbus2-mcponly.rb agentbus2.scoop.json agentbus2-mcponly.scoop.json | LC_ALL=C sort)"
     got="$(dist_files "$dist")"
     if [[ "$got" == "$want" ]]; then pass A-dist-files; else bad A-dist-files "got: $(tr '\n' ' ' <<<"$got")"; fi
-    got="$(dist_files "$dist/winget")"
-    want="$(printf '%s\n' ericfitz.agentbus2.yaml ericfitz.agentbus2.installer.yaml ericfitz.agentbus2.locale.en-US.yaml | LC_ALL=C sort)"
-    if [[ "$got" == "$want" && -z "$(find "$dist/winget" -mindepth 1 -type d)" ]]; then pass A-winget-files; else bad A-winget-files "got: $(tr '\n' ' ' <<<"$got")"; fi
+    got="$(find "$dist/winget" -type f | sed "s#^$dist/winget/##" | LC_ALL=C sort)"
+    want="$(printf '%s\n' ericfitz.agentbus2/ericfitz.agentbus2.yaml ericfitz.agentbus2/ericfitz.agentbus2.installer.yaml ericfitz.agentbus2/ericfitz.agentbus2.locale.en-US.yaml \
+        ericfitz.agentbus2-mcponly/ericfitz.agentbus2-mcponly.yaml ericfitz.agentbus2-mcponly/ericfitz.agentbus2-mcponly.installer.yaml ericfitz.agentbus2-mcponly/ericfitz.agentbus2-mcponly.locale.en-US.yaml | LC_ALL=C sort)"
+    if [[ "$got" == "$want" && "$(find "$dist/winget" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" == 2 && -z "$(find "$dist/winget" -mindepth 1 -maxdepth 1 -type f)" ]]; then
+        pass A-winget-files
+    else
+        bad A-winget-files "got: $(tr '\n' ' ' <<<"$got")"
+    fi
 
     sums="$dist/SHA256SUMS"
-    want="$(printf '%s\n' "agentbus2-$TAG-macos-universal.tar.gz" "agentbus2-$TAG-linux-amd64.tar.gz" "agentbus2-$TAG-linux-arm64.tar.gz" \
-        "agentbus2-$TAG-windows-amd64.zip" "agentbus2-$TAG-windows-arm64.zip" install.sh install.ps1)"
-    if [[ "$(wc -l <"$sums" | tr -d ' ')" == 7 && "$(awk '{print $2}' "$sums")" == "$want" ]]; then pass A-sums-order; else bad A-sums-order "$(cat "$sums")"; fi
+    want="$(printf '%s\n' "${ARCHIVE_NAMES[@]}" install.sh install.ps1)"
+    if [[ "$(wc -l <"$sums" | tr -d ' ')" == 12 && "$(awk '{print $2}' "$sums")" == "$want" ]]; then pass A-sums-order; else bad A-sums-order "$(cat "$sums")"; fi
     local sumsok=1
     while read -r h f; do
         [[ "$(shasum -a 256 "$dist/$f" | awk '{print $1}')" == "$h" ]] || sumsok=0
@@ -728,59 +791,33 @@ run_a() {
         bad A-installers-hold-throwaway-key
     fi
 
-    # host-native binary
-    mkdir -p "$WORK/extract"
-    tar -xzf "$(host_archive "$dist")" -C "$WORK/extract"
-    got="$("$WORK/extract/agentbus2" version 2>&1 || true)"
-    if [[ "$got" == "$VERSION" ]]; then pass A-host-binary-version; else bad A-host-binary-version "got '$got'"; fi
-
-    # formula
-    local sm sla slr
-    sm="$(shasum -a 256 "$dist/agentbus2-$TAG-macos-universal.tar.gz" | awk '{print $1}')"
-    sla="$(shasum -a 256 "$dist/agentbus2-$TAG-linux-amd64.tar.gz" | awk '{print $1}')"
-    slr="$(shasum -a 256 "$dist/agentbus2-$TAG-linux-arm64.tar.gz" | awk '{print $1}')"
-    if ruby -c "$dist/agentbus2.rb" >/dev/null 2>&1 && grep -q '^class Agentbus2' "$dist/agentbus2.rb" \
-        && [[ "$(grep -c '^ *sha256 "' "$dist/agentbus2.rb")" == 3 ]] \
-        && grep -qF "sha256 \"$sm\"" "$dist/agentbus2.rb" && grep -qF "sha256 \"$sla\"" "$dist/agentbus2.rb" && grep -qF "sha256 \"$slr\"" "$dist/agentbus2.rb"; then
-        pass A-formula
-    else
-        bad A-formula
-    fi
-
-    # scoop
-    local wa wr
-    wa="$(awk -v f="agentbus2-$TAG-windows-amd64.zip" '$2 == f {print $1}' "$sums")"
-    wr="$(awk -v f="agentbus2-$TAG-windows-arm64.zip" '$2 == f {print $1}' "$sums")"
-    if python3 -I -m json.tool "$dist/agentbus2.scoop.json" >/dev/null 2>&1 \
-        && [[ "$(jq -r '.version' "$dist/agentbus2.scoop.json")" == "$VERSION" && "$(jq -r '.bin' "$dist/agentbus2.scoop.json")" == agentbus2.exe \
-        && "$(jq -r '.architecture."64bit".hash' "$dist/agentbus2.scoop.json")" == "$wa" && "$(jq -r '.architecture.arm64.hash' "$dist/agentbus2.scoop.json")" == "$wr" ]]; then
-        pass A-scoop
-    else
-        bad A-scoop
-    fi
-
-    # winget
-    local wok=1 base="https://github.com/ericfitz/agentbus2/releases/download/$TAG" up lo
-    for f in "$dist"/winget/*; do
-        grep -qxF 'PackageIdentifier: ericfitz.agentbus2' "$f" && grep -qxF "PackageVersion: $VERSION" "$f" && ! grep -q '__' "$f" || wok=0
+    # host-native binary of each macOS/Linux archive
+    local bn
+    for bn in agentbus2 agentbus2-mcponly; do
+        rm -rf "$WORK/extract-$bn"
+        mkdir -p "$WORK/extract-$bn"
+        tar -xzf "$(host_archive "$dist" "$bn")" -C "$WORK/extract-$bn"
+        got="$("$WORK/extract-$bn/$bn" version 2>&1 || true)"
+        if [[ "$got" == "$VERSION" ]]; then pass "A-host-binary-version-$bn"; else bad "A-host-binary-version-$bn" "got '$got'"; fi
     done
-    f="$dist/winget/ericfitz.agentbus2.installer.yaml"
-    grep -qxF 'InstallerType: zip' "$f" && grep -qxF 'NestedInstallerType: portable' "$f" && grep -qF 'RelativeFilePath: agentbus2.exe' "$f" \
-        && grep -qxF "  InstallerUrl: $base/agentbus2-$TAG-windows-amd64.zip" "$f" && grep -qxF "  InstallerUrl: $base/agentbus2-$TAG-windows-arm64.zip" "$f" || wok=0
-    up="$(tr 'a-f' 'A-F' <<<"$wa")"
-    lo="$(tr 'a-f' 'A-F' <<<"$wr")"
-    [[ "$(grep -c 'InstallerSha256:' "$f")" == 2 ]] && grep -qiF "InstallerSha256: $up" "$f" && grep -qiF "InstallerSha256: $lo" "$f" || wok=0
-    if [[ "$wok" == 1 ]]; then pass A-winget; else bad A-winget; fi
+
+    # formula, scoop and winget of each package
+    check_formula "$dist" agentbus2 Agentbus2
+    check_formula "$dist" agentbus2-mcponly Agentbus2Mcponly
+    check_scoop "$dist" agentbus2
+    check_scoop "$dist" agentbus2-mcponly
+    check_winget "$dist" agentbus2
+    check_winget "$dist" agentbus2-mcponly
 
     # log
-    if [[ "$(grep -c '^rendered:' "$log")" == 5 ]] && grep -qF 'stopping before publish; draft:' "$log"; then pass A-log; else bad A-log; fi
+    if [[ "$(grep -c '^rendered:' "$log")" == 10 ]] && grep -qF 'stopping before publish; draft:' "$log"; then pass A-log; else bad A-log "$(grep -c '^rendered:' "$log") rendered lines"; fi
 
     # gh log
     local gl="$WORK/gh.log"
     if grep -Eq '^gh release create v0\.0\.1 .*--verify-tag.* --draft' "$gl" \
         && grep -qxF "gh workflow run release-build.yml --repo ericfitz/agentbus2 --ref $TAG -f tag=$TAG -f windows_signing=off" "$gl" \
-        && [[ "$(grep -Ec '^gh attestation verify .* --signer-workflow ericfitz/agentbus2/\.github/workflows/release-build\.yml --source-ref refs/tags/v0\.0\.1' "$gl")" == 4 ]] \
-        && [[ "$(grep -c '^gh release upload v0\.0\.1 .*--clobber .*agentbus2-v0\.0\.1-macos-universal\.tar\.gz install\.sh install\.ps1 SHA256SUMS SHA256SUMS\.sig' "$gl")" == 1 ]] \
+        && [[ "$(grep -Ec '^gh attestation verify .* --signer-workflow ericfitz/agentbus2/\.github/workflows/release-build\.yml --source-ref refs/tags/v0\.0\.1' "$gl")" == 8 ]] \
+        && [[ "$(grep -c '^gh release upload v0\.0\.1 .*--clobber .*agentbus2-v0\.0\.1-macos-universal\.tar\.gz agentbus2-mcponly-v0\.0\.1-macos-universal\.tar\.gz install\.sh install\.ps1 SHA256SUMS SHA256SUMS\.sig' "$gl")" == 1 ]] \
         && ! grep -qF "gh release edit $TAG --repo ericfitz/agentbus2 --draft=false" "$gl"; then
         pass A-gh-log
     else
@@ -806,21 +843,24 @@ run_b() {
     if [[ "$RC" == 0 ]]; then pass B-exit; else bad B-exit "exit $RC: $(tail -n 20 "$log")"; return; fi
     run_guard_check B
     if grep -qF "Reusing draft release $TAG" "$log" && grep -qF -- '--draft=false' "$WORK/gh.log"; then pass B-reuses-draft-and-publishes; else bad B-reuses-draft-and-publishes; fi
-    if [[ "$(fgit -C "$WORK/tap-origin.git" log -1 --format=%s main)" == "agentbus2 $VERSION" ]] \
-        && fgit -C "$WORK/tap-origin.git" show main:Formula/agentbus2.rb | cmp -s - "$dist/agentbus2.rb"; then
+    if [[ "$(fgit -C "$WORK/tap-origin.git" log -2 --format=%s main | tr '\n' ' ')" == "agentbus2-mcponly $VERSION agentbus2 $VERSION " ]] \
+        && fgit -C "$WORK/tap-origin.git" show main:Formula/agentbus2.rb | cmp -s - "$dist/agentbus2.rb" \
+        && fgit -C "$WORK/tap-origin.git" show main:Formula/agentbus2-mcponly.rb | cmp -s - "$dist/agentbus2-mcponly.rb"; then
         pass B-tap
     else
         bad B-tap
     fi
-    if [[ "$(fgit -C "$WORK/scoop-origin.git" log -1 --format=%s main)" == "agentbus2 $VERSION" ]] \
-        && fgit -C "$WORK/scoop-origin.git" show main:bucket/agentbus2.json | cmp -s - "$dist/agentbus2.scoop.json"; then
+    if [[ "$(fgit -C "$WORK/scoop-origin.git" log -2 --format=%s main | tr '\n' ' ')" == "agentbus2-mcponly $VERSION agentbus2 $VERSION " ]] \
+        && fgit -C "$WORK/scoop-origin.git" show main:bucket/agentbus2.json | cmp -s - "$dist/agentbus2.scoop.json" \
+        && fgit -C "$WORK/scoop-origin.git" show main:bucket/agentbus2-mcponly.json | cmp -s - "$dist/agentbus2-mcponly.scoop.json"; then
         pass B-bucket
     else
         bad B-bucket
     fi
-    want="komac update ericfitz.agentbus2 --version $VERSION --urls $url/agentbus2-$TAG-windows-amd64.zip $url/agentbus2-$TAG-windows-arm64.zip --submit"
+    want="komac update ericfitz.agentbus2 --version $VERSION --urls $url/agentbus2-$TAG-windows-amd64.zip $url/agentbus2-$TAG-windows-arm64.zip --submit
+komac update ericfitz.agentbus2-mcponly --version $VERSION --urls $url/agentbus2-mcponly-$TAG-windows-amd64.zip $url/agentbus2-mcponly-$TAG-windows-arm64.zip --submit"
     if [[ "$(cat "$WORK/komac.log" 2>/dev/null)" == "$want" ]]; then pass B-komac; else bad B-komac "$(cat "$WORK/komac.log" 2>/dev/null)"; fi
-    if [[ "$(tail -n1 "$log")" == *"brew install ericfitz/tap/agentbus2"* ]]; then pass B-last-line; else bad B-last-line "$(tail -n1 "$log")"; fi
+    if [[ "$(tail -n1 "$log")" == *"brew install ericfitz/tap/agentbus2;"*"brew install ericfitz/tap/agentbus2-mcponly;"* ]]; then pass B-last-line; else bad B-last-line "$(tail -n1 "$log")"; fi
 }
 
 run_c() {
