@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 func TestHealthProbeTier(t *testing.T) {

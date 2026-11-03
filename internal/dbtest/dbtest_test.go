@@ -23,19 +23,19 @@ func TestSQLiteOpensInTempDir(t *testing.T) {
 }
 
 func TestOpenDBUnreachablePostgres(t *testing.T) {
-	dsn := "postgres://agentbus2:agentbus2@127.0.0.1:1/agentbus2?sslmode=disable&connect_timeout=2"
+	dsn := "postgres://agentmesh:agentmesh@127.0.0.1:1/agentmesh?sslmode=disable&connect_timeout=2"
 	_, err := openDB(context.Background(), Engine{"postgres", "pgx"}, dsn, PostgresDSNEnv)
-	if err == nil || !strings.HasPrefix(err.Error(), "postgres from AGENTBUS2_TEST_POSTGRES_DSN is unreachable") {
+	if err == nil || !strings.HasPrefix(err.Error(), "postgres from AGENTMESH_TEST_POSTGRES_DSN is unreachable") {
 		t.Fatalf("got %v", err)
 	}
-	if strings.Contains(err.Error(), "agentbus2:agentbus2@") {
+	if strings.Contains(err.Error(), "agentmesh:agentmesh@") {
 		t.Fatalf("error leaks the DSN: %v", err)
 	}
 }
 
 func TestOpenDBRejectsMalformedDSN(t *testing.T) {
 	_, err := openDB(context.Background(), Engine{"postgres", "pgx"}, "not-a-dsn", PostgresDSNEnv)
-	if err == nil || !strings.HasPrefix(err.Error(), "postgres from AGENTBUS2_TEST_POSTGRES_DSN could not be opened") {
+	if err == nil || !strings.HasPrefix(err.Error(), "postgres from AGENTMESH_TEST_POSTGRES_DSN could not be opened") {
 		t.Fatalf("got %v", err)
 	}
 	if strings.Contains(err.Error(), "not-a-dsn") {

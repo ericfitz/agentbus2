@@ -3,7 +3,7 @@ package server
 import (
 	"context"
 
-	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 func (a *api) AdminUsage(ctx context.Context, _ gen.AdminUsageRequestObject) (gen.AdminUsageResponseObject, error) {

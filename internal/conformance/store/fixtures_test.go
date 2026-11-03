@@ -4,7 +4,7 @@ package store
 // parallel task (a gap is reported to the integrator). Every file of this
 // package imports the contract as
 //
-//	ab2store "github.com/ericfitz/agentbus2/internal/store"
+//	ab2store "github.com/ericfitz/agentmesh/internal/store"
 //
 // The aggregate fixtures compile against the Store interfaces; a failing Store
 // call fails the calling test with that error.
@@ -13,7 +13,7 @@ import (
 	"context"
 	"testing"
 
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
 // fixedNow is every fixture's timestamp.

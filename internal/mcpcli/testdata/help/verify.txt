@@ -1,16 +1,16 @@
-agentbus2-mcponly help verify: the six steps of check
+agentmesh-mcponly help verify: the six steps of check
 
 check runs six steps, prints one line for each and stops at the first FAIL:
   reach       the server answers its discovery document
   health      the server's health endpoint answers
-  identity    an identity is chosen (-identity, AGENTBUS2_IDENTITY, the profile's
+  identity    an identity is chosen (-identity, AGENTMESH_IDENTITY, the profile's
               identity or the profile's only credential)
   credential  the identity's key loads (a key file must be readable by you alone)
   token       the key signs in: the server exchanges it for a bearer
   access      the bearer works: health answers at the identity tier
 
 An ok line is "ok   STEP: DETAIL". A failure is
-"FAIL STEP: DETAIL; fix: WHAT TO RUN", then "agentbus2-mcponly: check: STEP
+"FAIL STEP: DETAIL; fix: WHAT TO RUN", then "agentmesh-mcponly: check: STEP
 failed" on standard error, and exit 1. With no identity, check stops after
 health, prints the register command to run next and exits 0.
 
@@ -18,7 +18,7 @@ check creates no session and changes no configuration. The token step always
 asks the server for a new bearer, so it proves the key works now, and it caches
 that bearer in the data directory as serve does.
 
-  $ agentbus2-mcponly check -server https://agentbus.example.com -identity my-agent
+  $ agentmesh-mcponly check -server https://agentbus.example.com -identity my-agent
     > ok   reach: https://agentbus.example.com (server <version>, protocol <version>)
     > ok   health: <status> (probe tier)
     > ok   identity: my-agent (<source>)
@@ -29,10 +29,10 @@ that bearer in the data directory as serve does.
 After register the saved profile supplies the server and identity, so the flags
 may be left out.
 
-  $ agentbus2-mcponly check
+  $ agentmesh-mcponly check
     > ok   token: exchanged a bearer for my-agent
     > ok   access: health at the identity tier
 
-Every FAIL line carries its fix; agentbus2-mcponly help troubleshoot explains
+Every FAIL line carries its fix; agentmesh-mcponly help troubleshoot explains
 each one. A server that neither a flag, a variable nor a profile supplies is
 exit 2 with the reason.

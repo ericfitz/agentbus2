@@ -5,8 +5,8 @@ import (
 	"math"
 	"time"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // Sessions, receive, watch and identities (Decisions 15, 16, 40, 42, 45, 68,

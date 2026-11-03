@@ -3,11 +3,11 @@
 # "ok  <name>" or "FAIL <name>: <why>" (scripts/check-gates-selftest.sh greps
 # these lines, so the format is a contract). Exit 1 when any check failed.
 #
-# The script never reads the ambient AGENTBUS2_TEST_POSTGRES_DSN: checks 1 and
+# The script never reads the ambient AGENTMESH_TEST_POSTGRES_DSN: checks 1 and
 # 2 set their own value, checks 3 and 4 touch no database, check 5 runs in a
 # container that inherits no host environment. Only check 5 needs Docker on the
 # host (checks 3 and 4 need none, nor does check 6: the bus suite exits on an
-# unknown AGENTBUS2_BUS_TRANSPORT before dbtest.Run starts anything). All scratch files
+# unknown AGENTMESH_BUS_TRANSPORT before dbtest.Run starts anything). All scratch files
 # live in a temp dir removed on exit; nothing is written under the repository.
 set -euo pipefail
 
@@ -17,7 +17,7 @@ cd "$ROOT"
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
 
-BAD_DSN='postgres://agentbus2:agentbus2@127.0.0.1:1/agentbus2?sslmode=disable&connect_timeout=2'
+BAD_DSN='postgres://agentmesh:agentmesh@127.0.0.1:1/agentmesh?sslmode=disable&connect_timeout=2'
 failed=0
 
 pass() { echo "ok  $1"; }
@@ -32,13 +32,13 @@ has() { grep -qF -- "$2" "$1"; }
 # --- 1. postgres-unreachable-fails ---------------------------------------
 check_unreachable() {
 	local name=postgres-unreachable-fails log="$tmp/conf.log"
-	if AGENTBUS2_TEST_POSTGRES_DSN="$BAD_DSN" go test -v -count=1 -p 1 -timeout 120s ./internal/conformance/... >"$log" 2>&1; then
+	if AGENTMESH_TEST_POSTGRES_DSN="$BAD_DSN" go test -v -count=1 -p 1 -timeout 120s ./internal/conformance/... >"$log" 2>&1; then
 		fail "$name" "suites passed against an unreachable Postgres"
 		return
 	fi
 	has "$log" '--- FAIL: TestScaffold/postgres' || { fail "$name" "log lacks '--- FAIL: TestScaffold/postgres'"; return; }
 	has "$log" '--- PASS: TestScaffold/sqlite' || { fail "$name" "log lacks '--- PASS: TestScaffold/sqlite'"; return; }
-	has "$log" 'postgres from AGENTBUS2_TEST_POSTGRES_DSN is unreachable' || { fail "$name" "log lacks the unreachable text"; return; }
+	has "$log" 'postgres from AGENTMESH_TEST_POSTGRES_DSN is unreachable' || { fail "$name" "log lacks the unreachable text"; return; }
 	if has "$log" '--- SKIP'; then
 		fail "$name" "log contains '--- SKIP'"
 		return
@@ -49,7 +49,7 @@ check_unreachable() {
 # --- 2. unit-tests-exclude-conformance -----------------------------------
 check_unit_excludes() {
 	local name=unit-tests-exclude-conformance log="$tmp/unit.log"
-	if AGENTBUS2_TEST_POSTGRES_DSN="$BAD_DSN" make test >"$log" 2>&1; then
+	if AGENTMESH_TEST_POSTGRES_DSN="$BAD_DSN" make test >"$log" 2>&1; then
 		pass "$name"
 	else
 		# Each "--- FAIL" and panic line comes with the three lines after it,
@@ -120,10 +120,10 @@ check_no_docker() {
 			return
 		fi
 		if docker run --rm --network none --platform "linux/$arch" -v "$tmp:/t:ro" busybox:1.37.0 "/t/$pkg.test" -test.v -test.count=1 -test.timeout 180s >"$log" 2>&1; then
-			fail "$name" "$pkg suite passed with no Docker and no AGENTBUS2_TEST_POSTGRES_DSN"
+			fail "$name" "$pkg suite passed with no Docker and no AGENTMESH_TEST_POSTGRES_DSN"
 			return
 		fi
-		has "$log" 'AGENTBUS2_TEST_POSTGRES_DSN is unset and testcontainers could not start cgr.dev/chainguard/postgres' || { fail "$name" "$pkg log lacks the unset-and-could-not-start text; tail: $({ grep -E '^\s*--- FAIL|^FAIL|^panic' "$log" || true; tail -n 5 "$log"; } | tr '\n' ' ')"; return; }
+		has "$log" 'AGENTMESH_TEST_POSTGRES_DSN is unset and testcontainers could not start cgr.dev/chainguard/postgres' || { fail "$name" "$pkg log lacks the unset-and-could-not-start text; tail: $({ grep -E '^\s*--- FAIL|^FAIL|^panic' "$log" || true; tail -n 5 "$log"; } | tr '\n' ' ')"; return; }
 		has "$log" '--- FAIL: TestScaffold/postgres' || { fail "$name" "$pkg log lacks '--- FAIL: TestScaffold/postgres'"; return; }
 		has "$log" '--- PASS: TestScaffold/sqlite' || { fail "$name" "$pkg log lacks '--- PASS: TestScaffold/sqlite'"; return; }
 		if has "$log" '--- SKIP'; then
@@ -138,11 +138,11 @@ check_no_docker() {
 # Docker-free: the suite's TestMain refuses an unknown value before dbtest.Run.
 check_transport_env() {
 	local name=transport-env-rejects-unknown log="$tmp/transport.log"
-	if AGENTBUS2_BUS_TRANSPORT=bogus go test -count=1 -run '^TestScaffold$' ./internal/conformance/bus/ >"$log" 2>&1; then
-		fail "$name" "the bus suite passed with AGENTBUS2_BUS_TRANSPORT=bogus"
+	if AGENTMESH_BUS_TRANSPORT=bogus go test -count=1 -run '^TestScaffold$' ./internal/conformance/bus/ >"$log" 2>&1; then
+		fail "$name" "the bus suite passed with AGENTMESH_BUS_TRANSPORT=bogus"
 		return
 	fi
-	has "$log" 'AGENTBUS2_BUS_TRANSPORT must be local or inproc' || { fail "$name" "log lacks 'AGENTBUS2_BUS_TRANSPORT must be local or inproc'; tail: $(tail -n 3 "$log" | tr '\n' ' ')"; return; }
+	has "$log" 'AGENTMESH_BUS_TRANSPORT must be local or inproc' || { fail "$name" "log lacks 'AGENTMESH_BUS_TRANSPORT must be local or inproc'; tail: $(tail -n 3 "$log" | tr '\n' ' ')"; return; }
 	pass "$name"
 }
 

@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
 )
 
 // The grammar helpers of the operator commands (session, channels, send,
@@ -37,7 +37,7 @@ func newOpCmd(name string, stderr io.Writer) *opCmd {
 	c := &opCmd{name: name, stderr: stderr}
 	c.fs = newFlagSet(name, stderr)
 	c.fs.Usage = func() {
-		_, _ = fmt.Fprintf(stderr, "Usage of agentbus2 %s:\n", name)
+		_, _ = fmt.Fprintf(stderr, "Usage of agentmesh %s:\n", name)
 		c.fs.PrintDefaults()
 		_, _ = fmt.Fprintln(stderr, OpGrammar)
 	}
@@ -78,7 +78,7 @@ func (c *opCmd) parse(args []string, minArgs, maxArgs int) (rest []string, code 
 		case maxArgs != minArgs:
 			want += " to " + strconv.Itoa(maxArgs)
 		}
-		_, _ = fmt.Fprintf(c.stderr, "agentbus2 %s: want %s argument(s), got %d\n", c.name, want, len(rest))
+		_, _ = fmt.Fprintf(c.stderr, "agentmesh %s: want %s argument(s), got %d\n", c.name, want, len(rest))
 		c.fs.Usage()
 		return nil, 2, false
 	}
@@ -86,9 +86,9 @@ func (c *opCmd) parse(args []string, minArgs, maxArgs int) (rest []string, code 
 }
 
 // usageErr reports a grammar error of the command's own flags or arguments:
-// "agentbus2 <command>: ..." on stderr and exit 2.
+// "agentmesh <command>: ..." on stderr and exit 2.
 func (c *opCmd) usageErr(format string, a ...any) int {
-	_, _ = fmt.Fprintf(c.stderr, "agentbus2 %s: %s\n", c.name, fmt.Sprintf(format, a...))
+	_, _ = fmt.Fprintf(c.stderr, "agentmesh %s: %s\n", c.name, fmt.Sprintf(format, a...))
 	return 2
 }
 
@@ -121,7 +121,7 @@ func opDispatch(ctx context.Context, name string, subs map[string]opRunFunc, arg
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	usage := "usage: agentbus2 " + name + " <" + strings.Join(names, "|") + "> [flags] [arguments]\n" + OpGrammar + "\n"
+	usage := "usage: agentmesh " + name + " <" + strings.Join(names, "|") + "> [flags] [arguments]\n" + OpGrammar + "\n"
 	if len(args) == 0 {
 		_, _ = io.WriteString(stderr, usage)
 		return 2
@@ -133,7 +133,7 @@ func opDispatch(ctx context.Context, name string, subs map[string]opRunFunc, arg
 	}
 	run, ok := subs[args[0]]
 	if !ok {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 %s: unknown subcommand %q\n%s", name, args[0], usage)
+		_, _ = fmt.Fprintf(stderr, "agentmesh %s: unknown subcommand %q\n%s", name, args[0], usage)
 		return 2
 	}
 	return run(ctx, args[1:], environ, stdin, stdout, stderr)

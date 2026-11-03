@@ -28,9 +28,9 @@ import (
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
 )
 
 const (
@@ -38,7 +38,7 @@ const (
 	arnFmt   = "arn:aws:kms:us-east-1:" + account + ":key/"
 	uuid1    = "1234abcd-12ab-34cd-56ef-1234567890ab"
 	uuid2    = "2234abcd-12ab-34cd-56ef-1234567890ab"
-	aliasURI = "/alias/agentbus2"
+	aliasURI = "/alias/agentmesh"
 )
 
 // kmsKey is one key of the fake service.
@@ -271,7 +271,7 @@ func TestNextResolvesAndPins(t *testing.T) {
 	f := newFakeKMS(t)
 	k1 := f.addP256(t, uuid1)
 	k2 := f.addP256(t, uuid2)
-	f.point("alias/agentbus2", uuid1)
+	f.point("alias/agentmesh", uuid1)
 	p := f.provider(t, aliasURI)
 	ctx := context.Background()
 
@@ -291,7 +291,7 @@ func TestNextResolvesAndPins(t *testing.T) {
 
 	// Repointing the alias changes what the next rotation adopts; the old ref
 	// still names the old key.
-	f.point("alias/agentbus2", uuid2)
+	f.point("alias/agentmesh", uuid2)
 	b, err := p.Next(ctx)
 	if err != nil {
 		t.Fatal(err)
@@ -342,7 +342,7 @@ func TestNextRefusesDisabledKey(t *testing.T) {
 func TestSignerIsLazy(t *testing.T) {
 	f := newFakeKMS(t)
 	f.addP256(t, uuid1)
-	f.point("alias/agentbus2", uuid1)
+	f.point("alias/agentmesh", uuid1)
 	p := f.provider(t, aliasURI)
 	k, err := p.Next(context.Background())
 	if err != nil {
@@ -377,7 +377,7 @@ func TestSignerIsLazy(t *testing.T) {
 func TestSignVerifiesAsJWS(t *testing.T) {
 	f := newFakeKMS(t)
 	f.addP256(t, uuid1)
-	f.point("alias/agentbus2", uuid1)
+	f.point("alias/agentmesh", uuid1)
 	p := f.provider(t, aliasURI)
 	ctx := context.Background()
 	k, err := p.Next(ctx)
@@ -640,11 +640,11 @@ func TestNewRefusesURI(t *testing.T) {
 		}
 	}
 	for _, uri := range []string{
-		"awskms:///alias/agentbus2",
-		"awskms://localhost:4566/alias/agentbus2",
+		"awskms:///alias/agentmesh",
+		"awskms://localhost:4566/alias/agentmesh",
 		"awskms:///" + uuid1,
 		"awskms:///" + arnFmt + uuid1,
-		"awskms://localhost:4566/arn:aws:kms:us-east-1:" + account + ":alias/agentbus2",
+		"awskms://localhost:4566/arn:aws:kms:us-east-1:" + account + ":alias/agentmesh",
 	} {
 		p, err := New(uri)
 		if err != nil || p == nil || p.Name() != "awskms" {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // The assertion_jti table is new in v2 (Decision (Eric, 2026-10-21),

@@ -3,7 +3,7 @@ package mcpcli
 import (
 	"os/user"
 
-	"github.com/ericfitz/agentbus2/internal/osuser"
+	"github.com/ericfitz/agentmesh/internal/osuser"
 )
 
 // currentUser is user.Current; tests replace it.

@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/access"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/access"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // keyFor registers a fresh key for an identity through the service and

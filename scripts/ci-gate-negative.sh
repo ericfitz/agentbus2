@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ci-gate-negative.sh <expected-text>: make verify must FAIL, its log must contain <expected-text> and must not contain "verify: OK".
-# Exit 0 when the gate failed for the expected reason; exit 1 otherwise. The caller sets (or unsets) AGENTBUS2_TEST_POSTGRES_DSN.
+# Exit 0 when the gate failed for the expected reason; exit 1 otherwise. The caller sets (or unsets) AGENTMESH_TEST_POSTGRES_DSN.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 expected="${1:?usage: ci-gate-negative.sh <expected-text>}"

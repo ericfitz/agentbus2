@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // keyOf is the key a provider returns for an existing row.
@@ -159,7 +159,7 @@ func TestRotateDueExternalStale(t *testing.T) {
 	if n != 0 || err == nil {
 		t.Fatalf("%d, %v", n, err)
 	}
-	want := fmt.Sprintf("signing key %s is older than signing_key_rotation_hours (100): point the key URI at a new key, then run agentbus2 server admin signing-key rotate", active.KID)
+	want := fmt.Sprintf("signing key %s is older than signing_key_rotation_hours (100): point the key URI at a new key, then run agentmesh server admin signing-key rotate", active.KID)
 	if err.Error() != want {
 		t.Fatalf("err = %q, want %q", err, want)
 	}
@@ -182,7 +182,7 @@ func TestRotateDueProviderMismatch(t *testing.T) {
 		t.Fatalf("n = %d", n)
 	}
 	wantCode(t, err, bus.CodeConflict)
-	wantText(t, err, "active signing key "+row.KID+" is provider store, configured provider is awskms: run agentbus2 server admin signing-key rotate with the new configuration")
+	wantText(t, err, "active signing key "+row.KID+" is provider store, configured provider is awskms: run agentmesh server admin signing-key rotate with the new configuration")
 	if ext.Provider.(*fakeProvider).nextCalls() != 0 {
 		t.Fatal("Next called")
 	}

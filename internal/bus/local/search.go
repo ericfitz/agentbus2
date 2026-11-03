@@ -3,8 +3,8 @@ package local
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	coresearch "github.com/ericfitz/agentbus2/internal/core/search"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	coresearch "github.com/ericfitz/agentmesh/internal/core/search"
 )
 
 // Search delegates to the search aggregate.

@@ -2,6 +2,6 @@
 
 package cmd
 
-import "github.com/ericfitz/agentbus2/internal/keyprovider/azurekms"
+import "github.com/ericfitz/agentmesh/internal/keyprovider/azurekms"
 
 func init() { keyBackends["azurekms"] = azurekms.New }

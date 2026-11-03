@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/sessions"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/sessions"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
 type clock struct{ t time.Time }
@@ -28,7 +28,7 @@ type fixture struct {
 
 func newFixture(t *testing.T, mut func(*core.Config)) *fixture {
 	t.Helper()
-	st, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "agentbus2.db"), sqlite.Options{})
+	st, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "agentmesh.db"), sqlite.Options{})
 	if err != nil {
 		t.Fatalf("sqlite.Open: %v", err)
 	}

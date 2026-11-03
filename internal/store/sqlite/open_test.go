@@ -12,15 +12,15 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlstore"
 )
 
 const fixedNow = 4242
 
 func newPath(t *testing.T) string {
 	t.Helper()
-	return filepath.Join(t.TempDir(), "agentbus2.db")
+	return filepath.Join(t.TempDir(), "agentmesh.db")
 }
 
 func openAt(t *testing.T, path string, opts Options) (store.Store, error) {
@@ -114,7 +114,7 @@ func TestOpenEmptyCreatesSchema(t *testing.T) {
 	if err := db.QueryRow("SELECT app, engine, created_at FROM schema_meta").Scan(&app, &engine, &created); err != nil {
 		t.Fatal(err)
 	}
-	if app != "agentbus2" || engine != "sqlite" || created != fixedNow {
+	if app != "agentmesh" || engine != "sqlite" || created != fixedNow {
 		t.Fatalf("schema_meta = %q %q %d", app, engine, created)
 	}
 	if got := scalar[int32](t, db, "PRAGMA application_id"); got != ApplicationID {
@@ -149,8 +149,8 @@ func TestOpenRefusesNonEmptyWithoutSchemaMeta(t *testing.T) {
 	before := scalar[int](t, db, "SELECT count(*) FROM sqlite_master")
 
 	_, err := openAt(t, path, Options{})
-	if !errors.Is(err, store.ErrNotAgentbus2) {
-		t.Fatalf("err = %v, want ErrNotAgentbus2", err)
+	if !errors.Is(err, store.ErrNotAgentmesh) {
+		t.Fatalf("err = %v, want ErrNotAgentmesh", err)
 	}
 	if got := scalar[int](t, db, "SELECT count(*) FROM sqlite_master"); got != before {
 		t.Fatalf("sqlite_master count %d -> %d", before, got)
@@ -169,13 +169,13 @@ func TestOpenRefusesWrongApp(t *testing.T) {
 	db := rawDB(t, path)
 
 	execAll(t, db, "UPDATE schema_meta SET app = 'other'")
-	if _, err := openAt(t, path, Options{}); !errors.Is(err, store.ErrNotAgentbus2) {
-		t.Fatalf("wrong app: err = %v, want ErrNotAgentbus2", err)
+	if _, err := openAt(t, path, Options{}); !errors.Is(err, store.ErrNotAgentmesh) {
+		t.Fatalf("wrong app: err = %v, want ErrNotAgentmesh", err)
 	}
 
-	execAll(t, db, "UPDATE schema_meta SET app = 'agentbus2'", "PRAGMA application_id = 0")
-	if _, err := openAt(t, path, Options{}); !errors.Is(err, store.ErrNotAgentbus2) {
-		t.Fatalf("application_id 0: err = %v, want ErrNotAgentbus2", err)
+	execAll(t, db, "UPDATE schema_meta SET app = 'agentmesh'", "PRAGMA application_id = 0")
+	if _, err := openAt(t, path, Options{}); !errors.Is(err, store.ErrNotAgentmesh) {
+		t.Fatalf("application_id 0: err = %v, want ErrNotAgentmesh", err)
 	}
 }
 
@@ -188,8 +188,8 @@ func TestOpenRefusesNewerVersion(t *testing.T) {
 	if !errors.Is(err, store.ErrUpgradeNeeded) {
 		t.Fatalf("err = %v, want ErrUpgradeNeeded", err)
 	}
-	if !strings.Contains(err.Error(), "upgrade agentbus2") || !strings.Contains(err.Error(), "recreate") {
-		t.Fatalf("err %q lacks 'upgrade agentbus2' or 'recreate'", err)
+	if !strings.Contains(err.Error(), "upgrade agentmesh") || !strings.Contains(err.Error(), "recreate") {
+		t.Fatalf("err %q lacks 'upgrade agentmesh' or 'recreate'", err)
 	}
 }
 

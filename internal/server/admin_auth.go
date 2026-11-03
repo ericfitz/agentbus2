@@ -3,9 +3,9 @@ package server
 import (
 	"context"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // AdminReset wipes the bus data (Decision 48, Eric 2026-10-21 Milestone 5 item

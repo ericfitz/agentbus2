@@ -15,11 +15,11 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/oidctest"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/oidctest"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 const (
@@ -138,8 +138,8 @@ func TestTokenExchangeIssuesHumanBearer(t *testing.T) {
 			}
 			raw, _ := m["access_token"].(string)
 			c, typ := bearerClaims(t, raw)
-			if c["sub"] != corpEric || c["agentbus2_kind"] != "human" || typ != "at+jwt" {
-				t.Fatalf("bearer sub %v kind %v typ %q", c["sub"], c["agentbus2_kind"], typ)
+			if c["sub"] != corpEric || c["agentmesh_kind"] != "human" || typ != "at+jwt" {
+				t.Fatalf("bearer sub %v kind %v typ %q", c["sub"], c["agentmesh_kind"], typ)
 			}
 			// The listing shows identities with a live session.
 			if r := f.do("POST", "/v1/sessions", "application/json", "Bearer "+raw, "{}"); r.StatusCode != 201 {

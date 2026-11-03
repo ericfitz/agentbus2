@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 func TestSessionStartHook(t *testing.T) {
@@ -31,19 +31,19 @@ func TestSessionStartHook(t *testing.T) {
 	}
 
 	// An identity: the register steps, naming the profile and identity.
-	withID := append(append([]string(nil), e.Environ...), "AGENTBUS2_IDENTITY=pat")
+	withID := append(append([]string(nil), e.Environ...), "AGENTMESH_IDENTITY=pat")
 	code, out := run(withID, `{"cwd":"","source":"startup"}`)
 	if code != 0 {
 		t.Fatalf("exit %d", code)
 	}
-	for _, want := range []string{`profile "default"`, `identity "pat"`, "without waiting to be asked", mcpserver.RegisterSteps, "using-agentbus2"} {
+	for _, want := range []string{`profile "default"`, `identity "pat"`, "without waiting to be asked", mcpserver.RegisterSteps, "using-agentmesh"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q: %s", want, out)
 		}
 	}
 
 	// The OS login name: the MCP server refuses it (Decision 16), so silent.
-	asLogin := append(append([]string(nil), e.Environ...), "AGENTBUS2_IDENTITY=eric")
+	asLogin := append(append([]string(nil), e.Environ...), "AGENTMESH_IDENTITY=eric")
 	if code, out := run(asLogin, `{"cwd":""}`); code != 0 || out != "" {
 		t.Fatalf("OS login identity: exit %d stdout %q", code, out)
 	}

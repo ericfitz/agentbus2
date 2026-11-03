@@ -199,12 +199,12 @@ func LoadIconsFor(s Settings, env []string, warn io.Writer) string {
 			set[k] = padIcon(k, g)
 		}
 	default:
-		_, _ = fmt.Fprintf(warn, "agentbus2 tui: icons %q is not emoji, nerdfont, or custom; using emoji\n", s.Icons)
+		_, _ = fmt.Fprintf(warn, "agentmesh tui: icons %q is not emoji, nerdfont, or custom; using emoji\n", s.Icons)
 		name = "emoji"
 	}
 	for k, g := range s.IconMap {
 		if _, ok := emojiIcons[k]; !ok || g == "" {
-			_, _ = fmt.Fprintf(warn, "agentbus2 tui: icon_map %q=%q is not a known icon with a value; keeping the current icon\n", k, g)
+			_, _ = fmt.Fprintf(warn, "agentmesh tui: icon_map %q=%q is not a known icon with a value; keeping the current icon\n", k, g)
 			continue
 		}
 		set[k] = padIcon(k, g)

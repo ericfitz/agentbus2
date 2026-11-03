@@ -13,7 +13,7 @@ An operator-run webhook can look at every inspected content write (listed below)
 
 Never inspected: reads (`receive`, `history`, `search`, `get_memory`, `task_get`, `task_list`), `delete_memory`, `delete_channel`, `set_status` (and the CLI `agent-status set`: an agent's status text and problem, up to 200 characters each, reach every agent through `register` and `discover` and the operator without passing the inspector), and every administration call (ACLs, scopes, identities, bridges, keys). A keyed retry that replays a stored result is not inspected again.
 
-A local profile (the CLI, `agentbus2 mcp` or `agentbus2 tui` over a SQLite file with no server) is never inspected: inspection runs in `agentbus2 server` only.
+A local profile (the CLI, `agentmesh mcp` or `agentmesh tui` over a SQLite file with no server) is never inspected: inspection runs in `agentmesh server` only.
 
 ## When it runs
 

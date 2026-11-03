@@ -12,8 +12,8 @@ import (
 // parses as an authority and rejects ("invalid uri authority").
 func TestURIPath(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
-		{"/Users/pat/agentbus2.db", "/Users/pat/agentbus2.db"},
-		{"C:/Users/pat/agentbus2.db", "/C:/Users/pat/agentbus2.db"},
+		{"/Users/pat/agentmesh.db", "/Users/pat/agentmesh.db"},
+		{"C:/Users/pat/agentmesh.db", "/C:/Users/pat/agentmesh.db"},
 	} {
 		if got := uriPath(tc.in); got != tc.want {
 			t.Errorf("uriPath(%q) = %q, want %q", tc.in, got, tc.want)
@@ -23,7 +23,7 @@ func TestURIPath(t *testing.T) {
 
 // Ported from v1 internal/bus/dsn_test.go (TestSQLiteDSNHasEmptyAuthority).
 func TestDSNHasEmptyAuthority(t *testing.T) {
-	dsn, err := DSN(t.TempDir()+"/agentbus2.db", 0)
+	dsn, err := DSN(t.TempDir()+"/agentmesh.db", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -33,7 +33,7 @@ func TestDSNHasEmptyAuthority(t *testing.T) {
 }
 
 func TestDSNCarriesPragmas(t *testing.T) {
-	dsn, err := DSN(t.TempDir()+"/agentbus2.db", 250*time.Millisecond)
+	dsn, err := DSN(t.TempDir()+"/agentmesh.db", 250*time.Millisecond)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -42,7 +42,7 @@ func TestDSNCarriesPragmas(t *testing.T) {
 			t.Errorf("dsn %q lacks %q", dsn, want)
 		}
 	}
-	def, err := DSN(t.TempDir()+"/agentbus2.db", 0)
+	def, err := DSN(t.TempDir()+"/agentmesh.db", 0)
 	if err != nil {
 		t.Fatal(err)
 	}

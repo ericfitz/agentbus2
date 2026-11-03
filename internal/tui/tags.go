@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // tagPanePrefix names a tag set's rail entry: "tags:" plus the sorted set of

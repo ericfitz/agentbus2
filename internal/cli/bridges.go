@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 type opBridgeOut struct {
@@ -32,7 +32,7 @@ func opBridge(b bus.Bridge) opBridgeOut {
 		State: string(b.State), CreatedAt: b.CreatedAt, ArchivedAt: b.ArchivedAt}
 }
 
-// RunBridges implements `agentbus2 bridges create|list|get|remove`
+// RunBridges implements `agentmesh bridges create|list|get|remove`
 // (administrator only). Where no Slack bridge is wired (local mode, or a
 // server started without one) every action is unavailable (not retryable).
 func RunBridges(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {

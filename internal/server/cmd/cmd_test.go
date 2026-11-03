@@ -21,16 +21,16 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 
-	"github.com/ericfitz/agentbus2/internal/auth/assertion"
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/core/notify/pgnotify"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/server"
-	"github.com/ericfitz/agentbus2/internal/server/config"
+	"github.com/ericfitz/agentmesh/internal/auth/assertion"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/core/notify/pgnotify"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/server"
+	"github.com/ericfitz/agentmesh/internal/server/config"
 )
 
 // syncBuf is a bytes.Buffer safe for a writer goroutine and a polling reader.
@@ -51,9 +51,9 @@ func (s *syncBuf) String() string {
 	return s.b.String()
 }
 
-var listeningRE = regexp.MustCompile(`agentbus2 server listening on (\S+) \((sqlite|postgres), registration (\S+), issuer (\S+), kid (\S+)\)`)
+var listeningRE = regexp.MustCompile(`agentmesh server listening on (\S+) \((sqlite|postgres), registration (\S+), issuer (\S+), kid (\S+)\)`)
 
-// running is one `agentbus2 server` started through Run in a goroutine.
+// running is one `agentmesh server` started through Run in a goroutine.
 type running struct {
 	t                               *testing.T
 	addr, engine, mode, issuer, kid string
@@ -465,7 +465,7 @@ func jwksKIDs(t *testing.T, base string) []string {
 func TestSigningKeyStoreLifecycle(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ab2.db")
 	// A fixed issuer, so a token minted by one start verifies on the next.
-	issuer := []string{"-set", "issuer=http://agentbus2.local"}
+	issuer := []string{"-set", "issuer=http://agentmesh.local"}
 	args := append([]string{"-listen", "127.0.0.1:0", "-sqlite", path}, issuer...)
 
 	first := runServer(t, args...)
@@ -653,14 +653,14 @@ func TestRunOverUnixSocket(t *testing.T) {
 	if len(sock) > 100 {
 		t.Skipf("socket path %q is too long for sun_path", sock)
 	}
-	r := runServer(t, "-listen", "unix:"+sock, "-sqlite", filepath.Join(t.TempDir(), "ab2.db"), "-set", "issuer=http://agentbus2.local")
-	if r.addr != sock || r.mode != "open" || r.issuer != "http://agentbus2.local" {
+	r := runServer(t, "-listen", "unix:"+sock, "-sqlite", filepath.Join(t.TempDir(), "ab2.db"), "-set", "issuer=http://agentmesh.local")
+	if r.addr != sock || r.mode != "open" || r.issuer != "http://agentmesh.local" {
 		t.Fatalf("listening line: addr %q mode %q issuer %q", r.addr, r.mode, r.issuer)
 	}
 	hc := &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return (&net.Dialer{}).DialContext(ctx, "unix", sock)
 	}}}
-	base := "http://agentbus2.local"
+	base := "http://agentmesh.local"
 	k := registerKey(t, base, hc, "pat")
 	tok := mintToken(t, base, base, hc, "pat", k)
 	if code, body := httpDo(t, hc, "GET", base+"/v1/channels", tok.Token); code != 200 {
@@ -783,7 +783,7 @@ func TestRunSlackTokenFiles(t *testing.T) {
 // and the row is left alone.
 func TestStartWithCorruptRetiringRowExits1(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "ab2.db")
-	args := []string{"-listen", "127.0.0.1:0", "-sqlite", path, "-set", "issuer=http://agentbus2.local"}
+	args := []string{"-listen", "127.0.0.1:0", "-sqlite", path, "-set", "issuer=http://agentmesh.local"}
 	runServer(t, args...).stop()
 
 	db, err := sql.Open("sqlite", path)

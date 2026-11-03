@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // The signing key set is new in v2 (Decision (Eric, 2026-10-21), Milestone 5

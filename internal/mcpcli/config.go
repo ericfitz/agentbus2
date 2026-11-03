@@ -9,7 +9,7 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentmesh/internal/client"
 )
 
 // executable is the path of this binary as the OS reports it; tests replace
@@ -94,7 +94,7 @@ type configSnippet struct {
 	MCPServers map[string]configServer `json:"mcpServers"`
 }
 
-// runConfig is `agentbus2-mcponly config [-server URL] [-identity I]
+// runConfig is `agentmesh-mcponly config [-server URL] [-identity I]
 // [-credential FILE] [-profile P]`: the harness's MCP server entry for these
 // settings, then the same command as a shell line. It reads the configuration
 // and writes and dials nothing, so any number of runs print the same text.
@@ -135,7 +135,7 @@ func runConfig(_ context.Context, args []string, environ []string, _ io.Reader, 
 	if o.Credential != "" {
 		snippetArgs = append(snippetArgs, "-credential", o.Credential)
 	}
-	doc, err := json.MarshalIndent(configSnippet{MCPServers: map[string]configServer{"agentbus2": {Command: exe, Args: snippetArgs}}}, "", "  ")
+	doc, err := json.MarshalIndent(configSnippet{MCPServers: map[string]configServer{"agentmesh": {Command: exe, Args: snippetArgs}}}, "", "  ")
 	if err != nil {
 		return fail(stderr, err)
 	}

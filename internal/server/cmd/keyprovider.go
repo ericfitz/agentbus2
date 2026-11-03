@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/server/config"
+	"github.com/ericfitz/agentmesh/internal/core/signingkeys"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/server/config"
 )
 
 // keyBackends are the external key providers this build contains, by key URI

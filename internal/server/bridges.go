@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // Bridges is the seam to the Slack bridge (spec 6.1a); the server imports no

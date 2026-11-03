@@ -12,7 +12,7 @@ import (
 
 func TestConfigSnippet(t *testing.T) {
 	prev := executable
-	executable = func() (string, error) { return "/opt/bin/agentbus2-mcponly", nil }
+	executable = func() (string, error) { return "/opt/bin/agentmesh-mcponly", nil }
 	t.Cleanup(func() { executable = prev })
 	environ, _ := testEnviron(t)
 	golden, err := filepath.Abs("testdata/config")
@@ -45,7 +45,7 @@ func TestConfigSnippet(t *testing.T) {
 			if err := json.Unmarshal([]byte(strings.SplitN(out, "\n\n", 2)[0]), &doc); err != nil {
 				t.Fatalf("the JSON part does not parse: %v", err)
 			}
-			if e := doc.MCPServers["agentbus2"]; e.Command != "/opt/bin/agentbus2-mcponly" || len(e.Args) == 0 || e.Args[0] != "serve" {
+			if e := doc.MCPServers["agentmesh"]; e.Command != "/opt/bin/agentmesh-mcponly" || len(e.Args) == 0 || e.Args[0] != "serve" {
 				t.Errorf("entry = %+v", e)
 			}
 		})
@@ -56,7 +56,7 @@ func TestConfigSnippet(t *testing.T) {
 // another directory.
 func TestConfigCredentialAbsolute(t *testing.T) {
 	prev := executable
-	executable = func() (string, error) { return "/opt/bin/agentbus2-mcponly", nil }
+	executable = func() (string, error) { return "/opt/bin/agentmesh-mcponly", nil }
 	t.Cleanup(func() { executable = prev })
 	environ, _ := testEnviron(t)
 	t.Chdir(t.TempDir())

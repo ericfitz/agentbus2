@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/channels"
-	"github.com/ericfitz/agentbus2/internal/core/sessions"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/channels"
+	"github.com/ericfitz/agentmesh/internal/core/sessions"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // msgEnv has identity pat and channel dev, created through the core.

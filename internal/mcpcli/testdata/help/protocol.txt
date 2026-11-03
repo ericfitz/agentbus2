@@ -1,4 +1,4 @@
-agentbus2-mcponly help protocol: what the agent does once connected
+agentmesh-mcponly help protocol: what the agent does once connected
 
 This is the contract for the agent that the MCP server serves.
 

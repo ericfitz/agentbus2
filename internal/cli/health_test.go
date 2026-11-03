@@ -7,9 +7,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 func runHealth(t *testing.T, e *testEnv, args ...string) (int, string, string) {
@@ -66,7 +66,7 @@ func TestHealthUsageErrors(t *testing.T) {
 			t.Errorf("%v: exit %d stdout %q stderr %q, want 2, no stdout, a message", args, code, out, errs)
 		}
 	}
-	if code, _, errs := runHealth(t, e, "extra"); !strings.Contains(errs, "Usage of agentbus2 health") {
+	if code, _, errs := runHealth(t, e, "extra"); !strings.Contains(errs, "Usage of agentmesh health") {
 		t.Errorf("exit %d: stderr %q lacks the usage", code, errs)
 	}
 }

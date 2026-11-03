@@ -10,8 +10,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 func TestViewShowsRailsStreamComposeAndStatus(t *testing.T) {
@@ -54,7 +54,7 @@ func assertStatusBarIsLastLine(t *testing.T, v string, height int) {
 	if len(lines) > height {
 		t.Fatalf("view is %d lines for height %d:\n%s", len(lines), height, v)
 	}
-	if last := lines[len(lines)-1]; !strings.Contains(last, "agentbus2 v") {
+	if last := lines[len(lines)-1]; !strings.Contains(last, "agentmesh v") {
 		t.Fatalf("status bar must be the last line, got %q:\n%s", last, v)
 	}
 }
@@ -62,7 +62,7 @@ func assertStatusBarIsLastLine(t *testing.T, v string, height int) {
 func TestStatusBarShowsVersion(t *testing.T) {
 	f := newFixture(t)
 	bar := ansi.Strip(f.m.renderStatusBar())
-	if !strings.HasPrefix(bar, "agentbus2 v"+version.Version+"  as eric") || strings.Contains(bar, "eric/tui") {
+	if !strings.HasPrefix(bar, "agentmesh v"+version.Version+"  as eric") || strings.Contains(bar, "eric/tui") {
 		t.Fatalf("status bar: %q", bar)
 	}
 	f = newFixtureWith(t, nil, Host{Describe: "local · /tmp/x/bus.sqlite"})

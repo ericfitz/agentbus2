@@ -13,12 +13,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 func TestWatchFlags(t *testing.T) {
@@ -93,7 +93,7 @@ func TestWatchPrintsOneLinePerWakeAndNeverExits(t *testing.T) {
 	send()
 	waitLines(3)
 
-	re := regexp.MustCompile(`^agentbus2: \d+ new message\(s\) for ` + regexp.QuoteMeta(sess.DisplayName) + ` on general; call receive$`)
+	re := regexp.MustCompile(`^agentmesh: \d+ new message\(s\) for ` + regexp.QuoteMeta(sess.DisplayName) + ` on general; call receive$`)
 	for i, l := range lines() {
 		if !re.MatchString(l) {
 			t.Errorf("line %d %q does not match", i, l)
@@ -299,7 +299,7 @@ func TestWatchErrorExits2(t *testing.T) {
 	}
 	var so, se syncBuf
 	if code := RunWatch(ctx, []string{"-profile", "lab", "-session", "s9"}, e.Environ, strings.NewReader(""), &so, &se); code != 2 ||
-		!strings.HasPrefix(se.String(), "agentbus2:") || so.String() != "" {
+		!strings.HasPrefix(se.String(), "agentmesh:") || so.String() != "" {
 		t.Fatalf("exit %d stdout %q stderr %q", code, so.String(), se.String())
 	}
 
@@ -357,9 +357,9 @@ func TestWatchUsesStateFileProfile(t *testing.T) {
 		t.Fatalf("-profile lab: exit %d hits %d stderr %q", code, hits.Load(), stderr)
 	}
 	hits.Store(0)
-	env := append(append([]string{}, e.Environ...), "AGENTBUS2_PROFILE=default")
+	env := append(append([]string{}, e.Environ...), "AGENTMESH_PROFILE=default")
 	if code, stderr := run(env); code != 2 || hits.Load() < 1 || !strings.Contains(stderr, srv.URL) {
-		t.Fatalf("AGENTBUS2_PROFILE=default: exit %d hits %d stderr %q", code, hits.Load(), stderr)
+		t.Fatalf("AGENTMESH_PROFILE=default: exit %d hits %d stderr %q", code, hits.Load(), stderr)
 	}
 }
 
@@ -420,7 +420,7 @@ func TestWatchNeverExits0Or1(t *testing.T) {
 
 func TestWatchLine(t *testing.T) {
 	got := watchLine("pat", bus.WatchResult{Count: 3, Channels: []string{"b", "a", "b"}})
-	if want := "agentbus2: 3 new message(s) for pat on a, b; call receive"; got != want {
+	if want := "agentmesh: 3 new message(s) for pat on a, b; call receive"; got != want {
 		t.Fatalf("%q, want %q", got, want)
 	}
 }

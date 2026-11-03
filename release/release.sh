@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build, sign and publish a release of agentbus2 and agentbus2-mcponly, then
+# Build, sign and publish a release of agentmesh and agentmesh-mcponly, then
 # update Homebrew, Scoop and winget (three packages per binary). macOS is built,
 # codesigned and notarized here; the Linux and Windows archives are built, run
 # and attested by .github/workflows/release-build.yml on native runners,
@@ -20,16 +20,16 @@
 # push) is called by name, so a test can shadow it with a shell function.
 set -euo pipefail
 
-BIN_NAMES=(agentbus2 agentbus2-mcponly) # the release binaries, in SHA256SUMS order
-GH_REPO="ericfitz/agentbus2"
+BIN_NAMES=(agentmesh agentmesh-mcponly) # the release binaries, in SHA256SUMS order
+GH_REPO="ericfitz/agentmesh"
 TAP_DIR="${TAP_DIR:-$HOME/Projects/homebrew-tap}" # SSH clone of ericfitz/homebrew-tap
 SCOOP_DIR="${SCOOP_DIR:-$HOME/Projects/scoop-bucket}" # SSH clone of ericfitz/scoop-bucket
 KOMAC_KEY_FILE="$HOME/.keys/KOMAC_GITHUB_KEY"           # `export KOMAC_GITHUB_KEY='<PAT with public_repo>'`
 SIGN_IDENTITY="Developer ID Application: Robert Fitzgerald (796T45968D)"
 NOTARY_PROFILE="sqdist-notary" # team-level credential, shared across projects
-SIGNING_KEY="${AGENTBUS2_SIGNING_KEY:-$HOME/.keys/agentbus2-release-ed25519.pem}"
+SIGNING_KEY="${AGENTMESH_SIGNING_KEY:-$HOME/.keys/agentbus2-release-ed25519.pem}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-PUBKEY="${REPO_ROOT}/release/agentbus2-release-ed25519.pub"
+PUBKEY="${REPO_ROOT}/release/agentmesh-release-ed25519.pub"
 DIST="${REPO_ROOT}/dist"
 OPENSSL=""  # an OpenSSL 3 binary, set by require_tools
 TAG="" VERSION="" SRC=""
@@ -47,17 +47,17 @@ FIND_RUN_TRIES="${FIND_RUN_TRIES:-30}"
 FIND_RUN_SLEEP="${FIND_RUN_SLEEP:-2}"
 
 # BEGIN shared release helpers
-# release_openssl prints the path of an OpenSSL 3 binary: $AGENTBUS2_RELEASE_OPENSSL,
+# release_openssl prints the path of an OpenSSL 3 binary: $AGENTMESH_RELEASE_OPENSSL,
 # else Homebrew openssl@3, else the first of openssl, openssl3 on PATH whose
 # "version" major is 3 or more. It dies naming the places it looked.
 release_openssl() {
     local cand major
     local tried=()
-    if [[ -n "${AGENTBUS2_RELEASE_OPENSSL:-}" ]]; then
-        cand="$AGENTBUS2_RELEASE_OPENSSL"
+    if [[ -n "${AGENTMESH_RELEASE_OPENSSL:-}" ]]; then
+        cand="$AGENTMESH_RELEASE_OPENSSL"
         major="$("$cand" version 2>/dev/null | sed -n 's/^OpenSSL \([0-9][0-9]*\)\..*/\1/p')"
         if [[ -n "$major" && "$major" -ge 3 ]]; then printf '%s\n' "$cand"; return 0; fi
-        echo "error: AGENTBUS2_RELEASE_OPENSSL=$cand is not OpenSSL 3 or newer ($("$cand" version 2>&1 | head -n1))" >&2
+        echo "error: AGENTMESH_RELEASE_OPENSSL=$cand is not OpenSSL 3 or newer ($("$cand" version 2>&1 | head -n1))" >&2
         return 1
     fi
     if command -v brew >/dev/null 2>&1; then
@@ -71,7 +71,7 @@ release_openssl() {
         if [[ -n "$major" && "$major" -ge 3 ]]; then command -v "$cand"; return 0; fi
         tried+=("$cand ($("$cand" version 2>&1 | head -n1))")
     done
-    echo "error: no OpenSSL 3 found; set AGENTBUS2_RELEASE_OPENSSL; tried: ${tried[*]}" >&2
+    echo "error: no OpenSSL 3 found; set AGENTMESH_RELEASE_OPENSSL; tried: ${tried[*]}" >&2
     return 1
 }
 # utc_minus_60s prints the UTC time one minute ago as YYYY-MM-DDTHH:MM:SSZ (BSD date, then GNU date).
@@ -127,7 +127,7 @@ require_tools() {
 # public key, so a wrong or regenerated private key is caught before building.
 check_signing_key() {
     local d; d="$(mktemp -d)"
-    printf 'agentbus2 release key check\n' > "$d/msg"
+    printf 'agentmesh release key check\n' > "$d/msg"
     "$OPENSSL" pkeyutl -sign -rawin -inkey "$SIGNING_KEY" -in "$d/msg" -out "$d/sig"
     if ! "$OPENSSL" pkeyutl -verify -rawin -pubin -inkey "$PUBKEY" -in "$d/msg" -sigfile "$d/sig" >/dev/null 2>&1; then
         rm -rf "$d"; fail "signing key $SIGNING_KEY does not match $PUBKEY"
@@ -270,7 +270,7 @@ copy_scripts() {
 # placeholder key block that embed-key.sh replaces.
 check_script_embedded() {
     if grep -qxF 'REPLACED-BY-release/embed-key.sh' "$1"; then
-        fail "$2 has no embedded release key (placeholder still present); run release/embed-key.sh release/agentbus2-release-ed25519.pub $2 and commit before tagging"
+        fail "$2 has no embedded release key (placeholder still present); run release/embed-key.sh release/agentmesh-release-ed25519.pub $2 and commit before tagging"
     fi
 }
 
@@ -428,7 +428,7 @@ download_archives() {
     done
     gh release download "$TAG" --repo "$GH_REPO" --dir "$DIST" --clobber "${patterns[@]}" \
         || fail "could not download the archives of $TAG; rerun the workflow"
-    for b in agentbus2 agentbus2-mcponly; do # keep equal to BIN_NAMES (m9-exit-checks.sh pins both)
+    for b in agentmesh agentmesh-mcponly; do # keep equal to BIN_NAMES (m9-exit-checks.sh pins both)
         for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do
             [[ -f "$DIST/${b}-${TAG}-$a" ]] || fail "release $TAG lacks ${b}-${TAG}-$a; rerun the workflow"
             ARCHIVES+=("${b}-${TAG}-$a")

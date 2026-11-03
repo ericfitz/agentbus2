@@ -20,7 +20,7 @@ func TestEnrollmentTokenSources(t *testing.T) {
 		}
 		return file
 	}
-	env := []string{"AGENTBUS2_ENROLLMENT_TOKEN=abe_env"}
+	env := []string{"AGENTMESH_ENROLLMENT_TOKEN=abe_env"}
 
 	if got, err := enrollmentToken("abe_flag", "", env); err != nil || got != "abe_flag" {
 		t.Errorf("flag over variable: %q, %v", got, err)

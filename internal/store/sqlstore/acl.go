@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // ACL rows are new in v2 (Decisions 73, 80, 88, 96; plan choice 2): one

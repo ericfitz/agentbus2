@@ -9,8 +9,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/fileacl"
-	"github.com/ericfitz/agentbus2/internal/filelock"
+	"github.com/ericfitz/agentmesh/internal/fileacl"
+	"github.com/ericfitz/agentmesh/internal/filelock"
 )
 
 // lookupIPAddr resolves a listen hostname; tests replace it.

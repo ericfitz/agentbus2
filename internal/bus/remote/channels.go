@@ -3,8 +3,8 @@ package remote
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // Channel, ACL and subscription methods. Every channel name goes to the

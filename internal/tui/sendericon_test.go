@@ -8,7 +8,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // The sender icon is drawn in the sender's color (user for the TUI's own

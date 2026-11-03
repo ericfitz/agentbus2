@@ -18,7 +18,7 @@ func repoWith(t *testing.T, body string) string {
 		if err := os.Mkdir(filepath.Join(root, ".local"), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(root, ".local", "agentbus2.json"), []byte(body), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(root, ".local", "agentmesh.json"), []byte(body), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -86,9 +86,9 @@ func TestResolveIdentityOrder(t *testing.T) {
 		{"env", server, IdentitySelection{Env: "e", Credentials: []string{"c"}}, "e", "env", ""},
 		{"profile", server, IdentitySelection{Credentials: []string{"c"}}, "fromprofile", "profile", ""},
 		{"one credential", bare, IdentitySelection{Credentials: []string{"c"}}, "c", "credential", ""},
-		{"two credentials", bare, IdentitySelection{Credentials: []string{"c", "d"}}, "", "", "identity is required: pass -identity, set AGENTBUS2_IDENTITY, or set identity in profile \"lab\""},
+		{"two credentials", bare, IdentitySelection{Credentials: []string{"c", "d"}}, "", "", "identity is required: pass -identity, set AGENTMESH_IDENTITY, or set identity in profile \"lab\""},
 		{"no credentials", bare, IdentitySelection{}, "", "", "identity is required"},
-		{"local never infers", local, IdentitySelection{Credentials: []string{"c"}}, "", "", "identity is required: pass -identity, set AGENTBUS2_IDENTITY, or set identity in profile \"loc\""},
+		{"local never infers", local, IdentitySelection{Credentials: []string{"c"}}, "", "", "identity is required: pass -identity, set AGENTMESH_IDENTITY, or set identity in profile \"loc\""},
 		{"local with flag", local, IdentitySelection{Flag: "me"}, "me", "flag", ""},
 		{"invalid flag", server, IdentitySelection{Flag: "a/b"}, "", "", "a/b"},
 		{"invalid env", server, IdentitySelection{Env: "a/b"}, "", "", "a/b"},
@@ -132,7 +132,7 @@ func TestResolveIdentityRequiredIsSentinel(t *testing.T) {
 	if !errors.Is(err, ErrIdentityRequired) {
 		t.Fatalf("err %v does not wrap ErrIdentityRequired", err)
 	}
-	if err.Error() != `identity is required: pass -identity, set AGENTBUS2_IDENTITY, or set identity in profile "lab"` {
+	if err.Error() != `identity is required: pass -identity, set AGENTMESH_IDENTITY, or set identity in profile "lab"` {
 		t.Fatalf("text %q", err)
 	}
 	if _, _, err := p.ResolveIdentity(IdentitySelection{Flag: "../x"}); errors.Is(err, ErrIdentityRequired) {

@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 // waitWake is the one JSON line a woken wait prints: the wire carries no
@@ -72,7 +72,7 @@ func waitOnce(ctx context.Context, s bus.Sessions, mf *wakeFilter, session strin
 	}
 }
 
-// RunWait is `agentbus2 wait` (choice 9): one wake prints a JSON line and
+// RunWait is `agentmesh wait` (choice 9): one wake prints a JSON line and
 // exits 0, -timeout exits 1, then 2 error, 3 replaced, 4 harness gone.
 func RunWait(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	var o client.Options
@@ -89,11 +89,11 @@ func RunWait(ctx context.Context, args []string, environ []string, stdin io.Read
 		return parseExit(err)
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintln(stderr, "agentbus2 wait: unexpected argument", fs.Arg(0))
+		_, _ = fmt.Fprintln(stderr, "agentmesh wait: unexpected argument", fs.Arg(0))
 		return 2
 	}
 	if timeout < 0 {
-		_, _ = fmt.Fprintln(stderr, "agentbus2 wait: -timeout must not be negative")
+		_, _ = fmt.Fprintln(stderr, "agentmesh wait: -timeout must not be negative")
 		return 2
 	}
 	ctx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)

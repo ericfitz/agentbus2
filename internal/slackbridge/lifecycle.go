@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core/scopes"
-	"github.com/ericfitz/agentbus2/internal/slackapi"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/core/scopes"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 const hourMs = int64(time.Hour / time.Millisecond)

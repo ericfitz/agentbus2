@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/channels"
-	"github.com/ericfitz/agentbus2/internal/core/maintenance"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/channels"
+	"github.com/ericfitz/agentmesh/internal/core/maintenance"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
 func maint(h *harness) maintenance.Service { return maintenance.New(h.core) }
@@ -762,7 +762,7 @@ func TestMaintenanceCapacityNotice(t *testing.T) {
 		if n := runJobOn(h, m, "capacity notices"); n != 1 {
 			t.Fatalf("capacity notices returned %d", n)
 		}
-		if n, ok := capacityNotice(h); !ok || !strings.HasPrefix(n.Message, "agentbus2 storage is over budget: ") {
+		if n, ok := capacityNotice(h); !ok || !strings.HasPrefix(n.Message, "agentmesh storage is over budget: ") {
 			t.Fatalf("notice = %+v, %v", n, ok)
 		}
 	})

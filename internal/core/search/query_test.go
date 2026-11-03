@@ -3,7 +3,7 @@ package search
 import (
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 func TestPrepareValidation(t *testing.T) {

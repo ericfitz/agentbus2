@@ -7,8 +7,8 @@ import (
 	"database/sql"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
 // SubscribeRaw writes a subscription for identity to the named channel

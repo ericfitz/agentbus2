@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/server/config"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/server/config"
 )
 
 // With the hashivault tag the hashivault scheme opens its provider; every
@@ -17,7 +17,7 @@ import (
 func TestHashivaultBackendIsRegistered(t *testing.T) {
 	t.Setenv("VAULT_ADDR", "http://127.0.0.1:1")
 	t.Setenv("VAULT_TOKEN", "t0ken-unused")
-	p, err := openKeyProvider(config.Config{SigningKeyURI: "hashivault://agentbus2"})
+	p, err := openKeyProvider(config.Config{SigningKeyURI: "hashivault://agentmesh"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestHashivaultUnsetEnvironmentExits2(t *testing.T) {
 	for _, v := range []string{"VAULT_ADDR", "BAO_ADDR", "VAULT_TOKEN", "BAO_TOKEN"} {
 		t.Setenv(v, "")
 	}
-	const uri = "signing_key_uri=hashivault://agentbus2"
+	const uri = "signing_key_uri=hashivault://agentmesh"
 	db := filepath.Join(t.TempDir(), "ab2.db")
 	if code, _, stderr := runOnce(nil, "-listen", "127.0.0.1:0", "-sqlite", db, "-set", uri); code != 2 || !strings.Contains(stderr, "hashivault: VAULT_ADDR") {
 		t.Fatalf("start: exit %d, stderr %q; want 2", code, stderr)

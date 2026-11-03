@@ -9,8 +9,8 @@ import (
 	"sync"
 	"testing"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 const notFoundProblem = `{"type":"about:blank","title":"Not Found","status":404,"code":"not_found","detail":"no matching operation was found","retryable":false}`

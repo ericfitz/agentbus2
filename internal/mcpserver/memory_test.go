@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // Decision 20: agents never receive memory channels.

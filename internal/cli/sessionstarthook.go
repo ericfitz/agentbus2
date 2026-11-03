@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
 )
 
 // sessionStartHookInput is the part of a SessionStart hook's stdin that
@@ -22,7 +22,7 @@ func sessionStartHookWork(environ []string, stdin io.Reader) hookResult {
 		return hookResult{stage: "decode", err: err}
 	}
 	// No bus call and no state file: the session does not exist yet. The
-	// profile and identity resolve the way `agentbus2 mcp` resolves them, so
+	// profile and identity resolve the way `agentmesh mcp` resolves them, so
 	// the hook stays silent wherever the MCP server's tools would refuse.
 	r, err := client.Resolve(client.Options{Environ: environ, Cwd: hi.Cwd})
 	if err != nil {
@@ -31,8 +31,8 @@ func sessionStartHookWork(environ []string, stdin io.Reader) hookResult {
 	if isOSLogin(r.Identity) {
 		return hookResult{} // Decision 16: the MCP server refuses to start
 	}
-	text := fmt.Sprintf("Agentbus2 is set up for this session (profile %q, identity %q). "+
-		"Do this now, without waiting to be asked. %s The using-agentbus2 skill is the full protocol.\n",
+	text := fmt.Sprintf("Agentmesh is set up for this session (profile %q, identity %q). "+
+		"Do this now, without waiting to be asked. %s The using-agentmesh skill is the full protocol.\n",
 		r.Profile.Name, r.Identity, mcpserver.RegisterSteps)
 	return hookResult{out: []byte(text)}
 }

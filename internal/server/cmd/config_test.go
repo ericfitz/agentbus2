@@ -17,12 +17,12 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
 // adminOnce runs RunAdmin against a SQLite file with a nil environment.
@@ -57,14 +57,14 @@ func TestRunLoadsConfigFileEnvAndFlags(t *testing.T) {
 	r.stop()
 
 	// Environment beats the file; flags beat the environment.
-	env := []string{"AGENTBUS2_SERVER_REGISTRATION=open"}
+	env := []string{"AGENTMESH_SERVER_REGISTRATION=open"}
 	e := startRun(t, env, "-config", cfgPath)
 	if e.mode != "open" {
 		t.Fatalf("environment did not beat file: mode %q", e.mode)
 	}
 	e.stop()
 
-	f := startRun(t, []string{"AGENTBUS2_SERVER_REGISTRATION=enrollment"}, "-config", cfgPath, "-set", "token_lifetime_seconds=60", "-registration", "open")
+	f := startRun(t, []string{"AGENTMESH_SERVER_REGISTRATION=enrollment"}, "-config", cfgPath, "-set", "token_lifetime_seconds=60", "-registration", "open")
 	if f.mode != "open" || !strings.Contains(f.stdout.String(), "registration open") {
 		t.Fatalf("flag did not beat environment: %q", f.stdout.String())
 	}
@@ -91,13 +91,13 @@ func TestRunRejectsConfigErrors(t *testing.T) {
 	}{
 		{"unknown key in file", nil, []string{"-config", bad, "-listen", "127.0.0.1:0", "-sqlite", db}, []string{"colour"}},
 		{"unknown -set", nil, []string{"-listen", "127.0.0.1:0", "-sqlite", db, "-set", "colour=1"}, []string{"colour"}},
-		{"unknown env", []string{"AGENTBUS2_SERVER_COLOUR=1"}, []string{"-listen", "127.0.0.1:0", "-sqlite", db}, []string{"colour"}},
+		{"unknown env", []string{"AGENTMESH_SERVER_COLOUR=1"}, []string{"-listen", "127.0.0.1:0", "-sqlite", db}, []string{"colour"}},
 		{"both stores", nil, []string{"-listen", "127.0.0.1:0", "-sqlite", db, "-postgres", "postgres://x"}, []string{"exactly one"}},
 		{"missing config", nil, []string{"-config", missing, "-listen", "127.0.0.1:0", "-sqlite", db}, []string{"missing.json"}},
 		{"no listen", nil, []string{"-sqlite", db}, []string{"listen is required"}},
 		{"unix without issuer", nil, []string{"-listen", sock, "-sqlite", db}, []string{"issuer is required when listen is a unix socket", "listen", "issuer"}},
 		{"unknown mode flag", nil, []string{"-listen", "127.0.0.1:0", "-sqlite", db, "-registration", "tofu"}, []string{"registration", "tofu"}},
-		{"unknown mode env", []string{"AGENTBUS2_SERVER_REGISTRATION=tofu"}, []string{"-listen", "127.0.0.1:0", "-sqlite", db}, []string{"registration", "tofu"}},
+		{"unknown mode env", []string{"AGENTMESH_SERVER_REGISTRATION=tofu"}, []string{"-listen", "127.0.0.1:0", "-sqlite", db}, []string{"registration", "tofu"}},
 		{"unknown mode file", nil, nil, []string{"registration", "tofu"}},
 		{"jwks refresh below bound", nil, []string{"-listen", "127.0.0.1:0", "-sqlite", db, "-set", "jwks_refresh_seconds=5"}, []string{"jwks_refresh_seconds"}},
 		{"embedding key file and env", nil, []string{"-listen", "127.0.0.1:0", "-sqlite", db,
@@ -184,7 +184,7 @@ func (p *extIDP) token(t *testing.T, k crypto.Signer, aud, sub string) string {
 }
 
 func (p *extIDP) issuersJSON() string {
-	return `[{"name":"corp","issuer":"` + p.URL + `","jwks_uri":"` + p.URL + `/jwks","audience":"agentbus2","algorithms":["ES256"]}]`
+	return `[{"name":"corp","issuer":"` + p.URL + `","jwks_uri":"` + p.URL + `/jwks","audience":"agentmesh","algorithms":["ES256"]}]`
 }
 
 func identityRow(t *testing.T, file, name string) (store.Identity, bool) {
@@ -217,15 +217,15 @@ func TestRunWiresExternalIssuers(t *testing.T) {
 			if via == "flag" {
 				args = append(args, "-set", "issuers="+idp.issuersJSON())
 			} else {
-				environ = []string{"AGENTBUS2_SERVER_ISSUERS=" + idp.issuersJSON()}
+				environ = []string{"AGENTMESH_SERVER_ISSUERS=" + idp.issuersJSON()}
 			}
 			r := startRun(t, environ, args...)
 			get := func(tok string) (int, []byte) { return httpDo(t, nil, "GET", r.base()+"/v1/channels", tok) }
 
 			// A corporate token is no bearer (Decision 10): 401 for every one.
 			for _, tok := range []string{
-				idp.token(t, idp.es, "agentbus2", "sub-1"),
-				idp.token(t, idp.ed, "agentbus2", "sub-1"),
+				idp.token(t, idp.es, "agentmesh", "sub-1"),
+				idp.token(t, idp.ed, "agentmesh", "sub-1"),
 				idp.token(t, idp.es, "other", "sub-1"),
 			} {
 				if code, body := get(tok); code != 401 || !strings.Contains(string(body), "unknown issuer") {
@@ -254,7 +254,7 @@ func TestRunWiresExternalIssuers(t *testing.T) {
 		idp := newExtIDP(t)
 		db := filepath.Join(t.TempDir(), "ab2.db")
 		r := startRun(t, nil, "-listen", "127.0.0.1:0", "-registration", "enrollment", "-sqlite", db, "-set", "issuers="+idp.issuersJSON())
-		tok := idp.token(t, idp.es, "agentbus2", "sub-2")
+		tok := idp.token(t, idp.es, "agentmesh", "sub-2")
 		code, body := httpDo(t, nil, "GET", r.base()+"/v1/channels", tok)
 		if code != 401 || problemCode(t, body) != "unauthenticated" {
 			t.Fatalf("enrollment mode, corporate bearer: %d %s", code, body)

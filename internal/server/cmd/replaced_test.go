@@ -14,17 +14,17 @@ import (
 	"testing"
 	"time"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/core/messaging"
-	"github.com/ericfitz/agentbus2/internal/core/notify"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/core/messaging"
+	"github.com/ericfitz/agentmesh/internal/core/notify"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
-const identityHeader = "X-Agentbus2-Test-Identity"
+const identityHeader = "X-Agentmesh-Test-Identity"
 
 // headerAuth is a test-only Authenticator: the identity is whatever the
 // header says. Shared by replaced_test.go and longpoll_test.go.
@@ -35,13 +35,13 @@ func (headerAuth) Authenticate(r *http.Request) (string, error) {
 }
 
 // TestHelperProcess is the re-exec target of startHelper: a server over the
-// SQLite file named by AGENTBUS2_HELPER_SQLITE with the polling notifier. In a
-// process without AGENTBUS2_HELPER_SERVER=1 it returns at once.
+// SQLite file named by AGENTMESH_HELPER_SQLITE with the polling notifier. In a
+// process without AGENTMESH_HELPER_SERVER=1 it returns at once.
 func TestHelperProcess(t *testing.T) {
-	if os.Getenv("AGENTBUS2_HELPER_SERVER") != "1" {
+	if os.Getenv("AGENTMESH_HELPER_SERVER") != "1" {
 		return
 	}
-	s, err := sqlite.Open(context.Background(), os.Getenv("AGENTBUS2_HELPER_SQLITE"), sqlite.Options{})
+	s, err := sqlite.Open(context.Background(), os.Getenv("AGENTMESH_HELPER_SQLITE"), sqlite.Options{})
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "helper: sqlite.Open:", err)
 		os.Exit(2)
@@ -76,7 +76,7 @@ func TestHelperProcess(t *testing.T) {
 func startHelper(t *testing.T, dbPath string) string {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^TestHelperProcess$")
-	cmd.Env = append(os.Environ(), "AGENTBUS2_HELPER_SERVER=1", "AGENTBUS2_HELPER_SQLITE="+dbPath)
+	cmd.Env = append(os.Environ(), "AGENTMESH_HELPER_SERVER=1", "AGENTMESH_HELPER_SQLITE="+dbPath)
 	cmd.Stderr = os.Stderr
 	stdin, err := cmd.StdinPipe()
 	if err != nil {

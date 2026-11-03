@@ -11,13 +11,13 @@ import (
 )
 
 // TestLive runs against a real Vault (or OpenBao) transit key. It is opt-in and
-// never runs in CI: set AGENTBUS2_LIVE_HASHIVAULT_URI to a hashivault://NAME
+// never runs in CI: set AGENTMESH_LIVE_HASHIVAULT_URI to a hashivault://NAME
 // URI for an ecdsa-p256 transit key, and VAULT_ADDR and VAULT_TOKEN for a token
 // that may read transit/keys/NAME and update transit/sign/NAME/sha2-256.
 func TestLive(t *testing.T) {
-	uri := os.Getenv("AGENTBUS2_LIVE_HASHIVAULT_URI")
+	uri := os.Getenv("AGENTMESH_LIVE_HASHIVAULT_URI")
 	if uri == "" {
-		t.Skip("AGENTBUS2_LIVE_HASHIVAULT_URI is not set")
+		t.Skip("AGENTMESH_LIVE_HASHIVAULT_URI is not set")
 	}
 	p, err := New(uri)
 	if err != nil {
@@ -33,7 +33,7 @@ func TestLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	digest := sha256.Sum256([]byte("agentbus2 live test"))
+	digest := sha256.Sum256([]byte("agentmesh live test"))
 	sig, err := sg.SignContext(ctx, digest[:], crypto.SHA256)
 	if err != nil {
 		t.Fatal(err)

@@ -1,6 +1,6 @@
 package rules
 
-import "github.com/ericfitz/agentbus2/internal/bus"
+import "github.com/ericfitz/agentmesh/internal/bus"
 
 // StorageTier is the pressure tier of a store holding bytes against a budget
 // and a sweep target. Above the budget the tier is a fact of what is still

@@ -19,9 +19,9 @@ import (
 	"github.com/jmoiron/sqlx"
 	sqlitedrv "modernc.org/sqlite" // registers the "sqlite" driver
 
-	"github.com/ericfitz/agentbus2/internal/search"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
+	"github.com/ericfitz/agentmesh/internal/search"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlstore"
 )
 
 // ApplicationID is stamped into the file header (Decision 34): "ab2\0". It is
@@ -231,7 +231,7 @@ func (dialect) CheckStamp(ctx context.Context, db *sqlx.DB) error {
 		return err
 	}
 	if id != ApplicationID {
-		return fmt.Errorf("%w: application_id %#x, want %#x", store.ErrNotAgentbus2, id, ApplicationID)
+		return fmt.Errorf("%w: application_id %#x, want %#x", store.ErrNotAgentmesh, id, ApplicationID)
 	}
 	return nil
 }

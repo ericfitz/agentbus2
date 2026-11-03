@@ -3,7 +3,7 @@ package rules
 import (
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 func TestStorageTier(t *testing.T) {

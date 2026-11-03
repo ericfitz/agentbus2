@@ -8,7 +8,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
 )
 
 var _ keyprovider.Provider = (*Fake)(nil)

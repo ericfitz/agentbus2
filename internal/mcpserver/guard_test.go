@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
 )
 
 // TestIdentityGuard is Decision 16 for every agent MCP server.
@@ -13,7 +13,7 @@ import (
 // command each binary runs).
 func TestIdentityGuard(t *testing.T) {
 	e := newTestEnv(t)
-	const cmd = "agentbus2-mcponly serve"
+	const cmd = "agentmesh-mcponly serve"
 	err := mcpserver.IdentityGuard(client.Options{Environ: e.Environ, Cwd: e.Home, Identity: "eric"}, "eric", cmd)
 	if err == nil {
 		t.Fatal("login eric, identity eric: want an error")

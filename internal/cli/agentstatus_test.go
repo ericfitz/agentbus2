@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 func runAS(t *testing.T, e *testEnv, args ...string) (int, string, string) {
@@ -45,7 +45,7 @@ func TestAgentStatusSetLocatesSession(t *testing.T) {
 	if so1 != so2 {
 		t.Errorf("replayed key changed the result:\n%s\n%s", so1, so2)
 	}
-	if code, _, se := runAS(t, e, "set", "-session", "nope", "idle", "a"); code != 1 || !strings.HasPrefix(se, "agentbus2: ") {
+	if code, _, se := runAS(t, e, "set", "-session", "nope", "idle", "a"); code != 1 || !strings.HasPrefix(se, "agentmesh: ") {
 		t.Fatalf("unknown session: exit %d stderr %q", code, se)
 	}
 }
@@ -64,7 +64,7 @@ func TestAgentStatusUnknownTagExit1(t *testing.T) {
 	e := newTestEnv(t)
 	sess := parkSession(t, e)
 	code, so, se := runAS(t, e, "set", "-session", sess.ID, "bogus", "x")
-	if code != 1 || so != "" || !strings.HasPrefix(se, `agentbus2: validation: unknown tag "bogus": `) {
+	if code != 1 || so != "" || !strings.HasPrefix(se, `agentmesh: validation: unknown tag "bogus": `) {
 		t.Fatalf("exit %d stdout %q stderr %q", code, so, se)
 	}
 }
@@ -109,7 +109,7 @@ func TestAgentStatusListAndHistoryJSON(t *testing.T) {
 	if hist[0]["tag"] != "planning" || hist[1]["tag"] != "implementing" || hist[0]["identity"] != "pat" {
 		t.Fatalf("history order = %v", hist)
 	}
-	if code, _, se := runAS(t, e, "history", "ghost"); code != 1 || !strings.HasPrefix(se, "agentbus2: ") {
+	if code, _, se := runAS(t, e, "history", "ghost"); code != 1 || !strings.HasPrefix(se, "agentmesh: ") {
 		t.Fatalf("history ghost: exit %d stderr %q", code, se)
 	}
 }

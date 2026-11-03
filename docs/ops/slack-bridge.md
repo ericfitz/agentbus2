@@ -11,10 +11,10 @@ The app is internal to one workspace and is never distributed publicly (a Socket
 3. Add these **bot token scopes**: `groups:write`, `groups:write.invites`, `groups:history`, `groups:read`, `users:read`, `users:read.email`, `chat:write` and `chat:write.customize`.
 4. Subscribe to these **bot events**: `message.groups` and `member_left_channel`.
 5. Install the app to the workspace and copy the **bot token** (`xoxb-...`).
-6. Write each token to its own file readable only by the server user (mode 0600), for example `/etc/agentbus2/slack-app-token` and `/etc/agentbus2/slack-bot-token`. The files hold the token alone; leading and trailing whitespace is trimmed.
+6. Write each token to its own file readable only by the server user (mode 0600), for example `/etc/agentmesh/slack-app-token` and `/etc/agentmesh/slack-bot-token`. The files hold the token alone; leading and trailing whitespace is trimmed.
 7. Set `slack_app_token_file` and `slack_bot_token_file` (see [configuration.md](configuration.md)); both or neither. The server reads the files once at start. A missing file, an app token that does not start with `xapp-` or a bot token that does not start with `xoxb-` stops the start with exit 2, naming the setting and never the token. Slack answering `invalid_auth` to the bot token also stops the start. Any other failure to reach Slack at start (network, a 5xx, a rate limit) does not: the server starts, bridge calls answer `unavailable` ("the Slack bridge is not connected to Slack yet; retry", retryable) and the bridge retries `auth.test` until Slack answers.
 
-Two more settings tune it: `slack_archive_after_done_hours` (default 168) and `slack_max_message_chars` (default 3000; a longer message is cut by characters and ends with a note pointing to agentbus2; a very long channel name makes the note shorter, so some of the message still shows). The bridge keeps Slack user lookups (`users.info`) in a cache of at most 1000 entries that expire after 10 minutes. Every replica needs both token files to serve bridge calls, and the same settings.
+Two more settings tune it: `slack_archive_after_done_hours` (default 168) and `slack_max_message_chars` (default 3000; a longer message is cut by characters and ends with a note pointing to agentmesh; a very long channel name makes the note shorter, so some of the message still shows). The bridge keeps Slack user lookups (`users.info`) in a cache of at most 1000 entries that expire after 10 minutes. Every replica needs both token files to serve bridge calls, and the same settings.
 
 ## What a job looks like
 
@@ -22,8 +22,8 @@ Everything starts with a scope (the walk-through is in [admin-bootstrap.md](admi
 
 1. An administrator creates the scope, its agents and its people (humans are identities named by their email address).
 2. A channel in the scope gets a **named-only ACL**: read or write may be granted only to named identities, never to `everyone`, `admins` or `humans`, and `everyone` and `humans` may hold no entry at all (administrators act through the implicit admin entry; an `admins` entry may hold `admin` alone). The bridge refuses any other ACL, and while a bridge is creating or live only a server administrator may change the ACL. Such a channel is listed to the identities and groups its ACL names and to administrators (of the groups only `admins`, with `admin` alone; `slack-bridge` also holds a row), and `ListChannels` marks it with the `bridged` capability while its bridge is `live`; the TUI draws it with the link icon.
-3. `agentbus2 bridges create [-slack-name N] CHANNEL` bridges it (below).
-4. `agentbus2 scopes done -retire with_bridge SCOPE` ends the job; the Slack channel is archived and the scope retired afterwards.
+3. `agentmesh bridges create [-slack-name N] CHANNEL` bridges it (below).
+4. `agentmesh scopes done -retire with_bridge SCOPE` ends the job; the Slack channel is archived and the scope retired afterwards.
 
 ## Creating a bridge
 
@@ -43,7 +43,7 @@ Any failure leaves the row `creating` and returns an error: a Slack rate limit (
 
 ## Removing and archiving
 
-`bridges remove CHANNEL` posts "This channel is archived; the record stays in agentbus2 until its scope is retired.", archives the Slack channel, deletes the bridge row with its message map, and removes the `slack-bridge` ACL entry and subscription. The scope and the bus channel stay. A second `bridges remove` is `not_found`.
+`bridges remove CHANNEL` posts "This channel is archived; the record stays in agentmesh until its scope is retired.", archives the Slack channel, deletes the bridge row with its message map, and removes the `slack-bridge` ACL entry and subscription. The scope and the bus channel stay. A second `bridges remove` is `not_found`.
 
 The Slack channel is also archived, and the bridge stops in both directions, at the earliest of:
 
@@ -59,7 +59,7 @@ A channel someone archived by hand in Slack is treated the same way: the bridge 
 
 One replica runs the bridge. The replicas compete for a Store lock named `slack-bridge`, renewed every 10 seconds: on SQLite it is a row with a 30-second expiry, on Postgres an advisory lock held by a pinned connection. The holder keeps the single Socket Mode connection, reads Slack's history on every connect and every minute, and posts the bus messages the bridge has not yet acked (it is woken by new messages and also polls every 5 seconds). A replica that loses the lock, or cannot renew it, stops all of that before its next attempt. If the runner's event queue ever fills (1024 events), the overflow is dropped, a catch-up is requested, and a dropped `member_left_channel` makes every done scope's members be checked again on the next lifecycle pass. When the holder shuts down it releases the lock; if it dies, another replica takes the lock after the expiry (SQLite) or when Postgres drops the dead session, connects, catches up and posts each unacked message once. A replica that vanishes without closing its database connection (a network partition, a frozen host) can keep a Postgres advisory lock, the runner's or a `bridges create` lock, until the server notices the dead connection; the TCP keepalive settings in [deploy.md](deploy.md) bound that wait. Every replica still needs the token files, because any replica may serve a `bridges` call or archive a bridge during maintenance.
 
-The crash repair reads message metadata back through `conversations.history` with `include_all_metadata`. Verified on a real workspace on 2026-10-24 with the scopes above: the bot reads its own `agentbus2_message` metadata, and a SIGKILL crash test (20 queued messages, server killed after 5 were recorded, restarted) produced each Slack post exactly once. The repair and the search below remain best effort.
+The crash repair reads message metadata back through `conversations.history` with `include_all_metadata`. Verified on a real workspace on 2026-10-24 with the scopes above: the bot reads its own `agentmesh_message` metadata, and a SIGKILL crash test (20 queued messages, server killed after 5 were recorded, restarted) produced each Slack post exactly once. The repair and the search below remain best effort.
 
 Slack's `chat.postMessage` has no idempotency key, so the bridge's message map is the only guard against posting a bus message twice. What the bridge does around a failed or interrupted post:
 

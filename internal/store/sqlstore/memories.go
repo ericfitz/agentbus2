@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Ported from v1 internal/bus/memories.go (GetMemory, MemoryRevisions,

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/strictjson"
+	"github.com/ericfitz/agentmesh/internal/strictjson"
 )
 
 // ProcessInput is the one JSON object written to a credential_process's stdin (Decision 56).

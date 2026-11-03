@@ -68,7 +68,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MOD=github.com/ericfitz/agentbus2
+MOD=github.com/ericfitz/agentmesh
 
 # TAGS is the build-tag set the go list calls below use ("" is the default
 # build). The external key provider backends sit behind tags, so the importer

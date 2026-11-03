@@ -7,13 +7,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
-	"github.com/ericfitz/agentbus2/internal/testkit"
+	"github.com/ericfitz/agentmesh/internal/server/cmd"
+	"github.com/ericfitz/agentmesh/internal/testkit"
 )
 
 var listeningRE = regexp.MustCompile(`listening on (\S+) `)
 
-// startServer runs `agentbus2 server` on a loopback port over a temp SQLite
+// startServer runs `agentmesh server` on a loopback port over a temp SQLite
 // file (open registration unless extra says otherwise) and returns its base URL.
 func startServer(t *testing.T, extra ...string) string {
 	t.Helper()

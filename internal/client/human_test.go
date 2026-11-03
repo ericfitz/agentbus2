@@ -16,11 +16,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/oidctest"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
-	"github.com/ericfitz/agentbus2/internal/testkit"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/oidctest"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/server/cmd"
+	"github.com/ericfitz/agentmesh/internal/testkit"
 )
 
 func freePort(t *testing.T) int {
@@ -49,7 +49,7 @@ func (b *testBrowser) open(raw string) error {
 	return nil
 }
 
-// startHumanServer runs `agentbus2 server` with prov as the issuer "corp" and
+// startHumanServer runs `agentmesh server` with prov as the issuer "corp" and
 // the users entry {email corp eric@corp.example}; it returns the base URL.
 func startHumanServer(t *testing.T, prov *oidctest.Provider) string {
 	t.Helper()
@@ -110,8 +110,8 @@ func TestResolveHumanSignInNeedsOIDC(t *testing.T) {
 			t.Errorf("profile %s: err %v, want a ResolveError naming the oidc setting", name, err)
 		}
 	}
-	// AGENTBUS2_IDENTITY, the profile's identity and its credentials never select the human's identity.
-	env := append(append([]string{}, e.Environ...), "AGENTBUS2_IDENTITY=x")
+	// AGENTMESH_IDENTITY, the profile's identity and its credentials never select the human's identity.
+	env := append(append([]string{}, e.Environ...), "AGENTMESH_IDENTITY=x")
 	r, err := Resolve(Options{Environ: env, Cwd: t.TempDir(), Profile: "corp", HumanSignIn: true, FallbackIdentity: "efitz"})
 	if err != nil || r.Identity != "" || r.IdentitySource != "sign-in" || r.Profile.OIDC == nil {
 		t.Fatalf("Resolve with oidc = %+v, %v", r, err)

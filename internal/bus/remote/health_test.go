@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
 )
 
 func TestHealthUnavailableError(t *testing.T) {

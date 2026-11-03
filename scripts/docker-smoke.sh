@@ -4,8 +4,8 @@
 # Containers are named, removed first and removed again by the trap, so a killed run leaves at most those three.
 set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-NAME="${DOCKER_SMOKE_NAME:-agentbus2-smoke}"
-IMAGE="agentbus2:smoke"
+NAME="${DOCKER_SMOKE_NAME:-agentmesh-smoke}"
+IMAGE="agentmesh:smoke"
 cleanup() { docker rm -f -v "$NAME" "$NAME-nocfg" "$NAME-nolisten" >/dev/null 2>&1 || true; }
 trap cleanup EXIT
 cleanup
@@ -48,7 +48,7 @@ docker build -q -t "$IMAGE" --build-arg VERSION=smoke "$ROOT" >/dev/null
 echo "step 2: no configuration exits 2"
 expect_exit "$NAME-nocfg" 2 'exactly one of sqlite or postgres is required' "$IMAGE"
 echo "step 2b: a store without listen exits 2"
-expect_exit "$NAME-nolisten" 2 'listen is required' -e AGENTBUS2_SERVER_SQLITE=/data/agentbus2.db "$IMAGE"
+expect_exit "$NAME-nolisten" 2 'listen is required' -e AGENTMESH_SERVER_SQLITE=/data/agentmesh.db "$IMAGE"
 
 echo "step 2c: every key provider backend is in the image"
 # The image carries all four backends (BUILD_TAGS in the Dockerfile; open note signing-keys 1); an untagged binary
@@ -56,18 +56,18 @@ echo "step 2c: every key provider backend is in the image"
 # backends refuse it as a configuration error (exit 2); hashivault does too, because New checks its environment
 # (VAULT_ADDR, VAULT_TOKEN), which the container leaves unset. No key service is needed. The log must carry the
 # backend's own text; expect_exit also fails when the log quotes the URI ("://none").
-for spec in awskms:2:'agentbus2 server: awskms:' gcpkms:2:'agentbus2 server: gcpkms:' azurekms:2:'agentbus2 server: azurekms:' \
-  hashivault:2:'agentbus2 server: hashivault:'; do
+for spec in awskms:2:'agentmesh server: awskms:' gcpkms:2:'agentmesh server: gcpkms:' azurekms:2:'agentmesh server: azurekms:' \
+  hashivault:2:'agentmesh server: hashivault:'; do
   scheme="${spec%%:*}"
   rest="${spec#*:}"
   want="${rest%%:*}"
   text="${rest#*:}"
-  expect_exit "$NAME-nolisten" "$want" "$text" -e AGENTBUS2_SERVER_LISTEN=0.0.0.0:8420 \
-    -e AGENTBUS2_SERVER_SQLITE=/data/agentbus2.db -e "AGENTBUS2_SERVER_SIGNING_KEY_URI=$scheme://none" "$IMAGE"
+  expect_exit "$NAME-nolisten" "$want" "$text" -e AGENTMESH_SERVER_LISTEN=0.0.0.0:8420 \
+    -e AGENTMESH_SERVER_SQLITE=/data/agentmesh.db -e "AGENTMESH_SERVER_SIGNING_KEY_URI=$scheme://none" "$IMAGE"
 done
 
 echo "step 3: version"
-got="$(docker run --rm --entrypoint /agentbus2 "$IMAGE" version)"
+got="$(docker run --rm --entrypoint /agentmesh "$IMAGE" version)"
 [ "$got" = smoke ] || fail "version printed \"$got\", want smoke"
 
 echo "step 4: non-root user"
@@ -76,7 +76,7 @@ got="$(docker inspect --format '{{.Config.User}}' "$IMAGE")"
 
 echo "step 5: serving container"
 docker run -d --name "$NAME" -p 127.0.0.1::8420 \
-  -e AGENTBUS2_SERVER_LISTEN=0.0.0.0:8420 -e AGENTBUS2_SERVER_SQLITE=/data/agentbus2.db \
+  -e AGENTMESH_SERVER_LISTEN=0.0.0.0:8420 -e AGENTMESH_SERVER_SQLITE=/data/agentmesh.db \
   "$IMAGE" -registration open >/dev/null
 port="$(docker port "$NAME" 8420/tcp | head -n 1 | sed 's/.*://')"
 [ -n "$port" ] || fail "no published port for $NAME"
@@ -119,9 +119,9 @@ case "$(printf '%s' "$hdr" | tr '[:upper:]' '[:lower:]')" in
 esac
 
 echo "step 7: bootstrap inside the image"
-got="$(docker exec "$NAME" /agentbus2 server admin -sqlite /data/agentbus2.db create-identity pat 2>&1)"
+got="$(docker exec "$NAME" /agentmesh server admin -sqlite /data/agentmesh.db create-identity pat 2>&1)"
 case "$got" in *'pat created'*) ;; *) fail "create-identity printed: $got" ;; esac
-got="$(docker exec "$NAME" /agentbus2 server admin -sqlite /data/agentbus2.db admins add -identity pat 2>&1)"
+got="$(docker exec "$NAME" /agentmesh server admin -sqlite /data/agentmesh.db admins add -identity pat 2>&1)"
 case "$got" in *added*) ;; *) fail "admins add printed: $got" ;; esac
 
 echo "step 8: startup log"

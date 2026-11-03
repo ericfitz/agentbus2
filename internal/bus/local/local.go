@@ -4,8 +4,8 @@
 package local
 
 import (
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
 )
 
 // Bus is the local implementation of ab2bus.Bus for one authenticated

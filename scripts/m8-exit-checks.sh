@@ -24,7 +24,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MOD=github.com/ericfitz/agentbus2
+MOD=github.com/ericfitz/agentmesh
 PKG="$MOD/internal/tui"
 
 import_check() {

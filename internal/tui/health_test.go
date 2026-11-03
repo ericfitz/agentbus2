@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/maintenance"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/maintenance"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 func healthBody(f *fixture) string { return stripANSI(strings.Join(f.m.healthLines(), "\n")) }
@@ -27,13 +27,13 @@ func TestHOpensHealthWithLines(t *testing.T) {
 	}
 	body := healthBody(f)
 	for _, want := range []string{
-		"version agentbus2 v" + version.Version,
+		"version agentmesh v" + version.Version,
 		"mode local · /tmp/x/bus.sqlite",
 		"identity eric · eric/tui · session " + f.c.sessionID(),
 		"sessions 2 live · channels 3 (1 memory, 0 tasks)",
 		"  sam ",
 		"receive long-poll connected · last batch",
-		"server ok · agentbus2 v" + version.Version + " · protocol " + version.Protocol + " · sqlite schema ",
+		"server ok · agentmesh v" + version.Version + " · protocol " + version.Protocol + " · sqlite schema ",
 		" · embeddings off",
 		"admin no (status and storage are administrator views)",
 		"theme · default",
@@ -169,7 +169,7 @@ func TestOOpensEditorAndToastsOnReturn(t *testing.T) {
 		t.Fatal("o must start the editor")
 	}
 	f.send(configEditedMsg{})
-	if f.m.toast != "config saved; restart agentbus2 tui to apply" {
+	if f.m.toast != "config saved; restart agentmesh tui to apply" {
 		t.Fatalf("toast = %q", f.m.toast)
 	}
 	f.m.host.ReloadConfig = func() error { return errors.New("tui.rail_width must be between 0 and 1000, got 1001") }
@@ -179,7 +179,7 @@ func TestOOpensEditorAndToastsOnReturn(t *testing.T) {
 	}
 	f.m.host.ReloadConfig = func() error { return nil }
 	f.send(configEditedMsg{})
-	if !strings.Contains(f.m.toast, "restart agentbus2 tui") {
+	if !strings.Contains(f.m.toast, "restart agentmesh tui") {
 		t.Fatalf("toast = %q", f.m.toast)
 	}
 }

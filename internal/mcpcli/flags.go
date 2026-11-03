@@ -9,8 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 // maxTokenFile is the largest enrollment token file (open note:
@@ -20,21 +20,21 @@ const maxTokenFile = 4096
 // commonFlags registers -server, -identity, -credential and -profile on fs,
 // writing into o.
 func commonFlags(fs *flag.FlagSet, o *client.Options) {
-	fs.StringVar(&o.Server, "server", "", "server URL (default: AGENTBUS2_SERVER, then the profile's server)")
-	fs.StringVar(&o.Identity, "identity", "", "identity (default: AGENTBUS2_IDENTITY, then the profile's identity, then the profile's only credential)")
-	fs.StringVar(&o.Credential, "credential", "", "private key file that signs, instead of the credential store (default: AGENTBUS2_CREDENTIAL)")
-	fs.StringVar(&o.Profile, "profile", "", "profile name (default: AGENTBUS2_PROFILE, then .local/agentbus2.json, then default)")
+	fs.StringVar(&o.Server, "server", "", "server URL (default: AGENTMESH_SERVER, then the profile's server)")
+	fs.StringVar(&o.Identity, "identity", "", "identity (default: AGENTMESH_IDENTITY, then the profile's identity, then the profile's only credential)")
+	fs.StringVar(&o.Credential, "credential", "", "private key file that signs, instead of the credential store (default: AGENTMESH_CREDENTIAL)")
+	fs.StringVar(&o.Profile, "profile", "", "profile name (default: AGENTMESH_PROFILE, then .local/agentmesh.json, then default)")
 }
 
-// applyEnv fills an empty Server from AGENTBUS2_SERVER and an empty Credential
-// from AGENTBUS2_CREDENTIAL, then makes Credential absolute so a later change
+// applyEnv fills an empty Server from AGENTMESH_SERVER and an empty Credential
+// from AGENTMESH_CREDENTIAL, then makes Credential absolute so a later change
 // of the working directory cannot move it.
 func applyEnv(o *client.Options, environ []string) {
 	if o.Server == "" {
-		o.Server, _ = profile.Getenv(environ, "AGENTBUS2_SERVER")
+		o.Server, _ = profile.Getenv(environ, "AGENTMESH_SERVER")
 	}
 	if o.Credential == "" {
-		o.Credential, _ = profile.Getenv(environ, "AGENTBUS2_CREDENTIAL")
+		o.Credential, _ = profile.Getenv(environ, "AGENTMESH_CREDENTIAL")
 	}
 	if o.Credential != "" {
 		if abs, err := filepath.Abs(o.Credential); err == nil {
@@ -44,7 +44,7 @@ func applyEnv(o *client.Options, environ []string) {
 }
 
 // enrollmentToken is the token from, in order, the -enrollment-token flag, the
-// -enrollment-token-file file and AGENTBUS2_ENROLLMENT_TOKEN; both flags at
+// -enrollment-token-file file and AGENTMESH_ENROLLMENT_TOKEN; both flags at
 // once is an error. The file is trimmed of surrounding white space and must be
 // a regular file, non-empty and at most 4 KiB. No error carries the token.
 // open note: mcp-only-client 13
@@ -58,7 +58,7 @@ func enrollmentToken(flagValue, file string, environ []string) (string, error) {
 	if file != "" {
 		return readTokenFile(file)
 	}
-	v, _ := profile.Getenv(environ, "AGENTBUS2_ENROLLMENT_TOKEN")
+	v, _ := profile.Getenv(environ, "AGENTMESH_ENROLLMENT_TOKEN")
 	return v, nil
 }
 

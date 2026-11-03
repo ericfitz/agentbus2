@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // unknownWire is the internal error of a closed enumeration member this

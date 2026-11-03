@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/slackapi"
-	"github.com/ericfitz/agentbus2/internal/slackbridge"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/slackbridge"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
 const (

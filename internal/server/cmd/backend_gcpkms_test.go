@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/server/config"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/server/config"
 )
 
 // With the gcpkms tag the gcpkms scheme opens its provider; every other scheme

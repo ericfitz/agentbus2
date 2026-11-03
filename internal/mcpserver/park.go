@@ -7,14 +7,14 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 // unparkOnToolCall is decision 18: any tool call other than receive (register
 // clears the mark itself, in its own state file write) unparks every session
 // this server holds. It runs before the tool, so a call that fails still
 // counts: the agent is working again. The state files are the source of
-// truth, because `agentbus2 park` writes them behind the server's back.
+// truth, because `agentmesh park` writes them behind the server's back.
 func (s *server) unparkOnToolCall(next mcp.MethodHandler) mcp.MethodHandler {
 	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
 		if method == "tools/call" {
@@ -77,7 +77,7 @@ func (s *server) unparkSessions(dataDir string, ids []string) {
 }
 
 // keepParked copies the on-disk Parked mark into f: the registry's copy of a
-// state file is stale after `agentbus2 park`, and a rewrite from it must not
+// state file is stale after `agentmesh park`, and a rewrite from it must not
 // erase the park.
 func keepParked(dataDir string, f *sessionstate.File) {
 	if d, err := sessionstate.Read(dataDir, f.Session); err == nil {

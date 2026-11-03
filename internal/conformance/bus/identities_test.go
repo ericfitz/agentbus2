@@ -9,12 +9,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
 func idKey(t *testing.T) crypto.PublicKey {

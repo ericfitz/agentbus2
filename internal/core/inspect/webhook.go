@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core"
 )
 
 // Webhook is an Inspector that POSTs the request as JSON to an HTTP endpoint

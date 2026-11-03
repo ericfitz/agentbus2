@@ -8,8 +8,8 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
-	"github.com/ericfitz/agentbus2/internal/search"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/search"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Dialect holds the only engine-specific code (plan choice 3).
@@ -24,11 +24,11 @@ type Dialect interface {
 	// IsEmpty: no user tables.
 	IsEmpty(ctx context.Context, db *sqlx.DB) (bool, error)
 	// TableExists is the same catalog query for one table. Open asks for
-	// "schema_meta" before selecting from it, so ErrNotAgentbus2 never
+	// "schema_meta" before selecting from it, so ErrNotAgentmesh never
 	// depends on classifying an engine's error.
 	TableExists(ctx context.Context, db *sqlx.DB, name string) (bool, error)
 	Stamp(ctx context.Context, db *sqlx.DB) error          // SQLite: PRAGMA application_id; Postgres: no-op
-	CheckStamp(ctx context.Context, db *sqlx.DB) error     // SQLite: ErrNotAgentbus2 on mismatch; Postgres: no-op
+	CheckStamp(ctx context.Context, db *sqlx.DB) error     // SQLite: ErrNotAgentmesh on mismatch; Postgres: no-op
 	LockMigrations(ctx context.Context, tx *sqlx.Tx) error // SQLite: no-op (immediate tx); Postgres: advisory lock
 	LockAppend(ctx context.Context, tx *sqlx.Tx) error     // SQLite: no-op; Postgres: LOCK TABLE seq_counter (choice 4)
 	// TextSearch (Task 10) returns a condition on alias m with ? placeholders.

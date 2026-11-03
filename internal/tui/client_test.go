@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/channels"
-	"github.com/ericfitz/agentbus2/internal/core/notify"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/channels"
+	"github.com/ericfitz/agentmesh/internal/core/notify"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
 // setBackoff pins retryBackoff for a test and restores it (no test in the

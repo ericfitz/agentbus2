@@ -12,9 +12,9 @@ import (
 	"runtime"
 	"sort"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/fileacl"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/fileacl"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // maxKeyFile bounds a credential file read; a PKCS#8 key is far smaller.

@@ -9,9 +9,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/keyprovider/kmsfake"
-	"github.com/ericfitz/agentbus2/internal/server/config"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/keyprovider/kmsfake"
+	"github.com/ericfitz/agentmesh/internal/server/config"
 )
 
 // open note: signing-keys 2
@@ -95,9 +95,9 @@ func useFake(t *testing.T, f *kmsfake.Fake) {
 func TestStartAdoptsExternalKeyAndPrintsNoURI(t *testing.T) {
 	useFake(t, kmsfake.New("awskms"))
 	db := filepath.Join(t.TempDir(), "ab2.db")
-	args := []string{"-listen", "127.0.0.1:0", "-sqlite", db, "-set", "signing_key_uri=awskms://alias/agentbus2?token=s3cret"}
+	args := []string{"-listen", "127.0.0.1:0", "-sqlite", db, "-set", "signing_key_uri=awskms://alias/agentmesh?token=s3cret"}
 	first := runServer(t, args...)
-	want := regexp.MustCompile(`adopted signing key ` + first.kid + ` \(awskms alias/agentbus2\)\n`)
+	want := regexp.MustCompile(`adopted signing key ` + first.kid + ` \(awskms alias/agentmesh\)\n`)
 	if !want.MatchString(first.stdout.String()) {
 		t.Fatalf("stdout %q lacks the adopted line", first.stdout.String())
 	}
@@ -117,7 +117,7 @@ func TestStartAdoptsExternalKeyAndPrintsNoURI(t *testing.T) {
 // Controller ruling 3: a provider runtime failure at start exits 1; a
 // configuration error exits 2.
 func TestStartExitCodesForProviderFailures(t *testing.T) {
-	uriArg := []string{"-set", "signing_key_uri=awskms://alias/agentbus2"}
+	uriArg := []string{"-set", "signing_key_uri=awskms://alias/agentmesh"}
 	run := func(t *testing.T) (int, string) {
 		t.Helper()
 		db := filepath.Join(t.TempDir(), "ab2.db")
@@ -184,13 +184,13 @@ func TestAdminRotateExitCodesForProviderFailures(t *testing.T) {
 	}
 	t.Run("a backend not in this build", func(t *testing.T) {
 		setBackend(t, "awskms", nil)
-		if code, errOut := rotate(t, "awskms://alias/agentbus2"); code != 2 || !strings.Contains(errOut, "not in this build") {
+		if code, errOut := rotate(t, "awskms://alias/agentmesh"); code != 2 || !strings.Contains(errOut, "not in this build") {
 			t.Fatalf("exit %d, stderr %q; want 2", code, errOut)
 		}
 	})
 	t.Run("a malformed URI", func(t *testing.T) {
 		setBackend(t, "awskms", func(string) (keyprovider.Provider, error) { return nil, errors.New("bad key URI") })
-		if code, errOut := rotate(t, "awskms://alias/agentbus2"); code != 2 || !strings.Contains(errOut, "bad key URI") {
+		if code, errOut := rotate(t, "awskms://alias/agentmesh"); code != 2 || !strings.Contains(errOut, "bad key URI") {
 			t.Fatalf("exit %d, stderr %q; want 2", code, errOut)
 		}
 	})
@@ -198,7 +198,7 @@ func TestAdminRotateExitCodesForProviderFailures(t *testing.T) {
 		setBackend(t, "awskms", func(string) (keyprovider.Provider, error) {
 			return nil, fmt.Errorf("dial: %w", keyprovider.ErrUnavailable)
 		})
-		if code, errOut := rotate(t, "awskms://alias/agentbus2"); code != 1 {
+		if code, errOut := rotate(t, "awskms://alias/agentmesh"); code != 1 {
 			t.Fatalf("exit %d, stderr %q; want 1", code, errOut)
 		}
 	})

@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/keyprovider/kmsfake"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/signingkeys"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/keyprovider/kmsfake"
 )
 
 // extKeysOver is a signing key service over a fresh handle of h's database
@@ -33,7 +33,7 @@ func extKeysOver(t *testing.T, h *harness, f *kmsfake.Fake) signingkeys.Service 
 
 func extIssuer(t *testing.T, h *harness, svc signingkeys.Service) *token.Issuer {
 	t.Helper()
-	iss, err := token.NewIssuer(context.Background(), "http://agentbus2.test", signingkeys.NewKeyring(svc), time.Hour, h.clock.Now)
+	iss, err := token.NewIssuer(context.Background(), "http://agentmesh.test", signingkeys.NewKeyring(svc), time.Hour, h.clock.Now)
 	if err != nil {
 		t.Fatal(err)
 	}

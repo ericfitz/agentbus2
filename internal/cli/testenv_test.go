@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/procs"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 // testHarness is the fake harness ref every state file in this package uses.
@@ -37,7 +37,7 @@ func pinned() *core.Config {
 
 type testEnv struct {
 	Home, ConfigDir, DataDir string
-	Environ                  []string // HOME, AGENTBUS2_CONFIG_DIR, AGENTBUS2_DATA_DIR, PATH
+	Environ                  []string // HOME, AGENTMESH_CONFIG_DIR, AGENTMESH_DATA_DIR, PATH
 	Config                   profile.Config
 }
 
@@ -50,7 +50,7 @@ func newTestEnv(t *testing.T) *testEnv {
 			t.Fatal(err)
 		}
 	}
-	e.Environ = []string{"HOME=" + e.Home, "AGENTBUS2_CONFIG_DIR=" + e.ConfigDir, "AGENTBUS2_DATA_DIR=" + e.DataDir, "PATH=" + os.Getenv("PATH")}
+	e.Environ = []string{"HOME=" + e.Home, "AGENTMESH_CONFIG_DIR=" + e.ConfigDir, "AGENTMESH_DATA_DIR=" + e.DataDir, "PATH=" + os.Getenv("PATH")}
 	e.Config = profile.Config{Path: e.ConfigDir + "/config.json", Profiles: map[string]profile.Profile{
 		"default": {Name: "default", Mode: profile.ModeLocal, Identity: "pat"},
 	}}
@@ -66,7 +66,7 @@ func newTestEnv(t *testing.T) *testEnv {
 	procs.HarnessPollInterval = 10 * time.Millisecond
 	tbl := newFakeTable()
 	tbl.set(10, 1, 5, "claude")
-	tbl.set(42, 10, 7, "agentbus2")
+	tbl.set(42, 10, 7, "agentmesh")
 	processTable = tbl
 	selfPID = func() int { return 42 }
 	t.Cleanup(func() {

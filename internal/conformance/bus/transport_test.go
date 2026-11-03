@@ -7,14 +7,14 @@ import (
 	"sync/atomic"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus/local"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/server"
+	"github.com/ericfitz/agentmesh/internal/bus/local"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/server"
 )
 
-const transportEnv = "AGENTBUS2_BUS_TRANSPORT"
+const transportEnv = "AGENTMESH_BUS_TRANSPORT"
 
 // transport is "local" or "inproc", set in TestMain before dbtest.Run.
 var transport string

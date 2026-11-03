@@ -19,8 +19,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 type healthState struct {
@@ -111,7 +111,7 @@ func (m *Model) onConfigEdited(msg configEditedMsg) tea.Cmd {
 			return m.showToast("config: " + errText(err))
 		}
 	}
-	return m.showToast("config saved; restart agentbus2 tui to apply")
+	return m.showToast("config saved; restart agentmesh tui to apply")
 }
 
 // tuiConfigView is the tui object as health shows it: lowercase keys, the
@@ -130,7 +130,7 @@ func (m Model) healthLines() []string {
 	dim, ok, warn := th.Style(th.Dim), th.Style(th.Health), th.Style(th.Warn)
 	var b strings.Builder
 	p := func(format string, a ...any) { _, _ = fmt.Fprintf(&b, format, a...) }
-	p("%s %s\n", dim.Render("version"), "agentbus2 v"+version.Version)
+	p("%s %s\n", dim.Render("version"), "agentmesh v"+version.Version)
 	p("%s %s\n", dim.Render("mode"), m.host.Describe)
 	p("%s %s · %s · session %s\n", dim.Render("identity"), m.c.identity, m.c.displayName(), m.c.sessionID())
 	live := 0
@@ -209,7 +209,7 @@ func (m Model) serverLine(p func(string, ...any), dim, ok, warn lipgloss.Style) 
 	if h.Status != bus.HealthOK {
 		status = warn.Render(string(h.Status))
 	}
-	p("%s %s · agentbus2 v%s", dim.Render("server"), status, h.Version)
+	p("%s %s · agentmesh v%s", dim.Render("server"), status, h.Version)
 	if h.ProtocolVersion != "" {
 		p(" · protocol %s", h.ProtocolVersion)
 	}

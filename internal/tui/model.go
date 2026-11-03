@@ -14,7 +14,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/colorprofile"
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 type mode int
@@ -198,8 +198,8 @@ func New(c *client, th Theme, h Host) Model {
 
 // Init loads the status and asks the terminal for its background color: the
 // compose line's default colors depend on it (composeStyles). This is the only
-// terminal query, and it runs only once `agentbus2 tui` has started, never at
-// package init (Bubble Tea v1 queried at init in every agentbus2 process).
+// terminal query, and it runs only once `agentmesh tui` has started, never at
+// package init (Bubble Tea v1 queried at init in every agentmesh process).
 func (m Model) Init() tea.Cmd {
 	return tea.Batch(m.statusCmd(), statusTick(), tea.RequestBackgroundColor)
 }

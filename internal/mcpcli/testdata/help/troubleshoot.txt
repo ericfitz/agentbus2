@@ -1,20 +1,20 @@
-agentbus2-mcponly help troubleshoot: each refusal and its fix
+agentmesh-mcponly help troubleshoot: each refusal and its fix
 
 The server cannot be reached. check prints FAIL reach and the command to retry
 after you fix the URL or start the server.
 
-  $ agentbus2-mcponly check -server http://127.0.0.1:1
-    > FAIL reach: <detail>; fix: check the URL and that the server is running, then agentbus2-mcponly check -server http://127.0.0.1:1
-    > agentbus2-mcponly: check: reach failed
+  $ agentmesh-mcponly check -server http://127.0.0.1:1
+    > FAIL reach: <detail>; fix: check the URL and that the server is running, then agentmesh-mcponly check -server http://127.0.0.1:1
+    > agentmesh-mcponly: check: reach failed
     (exit 1)
 
 has no local mode (exit 2). No server is known, so the command fell back to
 the built-in local profile, which this binary cannot open. Pass -server URL,
-set AGENTBUS2_SERVER, or run register -server URL first so the profile records
+set AGENTMESH_SERVER, or run register -server URL first so the profile records
 the server.
 
-  $ agentbus2-mcponly check -identity my-agent
-    > agentbus2-mcponly check: profile "default" is a local profile, and this binary has no local mode: pass -server URL, or use agentbus2
+  $ agentmesh-mcponly check -identity my-agent
+    > agentmesh-mcponly check: profile "default" is a local profile, and this binary has no local mode: pass -server URL, or use agentmesh
     (exit 2)
 
 forbidden: registration requires an enrollment token (exit 1). The server only
@@ -22,11 +22,11 @@ registers an identity that presents a token. Ask the administrator for one,
 save it in a file and name the file. The key made by the failed run is kept,
 so the second command registers it.
 
-  $ agentbus2-mcponly register -server https://agentbus.example.com -identity my-agent
-    > agentbus2-mcponly: forbidden: registration requires an enrollment token
+  $ agentmesh-mcponly register -server https://agentbus.example.com -identity my-agent
+    > agentmesh-mcponly: forbidden: registration requires an enrollment token
     (exit 1)
 
-  $ agentbus2-mcponly register -server https://agentbus.example.com -identity my-agent -enrollment-token-file ./enrollment-token
+  $ agentmesh-mcponly register -server https://agentbus.example.com -identity my-agent -enrollment-token-file ./enrollment-token
     > registered my-agent at https://agentbus.example.com (created)
 
 Other forbidden texts: "enrollment token is invalid" means the token is wrong,
@@ -38,12 +38,12 @@ unauthenticated at the token step (exit 1). The server does not know this key:
 the identity was never registered, or it is registered with another key. Run
 the register command the fix names (add -credential FILE if you use one). If
 the identity already holds another key, an administrator runs
-agentbus2 server admin reset-credential NAME first, and then you register.
+agentmesh server admin reset-credential NAME first, and then you register.
 
-  $ agentbus2-mcponly check -server https://agentbus.example.com -identity ghost -credential ./agent-key.pem
+  $ agentmesh-mcponly check -server https://agentbus.example.com -identity ghost -credential ./agent-key.pem
     > ok   credential: <path>
-    > FAIL token: unauthenticated: <message>; fix: agentbus2-mcponly register -server https://agentbus.example.com -identity ghost (if ghost already holds another key, an administrator runs agentbus2 server admin reset-credential ghost first)
-    > agentbus2-mcponly: check: token failed
+    > FAIL token: unauthenticated: <message>; fix: agentmesh-mcponly register -server https://agentbus.example.com -identity ghost (if ghost already holds another key, an administrator runs agentmesh server admin reset-credential ghost first)
+    > agentmesh-mcponly: check: token failed
     (exit 1)
 
 conflict: identity "NAME" already has a credential (exit 1). register sent a
@@ -52,7 +52,7 @@ the key that registered NAME, use it: pass -credential FILE, or run register
 from the machine whose credential store holds it. If register then adds "the
 pending key PATH differs from the key the server holds", that pending key is
 the new one a failed run left: remove the file it names. If the original key
-is lost, an administrator runs agentbus2 server admin reset-credential NAME,
+is lost, an administrator runs agentmesh server admin reset-credential NAME,
 and then you register.
 
 not_registered. A call from the agent answers not_registered when the
@@ -71,5 +71,5 @@ entries are Everyone, Authenticated Users and Users; add /remove:g ACCOUNT for
 another account that check names). The fix line of check names the right one
 for your system.
 
-Anything else. Run agentbus2-mcponly check and follow the first FAIL line's
-fix. Read agentbus2-mcponly help verify for what each step proves.
+Anything else. Run agentmesh-mcponly check and follow the first FAIL line's
+fix. Read agentmesh-mcponly help verify for what each step proves.

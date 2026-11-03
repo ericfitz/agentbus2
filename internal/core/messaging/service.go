@@ -3,7 +3,7 @@
 // channels. Search lives in its own package.
 package messaging
 
-import "github.com/ericfitz/agentbus2/internal/core"
+import "github.com/ericfitz/agentmesh/internal/core"
 
 // Service is the messaging aggregate.
 type Service struct{ *core.Core }

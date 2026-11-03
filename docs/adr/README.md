@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Decisions for agentbus2, numbered from 0001. Each record labels the
+Decisions for agentmesh (named agentbus2 before ADR 0017), numbered from 0001. Each record labels the
 decisions as Eric's and cites the numbered decisions it transcribes:
 1 to 63 from `HANDOFF.md` (2026-10-19), 64 to 96 from Eric's review
 answers (`.local/review-answers-2026-10-20.md`, 2026-10-20; records
@@ -28,6 +28,7 @@ NNNN" to keep the two series apart.
 | [0014](0014-agent-status.md) | Agent status and history | Accepted (Eric, 2026-10-27) |
 | [0015](0015-mcp-only-client.md) | The MCP-only client | Accepted (Eric, 2026-10-27); open notes are agent choices |
 | [0016](0016-mcp-events.md) | MCP events (server-initiated notifications) | Accepted (Eric, 2026-10-27 and 2026-11-03); build deferred |
+| [0017](0017-rename-to-agentmesh.md) | Rename agentbus2 to agentmesh | Accepted (Eric, 2026-11-03) |
 
 Decisions 60 (TUI in a later milestone), 61 (release tooling in the
 final milestone) and 87 (Scoop and winget in that tooling) are scheduling

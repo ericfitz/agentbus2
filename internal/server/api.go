@@ -3,18 +3,18 @@ package server
 import (
 	"log/slog"
 
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/channels"
-	"github.com/ericfitz/agentbus2/internal/core/delivery"
-	"github.com/ericfitz/agentbus2/internal/core/memories"
-	"github.com/ericfitz/agentbus2/internal/core/messaging"
-	"github.com/ericfitz/agentbus2/internal/core/scopes"
-	"github.com/ericfitz/agentbus2/internal/core/search"
-	"github.com/ericfitz/agentbus2/internal/core/sessions"
-	"github.com/ericfitz/agentbus2/internal/core/statuses"
-	"github.com/ericfitz/agentbus2/internal/core/tasks"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/channels"
+	"github.com/ericfitz/agentmesh/internal/core/delivery"
+	"github.com/ericfitz/agentmesh/internal/core/memories"
+	"github.com/ericfitz/agentmesh/internal/core/messaging"
+	"github.com/ericfitz/agentmesh/internal/core/scopes"
+	"github.com/ericfitz/agentmesh/internal/core/search"
+	"github.com/ericfitz/agentmesh/internal/core/sessions"
+	"github.com/ericfitz/agentmesh/internal/core/statuses"
+	"github.com/ericfitz/agentmesh/internal/core/tasks"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 // api implements gen.StrictServerInterface. Its services are used by the

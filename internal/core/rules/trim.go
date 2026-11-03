@@ -3,7 +3,7 @@ package rules
 import (
 	"encoding/json"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // TrimFramingBytes is a generous, fixed allowance for one record's own array

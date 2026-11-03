@@ -18,7 +18,7 @@ import (
 	"github.com/go-jose/go-jose/v4/cryptosigner"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
 )
 
 // Type is the client_assertion_type of RFC 7523 section 2.2.

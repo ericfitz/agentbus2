@@ -1,7 +1,7 @@
 //go:build !windows
 
 // Package e2e_test is the Milestone 6 exit (spec section 10): the built
-// agentbus2 binary, a real `agentbus2 server` over TCP and a separate client
+// agentmesh binary, a real `agentmesh server` over TCP and a separate client
 // data directory per simulated host. The server listens on 0.0.0.0, so it
 // starts in enrollment mode and no client step can register without a token:
 // that is the "another host" condition. Hosts A and B are two HOME
@@ -31,9 +31,9 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 var (
@@ -125,7 +125,7 @@ func mustRun(t testing.TB, home string, args ...string) result {
 	t.Helper()
 	r := run(home, args...)
 	if r.code != 0 {
-		t.Fatalf("agentbus2 %s: exit %d, stdout %q, stderr %q", strings.Join(args, " "), r.code, r.stdout, r.err)
+		t.Fatalf("agentmesh %s: exit %d, stdout %q, stderr %q", strings.Join(args, " "), r.code, r.stdout, r.err)
 	}
 	return r
 }
@@ -138,13 +138,13 @@ func TestMain(m *testing.M) {
 }
 
 func runMain(m *testing.M) int {
-	root, err := os.MkdirTemp("", "agentbus2-e2e-")
+	root, err := os.MkdirTemp("", "agentmesh-e2e-")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "e2e:", err)
 		return 1
 	}
 	defer func() { _ = os.RemoveAll(root) }()
-	binPath = filepath.Join(root, "agentbus2")
+	binPath = filepath.Join(root, "agentmesh")
 	build := exec.Command("go", "build", "-trimpath", "-o", binPath, ".")
 	build.Dir = filepath.Join("..", "..")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
@@ -152,12 +152,12 @@ func runMain(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "e2e: go build failed: %v\n%s", err, out)
 		return 1
 	}
-	mcpOnlyBin = filepath.Join(root, "agentbus2-mcponly")
-	buildOnly := exec.Command("go", "build", "-trimpath", "-o", mcpOnlyBin, "./cmd/agentbus2-mcponly")
+	mcpOnlyBin = filepath.Join(root, "agentmesh-mcponly")
+	buildOnly := exec.Command("go", "build", "-trimpath", "-o", mcpOnlyBin, "./cmd/agentmesh-mcponly")
 	buildOnly.Dir = filepath.Join("..", "..")
 	buildOnly.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := buildOnly.CombinedOutput(); err != nil {
-		fmt.Fprintf(os.Stderr, "e2e: go build agentbus2-mcponly failed: %v\n%s", err, out)
+		fmt.Fprintf(os.Stderr, "e2e: go build agentmesh-mcponly failed: %v\n%s", err, out)
 		return 1
 	}
 	fx, err = startFixture(root)
@@ -178,7 +178,7 @@ func runMain(m *testing.M) int {
 }
 
 var (
-	listeningRE = regexp.MustCompile(`agentbus2 server listening on (\S+) \((sqlite|postgres), registration (\S+), issuer (\S+), kid (\S+)\)`)
+	listeningRE = regexp.MustCompile(`agentmesh server listening on (\S+) \((sqlite|postgres), registration (\S+), issuer (\S+), kid (\S+)\)`)
 	tokenRE     = regexp.MustCompile(`(?m)^token: (abe_\S+)$`)
 )
 
@@ -273,7 +273,7 @@ func (f *fixture) stopServer() int {
 
 // --- background processes ------------------------------------------------
 
-// proc is an agentbus2 command that is still running.
+// proc is an agentmesh command that is still running.
 type proc struct {
 	cmd  *exec.Cmd
 	out  *syncBuf
@@ -430,9 +430,9 @@ func drain(t testing.TB, home, session string) {
 	t.Fatalf("session %s: still receiving after 10 batches", session)
 }
 
-func dataDir(home string) string { return filepath.Join(home, ".local", "share", "agentbus2") }
+func dataDir(home string) string { return filepath.Join(home, ".local", "share", "agentmesh") }
 func configDir(home string) string {
-	return filepath.Join(home, ".config", "agentbus2")
+	return filepath.Join(home, ".config", "agentmesh")
 }
 
 // --- TestSection24Sequence -----------------------------------------------
@@ -453,7 +453,7 @@ func spawnMCP(t *testing.T, home string) *mcpProc {
 	defer cancel()
 	cs, err := mcp.NewClient(&mcp.Implementation{Name: "claude-code", Version: "e2e"}, nil).Connect(ctx, &mcp.CommandTransport{Command: cmd}, nil)
 	if err != nil {
-		t.Fatalf("connect to agentbus2 mcp: %v (stderr %q)", err, p.stderr.String())
+		t.Fatalf("connect to agentmesh mcp: %v (stderr %q)", err, p.stderr.String())
 	}
 	p.cs = cs
 	return p
@@ -588,7 +588,7 @@ func TestSection24Sequence(t *testing.T) {
 				t.Fatalf("wait printed %q, want %q", waiter.out.String(), want)
 			}
 			lines := watcher.waitLines(1, 5*time.Second)
-			wantLine := "agentbus2: 1 new message(s) for " + s2.DisplayName + " on general; call receive"
+			wantLine := "agentmesh: 1 new message(s) for " + s2.DisplayName + " on general; call receive"
 			if len(lines) != 1 || lines[0] != wantLine {
 				t.Fatalf("watch printed %q, want exactly %q", watcher.out.String(), wantLine)
 			}
@@ -735,7 +735,7 @@ func TestSection24Sequence(t *testing.T) {
 				t.Fatalf("stop-hook: exit %d, stdout %q, stderr %q, hook.log %q", r.code, r.stdout, r.err, hookLogErr)
 			}
 			if r.code != 0 || out.Decision != "block" ||
-				!strings.Contains(out.Reason, "1 new message(s) for "+mcpName) || !strings.Contains(out.Reason, "background `agentbus2 wait`") {
+				!strings.Contains(out.Reason, "1 new message(s) for "+mcpName) || !strings.Contains(out.Reason, "background `agentmesh wait`") {
 				t.Fatalf("stop-hook: exit %d, %+v, hook.log %q", r.code, out, hookLogErr)
 			}
 			logBefore := hookLogErr
@@ -802,7 +802,7 @@ func cell(t *testing.T) sessionInfo {
 }
 
 var (
-	wakeLineRE = regexp.MustCompile(`^agentbus2: 1 new message\(s\) for pat(-\d+)? on general; call receive$`)
+	wakeLineRE = regexp.MustCompile(`^agentmesh: 1 new message\(s\) for pat(-\d+)? on general; call receive$`)
 	wakeJSONRE = regexp.MustCompile(`^\{"seq":\d+,"count":1,"channels":\["general"\]\}\n$`)
 )
 
@@ -827,7 +827,7 @@ func expectExit(t *testing.T, what string, p *proc, want int, d time.Duration) {
 // it (a signal before the handler is installed would kill it outright).
 func settle() { time.Sleep(1500 * time.Millisecond) }
 
-// harnessGone runs `agentbus2 args` under a helper harness and, once ready
+// harnessGone runs `agentmesh args` under a helper harness and, once ready
 // returns (the command is running), closes the helper. It returns the helper
 // after the command recorded its exit code.
 func harnessGone(t *testing.T, args []string, ready func(h *helper)) *helper {
@@ -876,7 +876,7 @@ func TestExitCodeTable(t *testing.T) {
 		s := cell(t)
 		p := startProc(t, home, waitArgs(s.Session, "-timeout", "5s", "-profile", "nosuch")...)
 		expectExit(t, "wait -profile nosuch", p, 2, 10*time.Second)
-		if !strings.Contains(p.errb.String(), "agentbus2:") || p.out.String() != "" {
+		if !strings.Contains(p.errb.String(), "agentmesh:") || p.out.String() != "" {
 			t.Fatalf("stdout %q, stderr %q", p.out.String(), p.errb.String())
 		}
 		// No -session and no state file for this harness (host C has none).
@@ -930,7 +930,7 @@ func TestExitCodeTable(t *testing.T) {
 		s := cell(t)
 		p := startProc(t, home, append(watchArgs(s.Session), "-profile", "nosuch")...)
 		expectExit(t, "watch -profile nosuch", p, 2, 10*time.Second)
-		if !strings.Contains(p.errb.String(), "agentbus2:") || p.out.String() != "" {
+		if !strings.Contains(p.errb.String(), "agentmesh:") || p.out.String() != "" {
 			t.Fatalf("stdout %q, stderr %q", p.out.String(), p.errb.String())
 		}
 	})

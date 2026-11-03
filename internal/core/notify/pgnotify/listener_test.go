@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core/notify"
+	"github.com/ericfitz/agentmesh/internal/core/notify"
 )
 
 type event struct {
@@ -26,7 +26,7 @@ type fakeConn struct {
 	listens []string
 }
 
-func newFakeConn() *fakeConn { return &fakeConn{channel: "agentbus2_x", events: make(chan event, 16)} }
+func newFakeConn() *fakeConn { return &fakeConn{channel: "agentmesh_x", events: make(chan event, 16)} }
 
 func (f *fakeConn) Channel(context.Context) (string, error) { return f.channel, nil }
 func (f *fakeConn) Listen(_ context.Context, ch string) error {
@@ -176,7 +176,7 @@ func TestListenerPublishesParsedHints(t *testing.T) {
 	if h := next(t, hints); h != (notify.Hint{ChannelID: 7, Seq: 42}) {
 		t.Fatalf("hint = %+v", h)
 	}
-	if len(c.listens) != 1 || c.listens[0] != "agentbus2_x" {
+	if len(c.listens) != 1 || c.listens[0] != "agentmesh_x" {
 		t.Fatalf("listens = %v", c.listens)
 	}
 }

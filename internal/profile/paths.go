@@ -8,37 +8,37 @@ import (
 	"path/filepath"
 )
 
-// ConfigDir is $AGENTBUS2_CONFIG_DIR, else $XDG_CONFIG_HOME/agentbus2, else
-// $HOME/.config/agentbus2. HOME comes from environ, then os.UserHomeDir; never
+// ConfigDir is $AGENTMESH_CONFIG_DIR, else $XDG_CONFIG_HOME/agentmesh, else
+// $HOME/.config/agentmesh. HOME comes from environ, then os.UserHomeDir; never
 // os.UserConfigDir, which on macOS is ~/Library/Application Support.
 func ConfigDir(environ []string) (string, error) {
-	if d, ok := Getenv(environ, "AGENTBUS2_CONFIG_DIR"); ok {
+	if d, ok := Getenv(environ, "AGENTMESH_CONFIG_DIR"); ok {
 		return d, nil
 	}
 	if d, ok := Getenv(environ, "XDG_CONFIG_HOME"); ok {
-		return filepath.Join(d, "agentbus2"), nil
+		return filepath.Join(d, "agentmesh"), nil
 	}
 	home, err := homeDir(environ)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".config", "agentbus2"), nil
+	return filepath.Join(home, ".config", "agentmesh"), nil
 }
 
-// DataDir is $AGENTBUS2_DATA_DIR, else $XDG_DATA_HOME/agentbus2, else
-// $HOME/.local/share/agentbus2.
+// DataDir is $AGENTMESH_DATA_DIR, else $XDG_DATA_HOME/agentmesh, else
+// $HOME/.local/share/agentmesh.
 func DataDir(environ []string) (string, error) {
-	if d, ok := Getenv(environ, "AGENTBUS2_DATA_DIR"); ok {
+	if d, ok := Getenv(environ, "AGENTMESH_DATA_DIR"); ok {
 		return d, nil
 	}
 	if d, ok := Getenv(environ, "XDG_DATA_HOME"); ok {
-		return filepath.Join(d, "agentbus2"), nil
+		return filepath.Join(d, "agentmesh"), nil
 	}
 	home, err := homeDir(environ)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, ".local", "share", "agentbus2"), nil
+	return filepath.Join(home, ".local", "share", "agentmesh"), nil
 }
 
 func homeDir(environ []string) (string, error) {

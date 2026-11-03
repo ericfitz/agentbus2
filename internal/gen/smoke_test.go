@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // smokeStub implements WellKnown only; the nil embedded interface panics on any other call.

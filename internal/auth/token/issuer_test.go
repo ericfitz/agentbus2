@@ -13,8 +13,8 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ericfitz/agentbus2/internal/auth/assertion"
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/assertion"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
 )
 
 const issURL = "https://bus.example"
@@ -283,7 +283,7 @@ func TestMintAccessTokenProfile(t *testing.T) {
 	if c["iat"] == nil || c["exp"] == nil {
 		t.Errorf("iat/exp missing: %v", c)
 	}
-	if KindClaim != "agentbus2_kind" {
+	if KindClaim != "agentmesh_kind" {
 		t.Errorf("KindClaim = %q", KindClaim)
 	}
 	if _, _, err := i.Mint(context.Background(), MintInput{Identity: "x", Kind: "robot"}); err == nil {

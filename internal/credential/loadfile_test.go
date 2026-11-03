@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
 )
 
 // TestLoadFileFollowsSymlinkAndChecksMode: a Kubernetes-style secret mount is a

@@ -1,4 +1,4 @@
-// Command agentbus2 coordinates agents over a local MCP server and an API server.
+// Command agentmesh coordinates agents over a local MCP server and an API server.
 package main
 
 import (
@@ -8,8 +8,8 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ericfitz/agentbus2/internal/cli"
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
+	"github.com/ericfitz/agentmesh/internal/cli"
+	"github.com/ericfitz/agentmesh/internal/server/cmd"
 )
 
 const usage = cli.Usage

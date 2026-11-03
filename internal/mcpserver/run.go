@@ -12,10 +12,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ericfitz/agentbus2/internal/procs"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 // Run serves stdio until the harness closes the connection or a signal

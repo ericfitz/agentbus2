@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 func TestStatusReport(t *testing.T) {
@@ -32,7 +32,7 @@ func TestStatusReport(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("status: %d %q", code, errs)
 	}
-	for _, want := range []string{"profile: default (local, " + filepath.Join(e.DataDir, "agentbus2.sqlite") + ")", "identity: pat", "  " + s.DisplayName + " (pat) since ", "  general [ordinary]"} {
+	for _, want := range []string{"profile: default (local, " + filepath.Join(e.DataDir, "agentmesh.sqlite") + ")", "identity: pat", "  " + s.DisplayName + " (pat) since ", "  general [ordinary]"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("report lacks %q:\n%s", want, out)
 		}

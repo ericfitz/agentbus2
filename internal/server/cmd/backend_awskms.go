@@ -2,6 +2,6 @@
 
 package cmd
 
-import "github.com/ericfitz/agentbus2/internal/keyprovider/awskms"
+import "github.com/ericfitz/agentmesh/internal/keyprovider/awskms"
 
 func init() { keyBackends["awskms"] = awskms.New }

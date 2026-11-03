@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
 )
 
 // adminEnv makes the default profile's identity (pat) an administrator.
@@ -82,7 +82,7 @@ func TestScopesCommands(t *testing.T) {
 	if code != 0 || !strings.Contains(out, `"state": "done"`) {
 		t.Fatalf("done: %d %q %s", code, out, er)
 	}
-	if code, _, er := run("get", "nosuch"); code != 1 || !strings.Contains(er, "agentbus2: not_found:") {
+	if code, _, er := run("get", "nosuch"); code != 1 || !strings.Contains(er, "agentmesh: not_found:") {
 		t.Fatalf("get nosuch: %d %q", code, er)
 	}
 }
@@ -118,7 +118,7 @@ func TestIdentitiesCreateCommand(t *testing.T) {
 	if err := json.Unmarshal([]byte(out2), &again); err != nil || again.Created || again.EnrollmentToken == "" || again.EnrollmentToken == got.EnrollmentToken {
 		t.Fatalf("second create out %q: %+v %v (want created false and a new token)", out2, again, err)
 	}
-	if code, _, er := ids("create", "-scope", "nosuch", "agent2"); code != 1 || !strings.Contains(er, "agentbus2: not_found:") {
+	if code, _, er := ids("create", "-scope", "nosuch", "agent2"); code != 1 || !strings.Contains(er, "agentmesh: not_found:") {
 		t.Fatalf("unknown scope: %d %q", code, er)
 	}
 	for _, args := range [][]string{{"create"}, {"frob"}} {
@@ -168,7 +168,7 @@ func TestScopesAndIdentitiesNonAdmin(t *testing.T) {
 		{ids, []string{"create", "-scope", "job1", "agent1"}},
 	} {
 		code, out, er := tc.run(tc.args...)
-		if code != 1 || !strings.Contains(er, "agentbus2: forbidden:") || out != "" {
+		if code != 1 || !strings.Contains(er, "agentmesh: forbidden:") || out != "" {
 			t.Errorf("%v: exit %d out %q err %q, want exit 1 forbidden and no output", tc.args, code, out, er)
 		}
 	}

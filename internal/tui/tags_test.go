@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/core/rules"
+	"github.com/ericfitz/agentmesh/internal/core/rules"
 )
 
 // tagSets is the TUI identity's tag subscriptions.

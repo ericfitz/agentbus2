@@ -11,12 +11,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
 const startMs = 1_700_000_000_000
@@ -120,7 +120,7 @@ func (e extSigner) SignContext(_ context.Context, d []byte, o crypto.SignerOpts)
 
 func openSQLite(t *testing.T) store.Store {
 	t.Helper()
-	s, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "agentbus2.db"), sqlite.Options{})
+	s, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "agentmesh.db"), sqlite.Options{})
 	if err != nil {
 		t.Fatalf("sqlite.Open: %v", err)
 	}
@@ -392,7 +392,7 @@ func TestEnsureActiveProviderMismatch(t *testing.T) {
 	ext := svcOver(t, s.Store, clk, &fakeProvider{name: "awskms"})
 	_, created, err := ext.EnsureActive(ctx)
 	wantCode(t, err, bus.CodeConflict)
-	wantText(t, err, "active signing key "+row.KID+" is provider store, configured provider is awskms: run agentbus2 server admin signing-key rotate with the new configuration")
+	wantText(t, err, "active signing key "+row.KID+" is provider store, configured provider is awskms: run agentmesh server admin signing-key rotate with the new configuration")
 	if created {
 		t.Fatal("created")
 	}

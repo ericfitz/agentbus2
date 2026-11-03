@@ -82,7 +82,7 @@ type InviteFailure struct{ User, Code string }
 
 // PostInput is a message to post. Section is mrkdwn, Context the tag chips,
 // Fallback the plain notification text; Seq goes into the message metadata
-// {"event_type": "agentbus2_message", "event_payload": {"seq": N}}.
+// {"event_type": "agentmesh_message", "event_payload": {"seq": N}}.
 type PostInput struct {
 	Channel, Fallback, Section string
 	Context                    []string

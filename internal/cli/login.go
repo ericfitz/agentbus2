@@ -7,11 +7,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
-// RunLogin is `agentbus2 login [-profile P] [-identity I]` (Milestone 6
+// RunLogin is `agentmesh login [-profile P] [-identity I]` (Milestone 6
 // choice 14): discovery, assertion, token exchange, cache. It always
 // exchanges, so it proves the credential works and warms the cache the hooks
 // and one-shot commands read. With -human it runs the browser sign-in of a
@@ -26,11 +26,11 @@ func RunLogin(ctx context.Context, args []string, environ []string, stdin io.Rea
 		return parseExit(err)
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 login: unexpected argument %q\n", fs.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "agentmesh login: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
 	if *human && o.Identity != "" {
-		_, _ = fmt.Fprintln(stderr, "agentbus2 login: -identity does not apply with -human: the identity comes from sign-in")
+		_, _ = fmt.Fprintln(stderr, "agentmesh login: -identity does not apply with -human: the identity comes from sign-in")
 		return 2
 	}
 	// Check the mode before resolving the identity, so a local profile gets the
@@ -41,7 +41,7 @@ func RunLogin(ctx context.Context, args []string, environ []string, stdin io.Rea
 		return 2
 	}
 	if sel.Profile.Mode != profile.ModeServer {
-		_, _ = fmt.Fprintln(stderr, "agentbus2: login applies to server profiles only")
+		_, _ = fmt.Fprintln(stderr, "agentmesh: login applies to server profiles only")
 		return 2
 	}
 	if *human {
@@ -70,12 +70,12 @@ func RunLogin(ctx context.Context, args []string, environ []string, stdin io.Rea
 // prints who signed in. The profile has been selected and is a server profile.
 func loginHuman(ctx context.Context, o client.Options, p profile.Profile, stdout, stderr io.Writer) int {
 	if p.OIDC == nil {
-		_, _ = fmt.Fprintf(stderr, "agentbus2: login -human needs an oidc setting in profile %q: on a server profile a human signs in through the corporate provider\n", p.Name)
+		_, _ = fmt.Fprintf(stderr, "agentmesh: login -human needs an oidc setting in profile %q: on a server profile a human signs in through the corporate provider\n", p.Name)
 		return 2
 	}
 	o.HumanSignIn, o.HumanDeferSignIn = true, true
 	o.HumanOpenBrowser = testOpenBrowser
-	o.HumanAnnounce = func(u string) { _, _ = fmt.Fprintf(stderr, "agentbus2 login: sign in at %s\n", u) }
+	o.HumanAnnounce = func(u string) { _, _ = fmt.Fprintf(stderr, "agentmesh login: sign in at %s\n", u) }
 	c, code := open(ctx, o, stderr)
 	if c == nil {
 		return code

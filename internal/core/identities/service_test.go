@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/signingkeys"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
 const startMs = 1_700_000_000_000
@@ -44,7 +44,7 @@ func (c *clock) advance(d time.Duration) {
 
 func newSvc(t *testing.T, mod func(*core.Config)) (Service, *clock) {
 	t.Helper()
-	s, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "agentbus2.db"), sqlite.Options{})
+	s, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "agentmesh.db"), sqlite.Options{})
 	if err != nil {
 		t.Fatalf("sqlite.Open: %v", err)
 	}
@@ -951,7 +951,7 @@ func (c *conflictStore) Tx(ctx context.Context, fn func(context.Context, store.T
 // never faulted).
 func newConflictSvc(t *testing.T) (loser, winner Service, cs *conflictStore) {
 	t.Helper()
-	raw, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "agentbus2.db"), sqlite.Options{})
+	raw, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "agentmesh.db"), sqlite.Options{})
 	if err != nil {
 		t.Fatalf("sqlite.Open: %v", err)
 	}

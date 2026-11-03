@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // The users and admins reference lists are new in v2 (federated identity spec

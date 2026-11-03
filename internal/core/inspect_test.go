@@ -16,9 +16,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
 // stubInspector is a scripted Inspector that records its requests.
@@ -56,7 +56,7 @@ func replyWith(body string) func(context.Context, InspectRequest) ([]byte, error
 // the returned buffer.
 func newInspectCore(t *testing.T, mod func(*Config), in Inspector) (*Core, *testClock, *bytes.Buffer) {
 	t.Helper()
-	s, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "agentbus2.db"), sqlite.Options{})
+	s, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "agentmesh.db"), sqlite.Options{})
 	if err != nil {
 		t.Fatalf("sqlite.Open: %v", err)
 	}
@@ -479,7 +479,7 @@ func TestRunInspectedFailClosed(t *testing.T) {
 				t.Error("an inspector failure was charged (open note 2)")
 			}
 			n, ok := inspectionNotice(t, c)
-			wantMsg := fmt.Sprintf("agentbus2 pid %d: write inspection failing (%s); inspection_on_failure=closed", os.Getpid(), tc.class)
+			wantMsg := fmt.Sprintf("agentmesh pid %d: write inspection failing (%s); inspection_on_failure=closed", os.Getpid(), tc.class)
 			if !ok || n.Message != wantMsg || n.SetAt != startMs {
 				t.Errorf("notice = %+v (set %v), want message %q", n, ok, wantMsg)
 			}

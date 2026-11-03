@@ -5,10 +5,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/search"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/search"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlstore"
 )
 
 func pats(ps ...string) []ab2store.TagPattern {

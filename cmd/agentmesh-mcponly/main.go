@@ -1,4 +1,4 @@
-// Command agentbus2-mcponly is the MCP-only client: the stdio MCP server and
+// Command agentmesh-mcponly is the MCP-only client: the stdio MCP server and
 // `register`, with no local mode, no TUI and no server. The commands are in
 // internal/mcpcli.
 package main
@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/ericfitz/agentbus2/internal/mcpcli"
+	"github.com/ericfitz/agentmesh/internal/mcpcli"
 )
 
 func main() {

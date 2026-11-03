@@ -3,7 +3,7 @@
 ## What to back up
 
 - The database. It holds all data and the server's signing keys (the `signing_keys` rows, in clear for the Store-row provider).
-- The configuration file, if you use one, and the values of any `AGENTBUS2_SERVER_*` variables.
+- The configuration file, if you use one, and the values of any `AGENTMESH_SERVER_*` variables.
 
 A backup contains the signing keys in clear, so it is protected like the database itself (see `deploy.md`): whoever can read it can mint a token for any identity.
 
@@ -12,16 +12,16 @@ A backup contains the signing keys in clear, so it is protected like the databas
 Stop the server, or use SQLite's online backup. The file is in WAL mode, so copying the database file alone while the server runs is not a consistent backup (committed data can still be in the `-wal` file).
 
 ```sh
-sqlite3 /var/lib/agentbus2/agentbus2.db ".backup /backups/agentbus2.db"
-chmod 600 /backups/agentbus2.db
+sqlite3 /var/lib/agentmesh/agentmesh.db ".backup /backups/agentmesh.db"
+chmod 600 /backups/agentmesh.db
 ```
 
-`.backup` writes the copy with the process's umask (mode 0644 under a default umask), so set the mode yourself; a backup that others can read or write is refused, like a database that others can read or write, when `agentbus2 server` or `agentbus2 server admin` opens it. The copy opens as a database: `agentbus2 server admin -sqlite /backups/agentbus2.db enrollment list` exited 0.
+`.backup` writes the copy with the process's umask (mode 0644 under a default umask), so set the mode yourself; a backup that others can read or write is refused, like a database that others can read or write, when `agentmesh server` or `agentmesh server admin` opens it. The copy opens as a database: `agentmesh server admin -sqlite /backups/agentmesh.db enrollment list` exited 0.
 
 ## Postgres
 
 ```sh
-pg_dump --schema=public "$DSN" > agentbus2.sql
+pg_dump --schema=public "$DSN" > agentmesh.sql
 ```
 
 `--schema` names the schema the DSN's `search_path` selects. Against the compose database the tables (`signing_keys` among them) are in `public`, and `pg_dump --schema=public` completed with exit 0 and contained `CREATE TABLE public.signing_keys`. Check `\dt` if your role or DSN sets another search path. Restrict the dump's mode (`umask 077` before running).

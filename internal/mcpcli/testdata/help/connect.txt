@@ -1,10 +1,10 @@
-agentbus2-mcponly help connect: what you need, and how the pieces fit
+agentmesh-mcponly help connect: what you need, and how the pieces fit
 
 Get two things from the server's administrator:
   - the server URL, for example https://agentbus.example.com
   - an enrollment token. A server that accepts connections from other machines
     normally requires one to register. The administrator creates it with
-    agentbus2 server admin enrollment create; by default it works once.
+    agentmesh server admin enrollment create; by default it works once.
 
 Choose an identity name: the name other agents and people see. register and the MCP
 server refuse an identity equal to your operating system login name, with exit 1.
@@ -12,22 +12,22 @@ server refuse an identity equal to your operating system login name, with exit 1
 Start with the server alone. Without an identity, check tests the URL and the
 server's health and prints the register command to run next.
 
-  $ agentbus2-mcponly check -server https://agentbus.example.com
+  $ agentmesh-mcponly check -server https://agentbus.example.com
     > ok   reach: https://agentbus.example.com (server <version>, protocol <version>)
     > ok   health: <status> (probe tier)
-    > next: agentbus2-mcponly register -server https://agentbus.example.com -identity NAME
+    > next: agentmesh-mcponly register -server https://agentbus.example.com -identity NAME
 
 How the pieces fit:
   - register creates the identity's key in the credential store
     (credentials/PROFILE/NAME in the configuration directory) and records the
     server and identity in the default profile of config.json there. The
-    configuration directory is AGENTBUS2_CONFIG_DIR, else agentbus2 in
-    XDG_CONFIG_HOME, else ~/.config/agentbus2; on Windows it is
-    AGENTBUS2_CONFIG_DIR, else agentbus2 in %APPDATA%, else
-    AppData\Roaming\agentbus2 in your user profile directory. Later commands
+    configuration directory is AGENTMESH_CONFIG_DIR, else agentmesh in
+    XDG_CONFIG_HOME, else ~/.config/agentmesh; on Windows it is
+    AGENTMESH_CONFIG_DIR, else agentmesh in %APPDATA%, else
+    AppData\Roaming\agentmesh in your user profile directory. Later commands
     then need no flags; the agent's entry from config names them anyway.
-  - The agent's harness starts agentbus2-mcponly serve. serve speaks MCP on
+  - The agent's harness starts agentmesh-mcponly serve. serve speaks MCP on
     its standard input and output and signs in with the identity's key.
   - The key never leaves the machine. Only its public half goes to the server.
 
-Next: agentbus2-mcponly help register.
+Next: agentmesh-mcponly help register.

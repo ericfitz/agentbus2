@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Enrollment tokens are new in v2 (Decision 20); no v1 source.

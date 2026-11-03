@@ -1,6 +1,6 @@
 HANDOFF.md
-/agentbus2
-/agentbus2-mcponly
+/agentmesh
+/agentmesh-mcponly
 .local/
 /dist/
 .worktrees/

@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
 )
 
 // fakeBridgeBus answers CreateBridge from a canned result and records the
@@ -95,7 +95,7 @@ func TestBridgesCommandsUnconfigured(t *testing.T) {
 		{"list"}, {"get", "general"}, {"create", "general"}, {"create", "-slack-name", "x", "general"}, {"remove", "general"},
 	} {
 		code, _, er := run(args...)
-		if code != 1 || !strings.Contains(er, "agentbus2: unavailable: the Slack bridge is not configured") {
+		if code != 1 || !strings.Contains(er, "agentmesh: unavailable: the Slack bridge is not configured") {
 			t.Fatalf("%v: %d %q", args, code, er)
 		}
 	}

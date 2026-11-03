@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/tui"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/tui"
 )
 
 // pinTUI pins the TUI's window size and the host name (macmini) for the test
@@ -216,7 +216,7 @@ func TestRunTUIServerProfile(t *testing.T) {
 	t.Cleanup(func() { _ = sam.Close() })
 
 	r := startTUI(t, e, "-profile", "lab")
-	driveSendAs(t, r, sam, "eric@corp.example", bus.IdentityHuman, func() string { return "agentbus2 tui: sign in at " + hs.lastURL() + "\n" })
+	driveSendAs(t, r, sam, "eric@corp.example", bus.IdentityHuman, func() string { return "agentmesh tui: sign in at " + hs.lastURL() + "\n" })
 	if hs.browser.opened.Load() != 1 {
 		t.Errorf("%d browser opens, want 1", hs.browser.opened.Load())
 	}
@@ -290,7 +290,7 @@ func TestRunTUIWarnsOnSharedIdentity(t *testing.T) {
 	}
 	r := startTUI(t, e, "-identity", "eric")
 	tuiSessionUp(t, other.Bus, "eric/macmini")
-	want := "agentbus2 tui: identity eric has 1 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)\n"
+	want := "agentmesh tui: identity eric has 1 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)\n"
 	if got := r.stderr.String(); got != want {
 		t.Fatalf("stderr %q, want %q", got, want)
 	}

@@ -7,10 +7,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/embed"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/embed"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
 // embeddedSeqs lists the seqs holding an embedding under model.

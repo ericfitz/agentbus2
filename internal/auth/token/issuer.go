@@ -21,7 +21,7 @@ import (
 	"github.com/go-jose/go-jose/v4/cryptosigner"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
 )
 
 // Leeway is the clock skew tolerated on every claim check (Milestone 5 choice 5).
@@ -267,7 +267,7 @@ const (
 )
 
 // KindClaim is the private claim naming the kind of the bearer's identity.
-const KindClaim = "agentbus2_kind"
+const KindClaim = "agentmesh_kind"
 
 // MintInput is what Mint needs. Lifetime 0 means the issuer's lifetime;
 // ClientID "" means Identity.
@@ -277,7 +277,7 @@ type MintInput struct {
 }
 
 // Mint issues an RFC 9068 access token: typ at+jwt, iss = aud = URL,
-// sub = identity, client_id, jti, iat, exp and the agentbus2_kind claim.
+// sub = identity, client_id, jti, iat, exp and the agentmesh_kind claim.
 func (i *Issuer) Mint(ctx context.Context, in MintInput) (string, time.Time, error) {
 	if in.Identity == "" {
 		return "", time.Time{}, errors.New("token: identity is required")
@@ -327,7 +327,7 @@ func (i *Issuer) Mint(ctx context.Context, in MintInput) (string, time.Time, err
 	}
 	extra := struct {
 		ClientID string `json:"client_id"`
-		Kind     string `json:"agentbus2_kind"`
+		Kind     string `json:"agentmesh_kind"`
 	}{clientID, in.Kind}
 	raw, err := jwt.Signed(signer).Claims(c).Claims(extra).Serialize()
 	if err != nil {

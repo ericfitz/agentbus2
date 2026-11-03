@@ -16,7 +16,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
 )
 
 // Key is one signing key a provider names: the public half, its thumbprint

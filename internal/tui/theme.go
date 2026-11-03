@@ -50,7 +50,7 @@ func LoadTheme(s Settings, warn io.Writer) Theme {
 	sel, ok := s.FindTheme(name)
 	if !ok {
 		if name != def.Name {
-			_, _ = fmt.Fprintf(warn, "agentbus2 tui: theme %q is not in themes; using %s\n", s.Theme, def.Name)
+			_, _ = fmt.Fprintf(warn, "agentmesh tui: theme %q is not in themes; using %s\n", s.Theme, def.Name)
 		}
 		sel = def
 	}
@@ -64,7 +64,7 @@ func LoadTheme(s Settings, warn io.Writer) Theme {
 		if value == "" {
 			value = defaults[key]
 		} else if _, err := ParseColor(value); err != nil {
-			_, _ = fmt.Fprintf(warn, "agentbus2 tui: theme %q %s=%q is not a color (%v); accepted: %s; using %s\n", sel.Name, key, kv[1], err, ColorForms, defaults[key])
+			_, _ = fmt.Fprintf(warn, "agentmesh tui: theme %q %s=%q is not a color (%v); accepted: %s; using %s\n", sel.Name, key, kv[1], err, ColorForms, defaults[key])
 			value = defaults[key]
 		}
 		c, _ := ParseColor(value) // defaults and validated values both parse

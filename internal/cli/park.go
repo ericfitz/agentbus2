@@ -8,13 +8,13 @@ import (
 	"io/fs"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
-// RunPark is `agentbus2 park [-session ID]` (decision 18, v1 ADR 0025): it
+// RunPark is `agentmesh park [-session ID]` (decision 18, v1 ADR 0025): it
 // marks the session parked in its state file, so that nothing wakes it: wait
-// and watch ignore wakes and the Stop hook stays silent. agentbus2 has no
+// and watch ignore wakes and the Stop hook stays silent. agentmesh has no
 // direct messages, so no message class still wakes it; an unpark does (see
 // RunUnpark). Parking a parked session succeeds. Exit 0 on success (a JSON
 // document on stdout), 2 when no session is found.
@@ -26,7 +26,7 @@ func RunPark(ctx context.Context, args []string, environ []string, stdin io.Read
 		return parseExit(err)
 	}
 	if flags.NArg() != 0 {
-		_, _ = fmt.Fprintln(stderr, "agentbus2 park: unexpected argument", flags.Arg(0))
+		_, _ = fmt.Fprintln(stderr, "agentmesh park: unexpected argument", flags.Arg(0))
 		return 2
 	}
 	dataDir, err := profile.DataDir(environ)
@@ -36,7 +36,7 @@ func RunPark(ctx context.Context, args []string, environ []string, stdin io.Read
 	}
 	l, err := locateSession(dataDir, session, processTable, selfPID())
 	if err == nil && !l.FromFile {
-		err = fmt.Errorf("no state file for session %s; agentbus2 mcp writes it when the session registers", l.Session)
+		err = fmt.Errorf("no state file for session %s; agentmesh mcp writes it when the session registers", l.Session)
 	}
 	if err == nil {
 		err = sessionstate.SetParked(dataDir, l.Session, true)
@@ -52,7 +52,7 @@ func RunPark(ctx context.Context, args []string, environ []string, stdin io.Read
 	return 0
 }
 
-// RunUnpark is `agentbus2 unpark [-session ID]` (decision 18), the
+// RunUnpark is `agentmesh unpark [-session ID]` (decision 18), the
 // UserPromptSubmit hook: it clears the session's parked mark. It prints
 // nothing and always exits 0, falling open within hookBudget and leaving one
 // line in hook.log on a failure; a session with no state file is not a
@@ -71,7 +71,7 @@ func RunUnpark(ctx context.Context, args []string, environ []string, stdin io.Re
 		}
 		l, err := locateSession(dataDir, session, processTable, selfPID())
 		if errors.Is(err, errNoSession) || errors.Is(err, errHarnessGone) {
-			return hookResult{} // not an agentbus2 session: nothing to unpark, nothing to log
+			return hookResult{} // not an agentmesh session: nothing to unpark, nothing to log
 		}
 		if err != nil {
 			return hookResult{stage: "locate", err: err}

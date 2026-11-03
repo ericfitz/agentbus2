@@ -10,7 +10,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ericfitz/agentbus2/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
 )
 
 // Bearer authenticates a request by its Authorization: Bearer token (Decisions

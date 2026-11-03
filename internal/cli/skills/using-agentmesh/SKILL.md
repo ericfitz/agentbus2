@@ -1,13 +1,13 @@
 ---
-name: using-agentbus2
-description: Use when an Agentbus2 MCP server is available and you are starting a session, starting or finishing a task, hitting something that should work but does not, running parallel agents or subagents on one repo, handing work to a reviewer or a later session, or blocked on a question only the user can answer.
+name: using-agentmesh
+description: Use when an Agentmesh MCP server is available and you are starting a session, starting or finishing a task, hitting something that should work but does not, running parallel agents or subagents on one repo, handing work to a reviewer or a later session, or blocked on a question only the user can answer.
 ---
 
-# Using Agentbus2
+# Using Agentmesh
 
 ## Overview
 
-Agentbus2 is a message bus that coordinates agent sessions. It has chat
+Agentmesh is a message bus that coordinates agent sessions. It has chat
 channels (ordinary), memory channels (searchable, revisable) and task lists.
 Use it for what a transcript and `HANDOFF.md` cannot do: outlive your context
 window, reach other sessions, and be searched later.
@@ -56,7 +56,7 @@ and `send` to a missing channel fails with `not_found`. Create a channel
 right before its first `send` and `subscribe` to it; if `send` returns
 `not_found`, create it again and retry.
 
-### Agentbus2 memory or harness memory
+### Agentmesh memory or harness memory
 
 Your harness may have its own per-user memory (Claude Code's auto-memory
 in its per-project memory directory under `~/.claude`, or the equivalent in
@@ -265,8 +265,8 @@ deployment; `["deployment", "failed"]` only messages carrying both (AND);
 for OR. A tag subscription matches only messages on channels you may read.
 Matches from channels you are not subscribed to arrive through `receive`
 with `matched_tags` (the message's own tags, such as `area:aws`, not your
-pattern), from now on; `agentbus2 wait` wakes on them.
-Memories are never pushed to you: `receive`, `agentbus2 wait` and the Stop
+pattern), from now on; `agentmesh wait` wakes on them.
+Memories are never pushed to you: `receive`, `agentmesh wait` and the Stop
 hook ignore memory channels, tag matches included, so a tag subscription
 never brings a memory; find memories with `search` and read them with
 `get_memory`. Task lists carry no tags, so they never match there. Tag
@@ -290,7 +290,7 @@ and results page with the returned `next` cursor.
 
 Start this protocol on your own at the start of every session; do not wait to
 be asked. On Claude Code and Codex the SessionStart hook
-(`agentbus2 session-start-hook`) says so when the session begins, and the
+(`agentmesh session-start-hook`) says so when the session begins, and the
 MCP server's instructions say the same on every harness.
 
 1. `register`, optionally with a `hint` (a short label such as `reviewer`
@@ -370,7 +370,7 @@ one included.
 
 ## Waiting for messages
 
-Keep one background `agentbus2 wait` running for the whole session, so a
+Keep one background `agentmesh wait` running for the whole session, so a
 message sent while you are idle wakes you. Start it after your first
 `receive`. Before you end a turn, make sure one is running. Codex has no idle
 wake (it reads background shells only when the model asks), so on Codex skip
@@ -385,21 +385,21 @@ your whole context.
 
 **`wait_seconds` replaces a running wait.** `receive` with `wait_seconds`
 set long-polls for that many seconds when nothing is pending. That long poll
-is the same server-side wait `agentbus2 wait` uses, so it takes over your
-session's wait: the running `agentbus2 wait` exits 3. While a wait is armed,
+is the same server-side wait `agentmesh wait` uses, so it takes over your
+session's wait: the running `agentmesh wait` exits 3. While a wait is armed,
 leave `wait_seconds` off and let the wait wake you.
 
 **Claude Code, Grok and other harnesses except Codex: a background
-`agentbus2 wait`.** Run it with the Bash tool's `run_in_background`; no
+`agentmesh wait`.** Run it with the Bash tool's `run_in_background`; no
 timeout is needed:
 
 ```
-Bash(run_in_background: true): agentbus2 wait
+Bash(run_in_background: true): agentmesh wait
 ```
 
 It takes no filter and no `-as` flag: it finds your session from the harness
 it runs under (the session your MCP server opened), so call `register` first.
-`agentbus2 wait` blocks until a message you have not been handed yet exists
+`agentmesh wait` blocks until a message you have not been handed yet exists
 on your subscribed channels, prints one JSON line with the count and the
 channels, and exits 0. Memory channels never wake it. It
 carries no message content; call `receive` to read
@@ -417,33 +417,33 @@ session yet): report it, usually after calling `register`. When blocked on
 another agent or on a question only the user can answer, post what you are
 waiting for first.
 
-`agentbus2 watch` (one line per wake, never exits 0 or 1) is deprecated in
+`agentmesh watch` (one line per wake, never exits 0 or 1) is deprecated in
 favor of the background wait; do not start it.
 
-When you finish a turn, the `agentbus2 stop-hook` Stop hook checks the bus.
+When you finish a turn, the `agentmesh stop-hook` Stop hook checks the bus.
 If new messages are waiting, the harness keeps you working with an
 instruction to `receive`: do that, handle what concerns you, make sure a
-background `agentbus2 wait` is running (except on Codex), then stop. It fires
+background `agentmesh wait` is running (except on Codex), then stop. It fires
 at most once per turn, and it does not fire for a batch you already hold.
 
 ## Park
 
 Before ending a session with a handoff, set `idle` with `set_status` first,
-then run `agentbus2 park` as your last
-agentbus2 action, after the final send or memory write; your next prompt,
-`register`, or any agentbus2 tool call except `receive` unparks. While parked nothing wakes you: a running `agentbus2 wait` ignores wakes and
+then run `agentmesh park` as your last
+agentmesh action, after the final send or memory write; your next prompt,
+`register`, or any agentmesh tool call except `receive` unparks. While parked nothing wakes you: a running `agentmesh wait` ignores wakes and
 the Stop hook stays silent. There are no direct messages, so no message class
 overrides a park. Any of these unparks you: the user's next prompt (the
-`UserPromptSubmit` hook runs `agentbus2 unpark`), the `register` tool, any
-tool call other than `receive`, or an explicit `agentbus2 unpark`. A `receive`
+`UserPromptSubmit` hook runs `agentmesh unpark`), the `register` tool, any
+tool call other than `receive`, or an explicit `agentmesh unpark`. A `receive`
 alone does not unpark you, and your next `receive` catches up on everything
 that arrived meanwhile.
 
 `park` and `unpark` act on the harness's primary session (the first one you
 registered without a hint), not on a second session registered with a hint.
-Set `idle` before `agentbus2 park`, never after, because `set_status` unparks.
+Set `idle` before `agentmesh park`, never after, because `set_status` unparks.
 A `register` with a hint still unparks the primary one. Only the top-level
-session parks; a subagent never runs `agentbus2 park`, because `park` would
+session parks; a subagent never runs `agentmesh park`, because `park` would
 park the parent's session.
 
 ## Idempotency
@@ -475,7 +475,7 @@ A write refused with `inspection_rejected` was refused by the operator's content
 | Starting a deployment | Project channel | Project, target environment, expected duration, expected impact (downtime, migrations, user-visible changes) |
 | Deployment completed | Project channel | Environment, version or commit deployed, anything that differed from the plan; `reply_to` the start message |
 | Deployment failed | Project channel | Environment, what failed, current state (rolled back, partial, degraded), what would unblock; `reply_to` the start message |
-| Question only the user can answer, while running autonomously | The project channel, or a channel whose ACL names you and the human's identity | The question; then make sure a background `agentbus2 wait` is running (except on Codex) instead of stopping empty-handed |
+| Question only the user can answer, while running autonomously | The project channel, or a channel whose ACL names you and the human's identity | The question; then make sure a background `agentmesh wait` is running (except on Codex) instead of stopping empty-handed |
 | Verified a non-obvious fact about this repo | The project's memory channel | Fact, how you verified it, workaround if any |
 | Verified a non-obvious fact about a tool, harness, or machine | The shared memory channel | Same shape |
 | Cross-repo coordination with no single counterpart | `general` | Only when more than one repo is involved and you cannot name the agent to put in an ACL |
@@ -503,11 +503,11 @@ text. Pass `if_revision` (the revision you read) so an edit fails with
 
 A subagent is not on the bus unless you ask. On Claude Code, subagents share
 your MCP connection and act as you, under the same identity, until they
-`register` themselves. To put one on the bus, write "use agentbus2" (or
-"register with agentbus2") in its prompt. A subagent calls `register` with a
+`register` themselves. To put one on the bus, write "use agentmesh" (or
+"register with agentmesh") in its prompt. A subagent calls `register` with a
 `hint` (a slug of its role, made unique if you start several), passes the
-returned `session` on every call, does not call `set_status`, and does not arm `agentbus2 wait`; it is
-short-lived, so it uses `receive`, and it never runs `agentbus2 park` (only
+returned `session` on every call, does not call `set_status`, and does not arm `agentmesh wait`; it is
+short-lived, so it uses `receive`, and it never runs `agentmesh park` (only
 the top-level session parks; `park` would park yours). There is no `parent` argument: the hint is what tells its display name from yours, and a subagent that registers without one resumes your session instead of opening its own. On
 Claude Code a SubagentStart hook gives each subagent this instruction. When
 dispatching subagents that could hit the same wall, have each one post
@@ -536,7 +536,7 @@ has both.
 | Posting repo facts to the shared memory channel | Move them to the project's memory channel. The shared one is for what holds across every repo. |
 | Saving a repo fact as harness auto-memory | Post it to the project's memory channel. Harness memory holds only who the user is and their guidance. |
 | Re-deriving a known gotcha | `search` the memory channels first, with `mode: both`. |
-| Stopping with nothing delivered when blocked on a question | Post the question, finish everything that does not depend on it, then make sure a background `agentbus2 wait` is running (`run_in_background: true`; none on Codex) and `receive` when it wakes you. |
+| Stopping with nothing delivered when blocked on a question | Post the question, finish everything that does not depend on it, then make sure a background `agentmesh wait` is running (`run_in_background: true`; none on Codex) and `receive` when it wakes you. |
 | Forgetting the ack token | Unacked batches redeliver. Pass the last token as `ack` on the next `receive`. |
 | Passing `wait_seconds` while a wait is armed | It replaces the wait, which exits 3. Leave it off. |
 | Announcing a cross-repo change on your own project channel only | The other repo's agent is not subscribed to it. Make a channel whose ACL names you both, tell them its name, and post there at the start and again when it lands. |

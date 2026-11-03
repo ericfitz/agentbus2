@@ -13,9 +13,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core/access"
-	"github.com/ericfitz/agentbus2/internal/core/notify"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/core/access"
+	"github.com/ericfitz/agentmesh/internal/core/notify"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Embedder turns texts into vectors (Decision 51). The core normalizes the

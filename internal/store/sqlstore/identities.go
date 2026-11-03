@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Identities and keys are new in v2 (Decisions 14, 55, 57, 73); no v1 source.

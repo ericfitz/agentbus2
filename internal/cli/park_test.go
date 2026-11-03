@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 // parkSession opens a session for pat on general and writes its state file.
@@ -180,7 +180,7 @@ func TestInitListsUnparkHookForEveryHarness(t *testing.T) {
 		if err := Init(o, &out); err != nil {
 			t.Fatal(err)
 		}
-		if !strings.Contains(out.String(), "UserPromptSubmit hook: agentbus2 unpark") {
+		if !strings.Contains(out.String(), "UserPromptSubmit hook: agentmesh unpark") {
 			t.Errorf("%s dry run lacks the UserPromptSubmit hook:\n%s", h, out.String())
 		}
 	}

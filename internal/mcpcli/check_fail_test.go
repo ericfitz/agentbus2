@@ -84,7 +84,7 @@ func TestCheckFailSteps(t *testing.T) {
 		got := lines(out)
 		if code != 1 || len(got) != 2 || !strings.HasPrefix(got[0], "ok   reach: ") || !strings.HasPrefix(got[1], "FAIL health: ") ||
 			!strings.HasSuffix(got[1], "fix: ask the server's operator: its store does not answer") ||
-			strings.TrimSpace(errs) != "agentbus2-mcponly: check: health failed" {
+			strings.TrimSpace(errs) != "agentmesh-mcponly: check: health failed" {
 			t.Errorf("health: code %d, stdout %q, stderr %q", code, out, errs)
 		}
 	})
@@ -103,7 +103,7 @@ func TestCheckFailSteps(t *testing.T) {
 		got := lines(out)
 		if code != 1 || len(got) != 5 || got[3] != "ok   credential: credential_process true" ||
 			!strings.HasPrefix(got[4], "FAIL token: ") || !strings.Contains(got[4], "true") ||
-			strings.TrimSpace(errs) != "agentbus2-mcponly: check: token failed" {
+			strings.TrimSpace(errs) != "agentmesh-mcponly: check: token failed" {
 			t.Errorf("credential_process: code %d, stdout %q, stderr %q", code, out, errs)
 		}
 	})
@@ -122,7 +122,7 @@ func TestCheckFailSteps(t *testing.T) {
 		got := lines(out)
 		if code != 1 || len(got) != 5 || !strings.HasPrefix(got[4], "FAIL token: unavailable: the signing key is unavailable") ||
 			!strings.HasSuffix(got[4], "fix: retry later; the server is busy or its store is down") ||
-			strings.TrimSpace(errs) != "agentbus2-mcponly: check: token failed" {
+			strings.TrimSpace(errs) != "agentmesh-mcponly: check: token failed" {
 			t.Errorf("token unavailable: code %d, stdout %q, stderr %q", code, out, errs)
 		}
 	})
@@ -136,8 +136,8 @@ func TestCheckFailSteps(t *testing.T) {
 		code, out, errs := run([]string{"check", "-server", px, "-identity", "pat", "-credential", keyFile}, other)
 		got := lines(out)
 		if code != 1 || len(got) != 6 || !strings.HasPrefix(got[5], "FAIL access: the server answered at the probe tier, not the identity tier") ||
-			!strings.HasSuffix(got[5], "fix: agentbus2-mcponly help troubleshoot") ||
-			strings.TrimSpace(errs) != "agentbus2-mcponly: check: access failed" {
+			!strings.HasSuffix(got[5], "fix: agentmesh-mcponly help troubleshoot") ||
+			strings.TrimSpace(errs) != "agentmesh-mcponly: check: access failed" {
 			t.Errorf("access tier: code %d, stdout %q, stderr %q", code, out, errs)
 		}
 	})

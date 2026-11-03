@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
 )
 
 // procArgv returns the argv of the fake process in mode and sets its environment.

@@ -28,14 +28,14 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
 )
 
 const (
 	secretToken = "hvs.s3cr3t-token-do-not-print"
-	keyName     = "agentbus2"
+	keyName     = "agentmesh"
 )
 
 // tkey is one transit key of the fake: a type and its versions (index 0 is
@@ -951,7 +951,7 @@ func TestNewRefusesURI(t *testing.T) {
 			t.Errorf("New(%q): the error leaks a secret: %v", uri, err)
 		}
 	}
-	for _, uri := range []string{"hashivault://agentbus2", "hashivault://a", "hashivault://a.b-c_d", "hashivault://A1"} {
+	for _, uri := range []string{"hashivault://agentmesh", "hashivault://a", "hashivault://a.b-c_d", "hashivault://A1"} {
 		p, err := New(uri)
 		if err != nil || p == nil || p.Name() != "hashivault" {
 			t.Errorf("New(%q) = %v, %v", uri, p, err)

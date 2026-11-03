@@ -20,18 +20,18 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/mcpcli"
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/mcpcli"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
 )
 
-// runOnly runs agentbus2-mcponly to completion under home.
+// runOnly runs agentmesh-mcponly to completion under home.
 func runOnly(home string, args ...string) result {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, mcpOnlyBin, args...)
 	cmd.Env = environFor(home)
-	cmd.Dir = home // not the repository: its .local/agentbus2.json would select a profile
+	cmd.Dir = home // not the repository: its .local/agentmesh.json would select a profile
 	var o, e bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &o, &e
 	err := cmd.Run()
@@ -84,7 +84,7 @@ func callOnly(t *testing.T, cs *mcp.ClientSession, name string, args map[string]
 }
 
 // TestMCPOnly is the MCP-only client's exit (issue #12): the built
-// agentbus2-mcponly over TCP against the e2e server in enrollment mode. The
+// agentmesh-mcponly over TCP against the e2e server in enrollment mode. The
 // leaf names are pinned by scripts/m10-exit-checks.sh.
 func TestMCPOnly(t *testing.T) {
 	url := fx.serverURL()
@@ -93,7 +93,7 @@ func TestMCPOnly(t *testing.T) {
 	t.Run("1-check-reach", func(t *testing.T) {
 		r := runOnly(home, "check", "-server", url)
 		if r.code != 0 || !strings.Contains(r.stdout, "ok   reach: "+url) || !strings.Contains(r.stdout, "ok   health: ") ||
-			!strings.Contains(r.stdout, "next: agentbus2-mcponly register -server "+url+" -identity NAME") {
+			!strings.Contains(r.stdout, "next: agentmesh-mcponly register -server "+url+" -identity NAME") {
 			t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.err)
 		}
 	})
@@ -154,7 +154,7 @@ func TestMCPOnly(t *testing.T) {
 		if err := json.Unmarshal([]byte(strings.SplitN(r.stdout, "\n\n", 2)[0]), &doc); err != nil {
 			t.Fatalf("snippet is not JSON: %v\n%s", err, r.stdout)
 		}
-		e := doc.MCPServers["agentbus2"]
+		e := doc.MCPServers["agentmesh"]
 		// Ruling 24: the path as the OS reports it, symlinks not resolved (a
 		// Homebrew Cellar path would not survive an upgrade).
 		want := mcpOnlyBin
@@ -330,7 +330,7 @@ func writeFreshKey(t *testing.T, path string) {
 // server, each leaf in a fresh home, and requires the exit code and each `>`
 // line the text states. The leaf names are pinned by
 // scripts/m10-exit-checks.sh. The commands run with the home as their working
-// directory, so the repository's .local/agentbus2.json selects no profile.
+// directory, so the repository's .local/agentmesh.json selects no profile.
 func TestHelpExamples(t *testing.T) {
 	url := fx.serverURL()
 	for _, leaf := range []string{"overview", "connect", "register", "configure", "verify", "troubleshoot"} {
@@ -377,8 +377,8 @@ func TestHelpExamples(t *testing.T) {
 					freshToken() // a token registers once; every use of the file gets a new one
 				}
 				fields := strings.Fields(line)
-				if len(fields) < 2 || fields[0] != "agentbus2-mcponly" {
-					t.Fatalf("example %q does not start with agentbus2-mcponly", ex.line)
+				if len(fields) < 2 || fields[0] != "agentmesh-mcponly" {
+					t.Fatalf("example %q does not start with agentmesh-mcponly", ex.line)
 				}
 				r := runOnly(home, fields[1:]...)
 				if r.code != ex.exit {

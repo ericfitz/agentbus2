@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core"
 )
 
 func testRequest(content string) core.InspectRequest {

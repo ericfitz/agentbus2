@@ -8,10 +8,10 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/oidcclient"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/oidcclient"
 )
 
 // openServer wires the token source and the refreshing transport (Decisions
@@ -35,7 +35,7 @@ func openServer(ctx context.Context, o Options, r Resolved) (*Conn, error) {
 		if !r.Credentials.Exists(r.Identity) {
 			reg := o.RegisterCommand
 			if reg == "" {
-				reg = "agentbus2 register"
+				reg = "agentmesh register"
 			}
 			return nil, resolveErr(fmt.Errorf("no credential for %q in profile %q: run %s", r.Identity, p.Name, reg))
 		}

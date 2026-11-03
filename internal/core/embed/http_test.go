@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core"
 )
 
 func TestHTTPEmbedRequestAndValidation(t *testing.T) {

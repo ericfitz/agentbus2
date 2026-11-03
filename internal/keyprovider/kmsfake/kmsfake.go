@@ -13,7 +13,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
 )
 
 // DefaultName is the provider name New("") uses.

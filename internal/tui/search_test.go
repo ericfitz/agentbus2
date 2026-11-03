@@ -8,7 +8,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // searchSpyBus records the SearchInput and the History Before values of the

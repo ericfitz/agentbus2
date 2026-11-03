@@ -3,7 +3,7 @@ package tasks
 import (
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 func TestContentChanged(t *testing.T) {

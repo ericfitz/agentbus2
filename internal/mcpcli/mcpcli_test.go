@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 func run(args []string, environ []string) (code int, stdout, stderr string) {
@@ -23,7 +23,7 @@ func firstLine(s string) string { return strings.SplitN(s, "\n", 2)[0] }
 
 func TestMainDispatch(t *testing.T) {
 	code, out, errs := run([]string{"bogus"}, nil)
-	if code != 2 || out != "" || !strings.Contains(errs, `agentbus2-mcponly: unknown command "bogus"`) {
+	if code != 2 || out != "" || !strings.Contains(errs, `agentmesh-mcponly: unknown command "bogus"`) {
 		t.Errorf("bogus: code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	overview, _ := Help("")
@@ -43,7 +43,7 @@ func TestMainDispatch(t *testing.T) {
 		}
 		for _, bad := range []string{"bogus", "", "overview"} {
 			code, out, errs = run([]string{a, bad}, nil)
-			want := "agentbus2-mcponly help: unknown topic " + strconv.Quote(bad) + "; topics: connect, register, configure, verify, protocol, troubleshoot\n"
+			want := "agentmesh-mcponly help: unknown topic " + strconv.Quote(bad) + "; topics: connect, register, configure, verify, protocol, troubleshoot\n"
 			if code != 2 || out != "" || errs != want {
 				t.Errorf("%s %q: code %d, stdout %q, stderr %q", a, bad, code, out, errs)
 			}
@@ -84,7 +84,7 @@ func TestOnlyMCPCommands(t *testing.T) {
 }
 
 func TestServeOptions(t *testing.T) {
-	env := []string{"AGENTBUS2_SERVER=http://h:1", "AGENTBUS2_CREDENTIAL=k.pem"}
+	env := []string{"AGENTMESH_SERVER=http://h:1", "AGENTMESH_CREDENTIAL=k.pem"}
 	o, code := serveOptions(nil, env, &bytes.Buffer{})
 	if code != -1 {
 		t.Fatalf("code %d", code)
@@ -118,10 +118,10 @@ func TestServeIdentityGuard(t *testing.T) {
 	currentUser = func() (*user.User, error) { return &user.User{Username: "eric"}, nil }
 	t.Cleanup(func() { currentUser = prev })
 	dir := t.TempDir()
-	t.Chdir(dir) // no .local/agentbus2.json selects a profile
-	env := []string{"HOME=" + dir, "AGENTBUS2_CONFIG_DIR=" + dir, "AGENTBUS2_DATA_DIR=" + dir}
+	t.Chdir(dir) // no .local/agentmesh.json selects a profile
+	env := []string{"HOME=" + dir, "AGENTMESH_CONFIG_DIR=" + dir, "AGENTMESH_DATA_DIR=" + dir}
 	code, out, errs := run([]string{"serve", "-identity", "eric"}, env)
-	if code != 1 || out != "" || !strings.Contains(errs, "agentbus2-mcponly serve") {
+	if code != 1 || out != "" || !strings.Contains(errs, "agentmesh-mcponly serve") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
 	}
 }

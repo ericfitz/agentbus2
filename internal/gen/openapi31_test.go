@@ -14,8 +14,8 @@ import (
 	"github.com/getkin/kin-openapi/openapi3filter"
 	nethttpmiddleware "github.com/oapi-codegen/nethttp-middleware"
 
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/gen/spec"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/gen/spec"
 )
 
 func loadDoc(t *testing.T) *openapi3.T {
@@ -54,7 +54,7 @@ func TestDocumentIs31AndValidates(t *testing.T) {
 	if !names["bearerAuth"] || len(names) != 1 {
 		t.Fatalf("global security names: %v", names)
 	}
-	for _, p := range []string{"/.well-known/agentbus2", "/.well-known/oauth-authorization-server", "/.well-known/openid-configuration", "/v1/discover"} {
+	for _, p := range []string{"/.well-known/agentmesh", "/.well-known/oauth-authorization-server", "/.well-known/openid-configuration", "/v1/discover"} {
 		op := doc.Paths.Value(p).Get
 		if op.Security == nil || len(*op.Security) != 0 {
 			t.Fatalf("%s: security = %v, want an empty list", p, op.Security)
@@ -84,7 +84,7 @@ func lowerFirst(s string) string {
 
 func TestOperationTable(t *testing.T) {
 	want := map[string]string{
-		"wellKnown":                   "GET /.well-known/agentbus2",
+		"wellKnown":                   "GET /.well-known/agentmesh",
 		"openidConfiguration":         "GET /.well-known/openid-configuration",
 		"discover":                    "GET /v1/discover",
 		"openSession":                 "POST /v1/sessions",
@@ -340,7 +340,7 @@ func TestValidatorOnRealDocument(t *testing.T) {
 		t.Fatalf("no token: status %d called %d: %s", rec.Code, s.called-before, rec.Body)
 	}
 
-	for _, p := range []string{"/v1/discover", "/.well-known/agentbus2"} {
+	for _, p := range []string{"/v1/discover", "/.well-known/agentmesh"} {
 		before = s.called
 		if rec := do(t, h, "GET", p, "", nil); rec.Code != 200 || s.called != before+1 {
 			t.Fatalf("%s without token: status %d: %s", p, rec.Code, rec.Body)
@@ -453,7 +453,7 @@ func TestPathParametersDecodeOnce(t *testing.T) {
 
 func TestProblemRoundTripsAsJSON(t *testing.T) {
 	var p gen.Problem
-	in := `{"type":"urn:agentbus2:problem:replaced","title":"Conflict","status":409,"code":"replaced","retryable":false}`
+	in := `{"type":"urn:agentmesh:problem:replaced","title":"Conflict","status":409,"code":"replaced","retryable":false}`
 	if err := json.Unmarshal([]byte(in), &p); err != nil {
 		t.Fatal(err)
 	}

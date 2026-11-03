@@ -6,11 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/filelock"
-	"github.com/ericfitz/agentbus2/internal/procs"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/filelock"
+	"github.com/ericfitz/agentmesh/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 // The session registry and the state file (Decisions 41, 78, 79; Milestone 6

@@ -1,5 +1,5 @@
 // Package dbtest hands both database engines to the test suites. SQLite lives
-// in a temp file; Postgres comes from AGENTBUS2_TEST_POSTGRES_DSN or, when it
+// in a temp file; Postgres comes from AGENTMESH_TEST_POSTGRES_DSN or, when it
 // is unset or empty, from a testcontainers container started once per test
 // binary. Nothing here skips: an unreachable engine is a test failure.
 package dbtest
@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	PostgresDSNEnv = "AGENTBUS2_TEST_POSTGRES_DSN"
+	PostgresDSNEnv = "AGENTMESH_TEST_POSTGRES_DSN"
 	PostgresImage  = "cgr.dev/chainguard/postgres:latest@sha256:0926ac7262a2c1963179eb939cd5d610e1be3ecca90b4b5cad8db8df16fab87e"
 	pingTimeout    = 10 * time.Second
 )
@@ -62,7 +62,7 @@ func (e Engine) dsn(t testing.TB) (dsn, from string, err error) {
 		return "", "", err
 	}
 	if e.Name == "sqlite" {
-		return filepath.Join(t.TempDir(), "agentbus2.db"), "temp file", nil
+		return filepath.Join(t.TempDir(), "agentmesh.db"), "temp file", nil
 	}
 	return defaultPostgres.resolve(context.Background())
 }

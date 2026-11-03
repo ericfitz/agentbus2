@@ -8,7 +8,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 func TestLoadIconsEmojiIsDefaultAndByteIdentical(t *testing.T) {
@@ -110,7 +110,7 @@ func TestLoadIconsCustomOverridesSubset(t *testing.T) {
 	if n := strings.Count(warn.String(), "\n"); n != 2 {
 		t.Fatalf("want exactly two warning lines, got %d: %q", n, warn.String())
 	}
-	if !strings.Contains(warn.String(), "agentbus2 tui: icon_map ") {
+	if !strings.Contains(warn.String(), "agentmesh tui: icon_map ") {
 		t.Fatalf("warning prefix: %q", warn.String())
 	}
 }
@@ -132,7 +132,7 @@ func TestLoadIconsUnknownSetWarnsAndFallsBackToEmoji(t *testing.T) {
 	if n := strings.Count(warn.String(), "\n"); n != 1 {
 		t.Fatalf("want exactly one warning line, got %d: %q", n, warn.String())
 	}
-	if !strings.Contains(warn.String(), `"fancy"`) || !strings.HasPrefix(warn.String(), "agentbus2 tui: ") {
+	if !strings.Contains(warn.String(), `"fancy"`) || !strings.HasPrefix(warn.String(), "agentmesh tui: ") {
 		t.Fatalf("warning must name the bad value: %q", warn.String())
 	}
 	for k, p := range iconVars {

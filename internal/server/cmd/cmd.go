@@ -15,24 +15,24 @@ import (
 
 	"github.com/go-jose/go-jose/v4"
 
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/embed"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/core/inspect"
-	"github.com/ericfitz/agentbus2/internal/core/notify"
-	"github.com/ericfitz/agentbus2/internal/core/notify/pgnotify"
-	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/server"
-	"github.com/ericfitz/agentbus2/internal/server/config"
-	"github.com/ericfitz/agentbus2/internal/slackapi"
-	"github.com/ericfitz/agentbus2/internal/slackapi/slackgo"
-	"github.com/ericfitz/agentbus2/internal/slackbridge"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/embed"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/core/inspect"
+	"github.com/ericfitz/agentmesh/internal/core/notify"
+	"github.com/ericfitz/agentmesh/internal/core/notify/pgnotify"
+	"github.com/ericfitz/agentmesh/internal/core/signingkeys"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/server"
+	"github.com/ericfitz/agentmesh/internal/server/config"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/slackapi/slackgo"
+	"github.com/ericfitz/agentmesh/internal/slackbridge"
 )
 
-// Run is `agentbus2 server` (Decision 85): the configuration comes from the
-// -config file, the AGENTBUS2_SERVER_* variables in environ and the flags,
+// Run is `agentmesh server` (Decision 85): the configuration comes from the
+// -config file, the AGENTMESH_SERVER_* variables in environ and the flags,
 // and `server admin ...` dispatches to RunAdmin. Exit codes: 0 clean shutdown
 // or -h, 1 runtime error, 2 flag or configuration error. Ported from v1
 // main.go (run's subcommand dispatch, flag.ContinueOnError, parseExit).
@@ -58,14 +58,14 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		return RunAdmin(ctx, args[1:], environ, stdout, stderr)
 	}
 	var f flags
-	fs := flagSet("agentbus2 server", &f, true)
+	fs := flagSet("agentmesh server", &f, true)
 	var usage bytes.Buffer
 	fs.SetOutput(&usage)
 	if code, done := parseFlags(fs, args, &usage, stdout, stderr); done {
 		return code
 	}
 	fail := func(code int, format string, a ...any) int {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 server: "+format+"\n", a...)
+		_, _ = fmt.Fprintf(stderr, "agentmesh server: "+format+"\n", a...)
 		return code
 	}
 	if fs.NArg() > 0 {
@@ -217,7 +217,7 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 			Logger:           logger,
 		},
 		Ready: func(a net.Addr) {
-			_, _ = fmt.Fprintf(stdout, "agentbus2 server listening on %s (%s, registration %s, issuer %s, kid %s)\n",
+			_, _ = fmt.Fprintf(stdout, "agentmesh server listening on %s (%s, registration %s, issuer %s, kid %s)\n",
 				a, engine, mode, issuer.URL(), issuer.KID())
 		},
 	})

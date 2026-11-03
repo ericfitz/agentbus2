@@ -6,7 +6,7 @@ Order: the ADR 0016 commit lands first; then this plan, in a single commit seque
 
 ## Task 1: code and current docs (one commit)
 
-Mechanical substitution with a checked-in script, `scripts/rename-agentmesh.sh` (deleted again in the last commit of the sequence), run once from the repository root:
+Mechanical substitution with a one-shot script, `rename-agentmesh.sh` (run once from the repository root and not committed: after the commit, the alias line and ADR 0017 name agentbus2 on purpose, so a second run would rewrite them):
 
 - Case-preserving replacements, longest first: `AGENTBUS2` to `AGENTMESH`, `Agentbus2` to `Agentmesh`, `agentbus2` to `agentmesh`. A bare `agentbus` (v1) is never touched; the patterns all end in `2`.
 - Scope: every tracked file except `docs/superpowers/**`, `docs/adr/0001`-`0016`, `internal/gen/**` (regenerated) and `go.sum`.

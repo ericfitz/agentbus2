@@ -1,39 +1,39 @@
-# Deploying agentbus2 server
+# Deploying agentmesh server
 
 All settings are in `configuration.md`; admin commands are in `admin-bootstrap.md`.
 
 ## 1. One host over SQLite
 
 ```sh
-agentbus2 server -listen 127.0.0.1:8420 -sqlite /var/lib/agentbus2/agentbus2.db
+agentmesh server -listen 127.0.0.1:8420 -sqlite /var/lib/agentmesh/agentmesh.db
 ```
 
 There is no default port: `listen` is required, and the server exits 2 with `listen is required` without it. On a loopback address (or a `unix:<path>` socket, created mode 0600; on Windows it gets an owner-only ACL) registration defaults to `open` (Decision 20): an agent claims any free name with an unauthenticated `register`. Any other address defaults to `enrollment` (Decision 58, 72); `-registration open|enrollment` overrides either default.
 
-On start the server prints `generated signing key <kid>` (first start only) and `agentbus2 server listening on ...` with the engine, registration mode, issuer and key id. SIGINT or SIGTERM starts a shutdown that gives in-flight requests up to 60 seconds; a clean shutdown exits 0.
+On start the server prints `generated signing key <kid>` (first start only) and `agentmesh server listening on ...` with the engine, registration mode, issuer and key id. SIGINT or SIGTERM starts a shutdown that gives in-flight requests up to 60 seconds; a clean shutdown exits 0.
 
-The SQLite file is created with mode 0600. An existing file readable or writable by group or others is refused: `agentbus2 server` and `agentbus2 server admin` exit non-zero with an error that names the path and mode; fix it with `chmod 600`. (Local mode, which has no signing key, only warns.) The file runs in WAL mode, so `-wal` and `-shm` files sit next to it.
+The SQLite file is created with mode 0600. An existing file readable or writable by group or others is refused: `agentmesh server` and `agentmesh server admin` exit non-zero with an error that names the path and mode; fix it with `chmod 600`. (Local mode, which has no signing key, only warns.) The file runs in WAL mode, so `-wal` and `-shm` files sit next to it.
 
 Set `issuer` on every server that is not local. When it is unset the issuer is `http://<bound address>`, so a server bound to `0.0.0.0` tells clients `http://0.0.0.0:<port>`, and the server prints a notice saying so. Behind a TLS proxy set it to the public `https` URL (no path, no trailing slash).
 
 ## 2. The Docker image
 
 ```sh
-make docker-image          # docker build -t agentbus2:local .
-docker build --build-arg VERSION=2.0.0 -t agentbus2:2.0.0 .
+make docker-image          # docker build -t agentmesh:local .
+docker build --build-arg VERSION=2.0.0 -t agentmesh:2.0.0 .
 ```
 
-`make docker-image` builds with `VERSION=dev`; give a release build its version with `--build-arg VERSION=...` and use the tag as the version (the value is what `agentbus2 version` and `server_version` in `GET /v1/discover` report). The image is a static binary on a Chainguard `static` base (built with Chainguard `go`), entrypoint `/agentbus2 server`, runs as `nonroot` (uid and gid 65532), declares `VOLUME /data` (owned by 65532) and has no shell.
+`make docker-image` builds with `VERSION=dev`; give a release build its version with `--build-arg VERSION=...` and use the tag as the version (the value is what `agentmesh version` and `server_version` in `GET /v1/discover` report). The image is a static binary on a Chainguard `static` base (built with Chainguard `go`), entrypoint `/agentmesh server`, runs as `nonroot` (uid and gid 65532), declares `VOLUME /data` (owned by 65532) and has no shell.
 
 ```sh
-docker run -d --name agentbus2 -p 127.0.0.1:8420:8420 -v agentbus2-data:/data \
-  -e AGENTBUS2_SERVER_LISTEN=0.0.0.0:8420 \
-  -e AGENTBUS2_SERVER_SQLITE=/data/agentbus2.db \
-  -e AGENTBUS2_SERVER_ISSUER=https://agentbus2.example.com \
-  agentbus2:local
+docker run -d --name agentmesh -p 127.0.0.1:8420:8420 -v agentmesh-data:/data \
+  -e AGENTMESH_SERVER_LISTEN=0.0.0.0:8420 \
+  -e AGENTMESH_SERVER_SQLITE=/data/agentmesh.db \
+  -e AGENTMESH_SERVER_ISSUER=https://agentmesh.example.com \
+  agentmesh:local
 ```
 
-A container listens on `0.0.0.0`, which is not local, so registration defaults to `enrollment`; the `-registration` flag, passed as the container command, is the override (`agentbus2:local -registration open`). A named volume takes the ownership of `/data`; a bind-mounted data directory must be writable by uid 65532 (`chown 65532:65532 <dir>`). The container exits 2 with a message when no store or no `listen` is configured.
+A container listens on `0.0.0.0`, which is not local, so registration defaults to `enrollment`; the `-registration` flag, passed as the container command, is the override (`agentmesh:local -registration open`). A named volume takes the ownership of `/data`; a bind-mounted data directory must be writable by uid 65532 (`chown 65532:65532 <dir>`). The container exits 2 with a message when no store or no `listen` is configured.
 
 `docker stop` waits 10 seconds by default before killing; pass `--time 60` (compose: `stop_grace_period: 60s`) to leave the full drain.
 
@@ -44,15 +44,15 @@ The server signs its bearer tokens with a key set kept in the database (the `sig
 - read access to the database is equivalent to the administrator flag: anyone who can read it can mint a token for any identity. Protect the database, its backups and its volume like a private key;
 - there is no key file. Three settings control the set (`configuration.md`): `signing_key_uri` (unset keeps the key in the database), `signing_key_rotation_hours` (default 720; 0 turns the scheduled rotation off) and `signing_key_rotation_cooldown_seconds` (default 3600);
 - an external key needs a binary built with the backend's tag: `-tags awskms` for AWS KMS, `-tags gcpkms` for Google Cloud KMS, `-tags azurekms` for Azure Key Vault, `-tags hashivault` for HashiCorp Vault transit or OpenBao (`signing-keys.md`); the Docker image of this repository is built with all four tags (`ARG BUILD_TAGS` in its `Dockerfile`, `awskms,gcpkms,azurekms,hashivault`), so every backend works there without a rebuild; the release archives (the brew, scoop and winget installs) carry none, so build from source with `-tags` for a binary that needs one;
-- the server refuses to start (exit 1, `signing key: ...` naming `agentbus2 server admin signing-key rotate`) when the active key's provider is not the configured one, for example a database whose active key is a database row and a `signing_key_uri` that names an external key; the active key is never changed by a start;
+- the server refuses to start (exit 1, `signing key: ...` naming `agentmesh server admin signing-key rotate`) when the active key's provider is not the configured one, for example a database whose active key is a database row and a `signing_key_uri` that names an external key; the active key is never changed by a start;
 - a replica whose provider differs from the active key's cannot sign: it logs a warning and signs with the newest retiring key it can use, or refuses to mint (`temporarily_unavailable`) when none remains, while verification keeps working.
 
 ## 3. Postgres and two replicas
 
-`deploy/docker-compose.yml` runs Chainguard Postgres 18 (`cgr.dev/chainguard/postgres`, pinned by digest) and two replicas of the image, `agentbus2-a` (127.0.0.1:8420) and `agentbus2-b` (127.0.0.1:8421).
+`deploy/docker-compose.yml` runs Chainguard Postgres 18 (`cgr.dev/chainguard/postgres`, pinned by digest) and two replicas of the image, `agentmesh-a` (127.0.0.1:8420) and `agentmesh-b` (127.0.0.1:8421).
 
 ```sh
-cp deploy/example.env deploy/.env      # deploy/.env is git-ignored; set POSTGRES_PASSWORD and AGENTBUS2_ISSUER
+cp deploy/example.env deploy/.env      # deploy/.env is git-ignored; set POSTGRES_PASSWORD and AGENTMESH_ISSUER
 docker compose -f deploy/docker-compose.yml up -d
 ```
 
@@ -76,7 +76,7 @@ Per replica:
 - **Maintenance** runs on one replica at a time. The holder keeps the lock across ticks and releases it at shutdown. A holder that is silently partitioned keeps the lock until the server ends its session, which pauses maintenance on every replica: cleanup is delayed, and no new tick starts on two replicas at once. The lock is checked when a tick starts, so a tick already running when its holder loses the lock finishes the job in hand (the tick stops starting jobs half an interval in) and can overlap the next holder's first tick; every job is idempotent, so the overlap repeats work and loses nothing. To bound the pause, set TCP keepalives on the Postgres server side, `tcp_keepalives_idle = 60`, `tcp_keepalives_interval = 10` and `tcp_keepalives_count = 3`, in `postgresql.conf` (or the managed service's parameter group), or per connection in the DSN:
 
   ```
-  postgres://USER:PASSWORD@HOST:5432/agentbus2?options=-c%20tcp_keepalives_idle%3D60%20-c%20tcp_keepalives_interval%3D10%20-c%20tcp_keepalives_count%3D3
+  postgres://USER:PASSWORD@HOST:5432/agentmesh?options=-c%20tcp_keepalives_idle%3D60%20-c%20tcp_keepalives_interval%3D10%20-c%20tcp_keepalives_count%3D3
   ```
 
   pgx passes `options` to the server at session start. Checked against the compose Postgres with `psql` on that DSN: `SHOW tcp_keepalives_idle`, `..._interval` and `..._count` printed `60`, `10` and `3`, against `0` on a default connection; the server accepted the same DSN (`server admin -postgres ... enrollment list` exited 0).

@@ -9,7 +9,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
 )
 
 // The issuer's timing constants (signing-keys plan, Task 2).

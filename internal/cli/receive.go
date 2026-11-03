@@ -5,7 +5,7 @@ import (
 	"errors"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 type opGapOut struct {
@@ -24,7 +24,7 @@ type opReceiveOut struct {
 	Instruction string        `json:"instruction,omitempty"`
 }
 
-// RunReceive implements `agentbus2 receive`. Without -session it opens a
+// RunReceive implements `agentmesh receive`. Without -session it opens a
 // session with hint "cli", receives, acks with a second receive unless
 // -no-ack, and closes the session; with -session it touches nothing but that
 // session and acks only what -ack names.

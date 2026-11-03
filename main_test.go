@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 func TestRunVersion(t *testing.T) {
@@ -47,7 +47,7 @@ func TestRunRejectsUnknownAndEmpty(t *testing.T) {
 		if code := run(args, nil, &out, &errb); code != 2 {
 			t.Fatalf("%v: exit %d, want 2", args, code)
 		}
-		if out.Len() != 0 || !strings.Contains(errb.String(), "usage: agentbus2") {
+		if out.Len() != 0 || !strings.Contains(errb.String(), "usage: agentmesh") {
 			t.Fatalf("%v: stdout %q stderr %q", args, out.String(), errb.String())
 		}
 	}
@@ -79,10 +79,10 @@ func TestRunServerRejectsMissingFlags(t *testing.T) {
 }
 
 // TestSignalContextHelper is the child process of TestSecondSignalExits, not a
-// test of its own: it stands in for `agentbus2 server` draining after the
+// test of its own: it stands in for `agentmesh server` draining after the
 // first signal.
 func TestSignalContextHelper(t *testing.T) {
-	if os.Getenv("AGENTBUS2_TEST_SIGNAL_HELPER") != "1" {
+	if os.Getenv("AGENTMESH_TEST_SIGNAL_HELPER") != "1" {
 		t.Skip("child process of TestSecondSignalExits")
 	}
 	ctx := signalContext()
@@ -101,7 +101,7 @@ func TestSecondSignalExits(t *testing.T) {
 		t.Skip("SIGINT cannot be delivered to a child process on Windows")
 	}
 	child := exec.Command(os.Args[0], "-test.run=^TestSignalContextHelper$")
-	child.Env = append(os.Environ(), "AGENTBUS2_TEST_SIGNAL_HELPER=1")
+	child.Env = append(os.Environ(), "AGENTMESH_TEST_SIGNAL_HELPER=1")
 	stdout, err := child.StdoutPipe()
 	if err != nil {
 		t.Fatal(err)
@@ -177,7 +177,7 @@ func TestUsageListsEveryCommand(t *testing.T) {
 	}
 	for _, n := range names {
 		line, _, _ := strings.Cut(usage, "\n")
-		if !strings.Contains(strings.TrimSuffix(strings.TrimPrefix(line, "usage: agentbus2 <"), "> [flags]"), n) {
+		if !strings.Contains(strings.TrimSuffix(strings.TrimPrefix(line, "usage: agentmesh <"), "> [flags]"), n) {
 			t.Errorf("usage lacks %q", n)
 		}
 		var out, errb bytes.Buffer

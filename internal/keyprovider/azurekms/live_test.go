@@ -11,14 +11,14 @@ import (
 )
 
 // TestLive runs against a real Key Vault key. It is opt-in and never runs in
-// CI: set AGENTBUS2_LIVE_AZUREKMS_URI to an azurekms://VAULT-HOST/KEY URI for
+// CI: set AGENTMESH_LIVE_AZUREKMS_URI to an azurekms://VAULT-HOST/KEY URI for
 // an EC key on curve P-256 whose key operations include sign, with credentials
 // the Azure default chain finds (the key permissions get and sign). It is the
 // only test that runs sigstore's Azure signer, which builds its own credential.
 func TestLive(t *testing.T) {
-	uri := os.Getenv("AGENTBUS2_LIVE_AZUREKMS_URI")
+	uri := os.Getenv("AGENTMESH_LIVE_AZUREKMS_URI")
 	if uri == "" {
-		t.Skip("AGENTBUS2_LIVE_AZUREKMS_URI is not set")
+		t.Skip("AGENTMESH_LIVE_AZUREKMS_URI is not set")
 	}
 	p, err := New(uri)
 	if err != nil {
@@ -34,7 +34,7 @@ func TestLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	digest := sha256.Sum256([]byte("agentbus2 live test"))
+	digest := sha256.Sum256([]byte("agentmesh live test"))
 	sig, err := sg.SignContext(ctx, digest[:], crypto.SHA256)
 	if err != nil {
 		t.Fatal(err)

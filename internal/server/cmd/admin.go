@@ -9,19 +9,19 @@ import (
 	"io"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/core/signingkeys"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 const adminSubcommands = "users and admins (add, remove, list), reset-credential, create-identity, create-human, enrollment (create, list, revoke), signing-key (list, rotate)"
 
 const makeAdminReplaced = "make-admin was replaced by: admins add -identity NAME (admins remove -identity NAME)"
 
-const createIdentityUsage = `usage: agentbus2 server admin create-identity NAME [-scope S]
+const createIdentityUsage = `usage: agentmesh server admin create-identity NAME [-scope S]
 
 Creates a keyless row for an identity that will register a key later; in open
 mode any registrant may bind a key to a keyless name that is not an
@@ -50,18 +50,18 @@ type hostEnv struct {
 
 type adminAction func(context.Context, hostEnv, io.Writer) error
 
-// RunAdmin is `agentbus2 server admin`: host commands against the Store with
+// RunAdmin is `agentmesh server admin`: host commands against the Store with
 // no listener and no credential. Exit codes: 0 success or -h, 1 runtime or
 // service error, 2 flag, configuration or usage error. listen and registration
 // are never consulted. Ported from v1 main.go (run's subcommand dispatch,
 // parseExit).
 func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stderr io.Writer) int {
 	var f flags
-	fs := flagSet("agentbus2 server admin", &f, false)
+	fs := flagSet("agentmesh server admin", &f, false)
 	var usage bytes.Buffer
 	fs.SetOutput(&usage)
 	fs.Usage = func() {
-		_, _ = fmt.Fprintf(&usage, "usage: agentbus2 server admin [flags] SUBCOMMAND [args]\nsubcommands: %s\n", adminSubcommands)
+		_, _ = fmt.Fprintf(&usage, "usage: agentmesh server admin [flags] SUBCOMMAND [args]\nsubcommands: %s\n", adminSubcommands)
 		fs.PrintDefaults()
 	}
 	if code, done := parseFlags(fs, args, &usage, stdout, stderr); done {
@@ -69,7 +69,7 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 	}
 	rest := fs.Args()
 	if len(rest) == 0 {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin: a subcommand is required: %s\n", adminSubcommands)
+		_, _ = fmt.Fprintf(stderr, "agentmesh server admin: a subcommand is required: %s\n", adminSubcommands)
 		return 2
 	}
 	sub, subArgs := rest[0], rest[1:]
@@ -98,7 +98,7 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 	case "signing-key":
 		run, code, done = signingKeyCommand(subArgs, stdout, stderr)
 	default:
-		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin: unknown subcommand %q; subcommands: %s\n", sub, adminSubcommands)
+		_, _ = fmt.Fprintf(stderr, "agentmesh server admin: unknown subcommand %q; subcommands: %s\n", sub, adminSubcommands)
 		return 2
 	}
 	if done {
@@ -107,7 +107,7 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 
 	cfg, st, cc, err := openFromConfig(ctx, &f, fs, environ, stderr)
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "agentmesh server admin: %v\n", err)
 		var ce *configError
 		if errors.As(err, &ce) {
 			return 2
@@ -117,7 +117,7 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 	defer func() { _ = st.Close() }()
 	c, err := core.New(st, cc, core.Options{})
 	if err != nil {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "agentmesh server admin: %v\n", err)
 		return 1
 	}
 	env := hostEnv{
@@ -135,7 +135,7 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 		env.Issuers = append(env.Issuers, is.Name)
 	}
 	if err := run(ctx, env, stdout); err != nil {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 server admin %s: %v\n", sub, err)
+		_, _ = fmt.Fprintf(stderr, "agentmesh server admin %s: %v\n", sub, err)
 		var ce *configError
 		if errors.As(err, &ce) {
 			return 2
@@ -147,7 +147,7 @@ func RunAdmin(ctx context.Context, args []string, environ []string, stdout, stde
 
 // referenceCommand parses `users|admins add|remove|list`.
 func referenceCommand(list string, args []string, stdout, stderr io.Writer) (adminAction, int, bool) {
-	use := fmt.Sprintf("usage: agentbus2 server admin %s add|remove|list [-issuer NAME] [-email V | -group V | -subject V | -identity NAME]", list)
+	use := fmt.Sprintf("usage: agentmesh server admin %s add|remove|list [-issuer NAME] [-email V | -group V | -subject V | -identity NAME]", list)
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(stderr, use)
 		return nil, 2, true
@@ -227,7 +227,7 @@ func resetCredentialCommand(args []string, stdout, stderr io.Writer) (adminActio
 		return nil, code, true
 	}
 	if len(pos) != 1 {
-		_, _ = fmt.Fprintln(stderr, "usage: agentbus2 server admin reset-credential NAME")
+		_, _ = fmt.Fprintln(stderr, "usage: agentmesh server admin reset-credential NAME")
 		return nil, 2, true
 	}
 	name := pos[0]
@@ -288,7 +288,7 @@ func createHumanCommand(args []string, stdout, stderr io.Writer) (adminAction, i
 		return nil, code, true
 	}
 	if len(pos) != 1 {
-		_, _ = fmt.Fprintln(stderr, "usage: agentbus2 server admin create-human EMAIL")
+		_, _ = fmt.Fprintln(stderr, "usage: agentmesh server admin create-human EMAIL")
 		return nil, 2, true
 	}
 	email := pos[0]
@@ -308,7 +308,7 @@ func createHumanCommand(args []string, stdout, stderr io.Writer) (adminAction, i
 
 // enrollmentCommand parses `enrollment create|list|revoke`.
 func enrollmentCommand(args []string, stdout, stderr io.Writer) (adminAction, int, bool) {
-	const use = "usage: agentbus2 server admin enrollment create [-identity NAME] [-expires 24h] [-uses 1] | list | revoke ID"
+	const use = "usage: agentmesh server admin enrollment create [-identity NAME] [-expires 24h] [-uses 1] | list | revoke ID"
 	if len(args) == 0 {
 		_, _ = fmt.Fprintln(stderr, use)
 		return nil, 2, true
@@ -377,7 +377,7 @@ func enrollmentCommand(args []string, stdout, stderr io.Writer) (adminAction, in
 			return nil, code, true
 		}
 		if len(pos) != 1 {
-			_, _ = fmt.Fprintln(stderr, "usage: agentbus2 server admin enrollment revoke ID")
+			_, _ = fmt.Fprintln(stderr, "usage: agentmesh server admin enrollment revoke ID")
 			return nil, 2, true
 		}
 		id := pos[0]
@@ -403,7 +403,7 @@ func orAny(identity string) string {
 }
 
 func subFlags(name string) (*flag.FlagSet, *bytes.Buffer) {
-	fs := flag.NewFlagSet("agentbus2 server admin "+name, flag.ContinueOnError)
+	fs := flag.NewFlagSet("agentmesh server admin "+name, flag.ContinueOnError)
 	buf := &bytes.Buffer{}
 	fs.SetOutput(buf)
 	return fs, buf
@@ -437,7 +437,7 @@ func parseInterleaved(fs *flag.FlagSet, buf *bytes.Buffer, args []string, stdout
 	}
 }
 
-const signingKeyUsage = "usage: agentbus2 server admin signing-key list | rotate [-revoke-previous]"
+const signingKeyUsage = "usage: agentmesh server admin signing-key list | rotate [-revoke-previous]"
 
 // signingKeyCommand parses `signing-key list|rotate [-revoke-previous]`.
 //

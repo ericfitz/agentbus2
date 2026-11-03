@@ -5,8 +5,8 @@
 package identities
 
 import (
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
 )
 
 // Mode is the registration mode of a listener (Decisions 20, 72).

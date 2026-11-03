@@ -8,9 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/slackapi"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 func TestConfigWithDefaults(t *testing.T) {

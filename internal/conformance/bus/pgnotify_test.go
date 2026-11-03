@@ -7,11 +7,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core/notify"
-	"github.com/ericfitz/agentbus2/internal/core/notify/pgnotify"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/postgres"
+	"github.com/ericfitz/agentmesh/internal/core/notify"
+	"github.com/ericfitz/agentmesh/internal/core/notify/pgnotify"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/postgres"
 )
 
 // postgresEngine is the postgres entry of dbtest.Engines. The tests built on it
@@ -107,7 +107,7 @@ func TestPgnotifyNoHintFromAnotherSchema(t *testing.T) {
 func TestPgnotifyReconnects(t *testing.T) {
 	e := postgresEngine(t)
 	h, _, dsn := harnessOverDSN(t, e)
-	name := "agentbus2-listen-test-" + randHex8(t)
+	name := "agentmesh-listen-test-" + randHex8(t)
 	l := pgnotify.New(t.Context(), dsn, pgnotify.Options{MinBackoff: 50 * time.Millisecond, ApplicationName: name})
 	t.Cleanup(l.Close)
 	waitConnected(t, l, 3*time.Second)

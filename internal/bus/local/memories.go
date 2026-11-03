@@ -3,8 +3,8 @@ package local
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/memories"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/memories"
 )
 
 // GetMemory is memories.Service.Get as b's identity. The name differs from

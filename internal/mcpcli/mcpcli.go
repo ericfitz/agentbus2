@@ -9,14 +9,14 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 // Binary is the executable's name, the prefix of every message.
-const Binary = "agentbus2-mcponly"
+const Binary = "agentmesh-mcponly"
 
-const usageLine = "usage: agentbus2-mcponly <serve|register|check|config|help|version> [flags]"
+const usageLine = "usage: agentmesh-mcponly <serve|register|check|config|help|version> [flags]"
 
 // runFunc is the shape of every command.
 type runFunc func(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int
@@ -114,8 +114,8 @@ func parseExit(err error) int {
 	return 2
 }
 
-// fail prints err as "agentbus2-mcponly: <code>: <message>" for a *bus.Error
-// and "agentbus2-mcponly: <err>" otherwise, and returns exit code 1.
+// fail prints err as "agentmesh-mcponly: <code>: <message>" for a *bus.Error
+// and "agentmesh-mcponly: <err>" otherwise, and returns exit code 1.
 func fail(stderr io.Writer, err error) int {
 	var be *bus.Error
 	if errors.As(err, &be) {

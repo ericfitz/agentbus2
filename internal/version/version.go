@@ -1,8 +1,8 @@
-// Package version holds the agentbus2 release version.
+// Package version holds the agentmesh release version.
 package version
 
 // Version is the release version. Release builds override it with
-// -ldflags "-X github.com/ericfitz/agentbus2/internal/version.Version=<v>".
+// -ldflags "-X github.com/ericfitz/agentmesh/internal/version.Version=<v>".
 var Version = "2.0.0-dev"
 
 // Protocol is the wire protocol version, api/openapi.yaml info.version (Eric's

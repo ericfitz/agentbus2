@@ -12,10 +12,10 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/auth/assertion"
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/auth/assertion"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // recorder answers with a canned response and keeps the last request.

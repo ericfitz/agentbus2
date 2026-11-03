@@ -20,19 +20,19 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ericfitz/agentbus2/internal/auth/assertion"
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/core/signingkeys"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/auth/assertion"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/core/signingkeys"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/server/cmd"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
 // syncBuffer is a bytes.Buffer safe for the server goroutine to write while
@@ -55,7 +55,7 @@ func (s *syncBuffer) String() string {
 }
 
 // listeningRE captures the engine, mode, issuer URL, port and kid from the
-// line `agentbus2 server listening on ADDR (ENGINE, registration MODE,
+// line `agentmesh server listening on ADDR (ENGINE, registration MODE,
 // issuer URL, kid KID)`.
 var listeningRE = regexp.MustCompile(`listening on (\S+) \((\w+), registration (\w+), issuer (http://[^:,]+:(\d+)), kid (\S+)\)`)
 
@@ -83,11 +83,11 @@ func mintBearer(ctx context.Context, c *gen.ClientWithResponses, issuer *token.I
 }
 
 // TestAuthEndToEnd is the Milestone 5 exit criterion over TCP on each engine
-// (spec section 10): the real `agentbus2 server` command, started through
+// (spec section 10): the real `agentmesh server` command, started through
 // cmd.Run on a non-loopback listen address with no -registration, so the
 // enrollment default is the command's own classification and not a
 // composition of unit tests. It is transport-independent (it always uses the
-// wire), so it runs identically under both AGENTBUS2_BUS_TRANSPORT values.
+// wire), so it runs identically under both AGENTMESH_BUS_TRANSPORT values.
 // The subtests that expect a refusal are the negative halves; each fails when
 // its check is removed (blocks 14 and 15 of scripts/check-gates-selftest.sh
 // break two of them).
@@ -310,7 +310,7 @@ func TestAuthEndToEnd(t *testing.T) {
 		t.Run("make-admin-on-host", func(t *testing.T) {
 			register(root, enroll(""))
 			var so, se bytes.Buffer
-			// A nil environ: the developer's AGENTBUS2_SERVER_* variables
+			// A nil environ: the developer's AGENTMESH_SERVER_* variables
 			// never choose the store.
 			if code := cmd.RunAdmin(ctx, []string{storeFlag, dsn, "admins", "add", "-identity", "root"}, nil, &so, &se); code != 0 {
 				t.Fatalf("make-admin exited %d: %s%s", code, so.String(), se.String())

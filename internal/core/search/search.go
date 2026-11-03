@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/rules"
-	query "github.com/ericfitz/agentbus2/internal/search"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/rules"
+	query "github.com/ericfitz/agentmesh/internal/search"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 var (

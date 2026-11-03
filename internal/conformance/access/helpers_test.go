@@ -8,11 +8,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/postgres"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
-	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/postgres"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/store/sqlstore"
 )
 
 const now int64 = 1_700_000_000_000

@@ -6,9 +6,9 @@ import (
 	"testing"
 	"time"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
 func peekOf(t *testing.T, b ab2bus.Bus, in ab2bus.PeekInput) ab2bus.PeekResult {

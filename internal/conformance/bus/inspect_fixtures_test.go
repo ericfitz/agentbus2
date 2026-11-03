@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core"
 )
 
 // allowJSON is the inspector reply that allows a write.

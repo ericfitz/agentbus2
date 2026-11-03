@@ -6,7 +6,7 @@ This page covers Authenticode only. The Ed25519 key that signs `SHA256SUMS` (whe
 
 The workflow signs with `Azure/artifact-signing-action`, the renamed `azure/trusted-signing-action`; the workflow pins the commit by SHA (`release/check-pins.sh` enforces that for every action).
 
-This is the same arrangement agentbus 1.x uses, set up separately for `ericfitz/agentbus2`: the federated credential names this repository, and the repository variables below are set on this repository.
+This is the same arrangement agentbus 1.x uses, set up separately for `ericfitz/agentmesh`: the federated credential names this repository, and the repository variables below are set on this repository.
 
 ## Cost
 
@@ -18,7 +18,7 @@ Basic plan: $9.99 per month for up to 5,000 signatures, billed per account per m
    - The *Artifact Signing Identity Verifier* role, assigned on the account, is needed to create the identity validation.
    - Organization validation takes the legal name, website, a primary and a different secondary email on the company's domain, a business identifier (the EIN) and the registered address; it matches them against public records (keep the D-U-N-S record current) and takes 1 to 20 business days. The named representative also completes an individual ID check when the request turns *Action Required*.
    - The validated name becomes the certificate's common name, which is the value of `AUTHENTICODE_SIGNER`; read it from the certificate profile's Certificate subject preview.
-2. Register an Entra application with a federated credential (scenario *GitHub Actions deploying Azure resources*, entity Environment `release`) whose subject is `repo:ericfitz@2677124/agentbus2@1426457945:environment:release` (issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`), so only jobs in this repository's `release` environment can obtain a token. Assign it the *Artifact Signing Certificate Profile Signer* role on that certificate profile only. The subject uses GitHub's immutable form (owner and repository ids), because this repository's OIDC subject claim does: `gh api repos/ericfitz/agentbus2/actions/oidc/customization/sub` reports `use_immutable_subject: true`. A credential with the name-only subject `repo:ericfitz/agentbus2:environment:release` never matches. An application registered for v1 can carry a second federated credential for this subject.
+2. Register an Entra application with a federated credential (scenario *GitHub Actions deploying Azure resources*, entity Environment `release`) whose subject is `repo:ericfitz@2677124/agentmesh@1426457945:environment:release` (issuer `https://token.actions.githubusercontent.com`, audience `api://AzureADTokenExchange`), so only jobs in this repository's `release` environment can obtain a token. Assign it the *Artifact Signing Certificate Profile Signer* role on that certificate profile only. The subject uses GitHub's immutable form (owner and repository ids), because this repository's OIDC subject claim does: `gh api repos/ericfitz/agentmesh/actions/oidc/customization/sub` reports `use_immutable_subject: true`. A credential with the name-only subject `repo:ericfitz/agentmesh:environment:release` never matches. An application registered for v1 can carry a second federated credential for this subject.
 3. In the repository, add a `v*` tag rule to the `release` environment (Settings > Environments > release > Deployment branches and tags > tag pattern `v*`, creating the environment there if absent), so only tags matching `v*` can deploy to it. `release.sh` dispatches the workflow on the tag itself (`gh workflow run --ref <tag>`), so the run's `github.ref` is the tag and the rule admits it. The `package-windows` job uses this environment for both `on` and `off` releases.
 4. Store these as repository **variables** (Settings > Secrets and variables > Actions > Variables), not secrets; none of them grants access on its own:
 
@@ -32,11 +32,11 @@ Basic plan: $9.99 per month for up to 5,000 signatures, billed per account per m
    | `ARTIFACT_SIGNING_PROFILE` | the certificate profile name |
    | `AUTHENTICODE_SIGNER` | the certificate's common name only (what `Get-AuthenticodeSignature` reports as the signer's simple name), not the full subject |
 
-`release.sh --windows-signing=on` checks that all seven exist (`gh variable list`) before building anything, and names the missing ones. The workflow checks them again. `gh variable list --repo ericfitz/agentbus2` shows what is set.
+`release.sh --windows-signing=on` checks that all seven exist (`gh variable list`) before building anything, and names the missing ones. The workflow checks them again. `gh variable list --repo ericfitz/agentmesh` shows what is set.
 
 ## Releasing
 
-- `--windows-signing=on`: `package-windows` signs the executables of both binaries, `agentbus2.exe` and `agentbus2-mcponly.exe`, for both architectures (four files; file digest SHA-256, timestamped by `http://timestamp.acs.microsoft.com` with SHA-256), verifies each signature's status, signer common name and timestamp countersignature, runs both signed amd64 binaries, and only then are the zips attested and listed in `SHA256SUMS`. A failure in that job (lapsed subscription, expired validation, missing role or variable) fails the workflow; `release.sh` stops with the run URL and the draft stays for a rerun. Nothing is published unsigned when `on` was chosen.
+- `--windows-signing=on`: `package-windows` signs the executables of both binaries, `agentmesh.exe` and `agentmesh-mcponly.exe`, for both architectures (four files; file digest SHA-256, timestamped by `http://timestamp.acs.microsoft.com` with SHA-256), verifies each signature's status, signer common name and timestamp countersignature, runs both signed amd64 binaries, and only then are the zips attested and listed in `SHA256SUMS`. A failure in that job (lapsed subscription, expired validation, missing role or variable) fails the workflow; `release.sh` stops with the run URL and the draft stays for a rerun. Nothing is published unsigned when `on` was chosen.
 - `--windows-signing=off`: no Azure step runs, and `release.sh` ends the release notes with: "The Windows binaries in this release are not Authenticode-signed; they are covered by the signed SHA256SUMS and by build attestations." (`release/notes-vX.Y.Z.md` never holds that line.)
 - A rerun before publishing may change the choice (for example `off` after a lapsed subscription); every Windows asset is replaced and the notes line is added or removed to match. Do not flip the choice after publishing: a rerun then replaces the public zips and `SHA256SUMS`, and winget is not refreshed.
 
@@ -49,7 +49,7 @@ Resuming: repeat setup step 1 (reuse the identity validation if it is still vali
 ## Checking a release
 
 ```powershell
-Get-AuthenticodeSignature .\agentbus2.exe, .\agentbus2-mcponly.exe | Format-List Path, Status, SignerCertificate, TimeStamperCertificate
+Get-AuthenticodeSignature .\agentmesh.exe, .\agentmesh-mcponly.exe | Format-List Path, Status, SignerCertificate, TimeStamperCertificate
 ```
 
 `Status` is `Valid` and the signer's subject names the maintainer's company. An unsigned release says so in its notes; its binaries are still covered by the signed `SHA256SUMS` and the build attestations.

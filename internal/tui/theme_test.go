@@ -102,7 +102,7 @@ func TestLoadThemeFallsBackPerValue(t *testing.T) {
 	if strings.Count(out, "\n") != 2 {
 		t.Fatalf("exactly one line per bad value, none for missing ones, got %q", out)
 	}
-	for _, want := range []string{`agentbus2 tui: theme "night" agent="#00f" is not a color (unknown color); accepted: ` + ColorForms + "; using cyan\n", `memory="#ff00ff"`, "using magenta"} {
+	for _, want := range []string{`agentmesh tui: theme "night" agent="#00f" is not a color (unknown color); accepted: ` + ColorForms + "; using cyan\n", `memory="#ff00ff"`, "using magenta"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("warning lacks %q: %q", want, out)
 		}
@@ -115,7 +115,7 @@ func TestLoadThemeUnknownName(t *testing.T) {
 	if th.Name != "default" || th.Agent != lipgloss.Color("6") {
 		t.Fatalf("unknown theme name must use the default theme: %+v", th)
 	}
-	want := `agentbus2 tui: theme "nope" is not in themes; using default` + "\n"
+	want := `agentmesh tui: theme "nope" is not in themes; using default` + "\n"
 	if warn.String() != want {
 		t.Fatalf("warning = %q, want %q", warn.String(), want)
 	}

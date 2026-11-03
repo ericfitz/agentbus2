@@ -10,8 +10,8 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
-	"github.com/ericfitz/agentbus2/internal/search"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/search"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Ported from v1 internal/bus/messages.go (Message, messageCols; the

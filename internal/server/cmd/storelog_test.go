@@ -6,9 +6,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/server/config"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/storetest"
+	"github.com/ericfitz/agentmesh/internal/server/config"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/storetest"
 )
 
 // TestStoreLogsToConfiguredLogger (issue #20): the Store's read-normalization

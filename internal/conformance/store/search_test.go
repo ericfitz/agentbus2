@@ -6,10 +6,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/search"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/search"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlstore"
 )
 
 // searchCorpus is the fixed corpus of Milestone 2 Task 11: row r<n> has seq n.

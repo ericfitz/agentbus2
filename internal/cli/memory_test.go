@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 // Decision 20: agents never receive memory channels. The commands below are
@@ -224,7 +224,7 @@ func TestServerFilteredWakeIsComplete(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 	cancel()
 	<-done
-	if out := wo.String(); !strings.Contains(out, "agentbus2: 1 new message(s) for pat on general;") {
+	if out := wo.String(); !strings.Contains(out, "agentmesh: 1 new message(s) for pat on general;") {
 		t.Fatalf("watch line %q", out)
 	}
 }

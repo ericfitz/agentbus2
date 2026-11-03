@@ -8,12 +8,12 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
 )
 
-// runRegister is `agentbus2-mcponly register [-server URL] [-identity I]
+// runRegister is `agentmesh-mcponly register [-server URL] [-identity I]
 // [-credential FILE] [-profile P] [-enrollment-token T |
 // -enrollment-token-file FILE] [-algorithm EdDSA|ES256]`: client.RegisterIdentity
 // with this binary's flags. A second run registers the same key again and
@@ -26,7 +26,7 @@ func runRegister(ctx context.Context, args []string, environ []string, _ io.Read
 	o := client.Options{Environ: environ}
 	commonFlags(fs, &o)
 	var token, tokenFile, algName string
-	fs.StringVar(&token, "enrollment-token", "", "enrollment token, for a server in enrollment mode (default: AGENTBUS2_ENROLLMENT_TOKEN)")
+	fs.StringVar(&token, "enrollment-token", "", "enrollment token, for a server in enrollment mode (default: AGENTMESH_ENROLLMENT_TOKEN)")
 	fs.StringVar(&tokenFile, "enrollment-token-file", "", "file holding the enrollment token")
 	fs.StringVar(&algName, "algorithm", string(keys.EdDSA), "key algorithm: EdDSA or ES256")
 	if err := fs.Parse(args); err != nil {

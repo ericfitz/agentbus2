@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 func TestInitGlobalClaude(t *testing.T) {
@@ -32,7 +32,7 @@ func TestInitGlobalClaude(t *testing.T) {
 	if err := Init(o, &out); err != nil {
 		t.Fatalf("Init: %v\n%s", err, out.String())
 	}
-	if len(calls) != 2 || calls[0] != "claude mcp remove -s user agentbus2" || calls[1] != "claude mcp add -s user agentbus2 -- agentbus2 mcp" {
+	if len(calls) != 2 || calls[0] != "claude mcp remove -s user agentmesh" || calls[1] != "claude mcp add -s user agentmesh -- agentmesh mcp" {
 		t.Fatalf("calls = %q", calls)
 	}
 	settings := filepath.Join(e.Home, ".claude", "settings.json")
@@ -51,19 +51,19 @@ func TestInitGlobalClaude(t *testing.T) {
 	if len(parsed.Hooks) != 4 {
 		t.Fatalf("want exactly the SessionStart, Stop, SubagentStart and UserPromptSubmit events, got %s", body)
 	}
-	if h := parsed.Hooks["SessionStart"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentbus2 session-start-hook" {
+	if h := parsed.Hooks["SessionStart"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentmesh session-start-hook" {
 		t.Fatalf("SessionStart: %s", body)
 	}
-	if h := parsed.Hooks["Stop"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentbus2 stop-hook" {
+	if h := parsed.Hooks["Stop"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentmesh stop-hook" {
 		t.Fatalf("Stop: %s", body)
 	}
-	if h := parsed.Hooks["UserPromptSubmit"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentbus2 unpark" {
+	if h := parsed.Hooks["UserPromptSubmit"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentmesh unpark" {
 		t.Fatalf("UserPromptSubmit: %s", body)
 	}
-	if h := parsed.Hooks["SubagentStart"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentbus2 subagent-hook" {
+	if h := parsed.Hooks["SubagentStart"]; len(h) != 1 || len(h[0].Hooks) != 1 || h[0].Hooks[0].Command != "agentmesh subagent-hook" {
 		t.Fatalf("SubagentStart: %s", body)
 	}
-	skill, err := os.ReadFile(filepath.Join(e.Home, ".claude", "skills", "using-agentbus2", "SKILL.md"))
+	skill, err := os.ReadFile(filepath.Join(e.Home, ".claude", "skills", "using-agentmesh", "SKILL.md"))
 	if err != nil || !bytes.Equal(skill, SkillMD) || len(SkillMD) == 0 {
 		t.Fatalf("skill differs from SkillMD: %v", err)
 	}
@@ -145,7 +145,7 @@ func TestInitGlobalClaudeBacksUpAnExistingSettingsFile(t *testing.T) {
 		t.Fatalf("backup = %q, %v", bak, err)
 	}
 	body, _ := os.ReadFile(filepath.Join(dir, "settings.json"))
-	for _, want := range []string{`"theme": "dark"`, "other-tool", "agentbus2 stop-hook", "agentbus2 subagent-hook"} {
+	for _, want := range []string{`"theme": "dark"`, "other-tool", "agentmesh stop-hook", "agentmesh subagent-hook"} {
 		if !strings.Contains(string(body), want) {
 			t.Fatalf("settings.json lacks %q:\n%s", want, body)
 		}
@@ -167,7 +167,7 @@ func TestInitGlobalCodex(t *testing.T) {
 				p := filepath.Join(e.Home, ".codex", "config.toml")
 				_ = os.MkdirAll(filepath.Dir(p), 0o755)
 				old, _ := os.ReadFile(p)
-				return os.WriteFile(p, append(old, "\n[mcp_servers.agentbus2]\ncommand = \"agentbus2\"\nargs = [\"mcp\"]\n"...), 0o644)
+				return os.WriteFile(p, append(old, "\n[mcp_servers.agentmesh]\ncommand = \"agentmesh\"\nargs = [\"mcp\"]\n"...), 0o644)
 			}
 			return nil
 		},
@@ -178,7 +178,7 @@ func TestInitGlobalCodex(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if calls[1] != "codex mcp add agentbus2 -- agentbus2 mcp" {
+	if calls[1] != "codex mcp add agentmesh -- agentmesh mcp" {
 		t.Fatalf("calls = %q", calls)
 	}
 	toml, _ := os.ReadFile(filepath.Join(e.Home, ".codex", "config.toml"))
@@ -186,15 +186,15 @@ func TestInitGlobalCodex(t *testing.T) {
 		t.Fatalf("config.toml:\n%s", toml)
 	}
 	hooks, _ := os.ReadFile(filepath.Join(e.Home, ".codex", "hooks.json"))
-	if strings.Count(string(hooks), "agentbus2 stop-hook") != 1 || strings.Count(string(hooks), "agentbus2 session-start-hook") != 1 ||
+	if strings.Count(string(hooks), "agentmesh stop-hook") != 1 || strings.Count(string(hooks), "agentmesh session-start-hook") != 1 ||
 		!strings.Contains(string(hooks), `"matcher": "startup|resume|clear"`) {
 		t.Fatalf("hooks.json:\n%s", hooks)
 	}
-	prompt, _ := os.ReadFile(filepath.Join(e.Home, ".codex", "prompts", "agentbus2.md"))
-	if !strings.Contains(string(prompt), "agentbus2 $ARGUMENTS") || !strings.Contains(string(prompt), "agentbus2 register") {
+	prompt, _ := os.ReadFile(filepath.Join(e.Home, ".codex", "prompts", "agentmesh.md"))
+	if !strings.Contains(string(prompt), "agentmesh $ARGUMENTS") || !strings.Contains(string(prompt), "agentmesh register") {
 		t.Fatalf("prompt:\n%s", prompt)
 	}
-	skill, err := os.ReadFile(filepath.Join(e.Home, ".agents", "skills", "using-agentbus2", "SKILL.md"))
+	skill, err := os.ReadFile(filepath.Join(e.Home, ".agents", "skills", "using-agentmesh", "SKILL.md"))
 	if err != nil || !bytes.Equal(skill, SkillMD) {
 		t.Fatalf("skill: %v", err)
 	}
@@ -208,21 +208,21 @@ func TestInitGlobalGrok(t *testing.T) {
 	if err := Init(o, &out); err != nil {
 		t.Fatal(err)
 	}
-	hooks, err := os.ReadFile(filepath.Join(e.Home, ".grok", "hooks", "agentbus2.json"))
-	if err != nil || !strings.Contains(string(hooks), "agentbus2 stop-hook") || strings.Contains(string(hooks), "SessionStart") {
+	hooks, err := os.ReadFile(filepath.Join(e.Home, ".grok", "hooks", "agentmesh.json"))
+	if err != nil || !strings.Contains(string(hooks), "agentmesh stop-hook") || strings.Contains(string(hooks), "SessionStart") {
 		t.Fatalf("hooks: %v\n%s", err, hooks)
 	}
-	rule, err := os.ReadFile(filepath.Join(e.Home, ".grok", "rules", "agentbus2.md"))
+	rule, err := os.ReadFile(filepath.Join(e.Home, ".grok", "rules", "agentmesh.md"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(strings.ToLower(string(rule)), "identity") || strings.Contains(string(rule), "agentbus2 identity") {
+	if strings.Contains(strings.ToLower(string(rule)), "identity") || strings.Contains(string(rule), "agentmesh identity") {
 		t.Fatalf("the rules file must not mention identity:\n%s", rule)
 	}
-	if _, err := os.Stat(filepath.Join(e.Home, ".grok", "commands", "agentbus2.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(e.Home, ".grok", "commands", "agentmesh.md")); err != nil {
 		t.Fatal(err)
 	}
-	if skill, err := os.ReadFile(filepath.Join(e.Home, ".grok", "skills", "using-agentbus2", "SKILL.md")); err != nil || !bytes.Equal(skill, SkillMD) {
+	if skill, err := os.ReadFile(filepath.Join(e.Home, ".grok", "skills", "using-agentmesh", "SKILL.md")); err != nil || !bytes.Equal(skill, SkillMD) {
 		t.Fatalf("skill: %v", err)
 	}
 	// No harness forced and none present: nothing is written, and it says so.
@@ -262,7 +262,7 @@ func TestInitDryRun(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(e.ConfigDir, "config.json")); !os.IsNotExist(err) {
 		t.Fatalf("a dry run wrote config.json: %v", err)
 	}
-	for _, want := range []string{"would have run claude mcp add -s user agentbus2", "would write", "would write " + filepath.Join(e.ConfigDir, "config.json")} {
+	for _, want := range []string{"would have run claude mcp add -s user agentmesh", "would write", "would write " + filepath.Join(e.ConfigDir, "config.json")} {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("output lacks %q:\n%s", want, out.String())
 		}
@@ -279,7 +279,7 @@ func TestHookIdempotent(t *testing.T) {
 		}
 	}
 	body, _ := os.ReadFile(path)
-	if n := strings.Count(string(body), "agentbus2 stop-hook"); n != 1 {
+	if n := strings.Count(string(body), "agentmesh stop-hook"); n != 1 {
 		t.Fatalf("%d hooks after three runs:\n%s", n, body)
 	}
 	if _, err := os.Stat(path + ".bak"); !os.IsNotExist(err) {
@@ -287,14 +287,14 @@ func TestHookIdempotent(t *testing.T) {
 	}
 	// A different command that merely starts with ours is not ours.
 	other := filepath.Join(dir, "other.json")
-	if err := os.WriteFile(other, []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"agentbus2 stop-hook-x"}]}]}}`), 0o644); err != nil {
+	if err := os.WriteFile(other, []byte(`{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"agentmesh stop-hook-x"}]}]}}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := in.hook(other, "Stop", stopHookCommand, ""); err != nil {
 		t.Fatal(err)
 	}
 	body, _ = os.ReadFile(other)
-	if !strings.Contains(string(body), `"agentbus2 stop-hook"`) {
+	if !strings.Contains(string(body), `"agentmesh stop-hook"`) {
 		t.Fatalf("the look-alike suppressed our hook:\n%s", body)
 	}
 	// A settings file that is not JSON is refused and left untouched.
@@ -318,7 +318,7 @@ func TestHookLeavesTheUserFileAlone(t *testing.T) {
 	dir := t.TempDir()
 	in := &initer{out: &bytes.Buffer{}}
 	present := filepath.Join(dir, "present.json")
-	orig := "{\n    \"model\": \"opus\",\n    \"hooks\": {\n        \"Stop\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"agentbus2 stop-hook\"}]}],\n        \"SubagentStart\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"agentbus2 subagent-hook\"}]}]\n    }\n}\n"
+	orig := "{\n    \"model\": \"opus\",\n    \"hooks\": {\n        \"Stop\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"agentmesh stop-hook\"}]}],\n        \"SubagentStart\": [{\"hooks\": [{\"type\": \"command\", \"command\": \"agentmesh subagent-hook\"}]}]\n    }\n}\n"
 	if err := os.WriteFile(present, []byte(orig), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -382,8 +382,8 @@ func TestHookLeavesTheUserFileAlone(t *testing.T) {
 
 func TestRequireOnPath(t *testing.T) {
 	dir := t.TempDir()
-	self := filepath.Join(dir, "self", "agentbus2.exe")
-	other := filepath.Join(dir, "other", "agentbus2.exe")
+	self := filepath.Join(dir, "self", "agentmesh.exe")
+	other := filepath.Join(dir, "other", "agentmesh.exe")
 	for _, p := range []string{self, other} {
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
 			t.Fatal(err)
@@ -393,8 +393,8 @@ func TestRequireOnPath(t *testing.T) {
 		}
 	}
 	for _, tc := range []struct{ name, onPath, want string }{
-		{"missing", "", "agentbus2.exe is not on your PATH"},
-		{"other copy", other, "is not this agentbus2.exe"},
+		{"missing", "", "agentmesh.exe is not on your PATH"},
+		{"other copy", other, "is not this agentmesh.exe"},
 		{"this binary", self, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -462,20 +462,20 @@ func TestInitPromptsAvoidRetiredVocabulary(t *testing.T) {
 }
 
 func TestInitPromptsWakeWithBackgroundWait(t *testing.T) {
-	if strings.Contains(codexPrompt, "run_in_background") || strings.Contains(codexPrompt, "`agentbus2 wait`") {
+	if strings.Contains(codexPrompt, "run_in_background") || strings.Contains(codexPrompt, "`agentmesh wait`") {
 		t.Error("codexPrompt tells Codex to run a background wait")
 	}
 	if !strings.Contains(codexPrompt, "end of each task") {
 		t.Error("codexPrompt does not tell Codex to receive at the end of each task")
 	}
 	for name, text := range map[string]string{"InitPrompt": InitPrompt, "codexPrompt": codexPrompt, "grokRule": grokRule} {
-		if strings.Contains(text, "Monitor") || strings.Contains(text, "agentbus2 watch") {
+		if strings.Contains(text, "Monitor") || strings.Contains(text, "agentmesh watch") {
 			t.Errorf("%s names Monitor or watch as the wake", name)
 		}
 	}
 	for name, text := range map[string]string{"InitPrompt": InitPrompt, "grokRule": grokRule} {
-		if !strings.Contains(text, "run_in_background") || !strings.Contains(text, "agentbus2 wait") {
-			t.Errorf("%s does not tell the agent to run a background agentbus2 wait", name)
+		if !strings.Contains(text, "run_in_background") || !strings.Contains(text, "agentmesh wait") {
+			t.Errorf("%s does not tell the agent to run a background agentmesh wait", name)
 		}
 	}
 	if !strings.Contains(codexPrompt, "Codex has no idle wake") {
@@ -487,7 +487,7 @@ func TestInitPromptsWakeWithBackgroundWait(t *testing.T) {
 		}
 	}
 	for name, text := range map[string]string{"InitPrompt": InitPrompt, "grokRule": grokRule, "codexPrompt": codexPrompt, "skill": string(SkillMD)} {
-		if !strings.Contains(text, "as your last") || !strings.Contains(text, "agentbus2 park") {
+		if !strings.Contains(text, "as your last") || !strings.Contains(text, "agentmesh park") {
 			t.Errorf("%s lacks the park-last wording", name)
 		}
 	}
@@ -509,9 +509,9 @@ func TestSkillWakesWithBackgroundWait(t *testing.T) {
 
 func TestInitPromptsSetIdleBeforePark(t *testing.T) {
 	for name, text := range map[string]string{"InitPrompt": InitPrompt, "codexPrompt": codexPrompt, "grokRule": grokRule} {
-		i, j := strings.Index(text, "set your status to idle with set_status"), strings.Index(text, "agentbus2 park")
+		i, j := strings.Index(text, "set your status to idle with set_status"), strings.Index(text, "agentmesh park")
 		if i < 0 || j < 0 || i > j {
-			t.Errorf("%s: idle status at %d, agentbus2 park at %d", name, i, j)
+			t.Errorf("%s: idle status at %d, agentmesh park at %d", name, i, j)
 		}
 	}
 }

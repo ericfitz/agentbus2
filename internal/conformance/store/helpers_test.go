@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/postgres"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
-	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/postgres"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/store/sqlstore"
 )
 
 // testSchemaRE matches the per-test Postgres schemas this package creates.
@@ -37,7 +37,7 @@ func migrationsFor(e dbtest.Engine) []sqlstore.Migration {
 }
 
 // isolate prepares a fresh, isolated, never-opened database on e and opens
-// nothing. sqlite: the path filepath.Join(t.TempDir(), "agentbus2.db") (no
+// nothing. sqlite: the path filepath.Join(t.TempDir(), "agentmesh.db") (no
 // file exists yet). postgres: a schema t_<unix seconds>_<8 hex> created on
 // e.Open(t), with DROP SCHEMA ... CASCADE registered in t.Cleanup before any
 // store is opened (so cleanup's LIFO order closes stores first), after the

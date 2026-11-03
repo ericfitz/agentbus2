@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // RotateDue is the scheduled rotation (the "signing key rotation" job; Eric
@@ -85,7 +85,7 @@ func (s Service) stale(active store.SigningKey, age time.Duration) error {
 	if s.Provider.Name() == keyprovider.NameStore || age < s.Settings.Interval {
 		return nil
 	}
-	return fmt.Errorf("signing key %s is older than signing_key_rotation_hours (%d): point the key URI at a new key, then run agentbus2 server admin signing-key rotate",
+	return fmt.Errorf("signing key %s is older than signing_key_rotation_hours (%d): point the key URI at a new key, then run agentmesh server admin signing-key rotate",
 		active.KID, int64(s.Settings.Interval/time.Hour))
 }
 

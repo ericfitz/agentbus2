@@ -10,16 +10,16 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/procs"
 )
 
 // newFlagSet returns the flag set of one command: ContinueOnError, output to
 // stderr (ported from v1 main.go).
 func newFlagSet(name string, stderr io.Writer) *flag.FlagSet {
-	fs := flag.NewFlagSet("agentbus2 "+name, flag.ContinueOnError)
+	fs := flag.NewFlagSet("agentmesh "+name, flag.ContinueOnError)
 	fs.SetOutput(stderr)
 	return fs
 }
@@ -33,14 +33,14 @@ func parseExit(err error) int {
 	return 2
 }
 
-// fail prints err as "agentbus2: <code>: <message>" for a *bus.Error and
-// "agentbus2: <err>" otherwise, and returns exit code 1.
+// fail prints err as "agentmesh: <code>: <message>" for a *bus.Error and
+// "agentmesh: <err>" otherwise, and returns exit code 1.
 func fail(stderr io.Writer, err error) int {
 	var be *bus.Error
 	if errors.As(err, &be) {
-		_, _ = fmt.Fprintf(stderr, "agentbus2: %s: %s\n", be.Code, be.Message)
+		_, _ = fmt.Fprintf(stderr, "agentmesh: %s: %s\n", be.Code, be.Message)
 	} else {
-		_, _ = fmt.Fprintf(stderr, "agentbus2: %v\n", err)
+		_, _ = fmt.Fprintf(stderr, "agentmesh: %v\n", err)
 	}
 	return 1
 }

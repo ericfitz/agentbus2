@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
 )
 
 // TestExternalJWKSSizeGuard isolates the size guard: the body is a valid key

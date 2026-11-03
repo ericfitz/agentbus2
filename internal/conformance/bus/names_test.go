@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
 )
 
 // Legal but awkward channel names must survive the generated client's path

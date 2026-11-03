@@ -3,7 +3,7 @@ package local
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // Usage is the administrator's database usage reading (Decision 48).

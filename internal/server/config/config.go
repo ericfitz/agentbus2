@@ -9,9 +9,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // MaxTokenLifetimeSeconds is the ceiling of token_lifetime_seconds and of an

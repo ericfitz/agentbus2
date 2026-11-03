@@ -3,8 +3,8 @@ package remote
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // fromGenAgentStatus copies the tag as a string: a tag this build does not

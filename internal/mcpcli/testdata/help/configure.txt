@@ -1,13 +1,13 @@
-agentbus2-mcponly help configure: the MCP server entry for the agent
+agentmesh-mcponly help configure: the MCP server entry for the agent
 
 config prints the entry for the agent's MCP server configuration, then the same
 command as one shell line. It reads this machine's configuration and contacts
 no server, so you may run it any number of times.
 
-  $ agentbus2-mcponly config -server https://agentbus.example.com -identity my-agent
+  $ agentmesh-mcponly config -server https://agentbus.example.com -identity my-agent
     > {
     >   "mcpServers": {
-    >     "agentbus2": {
+    >     "agentmesh": {
     >       "command": "<command>",
     >       "args": [
     >         "serve",
@@ -21,17 +21,17 @@ no server, so you may run it any number of times.
     > }
     > command line: <command> serve -server https://agentbus.example.com -identity my-agent
 
-Paste the "agentbus2" entry into the agent's MCP server configuration, or give
+Paste the "agentmesh" entry into the agent's MCP server configuration, or give
 the command line to the agent's add-MCP-server command. command is the full
 path of this binary as the operating system reports it: the path it was
 started through on macOS and Windows, but the resolved file on Linux, so a
 Linuxbrew install pins its versioned Cellar path. After an upgrade or a move
-of the binary, run agentbus2-mcponly config again and replace the entry; on
+of the binary, run agentmesh-mcponly config again and replace the entry; on
 macOS and Windows, start config through a package manager's stable link (such
 as Homebrew's bin directory) to keep the link in the entry. On Windows the command line is for
 PowerShell; the JSON entry is the same everywhere. The entry names
-the server and identity, but serve still reads AGENTBUS2_PROFILE, the nearest
-.local/agentbus2.json above its working directory and the configuration
+the server and identity, but serve still reads AGENTMESH_PROFILE, the nearest
+.local/agentmesh.json above its working directory and the configuration
 directory variables (see help connect) to choose the profile and find the key.
 Start the agent where those match what you checked; a profile that names a
 different server than the entry fails.
@@ -39,7 +39,7 @@ different server than the entry fails.
 With -credential FILE the entry carries the absolute path of the key file; with
 a profile other than default it carries -profile NAME.
 
-  $ agentbus2-mcponly config -server https://agentbus.example.com -identity my-agent -credential ./agent-key.pem
+  $ agentmesh-mcponly config -server https://agentbus.example.com -identity my-agent -credential ./agent-key.pem
     > command line: <command> serve -server https://agentbus.example.com -identity my-agent -credential <path>
 
 serve is what the agent runs; you do not run it by hand. It refuses an identity
@@ -47,4 +47,4 @@ equal to your operating system login name (exit 1), and keeps standard output
 for the protocol. A problem with the server or identity shows up as an error on
 the register tool, not at start-up. Run check before you start the agent.
 
-Next: agentbus2-mcponly help verify.
+Next: agentmesh-mcponly help verify.

@@ -6,13 +6,13 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // ProblemTypePrefix prefixes the code in a problem's type member (a URN,
 // because no domain is claimed; RFC 9457 requires only a URI reference).
-const ProblemTypePrefix = "urn:agentbus2:problem:"
+const ProblemTypePrefix = "urn:agentmesh:problem:"
 
 // StatusFor is the HTTP status of an error code (Milestone 4 choice 3). An
 // unknown code is 500.

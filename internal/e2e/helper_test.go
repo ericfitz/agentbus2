@@ -12,13 +12,13 @@ import (
 )
 
 // helperEnv marks the child process of startHelper.
-const helperEnv = "AGENTBUS2_E2E_HELPER"
+const helperEnv = "AGENTMESH_E2E_HELPER"
 
 // TestHelperHarness is not a test of its own: it is the harness process of the
 // harness-gone cells. startHelper runs the test binary with
 // -test.run=^TestHelperHarness$ and helperEnv set. The helper starts
 // `sh -c '"$0" "$@" > "$OUT"; echo $? > "$CODE"'` without waiting for it (so
-// the shell, and the agentbus2 command under it, find the helper as their
+// the shell, and the agentmesh command under it, find the helper as their
 // harness: FindHarness walks past the shell), then blocks on stdin. Closing
 // stdin makes the helper exit; the orphaned shell keeps the command alive, and
 // the command's harness poll finds the helper gone and exits 4, which the
@@ -27,9 +27,9 @@ func TestHelperHarness(t *testing.T) {
 	if os.Getenv(helperEnv) != "1" {
 		t.Skip("child process of the harness-gone cells")
 	}
-	bin := os.Getenv("AGENTBUS2_BIN")
-	args := strings.Split(os.Getenv("AGENTBUS2_ARGS"), "\x1f")
-	sh := exec.Command("sh", append([]string{"-c", `"$0" "$@" > "$AGENTBUS2_OUT"; echo $? > "$AGENTBUS2_CODE"`, bin}, args...)...)
+	bin := os.Getenv("AGENTMESH_BIN")
+	args := strings.Split(os.Getenv("AGENTMESH_ARGS"), "\x1f")
+	sh := exec.Command("sh", append([]string{"-c", `"$0" "$@" > "$AGENTMESH_OUT"; echo $? > "$AGENTMESH_CODE"`, bin}, args...)...)
 	sh.Env = os.Environ()
 	if err := sh.Start(); err != nil {
 		t.Fatal(err)
@@ -47,7 +47,7 @@ type helper struct {
 	waitDone      chan struct{}
 }
 
-// startHelper runs `agentbus2 args...` under a harness process of its own.
+// startHelper runs `agentmesh args...` under a harness process of its own.
 // The command's stdout goes to a file and its exit code to another.
 func startHelper(t *testing.T, home string, args ...string) *helper {
 	t.Helper()
@@ -56,10 +56,10 @@ func startHelper(t *testing.T, home string, args ...string) *helper {
 	h.cmd = exec.Command(os.Args[0], "-test.run=^TestHelperHarness$")
 	h.cmd.Env = append(environFor(home),
 		helperEnv+"=1",
-		"AGENTBUS2_BIN="+binPath,
-		"AGENTBUS2_OUT="+h.outFile,
-		"AGENTBUS2_CODE="+h.code,
-		"AGENTBUS2_ARGS="+strings.Join(args, "\x1f"))
+		"AGENTMESH_BIN="+binPath,
+		"AGENTMESH_OUT="+h.outFile,
+		"AGENTMESH_CODE="+h.code,
+		"AGENTMESH_ARGS="+strings.Join(args, "\x1f"))
 	in, err := h.cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)

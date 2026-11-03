@@ -3,9 +3,9 @@ package local
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/health"
-	"github.com/ericfitz/agentbus2/internal/version"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/health"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 // Health is the server health document at the caller's tier.

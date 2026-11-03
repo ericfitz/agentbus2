@@ -15,13 +15,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/oidctest"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/oidctest"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/server/cmd"
 )
 
 // humanServer is a running server whose issuer "corp" is a fake provider, with
@@ -146,7 +146,7 @@ func TestLoginHuman(t *testing.T) {
 		t.Fatalf("stdout %q", out.String())
 	}
 	assertNoTokenOnStderr(t, e, "lab", errb.String())
-	if want := "agentbus2 login: sign in at " + hs.lastURL() + "\n"; errb.String() != want {
+	if want := "agentmesh login: sign in at " + hs.lastURL() + "\n"; errb.String() != want {
 		t.Fatalf("stderr %q, want %q", errb.String(), want)
 	}
 	// login -human always uses the browser, even with a valid session.

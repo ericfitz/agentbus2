@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Per-session cursors and the pending batch are ported from v1

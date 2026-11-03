@@ -10,9 +10,9 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlstore"
 )
 
 // openStep is a migration step running sqlText, optionally failing after it.
@@ -53,7 +53,7 @@ func TestOpenEmptyCreatesSchema(t *testing.T) {
 		if err := db.QueryRow("SELECT app, engine, created_at FROM schema_meta").Scan(&app, &engine, &created); err != nil {
 			t.Fatal(err)
 		}
-		if app != "agentbus2" || engine != e.Name || created != fixedNow {
+		if app != "agentmesh" || engine != e.Name || created != fixedNow {
 			t.Fatalf("schema_meta = %q %q %d", app, engine, created)
 		}
 		if got := scalar[int](t, db, "SELECT count(*) FROM schema_meta"); got != 1 {
@@ -106,8 +106,8 @@ func TestOpenRefusesNonEmptyWithoutSchemaMeta(t *testing.T) {
 		}
 		before := count()
 
-		if _, err := reopen(sqlstore.Options{}); !errors.Is(err, ab2store.ErrNotAgentbus2) {
-			t.Fatalf("err = %v, want ErrNotAgentbus2", err)
+		if _, err := reopen(sqlstore.Options{}); !errors.Is(err, ab2store.ErrNotAgentmesh) {
+			t.Fatalf("err = %v, want ErrNotAgentmesh", err)
 		}
 		if got := count(); got != before {
 			t.Fatalf("table count %d -> %d (the refused open changed the database)", before, got)
@@ -133,13 +133,13 @@ func TestOpenRefusesWrongApp(t *testing.T) {
 		db := rawDB(t, e, rawDSN)
 
 		execAll(t, db, "UPDATE schema_meta SET app = 'other'")
-		if _, err := reopen(sqlstore.Options{}); !errors.Is(err, ab2store.ErrNotAgentbus2) {
-			t.Fatalf("wrong app: err = %v, want ErrNotAgentbus2", err)
+		if _, err := reopen(sqlstore.Options{}); !errors.Is(err, ab2store.ErrNotAgentmesh) {
+			t.Fatalf("wrong app: err = %v, want ErrNotAgentmesh", err)
 		}
 		if e.Name == "sqlite" { // Stamp and CheckStamp are no-ops on postgres
-			execAll(t, db, "UPDATE schema_meta SET app = 'agentbus2'", "PRAGMA application_id = 0")
-			if _, err := reopen(sqlstore.Options{}); !errors.Is(err, ab2store.ErrNotAgentbus2) {
-				t.Fatalf("application_id 0: err = %v, want ErrNotAgentbus2", err)
+			execAll(t, db, "UPDATE schema_meta SET app = 'agentmesh'", "PRAGMA application_id = 0")
+			if _, err := reopen(sqlstore.Options{}); !errors.Is(err, ab2store.ErrNotAgentmesh) {
+				t.Fatalf("application_id 0: err = %v, want ErrNotAgentmesh", err)
 			}
 		}
 	})
@@ -155,8 +155,8 @@ func TestOpenRefusesNewerVersion(t *testing.T) {
 		if !errors.Is(err, ab2store.ErrUpgradeNeeded) {
 			t.Fatalf("err = %v, want ErrUpgradeNeeded", err)
 		}
-		if !strings.Contains(err.Error(), "upgrade agentbus2") || !strings.Contains(err.Error(), "recreate") {
-			t.Fatalf("err %q lacks 'upgrade agentbus2' or 'recreate'", err)
+		if !strings.Contains(err.Error(), "upgrade agentmesh") || !strings.Contains(err.Error(), "recreate") {
+			t.Fatalf("err %q lacks 'upgrade agentmesh' or 'recreate'", err)
 		}
 	})
 }

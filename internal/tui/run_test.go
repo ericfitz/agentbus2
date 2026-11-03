@@ -12,14 +12,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/server"
-	"github.com/ericfitz/agentbus2/internal/testkit"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/server"
+	"github.com/ericfitz/agentmesh/internal/testkit"
 )
 
 // countingHandler counts the long polls (requests whose path ends in /watch)
@@ -319,7 +319,7 @@ func TestRunHeadlessSizeRenders(t *testing.T) {
 	sam := identityBus(t, c, "sam")
 	ensureIdentity(t, c, "pat")
 	rh := startRun(t, identityBus(t, c, "pat"), 80, 24)
-	waitFor(t, time.Second, func() bool { return strings.Contains(rh.out.String(), "agentbus2 v") })
+	waitFor(t, time.Second, func() bool { return strings.Contains(rh.out.String(), "agentmesh v") })
 	rh.write(t, "\x03")
 	rh.wait(t, 2*time.Second)
 
@@ -328,7 +328,7 @@ func TestRunHeadlessSizeRenders(t *testing.T) {
 	waitFor(t, 2*time.Second, func() bool { return lists(sam, "pat/tui") })
 	rh.write(t, "\x03")
 	rh.wait(t, 2*time.Second)
-	if strings.Contains(rh.out.String(), "agentbus2 v") {
+	if strings.Contains(rh.out.String(), "agentmesh v") {
 		t.Fatalf("status bar drawn without a size: %q", rh.out.String())
 	}
 }

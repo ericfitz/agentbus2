@@ -14,11 +14,11 @@ func TestConfigDirPrecedence(t *testing.T) {
 		environ []string
 		want    string
 	}{
-		{"explicit wins", []string{"HOME=/h", "XDG_CONFIG_HOME=/x", "AGENTBUS2_CONFIG_DIR=/c"}, "/c"},
-		{"xdg next", []string{"HOME=/h", "XDG_CONFIG_HOME=/x"}, "/x/agentbus2"},
-		{"home last", []string{"HOME=/h"}, "/h/.config/agentbus2"},
-		{"empty values count as unset", []string{"HOME=/h", "XDG_CONFIG_HOME=", "AGENTBUS2_CONFIG_DIR="}, "/h/.config/agentbus2"},
-		{"last duplicate wins", []string{"HOME=/a", "HOME=/h"}, "/h/.config/agentbus2"},
+		{"explicit wins", []string{"HOME=/h", "XDG_CONFIG_HOME=/x", "AGENTMESH_CONFIG_DIR=/c"}, "/c"},
+		{"xdg next", []string{"HOME=/h", "XDG_CONFIG_HOME=/x"}, "/x/agentmesh"},
+		{"home last", []string{"HOME=/h"}, "/h/.config/agentmesh"},
+		{"empty values count as unset", []string{"HOME=/h", "XDG_CONFIG_HOME=", "AGENTMESH_CONFIG_DIR="}, "/h/.config/agentmesh"},
+		{"last duplicate wins", []string{"HOME=/a", "HOME=/h"}, "/h/.config/agentmesh"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -33,7 +33,7 @@ func TestConfigDirPrecedence(t *testing.T) {
 			t.Skip("no home directory in this environment")
 		}
 		got, err := ConfigDir(nil)
-		if err != nil || got == "" || filepath.Base(got) != "agentbus2" {
+		if err != nil || got == "" || filepath.Base(got) != "agentmesh" {
 			t.Fatalf("ConfigDir(nil) = %q, %v", got, err)
 		}
 	})
@@ -45,10 +45,10 @@ func TestDataDirPrecedence(t *testing.T) {
 		environ []string
 		want    string
 	}{
-		{"explicit wins", []string{"HOME=/h", "XDG_DATA_HOME=/x", "AGENTBUS2_DATA_DIR=/d"}, "/d"},
-		{"xdg next", []string{"HOME=/h", "XDG_DATA_HOME=/x"}, "/x/agentbus2"},
-		{"home last", []string{"HOME=/h"}, "/h/.local/share/agentbus2"},
-		{"empty values count as unset", []string{"HOME=/h", "XDG_DATA_HOME="}, "/h/.local/share/agentbus2"},
+		{"explicit wins", []string{"HOME=/h", "XDG_DATA_HOME=/x", "AGENTMESH_DATA_DIR=/d"}, "/d"},
+		{"xdg next", []string{"HOME=/h", "XDG_DATA_HOME=/x"}, "/x/agentmesh"},
+		{"home last", []string{"HOME=/h"}, "/h/.local/share/agentmesh"},
+		{"empty values count as unset", []string{"HOME=/h", "XDG_DATA_HOME="}, "/h/.local/share/agentmesh"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -63,7 +63,7 @@ func TestDataDirPrecedence(t *testing.T) {
 			t.Skip("no home directory in this environment")
 		}
 		got, err := DataDir(nil)
-		if err != nil || got == "" || filepath.Base(got) != "agentbus2" {
+		if err != nil || got == "" || filepath.Base(got) != "agentmesh" {
 			t.Fatalf("DataDir(nil) = %q, %v", got, err)
 		}
 	})

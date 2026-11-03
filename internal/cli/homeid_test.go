@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 func setLogin(t *testing.T, name string) {
@@ -114,7 +114,7 @@ func TestMCPRefusesLoginName(t *testing.T) {
 	}
 	// The same refusal through the environment and the profile's identity.
 	stderr.Reset()
-	if code := runMCP(t.Context(), nil, append(append([]string{}, e.Environ...), "AGENTBUS2_IDENTITY=efitz"), strings.NewReader(""), &stdout, &stderr); code != 1 || stdout.Len() != 0 {
+	if code := runMCP(t.Context(), nil, append(append([]string{}, e.Environ...), "AGENTMESH_IDENTITY=efitz"), strings.NewReader(""), &stdout, &stderr); code != 1 || stdout.Len() != 0 {
 		t.Fatalf("env identity: exit %d stdout %q stderr %q", code, stdout.String(), stderr.String())
 	}
 	e.writeProfile(t, profile.Profile{Name: "default", Mode: profile.ModeLocal, Identity: "efitz"})

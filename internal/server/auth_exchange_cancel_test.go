@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
 )
 
 // TestTokenExchangeCancelIsNotAnOutage: a client that gives up during the

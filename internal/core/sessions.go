@@ -3,7 +3,7 @@ package core
 import (
 	"context"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // IsLive reports whether the session is open and its lease, plus the skew,

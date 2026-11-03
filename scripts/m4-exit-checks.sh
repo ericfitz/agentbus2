@@ -3,7 +3,7 @@
 #   usage: m4-exit-checks.sh <local.log> <inproc.log>   counts, then import rule
 #          m4-exit-checks.sh --deps-only                import rule alone (Docker-free)
 # The two logs are `go test -v` logs of ./internal/conformance/bus/ run with
-# AGENTBUS2_BUS_TRANSPORT=local and =inproc. Each must exist and be non-empty
+# AGENTMESH_BUS_TRANSPORT=local and =inproc. Each must exist and be non-empty
 # (exit 2 naming the path) and pass scripts/m3-exit-counts.sh (fail=0,
 # matrix_sqlite=52, matrix_postgres=52, search_agree=2, concurrent_send=2).
 #
@@ -21,7 +21,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MOD=github.com/ericfitz/agentbus2
+MOD=github.com/ericfitz/agentmesh
 
 # check_deps PATTERN FORBIDDEN...: a forbidden entry is an in-module path
 # (relative to the module, matched as a whole line) or, when it starts with

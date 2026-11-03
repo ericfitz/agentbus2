@@ -12,9 +12,9 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/repoconfig"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/strictjson"
+	"github.com/ericfitz/agentmesh/internal/repoconfig"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/strictjson"
 )
 
 // Mode says where a profile's bus lives.
@@ -315,12 +315,12 @@ func (c Config) Resolve(name string) (Profile, error) {
 	return Profile{}, fmt.Errorf("profile %q is not defined in %s", name, c.Path)
 }
 
-// SQLitePath is the profile's sqlite setting or <dataDir>/agentbus2.sqlite.
+// SQLitePath is the profile's sqlite setting or <dataDir>/agentmesh.sqlite.
 func SQLitePath(p Profile, dataDir string) string {
 	if p.SQLite != "" {
 		return p.SQLite
 	}
-	return filepath.Join(dataDir, "agentbus2.sqlite")
+	return filepath.Join(dataDir, "agentmesh.sqlite")
 }
 
 // CredentialDir is the directory holding a profile's credential files.

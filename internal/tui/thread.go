@@ -5,7 +5,7 @@ package tui
 import (
 	"sort"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // paneMsgs returns the messages a pane shows: a tag pane's matches, else the

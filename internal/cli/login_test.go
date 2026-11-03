@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/server/cmd"
 )
 
 func TestLoginExchangesAndCaches(t *testing.T) {
@@ -106,7 +106,7 @@ func TestLoginExchangesAndCaches(t *testing.T) {
 	// A server profile with no credential: exit 2 naming register.
 	e.writeProfile(t, profile.Profile{Name: "bare", Mode: profile.ModeServer, Server: base, Identity: "kim"})
 	out, errb = &syncBuf{}, &syncBuf{}
-	if code := RunLogin(ctx, []string{"-profile", "bare"}, e.Environ, nil, out, errb); code != 2 || !strings.Contains(errb.String(), "agentbus2 register") {
+	if code := RunLogin(ctx, []string{"-profile", "bare"}, e.Environ, nil, out, errb); code != 2 || !strings.Contains(errb.String(), "agentmesh register") {
 		t.Fatalf("no credential: %d %q", code, errb.String())
 	}
 	if code := RunLogin(ctx, []string{"-profile", "nosuch"}, e.Environ, nil, out, errb); code != 2 {

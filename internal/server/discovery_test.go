@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 func TestWellKnownPointsAtDiscover(t *testing.T) {
@@ -57,8 +57,8 @@ func TestDiscoverAgreesWithDocument(t *testing.T) {
 
 func TestDiscoverListsConfiguredExternalIssuers(t *testing.T) {
 	ext := []*token.External{
-		{Issuer: "https://idp.example", JWKSURI: "https://idp.example/jwks", Audience: "agentbus2", Name: "corp"},
-		{Issuer: "https://other.example", JWKSURI: "https://other.example/jwks", Audience: "agentbus2", Name: "other"},
+		{Issuer: "https://idp.example", JWKSURI: "https://idp.example/jwks", Audience: "agentmesh", Name: "corp"},
+		{Issuer: "https://other.example", JWKSURI: "https://other.example/jwks", Audience: "agentmesh", Name: "other"},
 	}
 	e := newEnv(t, envOptions{issuer: true, external: ext})
 	r, err := e.client("").DiscoverWithResponse(context.Background())

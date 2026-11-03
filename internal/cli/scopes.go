@@ -5,7 +5,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 type opScopeOut struct {
@@ -28,7 +28,7 @@ func opScope(s bus.Scope) opScopeOut {
 // usage error names them.
 var retireModes = []bus.RetireMode{bus.RetireWithBridge, bus.RetireNormal}
 
-// RunScopes implements `agentbus2 scopes create|list|get|done` (administrator
+// RunScopes implements `agentmesh scopes create|list|get|done` (administrator
 // only; the Bus judges that).
 func RunScopes(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return opDispatch(ctx, "scopes", map[string]opRunFunc{

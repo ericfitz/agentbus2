@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 type opChannelOut struct {
@@ -41,7 +41,7 @@ type opACLOut struct {
 	Permissions []string `json:"permissions"`
 }
 
-// RunChannels implements `agentbus2 channels list|create|delete|rename|acl|
+// RunChannels implements `agentmesh channels list|create|delete|rename|acl|
 // subscribe|unsubscribe|tags`. A value the core judges (a kind, a subscribe
 // origin, a permission) is passed as given.
 func RunChannels(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {

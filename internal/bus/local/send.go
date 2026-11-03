@@ -3,8 +3,8 @@ package local
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/messaging"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/messaging"
 )
 
 // Send ports v1 internal/bus/messages.go Send through messaging.Service.

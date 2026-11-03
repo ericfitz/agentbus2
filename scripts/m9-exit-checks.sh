@@ -25,7 +25,7 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SELF="${BASH_SOURCE[0]}"
 USAGE='usage: m9-exit-checks.sh [--real-only]'
-MOD=github.com/ericfitz/agentbus2
+MOD=github.com/ericfitz/agentmesh
 
 REAL_ONLY=0
 case "$#:${1:-}" in
@@ -64,8 +64,8 @@ run_capture() {
 	"$@" >"$out" 2>&1 || rc=$?
 }
 
-BEGIN_KEY='# BEGIN agentbus2 release public key'
-END_KEY='# END agentbus2 release public key'
+BEGIN_KEY='# BEGIN agentmesh release public key'
+END_KEY='# END agentmesh release public key'
 PLACEHOLDER_PEM='REPLACED-BY-release/embed-key.sh'
 
 # --- part 1: the real repository -----------------------------------------------
@@ -142,7 +142,7 @@ key_block_of() {
 }
 
 check_installers_key_block() {
-	local n=installers-key-block pub="$ROOT/release/agentbus2-release-ed25519.pub" s block want_ph want_pub ok=1
+	local n=installers-key-block pub="$ROOT/release/agentmesh-release-ed25519.pub" s block want_ph want_pub ok=1
 	for s in install.sh install.ps1; do
 		if ! block="$(key_block_of "$ROOT/$s" 2>"$tmp/kb.err")"; then
 			fail "$n" "$(cat "$tmp/kb.err")"
@@ -204,10 +204,10 @@ check_pipeline_selftest() {
 }
 
 FORLINE='for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do'
-BINLINE='for b in agentbus2 agentbus2-mcponly; do'
+BINLINE='for b in agentmesh agentmesh-mcponly; do'
 # release.sh's download_archives keeps BINLINE literal (the anchor above); this
 # one pins BIN_NAMES to the same two names so the loops cannot drift apart.
-BINNAMESLINE='BIN_NAMES=(agentbus2 agentbus2-mcponly)'
+BINNAMESLINE='BIN_NAMES=(agentmesh agentmesh-mcponly)'
 
 # anchors_missing WORKFLOW [ROOT]: prints each literal anchor missing from WORKFLOW
 # (a copy of release-build.yml) and from the two scripts of the repository
@@ -218,10 +218,10 @@ anchors_missing() {
 	for a in \
 		'run-name: release-build ${{ inputs.tag }}' \
 		'pattern: archive-*' \
-		'name: archive-agentbus2-windows-amd64' \
-		'name: archive-agentbus2-windows-arm64' \
-		'name: archive-agentbus2-mcponly-windows-amd64' \
-		'name: archive-agentbus2-mcponly-windows-arm64' \
+		'name: archive-agentmesh-windows-amd64' \
+		'name: archive-agentmesh-windows-arm64' \
+		'name: archive-agentmesh-mcponly-windows-amd64' \
+		'name: archive-agentmesh-mcponly-windows-arm64' \
 		'name: archive-${{ matrix.binary }}-${{ matrix.goos }}-${{ matrix.goarch }}' \
 		'-windows-amd64.zip"' \
 		'-windows-arm64.zip"' \
@@ -379,7 +379,7 @@ mutations() {
 	revert
 
 	# (2) an unfilled placeholder in a template
-	if mutate mutation-unfilled-placeholder release/agentbus2.rb.tmpl '$a\
+	if mutate mutation-unfilled-placeholder release/agentmesh.rb.tmpl '$a\
 extra "__UNFILLED__"'; then
 		run_capture "$out" bash "$wt/release/test-render.sh"
 		expect mutation-unfilled-placeholder 1 "$out" 'unfilled placeholders'
@@ -401,7 +401,7 @@ extra "__UNFILLED__"'; then
 	revert
 
 	# (5) the mcponly archive builds the wrong package: build-archive.sh must see it
-	if mutate mutation-wrong-binary release/build-archive.sh 's#pkg=./cmd/agentbus2-mcponly#pkg=.#'; then
+	if mutate mutation-wrong-binary release/build-archive.sh 's#pkg=./cmd/agentmesh-mcponly#pkg=.#'; then
 		run_capture "$out" bash "$wt/release/build-archive.sh" --self-test
 		expect mutation-wrong-binary 1 "$out" 'holds the wrong binary'
 	fi
@@ -409,11 +409,11 @@ extra "__UNFILLED__"'; then
 
 	# (6) BIN_NAMES gains a name: the anchor that pins it to download_archives'
 	# literal loop must fire (the anchors are read from the worktree)
-	if mutate mutation-bin-names release/release.sh 's#^BIN_NAMES=(agentbus2 agentbus2-mcponly)#BIN_NAMES=(agentbus2 agentbus2-mcponly agentbus2-extra)#'; then
+	if mutate mutation-bin-names release/release.sh 's#^BIN_NAMES=(agentmesh agentmesh-mcponly)#BIN_NAMES=(agentmesh agentmesh-mcponly agentmesh-extra)#'; then
 		anchors_missing "$wt/.github/workflows/release-build.yml" "$wt" >"$out"
 		rc=0
 		if [ -s "$out" ]; then rc=1; fi # output means an anchor fired (1); none means the mutation was missed (0)
-		expect mutation-bin-names 1 "$out" 'BIN_NAMES=(agentbus2 agentbus2-mcponly)'
+		expect mutation-bin-names 1 "$out" 'BIN_NAMES=(agentmesh agentmesh-mcponly)'
 	fi
 	revert
 }

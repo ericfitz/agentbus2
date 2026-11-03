@@ -53,9 +53,9 @@ func (s *postgresSource) resolve(ctx context.Context) (dsn, from string, err err
 
 func startPostgresContainer(ctx context.Context) (string, func(), error) {
 	ctr, err := postgres.Run(ctx, PostgresImage,
-		postgres.WithDatabase("agentbus2"),
-		postgres.WithUsername("agentbus2"),
-		postgres.WithPassword("agentbus2"),
+		postgres.WithDatabase("agentmesh"),
+		postgres.WithUsername("agentmesh"),
+		postgres.WithPassword("agentmesh"),
 		postgres.BasicWaitStrategies(),
 		// The module's command starts with "postgres"; Chainguard's entrypoint already ends with it, so the
 		// server would get "postgres postgres -c fsync=off" and exit. The bare script takes the command as is.

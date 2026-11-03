@@ -10,7 +10,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // opSplitTags splits a comma-separated tag list, trimming space around each
@@ -88,7 +88,7 @@ type opSessionOut struct {
 	RejectedCursors []opRejectedOut `json:"rejected_cursors"`
 }
 
-// RunSession implements `agentbus2 session open|close`.
+// RunSession implements `agentmesh session open|close`.
 func RunSession(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	return opDispatch(ctx, "session", map[string]opRunFunc{
 		"open":  runSessionOpen,

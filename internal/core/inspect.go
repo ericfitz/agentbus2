@@ -15,8 +15,8 @@ import (
 	"time"
 	"unicode/utf8"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Inspector judges a content write before it commits (write inspection, issue
@@ -431,7 +431,7 @@ func (c *Core) noteFailure(ctx context.Context, class string) {
 	c.noticeSetAt = now
 	c.inspectMu.Unlock()
 
-	msg := fmt.Sprintf("agentbus2 pid %d: write inspection failing (%s); inspection_on_failure=%s", os.Getpid(), class, c.Cfg.InspectionOnFailure)
+	msg := fmt.Sprintf("agentmesh pid %d: write inspection failing (%s); inspection_on_failure=%s", os.Getpid(), class, c.Cfg.InspectionOnFailure)
 	nctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), noticeTxTimeout)
 	defer cancel()
 	err := c.Store.Tx(nctx, func(ctx context.Context, tx store.Tx) error {

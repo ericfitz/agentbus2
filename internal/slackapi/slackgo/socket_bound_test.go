@@ -7,7 +7,7 @@ import (
 
 	"github.com/slack-go/slack/socketmode"
 
-	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
 )
 
 // TestRunSocketBoundsStuckLibrary: a RunContext that ignores its context must

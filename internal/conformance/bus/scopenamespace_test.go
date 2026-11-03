@@ -5,9 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/scopes"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/scopes"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
 )
 
 // TestScopeNamespace: channel names are scope-prefixed (accesscheck spec

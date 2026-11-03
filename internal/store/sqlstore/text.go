@@ -3,7 +3,7 @@ package sqlstore
 import (
 	"fmt"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Every caller-supplied string bound to a TEXT column passes store.TextRule

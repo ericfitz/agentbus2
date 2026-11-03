@@ -11,12 +11,12 @@ import (
 	"errors"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // MaxBearerLifetime is the longest bearer lifetime the server admits; a
@@ -101,7 +101,7 @@ func corrupt(kid string) error {
 func (s Service) checkActive(row store.SigningKey) error {
 	if row.Provider != s.Provider.Name() {
 		return core.E(bus.CodeConflict,
-			"active signing key %s is provider %s, configured provider is %s: run agentbus2 server admin signing-key rotate with the new configuration",
+			"active signing key %s is provider %s, configured provider is %s: run agentmesh server admin signing-key rotate with the new configuration",
 			row.KID, row.Provider, s.Provider.Name())
 	}
 	return validateRow(row)

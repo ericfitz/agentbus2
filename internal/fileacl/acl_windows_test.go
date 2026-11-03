@@ -11,7 +11,7 @@ import (
 
 	"golang.org/x/sys/windows"
 
-	"github.com/ericfitz/agentbus2/internal/fileacl/acltest"
+	"github.com/ericfitz/agentmesh/internal/fileacl/acltest"
 )
 
 // OwnerOnly replaces the DACL of an existing file, and again on a second call.

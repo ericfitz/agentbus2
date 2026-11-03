@@ -3,8 +3,8 @@ package local
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/scopes"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/scopes"
 )
 
 func (b *Bus) scopes() scopes.Service { return scopes.Service{Core: b.c} }

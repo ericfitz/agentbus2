@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 type opSigningKeyOut struct {
@@ -29,7 +29,7 @@ func opSigningKey(k bus.SigningKey) opSigningKeyOut {
 		Algorithm: k.Algorithm, CreatedAt: k.CreatedAt, RetiredAt: k.RetiredAt, RemoveAfter: k.RemoveAfter}
 }
 
-// RunSigningKeys implements `agentbus2 signing-keys list|rotate`
+// RunSigningKeys implements `agentmesh signing-keys list|rotate`
 // (administrator only), the client form of the server's token signing key
 // set. Where the server has no signing keys (a local profile) every action is
 // unavailable (not retryable).

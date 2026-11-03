@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
 )
 
 // methods is the closed set of names Calls, FailNext and RateLimit accept.

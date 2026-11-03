@@ -8,37 +8,37 @@ import (
 	"path/filepath"
 )
 
-// ConfigDir is %AGENTBUS2_CONFIG_DIR%, else %APPDATA%\agentbus2 (roaming),
-// else <home>\AppData\Roaming\agentbus2.
+// ConfigDir is %AGENTMESH_CONFIG_DIR%, else %APPDATA%\agentmesh (roaming),
+// else <home>\AppData\Roaming\agentmesh.
 func ConfigDir(environ []string) (string, error) {
-	if d, ok := Getenv(environ, "AGENTBUS2_CONFIG_DIR"); ok {
+	if d, ok := Getenv(environ, "AGENTMESH_CONFIG_DIR"); ok {
 		return d, nil
 	}
 	if d, ok := Getenv(environ, "APPDATA"); ok {
-		return filepath.Join(d, "agentbus2"), nil
+		return filepath.Join(d, "agentmesh"), nil
 	}
 	home, err := homeDir(environ)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, "AppData", "Roaming", "agentbus2"), nil
+	return filepath.Join(home, "AppData", "Roaming", "agentmesh"), nil
 }
 
-// DataDir is %AGENTBUS2_DATA_DIR%, else %LOCALAPPDATA%\agentbus2 (Local, not
+// DataDir is %AGENTMESH_DATA_DIR%, else %LOCALAPPDATA%\agentmesh (Local, not
 // Roaming: the SQLite database must not roam with a domain profile), else
-// <home>\AppData\Local\agentbus2.
+// <home>\AppData\Local\agentmesh.
 func DataDir(environ []string) (string, error) {
-	if d, ok := Getenv(environ, "AGENTBUS2_DATA_DIR"); ok {
+	if d, ok := Getenv(environ, "AGENTMESH_DATA_DIR"); ok {
 		return d, nil
 	}
 	if d, ok := Getenv(environ, "LOCALAPPDATA"); ok {
-		return filepath.Join(d, "agentbus2"), nil
+		return filepath.Join(d, "agentmesh"), nil
 	}
 	home, err := homeDir(environ)
 	if err != nil {
 		return "", err
 	}
-	return filepath.Join(home, "AppData", "Local", "agentbus2"), nil
+	return filepath.Join(home, "AppData", "Local", "agentmesh"), nil
 }
 
 func homeDir(environ []string) (string, error) {

@@ -6,14 +6,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/server/config"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/server/config"
 )
 
 // With the awskms tag the awskms scheme opens its provider; every other
 // scheme is still refused with its own tag.
 func TestAwskmsBackendIsRegistered(t *testing.T) {
-	p, err := openKeyProvider(config.Config{SigningKeyURI: "awskms:///alias/agentbus2"})
+	p, err := openKeyProvider(config.Config{SigningKeyURI: "awskms:///alias/agentmesh"})
 	if err != nil {
 		t.Fatal(err)
 	}

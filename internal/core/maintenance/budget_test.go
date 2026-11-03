@@ -12,11 +12,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/tasks"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/tasks"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
 const hour = int64(time.Hour / time.Millisecond)
@@ -51,7 +51,7 @@ func (s *syncBuf) String() string {
 
 func newBfx(t *testing.T, mut func(*core.Config)) *bfx {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "agentbus2.db")
+	path := filepath.Join(t.TempDir(), "agentmesh.db")
 	clk := &testClock{t: time.UnixMilli(startMs)}
 	st, err := sqlite.Open(context.Background(), path, sqlite.Options{})
 	if err != nil {
@@ -305,7 +305,7 @@ func TestEvictionFloors(t *testing.T) {
 		t.Fatalf("capacity notices = %d", n)
 	}
 	n, _ := f.notice()
-	if !strings.HasPrefix(n.Message, "agentbus2 capacity exhausted: ") {
+	if !strings.HasPrefix(n.Message, "agentmesh capacity exhausted: ") {
 		t.Fatalf("notice = %q", n.Message)
 	}
 }
@@ -433,8 +433,8 @@ func TestCapacityTexts(t *testing.T) {
 	u := store.Usage{Bytes: 3000 << 20, DiskBytes: 6000 << 20}
 	over := overBudgetText("postgres_budget_mib", 2048<<20, u)
 	ex := exhaustedText("postgres_budget_mib", 2048<<20, u)
-	wantOver := "agentbus2 storage is over budget: postgres_budget_mib=2048 MiB holds 3000 MiB (disk 6000 MiB, 2.00x); orphaned and expired rows, idle task lists and memories, and ordinary messages older than 1 hour are being deleted to make room"
-	wantEx := "agentbus2 capacity exhausted: postgres_budget_mib=2048 MiB (disk 6000 MiB, 2.00x) is filled by task lists and memories active within idle_window_hours, ordinary messages younger than 1 hour, tombstones younger than 72 hours and agent status history, which are never evicted; raise postgres_budget_mib and restart every replica, lower idle_window_hours, or have an administrator reset the bus to discard all data"
+	wantOver := "agentmesh storage is over budget: postgres_budget_mib=2048 MiB holds 3000 MiB (disk 6000 MiB, 2.00x); orphaned and expired rows, idle task lists and memories, and ordinary messages older than 1 hour are being deleted to make room"
+	wantEx := "agentmesh capacity exhausted: postgres_budget_mib=2048 MiB (disk 6000 MiB, 2.00x) is filled by task lists and memories active within idle_window_hours, ordinary messages younger than 1 hour, tombstones younger than 72 hours and agent status history, which are never evicted; raise postgres_budget_mib and restart every replica, lower idle_window_hours, or have an administrator reset the bus to discard all data"
 	if over != wantOver || ex != wantEx {
 		t.Fatalf("texts:\n%s\n%s", over, ex)
 	}

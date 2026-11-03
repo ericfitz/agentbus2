@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/rules"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/rules"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 const (
@@ -221,7 +221,7 @@ func noteEmbed(ctx context.Context, c *core.Core, err error) {
 	} else {
 		// Name the process: with several, the one that failed (for example,
 		// one started without the key) is the one to fix.
-		msg := fmt.Sprintf("agentbus2 pid %d: %v", os.Getpid(), err)
+		msg := fmt.Sprintf("agentmesh pid %d: %v", os.Getpid(), err)
 		at := c.NowMs()
 		dbErr = c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 			return tx.SetNotice(ctx, store.Notice{Kind: noticeKind, Message: msg, SetAt: at})

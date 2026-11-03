@@ -11,7 +11,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core"
 )
 
 // HTTP is an OpenAI-style embeddings endpoint client. It implements

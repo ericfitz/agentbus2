@@ -1,11 +1,11 @@
 .PHONY: build build-mcponly build-all vet fmt-check lint test test-conformance test-race tidy-check generate generate-check check-gates check-gates-selftest verify docker-image docker-smoke vet-cross release-check release-lint release-install-check vet-tags
 export CGO_ENABLED=0
-PKGS_UNIT = $$(go list ./... | grep -v '^github.com/ericfitz/agentbus2/internal/conformance')
+PKGS_UNIT = $$(go list ./... | grep -v '^github.com/ericfitz/agentmesh/internal/conformance')
 
-build:       ## Build the agentbus2 binary (no cgo), as the release build will
-	go build -trimpath -o agentbus2 .
-build-mcponly: ## Build the agentbus2-mcponly binary (no cgo; the MCP-only client)
-	go build -trimpath -o agentbus2-mcponly ./cmd/agentbus2-mcponly
+build:       ## Build the agentmesh binary (no cgo), as the release build will
+	go build -trimpath -o agentmesh .
+build-mcponly: ## Build the agentmesh-mcponly binary (no cgo; the MCP-only client)
+	go build -trimpath -o agentmesh-mcponly ./cmd/agentmesh-mcponly
 build-all:   ## Compile every package
 	go build ./...
 vet:
@@ -28,13 +28,13 @@ generate-check: generate  ## Fail when internal/gen is not exactly what api/ gen
 test-conformance:  ## Store and Bus conformance suites on SQLite and Postgres; -count=1 so an unreachable Postgres can never be masked by the test cache
 	go test -count=1 -p 1 ./internal/conformance/...
 	@# the bus suite runs through local.New and through the generated client over the in-process transport (spec 10, Milestone 4 exit)
-	AGENTBUS2_BUS_TRANSPORT=inproc go test -count=1 -p 1 ./internal/conformance/bus/
+	AGENTMESH_BUS_TRANSPORT=inproc go test -count=1 -p 1 ./internal/conformance/bus/
 check-gates:  ## Prove the negative halves: an unreachable Postgres fails the suites, unit tests exclude the suites, nothing skips, the generator reacts to the schema, the suites fail with no Docker and no variable (needs Docker for the busybox run)
 	bash scripts/check-gates.sh
 check-gates-selftest:  ## Prove the gate scripts fire: one mutation per check in a throwaway worktree of HEAD (minutes; its own CI job, not part of verify)
 	bash scripts/check-gates-selftest.sh
-docker-image: ## Build the agentbus2:local Docker image (not part of verify)
-	docker build -t agentbus2:local .
+docker-image: ## Build the agentmesh:local Docker image (not part of verify)
+	docker build -t agentmesh:local .
 docker-smoke: ## Build the image and smoke-test it with Docker (not part of verify; its own CI job)
 	bash scripts/docker-smoke.sh
 vet-cross:   ## go vet for linux and windows on amd64 and arm64, and golangci-lint for windows (ported from v1)

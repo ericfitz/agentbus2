@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/access"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/access"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // RequireServerAdmin resolves identity (not_registered for "", a reserved name

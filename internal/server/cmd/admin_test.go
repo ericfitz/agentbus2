@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/core/scopes"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/core/scopes"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
 // adminEnv is one SQLite file per test plus a way to run RunAdmin against it.
@@ -312,7 +312,7 @@ func TestAdminWorksWithoutServer(t *testing.T) {
 	if code, _, errOut := e.run("-set", "listen=nonsense", "-set", "registration=enrollment", "create-identity", "b"); code != 0 {
 		t.Fatalf("-set listen/registration: code %d stderr %q", code, errOut)
 	}
-	if code, _, errOut := e.runEnv([]string{"AGENTBUS2_SERVER_LISTEN=nonsense"}, "-sqlite", e.file, "create-identity", "c"); code != 0 {
+	if code, _, errOut := e.runEnv([]string{"AGENTMESH_SERVER_LISTEN=nonsense"}, "-sqlite", e.file, "create-identity", "c"); code != 0 {
 		t.Fatalf("environment listen: code %d stderr %q", code, errOut)
 	}
 	// Syntax of registration is still judged, as for the server.
@@ -349,17 +349,17 @@ func TestAdminFlagSet(t *testing.T) {
 	if code != 2 || !strings.Contains(errOut, "exactly one") {
 		t.Fatalf("no store: code %d stderr %q", code, errOut)
 	}
-	code, out, errOut := e.runEnv([]string{"AGENTBUS2_SERVER_SQLITE=" + e.file}, "create-identity", "a")
+	code, out, errOut := e.runEnv([]string{"AGENTMESH_SERVER_SQLITE=" + e.file}, "create-identity", "a")
 	if code != 0 || !strings.Contains(out, "a created") {
 		t.Fatalf("store from the environment: code %d out %q stderr %q", code, out, errOut)
 	}
-	code, _, errOut = e.runEnv([]string{"AGENTBUS2_SERVER_SQLITE=" + e.file, "AGENTBUS2_SERVER_COLOUR=1"}, "create-identity", "b")
+	code, _, errOut = e.runEnv([]string{"AGENTMESH_SERVER_SQLITE=" + e.file, "AGENTMESH_SERVER_COLOUR=1"}, "create-identity", "b")
 	if code != 2 || !strings.Contains(errOut, "colour") {
 		t.Fatalf("unknown environment setting: code %d stderr %q", code, errOut)
 	}
 	// -set overrides the environment; the -sqlite flag overrides both.
 	other := filepath.Join(t.TempDir(), "other.db")
-	if code, _, errOut := e.runEnv([]string{"AGENTBUS2_SERVER_SQLITE=" + e.file}, "-sqlite", other, "create-identity", "z"); code != 0 {
+	if code, _, errOut := e.runEnv([]string{"AGENTMESH_SERVER_SQLITE=" + e.file}, "-sqlite", other, "create-identity", "z"); code != 0 {
 		t.Fatalf("flag over environment: code %d stderr %q", code, errOut)
 	}
 	if _, err := os.Stat(other); err != nil {
@@ -414,7 +414,7 @@ func TestAdminCreateHuman(t *testing.T) {
 // names the configured ones.
 func TestAdminUsersAddKnownIssuer(t *testing.T) {
 	e := newAdminEnv(t)
-	issuers := `[{"name":"corp","issuer":"https://idp.example","jwks_uri":"https://idp.example/jwks","audience":"agentbus2"}]`
+	issuers := `[{"name":"corp","issuer":"https://idp.example","jwks_uri":"https://idp.example/jwks","audience":"agentmesh"}]`
 	set := []string{"-set", "issuers=" + issuers}
 	run := func(args ...string) (int, string, string) {
 		return e.run(append(set, args...)...)

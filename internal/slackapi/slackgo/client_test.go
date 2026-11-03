@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
 )
 
 const (
@@ -263,7 +263,7 @@ func TestPostParams(t *testing.T) {
 		EventType    string         `json:"event_type"`
 		EventPayload map[string]int `json:"event_payload"`
 	}
-	if err := json.Unmarshal([]byte(form.Get("metadata")), &md); err != nil || md.EventType != "agentbus2_message" || md.EventPayload["seq"] != 42 {
+	if err := json.Unmarshal([]byte(form.Get("metadata")), &md); err != nil || md.EventType != "agentmesh_message" || md.EventPayload["seq"] != 42 {
 		t.Fatalf("metadata %s, %v", form.Get("metadata"), err)
 	}
 	if strings.Contains(form.Get("metadata"), "\"seq\":42.") {
@@ -357,7 +357,7 @@ func TestUserMapping(t *testing.T) {
 func TestHistoryIncludesMetadata(t *testing.T) {
 	f, c := newFake(t)
 	f.on("conversations.history", jsonReply(`{"ok":true,"messages":[
-		{"ts":"1700000002.000000","user":"UBOT","bot_id":"B1","text":"b","metadata":{"event_type":"agentbus2_message","event_payload":{"seq":42}}},
+		{"ts":"1700000002.000000","user":"UBOT","bot_id":"B1","text":"b","metadata":{"event_type":"agentmesh_message","event_payload":{"seq":42}}},
 		{"ts":"1700000001.000000","user":"U1","text":"a","thread_ts":"1700000001.000000","reply_count":2},
 		{"ts":"1700000000.000000","user":"U2","text":"c","metadata":{"event_type":"other","event_payload":{"seq":7}}}],
 		"response_metadata":{"next_cursor":"nx"}}`))
@@ -385,7 +385,7 @@ func TestHistoryIncludesMetadata(t *testing.T) {
 
 func TestRepliesAndMembers(t *testing.T) {
 	f, c := newFake(t)
-	f.on("conversations.replies", jsonReply(`{"ok":true,"has_more":true,"messages":[{"ts":"1.1","text":"r","metadata":{"event_type":"agentbus2_message","event_payload":{"seq":5}}}],"response_metadata":{"next_cursor":"n2"}}`))
+	f.on("conversations.replies", jsonReply(`{"ok":true,"has_more":true,"messages":[{"ts":"1.1","text":"r","metadata":{"event_type":"agentmesh_message","event_payload":{"seq":5}}}],"response_metadata":{"next_cursor":"n2"}}`))
 	p, err := c.Replies(context.Background(), "C1", "1700000000.000001", "1699999999.000000", "")
 	if err != nil || p.NextCursor != "n2" || len(p.Messages) != 1 || p.Messages[0].MetadataSeq != 5 {
 		t.Fatalf("got %+v, %v", p, err)

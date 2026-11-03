@@ -3,9 +3,9 @@ package scopes
 import (
 	"slices"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // CheckBridgeACL is the ACL rule of a bridged channel (Decision 12, spec

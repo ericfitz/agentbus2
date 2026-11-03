@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // opEditOut is the printed form of bus.EditResult.
@@ -16,7 +16,7 @@ type opEditOut struct {
 	Replaced int64 `json:"replaced"`
 }
 
-// RunMemories implements `agentbus2 memories get|edit|delete|revisions`.
+// RunMemories implements `agentmesh memories get|edit|delete|revisions`.
 func RunMemories(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	subs := map[string]opRunFunc{}
 	for _, sub := range []string{"get", "edit", "delete", "revisions"} {

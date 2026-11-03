@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/procs"
 )
 
 // The exit-code errors of watch and wait (spec 3.5, Decision 42, v1 ADR 0021).

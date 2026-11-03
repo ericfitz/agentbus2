@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/search"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/search"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 func TestTextSearchPostgres(t *testing.T) {

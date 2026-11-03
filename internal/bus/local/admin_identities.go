@@ -3,8 +3,8 @@ package local
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
 )
 
 func (b *Bus) identities() identities.Service { return identities.Service{Core: b.c} }

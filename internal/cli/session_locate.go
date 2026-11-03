@@ -6,14 +6,14 @@ import (
 	"fmt"
 	"io/fs"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/procs"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 // errNoSession is locateSession's answer when the harness has no state file.
-var errNoSession = errors.New("no session for this harness; pass -session or start agentbus2 mcp")
+var errNoSession = errors.New("no session for this harness; pass -session or start agentmesh mcp")
 
 // located is the session a watch, a wait or a hook works on (choice 9).
 type located struct {

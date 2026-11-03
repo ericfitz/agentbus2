@@ -12,7 +12,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 // LockedBuffer is a buffer a goroutine other than the test's can write to
@@ -44,7 +44,7 @@ type ProfileEnv struct {
 }
 
 // NewProfileEnv creates the three directories under one t.TempDir() and
-// returns the environ (HOME, AGENTBUS2_CONFIG_DIR, AGENTBUS2_DATA_DIR, then
+// returns the environ (HOME, AGENTMESH_CONFIG_DIR, AGENTMESH_DATA_DIR, then
 // extra).
 func NewProfileEnv(t testing.TB, extra ...string) *ProfileEnv {
 	t.Helper()
@@ -55,7 +55,7 @@ func NewProfileEnv(t testing.TB, extra ...string) *ProfileEnv {
 			t.Fatal(err)
 		}
 	}
-	e.Environ = append([]string{"HOME=" + e.Home, "AGENTBUS2_CONFIG_DIR=" + e.Config, "AGENTBUS2_DATA_DIR=" + e.Data}, extra...)
+	e.Environ = append([]string{"HOME=" + e.Home, "AGENTMESH_CONFIG_DIR=" + e.Config, "AGENTMESH_DATA_DIR=" + e.Data}, extra...)
 	return e
 }
 

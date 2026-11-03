@@ -3,8 +3,8 @@ package core
 import (
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 func TestBudgetPicksEngineSetting(t *testing.T) {

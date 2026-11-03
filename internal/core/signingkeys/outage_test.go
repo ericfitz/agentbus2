@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
 )
 
 // outageProvider is an external provider whose Next fails with err.

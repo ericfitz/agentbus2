@@ -12,7 +12,7 @@ import (
 	"github.com/jmoiron/sqlx"
 	sqlitedrv "modernc.org/sqlite"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // tx implements store.Tx over one database transaction.

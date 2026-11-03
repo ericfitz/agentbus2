@@ -1,15 +1,15 @@
-# Formula for agentbus2-mcponly: installs a prebuilt binary: a signed, notarized
+# Formula for agentmesh-mcponly: installs a prebuilt binary: a signed, notarized
 # universal binary on macOS, a static binary on Linux (amd64 and arm64).
-# Rendered from release/agentbus2-mcponly.rb.tmpl by release/release.sh; do not edit
+# Rendered from release/agentmesh-mcponly.rb.tmpl by release/release.sh; do not edit
 # the copy in the tap by hand.
 #
 # The host checks below are the layout Homebrew accepts for third-party taps
 # that ship platform-specific URLs: `url`/`sha256` are not allowed inside
 # `on_macos`/`on_linux` blocks (FormulaAudit/ComponentsOrder), and the
 # OnSystemConditionals cop exempts non-core taps from the on_* rewrite.
-class Agentbus2Mcponly < Formula
-  desc "Small MCP-only client for an agentbus2 server (no local mode, no TUI)"
-  homepage "https://github.com/ericfitz/agentbus2"
+class AgentmeshMcponly < Formula
+  desc "Small MCP-only client for an agentmesh server (no local mode, no TUI)"
+  homepage "https://github.com/ericfitz/agentmesh"
   license "Apache-2.0"
 
   if OS.mac?
@@ -24,16 +24,16 @@ class Agentbus2Mcponly < Formula
   end
 
   def install
-    bin.install "agentbus2-mcponly"
+    bin.install "agentmesh-mcponly"
   end
 
   def caveats
     <<~EOS
-      Run agentbus2-mcponly help to connect an agent to an agentbus2 server.
+      Run agentmesh-mcponly help to connect an agent to an agentmesh server.
     EOS
   end
 
   test do
-    assert_equal version.to_s, shell_output("#{bin}/agentbus2-mcponly version").strip
+    assert_equal version.to_s, shell_output("#{bin}/agentmesh-mcponly version").strip
   end
 end

@@ -18,13 +18,13 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ericfitz/agentbus2/internal/auth/assertion"
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/core/maintenance"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/auth/assertion"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/core/maintenance"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 func genKey(t *testing.T, alg keys.Algorithm) crypto.Signer {
@@ -522,14 +522,14 @@ func TestBearerRefusesCorporateToken(t *testing.T) {
 		_ = json.NewEncoder(w).Encode(set)
 	}))
 	t.Cleanup(srv.Close)
-	ext := &token.External{Name: "corp", Issuer: "https://idp.example", JWKSURI: srv.URL, Audience: "agentbus2"}
+	ext := &token.External{Name: "corp", Issuer: "https://idp.example", JWKSURI: srv.URL, Audience: "agentmesh"}
 	sg, err := jose.NewSigner(jose.SigningKey{Algorithm: jose.ES256, Key: extKey},
 		(&jose.SignerOptions{}).WithType("JWT").WithHeader("kid", kidOf(t, extKey)))
 	if err != nil {
 		t.Fatal(err)
 	}
 	raw, err := jwt.Signed(sg).Claims(jwt.Claims{
-		Issuer: ext.Issuer, Subject: "sub-1", Audience: jwt.Audience{"agentbus2"}, ID: "j",
+		Issuer: ext.Issuer, Subject: "sub-1", Audience: jwt.Audience{"agentmesh"}, ID: "j",
 		Expiry: jwt.NewNumericDate(time.Now().Add(time.Hour)),
 	}).Claims(map[string]any{"email": "pat@corp.example"}).Serialize()
 	if err != nil {

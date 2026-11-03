@@ -3,9 +3,9 @@ package local
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/delivery"
-	"github.com/ericfitz/agentbus2/internal/core/sessions"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/delivery"
+	"github.com/ericfitz/agentmesh/internal/core/sessions"
 )
 
 func (b *Bus) delivery() delivery.Service {

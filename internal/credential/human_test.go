@@ -17,12 +17,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/oidcclient"
-	"github.com/ericfitz/agentbus2/internal/oidctest"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/oidcclient"
+	"github.com/ericfitz/agentmesh/internal/oidctest"
 )
 
-// humanEnv is a fake corporate provider plus a fake agentbus2 server that
+// humanEnv is a fake corporate provider plus a fake agentmesh server that
 // answers discovery, the RFC 8693 exchange and a protected /v1/echo.
 type humanEnv struct {
 	prov        *oidctest.Provider

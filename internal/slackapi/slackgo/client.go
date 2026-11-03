@@ -18,14 +18,14 @@ import (
 	"github.com/slack-go/slack"
 	"github.com/slack-go/slack/socketmode"
 
-	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
 )
 
 const (
 	pageLimit = 200
 	// metadataType is the event_type of the metadata every posted message
 	// carries (slackapi.PostInput).
-	metadataType = "agentbus2_message"
+	metadataType = "agentmesh_message"
 )
 
 // Options configures New. APIURL "" is Slack's; tests point it at httptest.

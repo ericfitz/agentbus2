@@ -12,8 +12,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 // senderName renders a message's sender for display: the server-assigned
@@ -836,7 +836,7 @@ func (m Model) renderCompose() string {
 
 func (m Model) renderStatusBar() string {
 	th := m.theme
-	left := th.Style(th.Dim).Render("agentbus2 v"+version.Version) + "  "
+	left := th.Style(th.Dim).Render("agentmesh v"+version.Version) + "  "
 	left += "as " + th.Style(th.User).Render(m.c.identity)
 	if n := m.attention(); n > 0 {
 		left += "  " + th.Style(th.Warn).Render(attentionText(n))

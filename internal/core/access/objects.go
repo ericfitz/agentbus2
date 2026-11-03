@@ -1,6 +1,6 @@
 package access
 
-import "github.com/ericfitz/agentbus2/internal/store"
+import "github.com/ericfitz/agentmesh/internal/store"
 
 // Action is what a principal asks to do to an object.
 type Action string

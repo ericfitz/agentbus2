@@ -10,15 +10,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/core/notify"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/testkit"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/core/notify"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/testkit"
 )
 
 // noMerge is core.Defaults with the wake merge window off, so a wake does not
@@ -97,7 +97,7 @@ func TestLocalOpenRegistersAndServes(t *testing.T) {
 	if len(r.Messages) != 1 || r.Messages[0].Content != "hello" || r.Messages[0].Sender != "sam" {
 		t.Fatalf("receive: %+v", r.Messages)
 	}
-	if _, err := os.Stat(filepath.Join(e.Data, "agentbus2.sqlite")); err != nil {
+	if _, err := os.Stat(filepath.Join(e.Data, "agentmesh.sqlite")); err != nil {
 		t.Fatalf("store file: %v", err)
 	}
 	if err := pat.Close(); err != nil {

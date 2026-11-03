@@ -4,7 +4,7 @@
 // section 4.6 (Decision 95). Ported from v1 internal/bus/memories.go.
 package memories
 
-import "github.com/ericfitz/agentbus2/internal/core"
+import "github.com/ericfitz/agentmesh/internal/core"
 
 // Service is the memory aggregate over a Core.
 type Service struct{ *core.Core }

@@ -10,11 +10,11 @@ package delivery
 import (
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/rules"
-	"github.com/ericfitz/agentbus2/internal/core/sessions"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/rules"
+	"github.com/ericfitz/agentmesh/internal/core/sessions"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Service is the delivery aggregate over a Core.

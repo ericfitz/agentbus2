@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/fileacl"
-	"github.com/ericfitz/agentbus2/internal/fileacl/acltest"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/fileacl"
+	"github.com/ericfitz/agentmesh/internal/fileacl/acltest"
 )
 
 // TestSaveSetsOwnerOnlyACL is the Windows counterpart of the Unix mode-0600

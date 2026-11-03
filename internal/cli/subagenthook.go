@@ -10,7 +10,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 // subagentHookInput is the part of a Claude Code SubagentStart hook's stdin
@@ -51,8 +51,8 @@ func subagentHookWork(environ []string, stdin io.Reader) hookResult {
 	if _, err := locateSession(dataDir, "", processTable, selfPID()); err != nil {
 		return hookResult{stage: "locate", err: err}
 	}
-	text := fmt.Sprintf("Agentbus2: only if your prompt asks you to use agentbus2, call the register tool "+
-		"with hint=%q (or the hint your prompt names) and follow the using-agentbus2 skill. "+
+	text := fmt.Sprintf("Agentmesh: only if your prompt asks you to use agentmesh, call the register tool "+
+		"with hint=%q (or the hint your prompt names) and follow the using-agentmesh skill. "+
 		"Do not start wait or watch; use receive. Do not call set_status; your parent's status covers you.",
 		subagentName(hi.AgentType))
 	b, err := json.Marshal(map[string]any{"hookSpecificOutput": map[string]string{
@@ -67,7 +67,7 @@ func subagentHookWork(environ []string, stdin io.Reader) hookResult {
 
 // RunSubagentHook is the SubagentStart hook (choice 15, v1 ADR 0016): when the
 // parent has a session it prints additionalContext telling a subagent to
-// register with its own hint only if its prompt asks it to use agentbus2
+// register with its own hint only if its prompt asks it to use agentmesh
 // (decision 19: the text stays under 300 characters). It
 // always exits 0 and falls open within hookBudget.
 func RunSubagentHook(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {

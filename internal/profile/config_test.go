@@ -279,7 +279,7 @@ func TestResolveDefault(t *testing.T) {
 }
 
 func TestSQLitePathAndCredentialDir(t *testing.T) {
-	if got := SQLitePath(Profile{Mode: ModeLocal}, "/d"); got != filepath.Join("/d", "agentbus2.sqlite") {
+	if got := SQLitePath(Profile{Mode: ModeLocal}, "/d"); got != filepath.Join("/d", "agentmesh.sqlite") {
 		t.Fatalf("default sqlite = %q", got)
 	}
 	if got := SQLitePath(Profile{Mode: ModeLocal, SQLite: "/x/y.db"}, "/d"); got != "/x/y.db" {

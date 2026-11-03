@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 func TestRemoteAgentStatusUnknownTagPassesThrough(t *testing.T) { // open note: agent-status 1

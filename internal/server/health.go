@@ -3,10 +3,10 @@ package server
 import (
 	"context"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/health"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/health"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // Health answers GET /v1/health: the document tiered by the caller (Decision

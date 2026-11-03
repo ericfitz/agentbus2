@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/ericfitz/agentbus2/internal/search"
+	"github.com/ericfitz/agentmesh/internal/search"
 )
 
 // Message is a stored message. Tombstoned rows keep their seq.

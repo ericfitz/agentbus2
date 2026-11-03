@@ -20,7 +20,7 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ericfitz/agentbus2/internal/oidctest"
+	"github.com/ericfitz/agentmesh/internal/oidctest"
 )
 
 // watchPort wraps c.Announce (set it first) to record the redirect_uri of the

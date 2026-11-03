@@ -13,14 +13,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 func TestStopHookBlocksWhenPending(t *testing.T) {
@@ -57,20 +57,20 @@ func TestStopHookBlocksWhenPending(t *testing.T) {
 		t.Fatalf("stderr %q: a hook never writes to stderr", errOut)
 	}
 	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "2 new message(s) for "+sess.DisplayName+" on general") ||
-		!strings.Contains(out["reason"], "background `agentbus2 wait`") || strings.Contains(out["reason"], "agentbus2 watch") ||
+		!strings.Contains(out["reason"], "background `agentmesh wait`") || strings.Contains(out["reason"], "agentmesh watch") ||
 		strings.Contains(out["reason"], "Monitor") || strings.Contains(out["reason"], "-filter") {
 		t.Fatalf("claude-code: exit %d %v", code, out)
 	}
 	state("grok")
 	code, out, _ = run()
-	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "background `agentbus2 wait`") || !strings.Contains(out["reason"], "in a background shell; on Claude Code, Bash with run_in_background") || !strings.Contains(out["reason"], "If it exits 2, read stderr; do not loop.") || strings.Contains(out["reason"], "agentbus2 watch") ||
+	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "background `agentmesh wait`") || !strings.Contains(out["reason"], "in a background shell; on Claude Code, Bash with run_in_background") || !strings.Contains(out["reason"], "If it exits 2, read stderr; do not loop.") || strings.Contains(out["reason"], "agentmesh watch") ||
 		strings.Contains(out["reason"], "Monitor") || strings.Contains(out["reason"], "Codex") {
 		t.Fatalf("other harness: exit %d %v", code, out)
 	}
 	state("codex-mcp-client")
 	code, out, _ = run()
 	if code != 0 || out["decision"] != "block" || !strings.Contains(out["reason"], "Call receive") ||
-		strings.Contains(out["reason"], "agentbus2 wait") || strings.Contains(out["reason"], "run_in_background") ||
+		strings.Contains(out["reason"], "agentmesh wait") || strings.Contains(out["reason"], "run_in_background") ||
 		strings.Contains(out["reason"], "Monitor") || strings.Contains(out["reason"], "watch") {
 		t.Fatalf("codex: exit %d %v", code, out)
 	}

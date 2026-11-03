@@ -69,7 +69,7 @@ The administrator flag is the one that gates `GET /v1/admin/status` (see `admin-
 
 ## Examples
 
-Output from a scratch server on loopback (`agentbus2 server -listen 127.0.0.1:8431 -sqlite FILE`).
+Output from a scratch server on loopback (`agentmesh server -listen 127.0.0.1:8431 -sqlite FILE`).
 
 Anonymous (the probe tier):
 
@@ -90,32 +90,32 @@ HTTP/1.1 401 Unauthorized
 Content-Type: application/problem+json
 ...
 
-{"code":"unauthenticated","detail":"invalid credential: invalid bearer token: malformed","instance":"/v1/health","retryable":false,"status":401,"title":"Unauthorized","type":"urn:agentbus2:problem:unauthenticated"}
+{"code":"unauthenticated","detail":"invalid credential: invalid bearer token: malformed","instance":"/v1/health","retryable":false,"status":401,"title":"Unauthorized","type":"urn:agentmesh:problem:unauthenticated"}
 ```
 
-With a bearer: `agentbus2 login -profile P -identity I` on a server profile caches one in `<data dir>/tokens/P/I.json` (member `access_token`; mode 0600; it expires after `token_lifetime_seconds`, an hour by default):
+With a bearer: `agentmesh login -profile P -identity I` on a server profile caches one in `<data dir>/tokens/P/I.json` (member `access_token`; mode 0600; it expires after `token_lifetime_seconds`, an hour by default):
 
 ```
-$ BEARER=$(jq -r .access_token "$AGENTBUS2_DATA_DIR/tokens/P/I.json")
+$ BEARER=$(jq -r .access_token "$AGENTMESH_DATA_DIR/tokens/P/I.json")
 $ curl -sS -H "Authorization: Bearer $BEARER" http://127.0.0.1:8431/v1/health
 {"embeddings":{"backlog":0,"rejected":0,"state":"off"},"maintenance":{"interval_seconds":60,"jobs":[],"lock":"unknown","owner":"a31950eb95b5c835988bcf17"},"notices":[],"now":1793207928667,"protocol_version":"1.0.0","started_at":1793207928294,"status":"ok","storage":{"budget_bytes":2147483648,"bytes":352256,"disk_bytes":352256,"disk_ratio":1,"evictable":true,"tier":"normal"},"store":{"engine":"sqlite","schema_version":1},"tier":"admin","version":"2.0.0-dev"}
 ```
 
-`agentbus2 health [-profile P] [-identity I]` prints the same document, indented, using the profile's own credential. It exits 0 for `ok` and `degraded`, 1 for a `bus.Error` (an unreachable store among them) and 2 for a flag or resolution error.
+`agentmesh health [-profile P] [-identity I]` prints the same document, indented, using the profile's own credential. It exits 0 for `ok` and `degraded`, 1 for a `bus.Error` (an unreachable store among them) and 2 for a flag or resolution error.
 
 ## Reading `maintenance`
 
-The maintenance block is this process's view, kept in memory; nothing about a run is stored in the database. The loop ticks once per `maintenance_interval_seconds`, the first tick one interval after start on the server (in local mode, in `agentbus2 mcp` and `agentbus2 tui`, after a random delay of up to one interval), so `lock` is `unknown` and `jobs` is empty until then (and after a lock error). After a tick (here with an interval of 1 second):
+The maintenance block is this process's view, kept in memory; nothing about a run is stored in the database. The loop ticks once per `maintenance_interval_seconds`, the first tick one interval after start on the server (in local mode, in `agentmesh mcp` and `agentmesh tui`, after a random delay of up to one interval), so `lock` is `unknown` and `jobs` is empty until then (and after a lock error). After a tick (here with an interval of 1 second):
 
 ```
 "maintenance":{"interval_seconds":1,"jobs":[{"changed":0,"name":"lapsed sessions","skipped":false}, ...14 jobs, 16 on a server...],"last_tick_at":1792911399430,"lock":"held","owner":"724fe2f04ea92cd30e839391"}
 ```
 
-The two extra jobs on a server, which run just before the last job (`assertion replay expiry`), are `signing key rotation` and `signing key removal`. Rotation reports 1 when it rotated the active signing key and 0 otherwise; its error is the provider mismatch text (the configured provider is not the active key's), or, for an external key the provider still names after it is older than `signing_key_rotation_hours`, `signing key <kid> is older than signing_key_rotation_hours (<n>): point the key URI at a new key, then run agentbus2 server admin signing-key rotate`. Removal reports how many retiring keys it deleted.
+The two extra jobs on a server, which run just before the last job (`assertion replay expiry`), are `signing key rotation` and `signing key removal`. Rotation reports 1 when it rotated the active signing key and 0 otherwise; its error is the provider mismatch text (the configured provider is not the active key's), or, for an external key the provider still names after it is older than `signing_key_rotation_hours`, `signing key <kid> is older than signing_key_rotation_hours (<n>): point the key URI at a new key, then run agentmesh server admin signing-key rotate`. Removal reports how many retiring keys it deleted.
 
 With several replicas over Postgres exactly one holds the maintenance lock. Ask each replica: the one that answers `held` runs the jobs, the others answer `held_elsewhere` with no jobs. Two replicas both answering `held`, or none while every replica reports recent ticks, is worth investigating. `owner` is the answering process's own lock owner, not the holder's.
 
-A process that does not run the maintenance loop (an `agentbus2 health` or a hook over a local profile) reports `unknown` and no jobs. In local mode only `agentbus2 mcp` and `agentbus2 tui` run the loop.
+A process that does not run the maintenance loop (an `agentmesh health` or a hook over a local profile) reports `unknown` and no jobs. In local mode only `agentmesh mcp` and `agentmesh tui` run the loop.
 
 ## Other surfaces
 

@@ -1,23 +1,23 @@
-# install.ps1: install agentbus2 on Windows into %LocalAppData%\Programs\agentbus2.
-#   irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1 | iex
-# The MCP-only client (agentbus2-mcponly.exe: serve, register, check, config and
+# install.ps1: install agentmesh on Windows into %LocalAppData%\Programs\agentmesh.
+#   irm https://github.com/ericfitz/agentmesh/releases/latest/download/install.ps1 | iex
+# The MCP-only client (agentmesh-mcponly.exe: serve, register, check, config and
 # version; no local mode) installs the same way into the same directory, beside
-# agentbus2.exe, which it never touches. -McpOnly is the one argument, so the
+# agentmesh.exe, which it never touches. -McpOnly is the one argument, so the
 # piped form becomes:
-#   & ([scriptblock]::Create((irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1))) -McpOnly
+#   & ([scriptblock]::Create((irm https://github.com/ericfitz/agentmesh/releases/latest/download/install.ps1))) -McpOnly
 # Windows PowerShell 5.1 and PowerShell 7. Environment:
-#   AGENTBUS2_VERSION        vX.Y.Z to install (default: the latest release)
-#   AGENTBUS2_INSTALL_DIR    absolute directory (default: %LocalAppData%\Programs\agentbus2)
-#   AGENTBUS2_BASE_URL       mirror or test server (default: https://github.com/ericfitz/agentbus2)
-#   AGENTBUS2_SKIP_SIGNATURE 1 skips the OpenSSL signature check (the checksum is still verified)
-#   AGENTBUS2_TEST_OSARCH    test hook: pretend the OS architecture is this value
+#   AGENTMESH_VERSION        vX.Y.Z to install (default: the latest release)
+#   AGENTMESH_INSTALL_DIR    absolute directory (default: %LocalAppData%\Programs\agentmesh)
+#   AGENTMESH_BASE_URL       mirror or test server (default: https://github.com/ericfitz/agentmesh)
+#   AGENTMESH_SKIP_SIGNATURE 1 skips the OpenSSL signature check (the checksum is still verified)
+#   AGENTMESH_TEST_OSARCH    test hook: pretend the OS architecture is this value
 # Downloads the zip, SHA256SUMS and SHA256SUMS.sig, verifies the Ed25519
 # signature with OpenSSL 3 (Git for Windows ships one) and the public key
-# below, verifies the zip's hash, runs the new agentbus2.exe (or
-# agentbus2-mcponly.exe) once in the
+# below, verifies the zip's hash, runs the new agentmesh.exe (or
+# agentmesh-mcponly.exe) once in the
 # temporary directory, then swaps it into place (whatever is there, running or
 # not, is renamed aside, never overwritten) and adds the directory to the user
-# PATH. Never runs agentbus2 init. A refusal throws, so a piped `iex` leaves the
+# PATH. Never runs agentmesh init. A refusal throws, so a piped `iex` leaves the
 # session open; `powershell -File install.ps1` exits 1.
 # open note: mcp-only-client 10
 #Requires -Version 5.1
@@ -25,15 +25,15 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-# BEGIN agentbus2 release public key
+# BEGIN agentmesh release public key
 $PubKeyPem = @'
 -----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAXQGv11CrEIzH0muqwxbbXZPyNtPzt/5dRekDooj2eRk=
 -----END PUBLIC KEY-----
 '@
-# END agentbus2 release public key
+# END agentmesh release public key
 
-# Upgrade: agentbus2.exe was already there. OldVersion: what it reported, or
+# Upgrade: agentmesh.exe was already there. OldVersion: what it reported, or
 # $null when it did not run (or vanished under a concurrent installer).
 $script:Upgrade = $false
 $script:OldVersion = $null
@@ -44,7 +44,7 @@ $script:OldVersion = $null
 # no OSArchitecture, and it shadows the real type in interactive Windows
 # PowerShell 5.1 sessions.
 function Get-Arch {
-    $a = $env:AGENTBUS2_TEST_OSARCH
+    $a = $env:AGENTMESH_TEST_OSARCH
     if (-not $a) {
         try { $a = (Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment' -Name PROCESSOR_ARCHITECTURE).PROCESSOR_ARCHITECTURE } catch { $a = $null }
         if (-not $a) { $a = 'unknown' }
@@ -52,7 +52,7 @@ function Get-Arch {
     switch ("$a") {
         'AMD64' { return 'amd64' }
         'ARM64' { return 'arm64' }
-        default { throw "agentbus2 install: unsupported architecture: $a (releases cover windows-amd64 and windows-arm64)" }
+        default { throw "agentmesh install: unsupported architecture: $a (releases cover windows-amd64 and windows-arm64)" }
     }
 }
 
@@ -107,15 +107,15 @@ function Find-OpenSsl {
         if ($major -and -not $old) { $old = "$cand ($(Get-OpenSslVersion $cand))" }
     }
     if ($old) {
-        throw "agentbus2 install: found $old, but verifying the release signature needs OpenSSL 3. Install Git for Windows (winget install --id Git.Git -e), which ships OpenSSL 3, or rerun with AGENTBUS2_SKIP_SIGNATURE=1 to verify the hash only"
+        throw "agentmesh install: found $old, but verifying the release signature needs OpenSSL 3. Install Git for Windows (winget install --id Git.Git -e), which ships OpenSSL 3, or rerun with AGENTMESH_SKIP_SIGNATURE=1 to verify the hash only"
     }
-    throw "agentbus2 install: OpenSSL 3 is required to verify the release signature and none was found. Install Git for Windows: winget install --id Git.Git -e (or rerun with AGENTBUS2_SKIP_SIGNATURE=1 to verify the hash only)"
+    throw "agentmesh install: OpenSSL 3 is required to verify the release signature and none was found. Install Git for Windows: winget install --id Git.Git -e (or rerun with AGENTMESH_SKIP_SIGNATURE=1 to verify the hash only)"
 }
 
-# Resolve-Tag: AGENTBUS2_VERSION, else the tag releases/latest redirects to
+# Resolve-Tag: AGENTMESH_VERSION, else the tag releases/latest redirects to
 # (no API call, so no anonymous rate limit).
 function Resolve-Tag([string]$Base) {
-    $tag = $env:AGENTBUS2_VERSION
+    $tag = $env:AGENTMESH_VERSION
     if (-not $tag) {
         $loc = $null
         try {
@@ -127,10 +127,10 @@ function Resolve-Tag([string]$Base) {
             $resp.Close()
         } catch { $loc = $null }
         if ($loc) { $tag = ($loc.TrimEnd('/') -split '/')[-1] }
-        if (-not $tag) { throw "agentbus2 install: could not determine the latest release from $Base/releases/latest; set AGENTBUS2_VERSION=vX.Y.Z" }
+        if (-not $tag) { throw "agentmesh install: could not determine the latest release from $Base/releases/latest; set AGENTMESH_VERSION=vX.Y.Z" }
     }
-    if ($tag.Contains("`n")) { throw 'agentbus2 install: version must look like vX.Y.Z, got a value containing a newline' }
-    if ($tag -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+\z') { throw "agentbus2 install: version must look like vX.Y.Z, got '$tag'" }
+    if ($tag.Contains("`n")) { throw 'agentmesh install: version must look like vX.Y.Z, got a value containing a newline' }
+    if ($tag -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+\z') { throw "agentmesh install: version must look like vX.Y.Z, got '$tag'" }
     return $tag
 }
 
@@ -152,7 +152,7 @@ function Get-Asset([string]$Url, [string]$Out, [string]$NotFound) {
             if ($sc -and $sc.Value) { try { $status = [int]$sc.Value } catch { $status = 0 } }
         }
         if ($status -eq 404 -and $NotFound) { throw $NotFound }
-        throw "agentbus2 install: download failed: $Url"
+        throw "agentmesh install: download failed: $Url"
     } finally { $ProgressPreference = $pp }
 }
 
@@ -162,7 +162,7 @@ function Test-Signature([string]$OpenSsl, [string]$Dir, [string]$Base) {
     # the one release.sh and embed-key.sh look for.
     $placeholder = @('-----BEGIN PUBLIC KEY-----', ('REPLACED-BY-' + 'release/embed-key.sh'), '-----END PUBLIC KEY-----') -join "`n"
     if ((($PubKeyPem -replace "`r", '').Trim()) -ceq $placeholder) {
-        throw "agentbus2 install: this copy of install.ps1 has no embedded release key; fetch it from $Base/releases/latest/download/install.ps1"
+        throw "agentmesh install: this copy of install.ps1 has no embedded release key; fetch it from $Base/releases/latest/download/install.ps1"
     }
     [IO.File]::WriteAllText($key, ($PubKeyPem -replace "`r", '') + "`n")
     # Windows PowerShell 5.1 turns captured stderr into a terminating error
@@ -174,16 +174,16 @@ function Test-Signature([string]$OpenSsl, [string]$Dir, [string]$Base) {
         & $OpenSsl pkeyutl -verify -rawin -pubin -inkey $key -in (Join-Path $Dir 'SHA256SUMS') -sigfile (Join-Path $Dir 'SHA256SUMS.sig') 2>&1 | Out-Null
         $code = $LASTEXITCODE
     } catch { $code = 1 } finally { $ErrorActionPreference = $eap }
-    if ($code -ne 0) { throw "agentbus2 install: signature check of SHA256SUMS failed: the download is damaged, tampered with, or signed with a key this script does not know" }
+    if ($code -ne 0) { throw "agentmesh install: signature check of SHA256SUMS failed: the download is damaged, tampered with, or signed with a key this script does not know" }
 }
 
 function Test-Hash([string]$Dir, [string]$Asset) {
     $pattern = '^([0-9a-fA-F]{64})\s+\*?' + [regex]::Escape($Asset) + '$'
     $line = Get-Content -LiteralPath (Join-Path $Dir 'SHA256SUMS') | Where-Object { $_ -match $pattern } | Select-Object -First 1
-    if (-not $line) { throw "agentbus2 install: SHA256SUMS has no entry for $Asset" }
+    if (-not $line) { throw "agentmesh install: SHA256SUMS has no entry for $Asset" }
     $want = ($line -split '\s+')[0].ToLower()
     $got = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Dir $Asset)).Hash.ToLower()
-    if ($got -ne $want) { throw "agentbus2 install: checksum mismatch for $Asset" }
+    if ($got -ne $want) { throw "agentmesh install: checksum mismatch for $Asset" }
 }
 
 # Install-Binary extracts $Bin.exe, runs it once where it was extracted
@@ -204,16 +204,16 @@ function Install-Binary([string]$Dir, [string]$Asset, [string]$InstallDir, [stri
     $extract = Join-Path $Dir 'extract'
     Expand-Archive -LiteralPath (Join-Path $Dir $Asset) -DestinationPath $extract -Force
     $new = Join-Path $extract "$Bin.exe"
-    if (-not (Test-Path -LiteralPath $new)) { throw "agentbus2 install: $Asset does not contain $Bin.exe" }
+    if (-not (Test-Path -LiteralPath $new)) { throw "agentmesh install: $Asset does not contain $Bin.exe" }
     $version = Get-InstalledVersion $new
     try {
         New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-        $probe = Join-Path $InstallDir ('.agentbus2-write-test-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
+        $probe = Join-Path $InstallDir ('.agentmesh-write-test-' + [guid]::NewGuid().ToString('N').Substring(0, 8))
         try { [IO.File]::WriteAllText($probe, 'x') }
         finally { Remove-Item -LiteralPath $probe -Force -ErrorAction SilentlyContinue }
-    } catch { throw "agentbus2 install: cannot write to $InstallDir. Set AGENTBUS2_INSTALL_DIR to a writable directory" }
+    } catch { throw "agentmesh install: cannot write to $InstallDir. Set AGENTMESH_INSTALL_DIR to a writable directory" }
     $target = Join-Path $InstallDir "$Bin.exe"
-    if (Test-Path -LiteralPath $target -PathType Container) { throw "agentbus2 install: $target is a directory; remove it or choose another AGENTBUS2_INSTALL_DIR" }
+    if (Test-Path -LiteralPath $target -PathType Container) { throw "agentmesh install: $target is a directory; remove it or choose another AGENTMESH_INSTALL_DIR" }
     $script:Upgrade = Test-Path -LiteralPath $target
     $script:OldVersion = $null
     if ($script:Upgrade) {
@@ -230,7 +230,7 @@ function Install-Binary([string]$Dir, [string]$Asset, [string]$InstallDir, [stri
             break
         } catch { Start-Sleep -Milliseconds 300 }
     }
-    if (-not $placed) { throw "agentbus2 install: could not replace $target (another installer or a scanner kept it busy); rerun the installer" }
+    if (-not $placed) { throw "agentmesh install: could not replace $target (another installer or a scanner kept it busy); rerun the installer" }
     Get-ChildItem -LiteralPath $InstallDir -Filter "$Bin.exe.old-*" | ForEach-Object {
         try { Remove-Item -LiteralPath $_.FullName -Force -ErrorAction Stop } catch { } # still running: a later run removes it
     }
@@ -256,11 +256,11 @@ function Add-UserPath([string]$Dir) {
     # SetEnvironmentVariable broadcasts WM_SETTINGCHANGE, which the registry
     # write above does not; deleting a variable that does not exist is the
     # cheapest way to send it, so running programs see the new Path.
-    try { [Environment]::SetEnvironmentVariable('AGENTBUS2_PATH_REFRESH', [NullString]::Value, 'User') } catch { }
+    try { [Environment]::SetEnvironmentVariable('AGENTMESH_PATH_REFRESH', [NullString]::Value, 'User') } catch { }
     Write-Host "added $Dir to your user PATH; new terminals pick it up"
 }
 
-# Get-InstalledVersion runs an agentbus2.exe or agentbus2-mcponly.exe (the extracted one before the swap,
+# Get-InstalledVersion runs an agentmesh.exe or agentmesh-mcponly.exe (the extracted one before the swap,
 # the installed one for its old version) and returns the version it prints,
 # or throws. The output is collected whole (not piped to Select-Object -First
 # 1, which stops the pipeline before the native exit code is recorded), stderr
@@ -271,37 +271,37 @@ function Get-InstalledVersion([string]$Exe) {
     $global:LASTEXITCODE = 1
     $out = @()
     try { $out = @(& $Exe version) } catch { $out = @() }
-    if ($LASTEXITCODE -ne 0 -or $out.Count -eq 0) { throw "agentbus2 install: $Exe does not run" }
+    if ($LASTEXITCODE -ne 0 -or $out.Count -eq 0) { throw "agentmesh install: $Exe does not run" }
     return "$($out[0])"
 }
 
 function Main {
     # No argument, or exactly -McpOnly (any case); anything else, a repeat
     # included, is the usage text.
-    $bin = 'agentbus2'
-    if ($args.Count -eq 1 -and "$($args[0])" -ieq '-McpOnly') { $bin = 'agentbus2-mcponly' }
-    elseif ($args.Count -gt 0) { throw 'agentbus2 install: usage: install.ps1 [-McpOnly]; configure it with AGENTBUS2_VERSION, AGENTBUS2_INSTALL_DIR, AGENTBUS2_BASE_URL, AGENTBUS2_SKIP_SIGNATURE' }
-    $base = if ($env:AGENTBUS2_BASE_URL) { $env:AGENTBUS2_BASE_URL.TrimEnd('/', '\') } else { 'https://github.com/ericfitz/agentbus2' }
+    $bin = 'agentmesh'
+    if ($args.Count -eq 1 -and "$($args[0])" -ieq '-McpOnly') { $bin = 'agentmesh-mcponly' }
+    elseif ($args.Count -gt 0) { throw 'agentmesh install: usage: install.ps1 [-McpOnly]; configure it with AGENTMESH_VERSION, AGENTMESH_INSTALL_DIR, AGENTMESH_BASE_URL, AGENTMESH_SKIP_SIGNATURE' }
+    $base = if ($env:AGENTMESH_BASE_URL) { $env:AGENTMESH_BASE_URL.TrimEnd('/', '\') } else { 'https://github.com/ericfitz/agentmesh' }
     $skip = $false
-    switch ("$env:AGENTBUS2_SKIP_SIGNATURE") {
+    switch ("$env:AGENTMESH_SKIP_SIGNATURE") {
         ''      { $skip = $false }
-        '1'     { $skip = $true; Write-Warning 'AGENTBUS2_SKIP_SIGNATURE=1: skipping the signature check; the checksum is still verified' }
-        default { throw "agentbus2 install: AGENTBUS2_SKIP_SIGNATURE must be 1 or unset, got '$env:AGENTBUS2_SKIP_SIGNATURE'" }
+        '1'     { $skip = $true; Write-Warning 'AGENTMESH_SKIP_SIGNATURE=1: skipping the signature check; the checksum is still verified' }
+        default { throw "agentmesh install: AGENTMESH_SKIP_SIGNATURE must be 1 or unset, got '$env:AGENTMESH_SKIP_SIGNATURE'" }
     }
-    if (-not $env:AGENTBUS2_INSTALL_DIR -and -not $env:LocalAppData) { throw 'agentbus2 install: LocalAppData is not set; set AGENTBUS2_INSTALL_DIR to an absolute directory' }
-    $installDir = if ($env:AGENTBUS2_INSTALL_DIR) { $env:AGENTBUS2_INSTALL_DIR } else { Join-Path $env:LocalAppData 'Programs\agentbus2' }
+    if (-not $env:AGENTMESH_INSTALL_DIR -and -not $env:LocalAppData) { throw 'agentmesh install: LocalAppData is not set; set AGENTMESH_INSTALL_DIR to an absolute directory' }
+    $installDir = if ($env:AGENTMESH_INSTALL_DIR) { $env:AGENTMESH_INSTALL_DIR } else { Join-Path $env:LocalAppData 'Programs\agentmesh' }
     $installDir = $installDir.TrimEnd('\', '/')
     if ($installDir -match '^[A-Za-z]:$') { $installDir += '\' }
-    if (-not [IO.Path]::IsPathRooted($installDir) -or $installDir -notmatch '^[A-Za-z]:\\|^\\\\') { throw "agentbus2 install: AGENTBUS2_INSTALL_DIR must be an absolute path, got '$installDir'" }
+    if (-not [IO.Path]::IsPathRooted($installDir) -or $installDir -notmatch '^[A-Za-z]:\\|^\\\\') { throw "agentmesh install: AGENTMESH_INSTALL_DIR must be an absolute path, got '$installDir'" }
     $arch = Get-Arch
     $openssl = if ($skip) { $null } else { Find-OpenSsl }
     $tag = Resolve-Tag $base
     $asset = "$bin-$tag-windows-$arch.zip"
-    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('agentbus2-install-' + [guid]::NewGuid().ToString('N'))
+    $tmp = Join-Path ([IO.Path]::GetTempPath()) ('agentmesh-install-' + [guid]::NewGuid().ToString('N'))
     New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
         $dl = "$base/releases/download/$tag"
-        Get-Asset "$dl/$asset" (Join-Path $tmp $asset) "agentbus2 install: release $tag has no Windows build: $asset was not found at $dl/$asset"
+        Get-Asset "$dl/$asset" (Join-Path $tmp $asset) "agentmesh install: release $tag has no Windows build: $asset was not found at $dl/$asset"
         Get-Asset "$dl/SHA256SUMS" (Join-Path $tmp 'SHA256SUMS')
         if (-not $skip) {
             Get-Asset "$dl/SHA256SUMS.sig" (Join-Path $tmp 'SHA256SUMS.sig')
@@ -311,8 +311,8 @@ function Main {
         $v = Install-Binary $tmp $asset $installDir $bin
         Add-UserPath $installDir
         Write-Host "installed $bin $v to $installDir\$bin.exe"
-        if ($bin -eq 'agentbus2-mcponly') { Write-Host 'next: agentbus2-mcponly help (connect this agent to an agentbus2 server)' }
-        else { Write-Host 'next: agentbus2 init --global (once per machine), then agentbus2 init inside each repository' }
+        if ($bin -eq 'agentmesh-mcponly') { Write-Host 'next: agentmesh-mcponly help (connect this agent to an agentmesh server)' }
+        else { Write-Host 'next: agentmesh init --global (once per machine), then agentmesh init inside each repository' }
         if ($script:Upgrade) {
             if ($script:OldVersion -and $script:OldVersion -eq $v) { Write-Host "reinstalled: $bin $v was already installed" }
             elseif ($script:OldVersion) { Write-Host "upgraded from $($script:OldVersion): restart every harness session and the TUI to pick up the new binary" }

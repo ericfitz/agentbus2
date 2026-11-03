@@ -2,6 +2,6 @@
 
 package cmd
 
-import "github.com/ericfitz/agentbus2/internal/keyprovider/hashivault"
+import "github.com/ericfitz/agentmesh/internal/keyprovider/hashivault"
 
 func init() { keyBackends["hashivault"] = hashivault.New }

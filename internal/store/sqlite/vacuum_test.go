@@ -12,7 +12,7 @@ func TestOpenSetsIncrementalAutoVacuum(t *testing.T) {
 	})
 	// A file holding a foreign table is refused by Open before any pragma
 	// (application_id check), so the conversion path is exercised on an
-	// agentbus2 file put back in mode 0 with an extra table whose rows must
+	// agentmesh file put back in mode 0 with an extra table whose rows must
 	// survive the VACUUM.
 	t.Run("converts a mode 0 file, second Open does not VACUUM", func(t *testing.T) {
 		path := newPath(t)

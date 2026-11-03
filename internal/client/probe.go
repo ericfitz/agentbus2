@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 // ServerInfo is what GET /v1/discover says about a server.
@@ -16,7 +16,7 @@ type ServerInfo struct{ ServerVersion, ProtocolVersion string }
 
 // DiscoverServer is GET /v1/discover with no bearer: the liveness probe. A
 // non-200 answer, an undecodable body and a body with no protocol version (not
-// an agentbus2 server) are errors that name what came back. hc nil: a client
+// an agentmesh server) are errors that name what came back. hc nil: a client
 // with no Timeout. It exists so internal/mcpcli never imports internal/gen.
 func DiscoverServer(ctx context.Context, hc *http.Client, server string) (ServerInfo, error) {
 	gc, err := unauthenticated(hc, server)
@@ -34,7 +34,7 @@ func DiscoverServer(ctx context.Context, hc *http.Client, server string) (Server
 		return ServerInfo{}, fmt.Errorf("discover %s: HTTP 200 but the body is not a discovery document", server)
 	}
 	if r.JSON200.ProtocolVersion == "" {
-		return ServerInfo{}, fmt.Errorf("discover %s: the answer names no protocol version, so it is not an agentbus2 server", server)
+		return ServerInfo{}, fmt.Errorf("discover %s: the answer names no protocol version, so it is not an agentmesh server", server)
 	}
 	return ServerInfo{ServerVersion: r.JSON200.ServerVersion, ProtocolVersion: r.JSON200.ProtocolVersion}, nil
 }

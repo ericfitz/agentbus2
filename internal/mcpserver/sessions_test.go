@@ -11,14 +11,14 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/core/maintenance"
-	"github.com/ericfitz/agentbus2/internal/filelock"
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
-	"github.com/ericfitz/agentbus2/internal/procs"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/core/maintenance"
+	"github.com/ericfitz/agentmesh/internal/filelock"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 func TestRegisterResumesAfterRestart(t *testing.T) {
@@ -74,7 +74,7 @@ func TestRegisterIgnoresOtherHarnessAndLiveServers(t *testing.T) {
 	e := newTestEnv(t)
 	tbl := newFakeTable()
 	tbl.set(20, 1, 9, "codex")
-	tbl.set(52, 20, 3, "agentbus2")
+	tbl.set(52, 20, 3, "agentmesh")
 	c := e.conn(t, "pat")
 	s, err := c.Bus.Open(context.Background(), bus.OpenSessionInput{})
 	if err != nil {
@@ -175,7 +175,7 @@ func TestRegisterWithResumeTokenAndStaleFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	tbl.set(20, 1, 9, "codex")
-	tbl.set(53, 20, 4, "agentbus2")
+	tbl.set(53, 20, 4, "agentmesh")
 	r2 := startServer(t, e, tbl, "codex", func(o *mcpserver.Options) { o.Self = 53 })
 	got2 := r2.must(t, "register", nil)
 	if got2["resumed"] != false || str(got2, "session") == closed.ID {

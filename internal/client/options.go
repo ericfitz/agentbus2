@@ -12,9 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core/notify"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/core/notify"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 // Options configure Resolve and Open.
@@ -66,7 +66,7 @@ type Options struct {
 	// store. open note: mcp-only-client 3, 4
 	Server, Credential string
 	// RegisterCommand is the command the missing-credential error tells the
-	// operator to run; empty: "agentbus2 register" (the full binary's).
+	// operator to run; empty: "agentmesh register" (the full binary's).
 	RegisterCommand string
 	// HTTP is the server-mode base client; nil: a client with no Timeout.
 	HTTP *http.Client
@@ -79,8 +79,8 @@ type LocalOpener func(ctx context.Context, o Options, r Resolved) (*Conn, error)
 
 // Flags registers -profile and -identity on fs, writing into o.
 func Flags(fs *flag.FlagSet, o *Options) {
-	fs.StringVar(&o.Profile, "profile", "", "profile name (default: AGENTBUS2_PROFILE, then .local/agentbus2.json, then default)")
-	fs.StringVar(&o.Identity, "identity", "", "identity (default: AGENTBUS2_IDENTITY, then the profile's identity, then the profile's only credential)")
+	fs.StringVar(&o.Profile, "profile", "", "profile name (default: AGENTMESH_PROFILE, then .local/agentmesh.json, then default)")
+	fs.StringVar(&o.Identity, "identity", "", "identity (default: AGENTMESH_IDENTITY, then the profile's identity, then the profile's only credential)")
 }
 
 // ResolveError marks a profile, identity or credential resolution failure: a
@@ -96,7 +96,7 @@ func resolveErr(err error) error { return &ResolveError{Err: err} }
 // NoLocalModeError is the ResolveError for a local profile in a binary that
 // has no local mode (Options.Local nil).
 func NoLocalModeError(profileName string) error {
-	return resolveErr(fmt.Errorf("profile %q is a local profile, and this binary has no local mode: pass -server URL, or use agentbus2", profileName))
+	return resolveErr(fmt.Errorf("profile %q is a local profile, and this binary has no local mode: pass -server URL, or use agentmesh", profileName))
 }
 
 // Resolved is the outcome of the selection rules.
@@ -130,7 +130,7 @@ func Resolve(o Options) (Resolved, error) {
 			return Resolved{}, resolveErr(fmt.Errorf("working directory: %w", err))
 		}
 	}
-	envProfile, _ := profile.Getenv(o.Environ, "AGENTBUS2_PROFILE")
+	envProfile, _ := profile.Getenv(o.Environ, "AGENTMESH_PROFILE")
 	name, src, err := profile.SelectName(profile.Selection{Flag: o.Profile, Env: envProfile, Cwd: cwd})
 	if err != nil {
 		return Resolved{}, resolveErr(err)
@@ -156,7 +156,7 @@ func Resolve(o Options) (Resolved, error) {
 		r.IdentitySource = "sign-in"
 		return r, nil
 	}
-	envIdentity, _ := profile.Getenv(o.Environ, "AGENTBUS2_IDENTITY")
+	envIdentity, _ := profile.Getenv(o.Environ, "AGENTMESH_IDENTITY")
 	r.Identity, r.IdentitySource, err = r.Profile.ResolveIdentity(profile.IdentitySelection{Flag: o.Identity, Env: envIdentity, Credentials: creds, Fallback: o.FallbackIdentity, SkipProfile: o.HumanIdentity && src == profile.SourceRepo})
 	if err != nil {
 		return Resolved{}, resolveErr(err)

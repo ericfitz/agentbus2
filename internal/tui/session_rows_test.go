@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // sessionFixture is a fixture whose rail lists two live sessions (the TUI's

@@ -8,7 +8,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Ported from v1 internal/bus/receipts.go (checkReceipt, storeReceipt),

@@ -41,7 +41,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MOD=github.com/ericfitz/agentbus2
+MOD=github.com/ericfitz/agentmesh
 WANT_SEQUENCE=13
 WANT_EXITCODES=11
 # The names of internal/e2e's TestSection24Sequence steps and TestExitCodeTable
@@ -115,7 +115,7 @@ sequence="$(passed TestSection24Sequence "${STEPS[@]}")"
 exitcodes="$(passed TestExitCodeTable "${CELLS[@]}")"
 fail="$(grep -c -E '^[[:space:]]*--- FAIL' "$log" || true)"
 pkg_ok=0
-if grep -qE '^ok[[:space:]]+github\.com/ericfitz/agentbus2/internal/e2e([[:space:]]|$)' "$log" && ! grep -qE '^FAIL([[:space:]]|$)' "$log"; then
+if grep -qE '^ok[[:space:]]+github\.com/ericfitz/agentmesh/internal/e2e([[:space:]]|$)' "$log" && ! grep -qE '^FAIL([[:space:]]|$)' "$log"; then
 	pkg_ok=1
 fi
 echo "sequence=$sequence"
@@ -129,7 +129,7 @@ if [ "$fail" -ne 0 ] || [ "$sequence" -ne "$WANT_SEQUENCE" ] || [ "$exitcodes" -
 fi
 
 words=(
-	internal/cli/skills/using-agentbus2/SKILL.md
+	internal/cli/skills/using-agentmesh/SKILL.md
 	internal/mcpserver/inputs.go
 	internal/mcpserver/server.go
 	internal/cli/stophook.go

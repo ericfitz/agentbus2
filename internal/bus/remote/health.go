@@ -3,7 +3,7 @@ package remote
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // Health is the server health document at the caller's tier.

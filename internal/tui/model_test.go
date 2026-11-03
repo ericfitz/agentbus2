@@ -13,8 +13,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // fixture is the busFixture (a core over SQLite, sam with dev and dev-notes,
@@ -998,7 +998,7 @@ func TestOwnSessionIsYou(t *testing.T) {
 // are carried in Host.Warnings and shown in health. The line itself is built
 // by cli.RunTUI (Task 10).
 func TestSharedIdentityWarningLine(t *testing.T) {
-	line := "agentbus2 tui: identity eric has 2 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)"
+	line := "agentmesh tui: identity eric has 2 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)"
 	f := newFixtureWith(t, nil, Host{Warnings: []string{line}})
 	f.key("esc")
 	f.key("h")

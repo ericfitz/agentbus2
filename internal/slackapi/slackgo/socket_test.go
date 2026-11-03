@@ -14,7 +14,7 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
 )
 
 // socketServer serves apps.connections.open and a Socket Mode websocket. Each

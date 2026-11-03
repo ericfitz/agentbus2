@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/channels"
-	"github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/channels"
+	"github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 const startMs = 1_700_000_000_000
@@ -38,7 +38,7 @@ type env struct {
 
 func newEnv(t *testing.T, emb core.Embedder) env {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "agentbus2.db")
+	path := filepath.Join(t.TempDir(), "agentmesh.db")
 	s, err := sqlite.Open(context.Background(), path, sqlite.Options{})
 	if err != nil {
 		t.Fatalf("sqlite.Open: %v", err)

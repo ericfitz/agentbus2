@@ -10,19 +10,19 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/assertion"
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/oidctest"
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/auth/assertion"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/oidctest"
+	"github.com/ericfitz/agentmesh/internal/server/cmd"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
 // TestFederatedEndToEnd is the federated-identity exit over TCP on each engine
-// (spec 10): the real `agentbus2 server` command with a fake OIDC provider
+// (spec 10): the real `agentmesh server` command with a fake OIDC provider
 // configured as the issuers entry "corp", users and admins entries and a
 // pre-created human added by the host commands. It is transport-independent
 // (it always uses the wire). Seven leaves per engine.
@@ -45,7 +45,7 @@ func TestFederatedEndToEnd(t *testing.T) {
 		setIssuers := "issuers=" + string(issuersJSON)
 
 		// The host commands run before the server starts (a nil environ: the
-		// developer's AGENTBUS2_SERVER_* variables never choose the store).
+		// developer's AGENTMESH_SERVER_* variables never choose the store).
 		admin := func(args ...string) {
 			t.Helper()
 			var so, se bytes.Buffer

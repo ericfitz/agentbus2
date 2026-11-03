@@ -4,9 +4,9 @@ import (
 	"slices"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/store/postgres"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
-	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
+	"github.com/ericfitz/agentmesh/internal/store/postgres"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/store/sqlstore"
 )
 
 // TestMigrationSetsAlign: one migration set per engine, numbered in step

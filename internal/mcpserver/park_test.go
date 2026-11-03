@@ -3,8 +3,8 @@ package mcpserver_test
 import (
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 func parkedOf(t *testing.T, e *testEnv, sid string) bool {

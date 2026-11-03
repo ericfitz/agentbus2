@@ -7,15 +7,15 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/fileacl"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/fileacl"
 )
 
 func testEnviron(t *testing.T) (environ []string, configDir string) {
 	t.Helper()
 	root := t.TempDir()
 	configDir = filepath.Join(root, "config")
-	return []string{"HOME=" + root, "AGENTBUS2_CONFIG_DIR=" + configDir, "AGENTBUS2_DATA_DIR=" + filepath.Join(root, "data")}, configDir
+	return []string{"HOME=" + root, "AGENTMESH_CONFIG_DIR=" + configDir, "AGENTMESH_DATA_DIR=" + filepath.Join(root, "data")}, configDir
 }
 
 // The token never reaches stdout or stderr (plan Review Focus 2).
@@ -48,7 +48,7 @@ func TestRegisterTokenNeverEchoed(t *testing.T) {
 	if code != 1 || strings.Contains(out+errs, token) {
 		t.Errorf("flag token: code %d, output %q %q", code, out, errs)
 	}
-	code, out, errs = run([]string{"register", "-server", base, "-identity", "pat"}, append(environ, "AGENTBUS2_ENROLLMENT_TOKEN="+token))
+	code, out, errs = run([]string{"register", "-server", base, "-identity", "pat"}, append(environ, "AGENTMESH_ENROLLMENT_TOKEN="+token))
 	if code != 1 || strings.Contains(out+errs, token) {
 		t.Errorf("variable token: code %d, output %q %q", code, out, errs)
 	}
@@ -115,7 +115,7 @@ func TestRegisterRefusesOSLoginName(t *testing.T) {
 	base := startServer(t)
 	environ, configDir := testEnviron(t)
 	code, out, errs := run([]string{"register", "-server", base, "-identity", "pat"}, environ)
-	if code != 1 || out != "" || !strings.Contains(errs, "is the OS login name") || !strings.Contains(errs, "agentbus2-mcponly register") {
+	if code != 1 || out != "" || !strings.Contains(errs, "is the OS login name") || !strings.Contains(errs, "agentmesh-mcponly register") {
 		t.Errorf("code %d, stdout %q, stderr %q", code, out, errs)
 	}
 	if _, err := os.Stat(filepath.Join(configDir, "credentials")); err == nil {

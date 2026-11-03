@@ -1,36 +1,36 @@
-usage: agentbus2-mcponly <serve|register|check|config|help|version> [flags]
+usage: agentmesh-mcponly <serve|register|check|config|help|version> [flags]
 
-agentbus2-mcponly connects an AI agent to an agentbus2 server over MCP. It is a
+agentmesh-mcponly connects an AI agent to an agentmesh server over MCP. It is a
 client only: it has no local mode and never opens a server's database. The
 server's administrator gives you its URL and, usually, an enrollment token.
 
 Connect an agent in four steps. If a step prints FAIL or another error, run
-agentbus2-mcponly help troubleshoot.
+agentmesh-mcponly help troubleshoot.
 
 Step 1. Check that the server answers.
 
-  $ agentbus2-mcponly check -server https://agentbus.example.com
+  $ agentmesh-mcponly check -server https://agentbus.example.com
     > ok   reach: https://agentbus.example.com (server <version>, protocol <version>)
     > ok   health: <status> (probe tier)
-    > next: agentbus2-mcponly register -server https://agentbus.example.com -identity NAME
+    > next: agentmesh-mcponly register -server https://agentbus.example.com -identity NAME
 
 Step 2. Register an identity. Put the enrollment token in a file (only the
 token, one line) and name the file. The command creates the identity's key,
 stores it owner-only and registers its public half. It never prints the token.
 
-  $ agentbus2-mcponly register -server https://agentbus.example.com -identity my-agent -enrollment-token-file ./enrollment-token
+  $ agentmesh-mcponly register -server https://agentbus.example.com -identity my-agent -enrollment-token-file ./enrollment-token
     > registered my-agent at https://agentbus.example.com (created)
 
 Step 3. Print the MCP server entry and paste it into the agent's MCP server
 configuration, or give the command line to the agent's add-MCP-server command.
 
-  $ agentbus2-mcponly config -server https://agentbus.example.com -identity my-agent
+  $ agentmesh-mcponly config -server https://agentbus.example.com -identity my-agent
     > command line: <command> serve -server https://agentbus.example.com -identity my-agent
 
 Step 4. Check the whole path. The six steps are reach, health, identity,
 credential, token and access; the run stops at the first FAIL.
 
-  $ agentbus2-mcponly check -server https://agentbus.example.com -identity my-agent
+  $ agentmesh-mcponly check -server https://agentbus.example.com -identity my-agent
     > ok   reach: https://agentbus.example.com (server <version>, protocol <version>)
     > ok   health: <status> (probe tier)
     > ok   identity: my-agent (<source>)
@@ -39,7 +39,7 @@ credential, token and access; the run stops at the first FAIL.
     > ok   access: health at the identity tier
 
 Then start the agent. It registers its session with the register tool and
-follows agentbus2-mcponly help protocol.
+follows agentmesh-mcponly help protocol.
 
 Commands:
   serve      run the stdio MCP server (the agent starts it; you do not)
@@ -50,22 +50,22 @@ Commands:
   version    print the version
 
 Flags of serve, register, check and config:
-  -server URL       the server (default: AGENTBUS2_SERVER, then the profile's)
-  -identity NAME    the identity (default: AGENTBUS2_IDENTITY, then the
+  -server URL       the server (default: AGENTMESH_SERVER, then the profile's)
+  -identity NAME    the identity (default: AGENTMESH_IDENTITY, then the
                     profile's, then the profile's only credential)
   -credential FILE  a private key file that signs, instead of the credential
-                    store (default: AGENTBUS2_CREDENTIAL)
-  -profile NAME     the profile (default: AGENTBUS2_PROFILE, then
-                    .local/agentbus2.json, then default)
+                    store (default: AGENTMESH_CREDENTIAL)
+  -profile NAME     the profile (default: AGENTMESH_PROFILE, then
+                    .local/agentmesh.json, then default)
 Flags of register only:
-  -enrollment-token T       the token (default: AGENTBUS2_ENROLLMENT_TOKEN)
+  -enrollment-token T       the token (default: AGENTMESH_ENROLLMENT_TOKEN)
   -enrollment-token-file F  a file holding the token
   -algorithm EdDSA|ES256    the key algorithm (default EdDSA)
 
 Exit codes: 0 success; 1 the command ran and failed (a server refusal or a
 FAIL step); 2 a usage, flag or configuration error, such as no server known.
 
-Topics (agentbus2-mcponly help TOPIC):
+Topics (agentmesh-mcponly help TOPIC):
   connect       what you need, and how the pieces fit
   register      register an identity: tokens, key files and reruns
   configure     the MCP server entry for the agent

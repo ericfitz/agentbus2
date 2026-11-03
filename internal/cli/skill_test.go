@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // TestSkillDeliveryClaims pins what the skill says about memory channels:
@@ -27,7 +27,7 @@ func TestSkillDeliveryClaims(t *testing.T) {
 	}
 
 	// Park acts on the harness's primary session, so a subagent must not run it.
-	if n := bytes.Count(SkillMD, []byte("a subagent never runs `agentbus2 park`")) + bytes.Count(SkillMD, []byte("never runs `agentbus2 park`")); n < 2 {
+	if n := bytes.Count(SkillMD, []byte("a subagent never runs `agentmesh park`")) + bytes.Count(SkillMD, []byte("never runs `agentmesh park`")); n < 2 {
 		t.Errorf("the skill names the subagent park ban %d times, want the Park and Subagents sections", n)
 	}
 
@@ -123,9 +123,9 @@ func TestSkillStatusProtocol(t *testing.T) {
 	}
 	section("Status")
 	park := section("Park")
-	a, b := strings.Index(park, "set_status"), strings.Index(park, "agentbus2 park")
+	a, b := strings.Index(park, "set_status"), strings.Index(park, "agentmesh park")
 	if a < 0 || b < 0 || a > b {
-		t.Errorf("Park does not set the status before agentbus2 park (set_status at %d, park at %d)", a, b)
+		t.Errorf("Park does not set the status before agentmesh park (set_status at %d, park at %d)", a, b)
 	}
 	if sub := section("Subagents"); !strings.Contains(sub, "does not call") || !strings.Contains(sub, "set_status") {
 		t.Error("Subagents does not say a subagent does not call set_status")

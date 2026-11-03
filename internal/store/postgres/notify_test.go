@@ -29,7 +29,7 @@ func TestParsePayloadRejects(t *testing.T) {
 }
 
 // The channel name must stay within Postgres's 63-byte identifier limit
-// however long the schema name is: "agentbus2_" (10) + 24 hex = 34 bytes.
+// however long the schema name is: "agentmesh_" (10) + 24 hex = 34 bytes.
 func TestChannelQueryIsBounded(t *testing.T) {
 	if !strings.Contains(ChannelQuery, "left(") || !strings.Contains(ChannelQuery, "24)") {
 		t.Fatalf("ChannelQuery does not bound the name: %s", ChannelQuery)

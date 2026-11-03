@@ -8,12 +8,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 func TestWaitWokeExits0(t *testing.T) {
@@ -181,7 +181,7 @@ func TestWaitErrorExits2(t *testing.T) {
 	}
 	var so, se syncBuf
 	if code := RunWait(context.Background(), []string{"-profile", "lab", "-session", "s9"}, e.Environ, strings.NewReader(""), &so, &se); code != 2 ||
-		!strings.HasPrefix(se.String(), "agentbus2:") {
+		!strings.HasPrefix(se.String(), "agentmesh:") {
 		t.Fatalf("exit %d stderr %q", code, se.String())
 	}
 	// No session for the harness and no -session.

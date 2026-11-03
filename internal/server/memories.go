@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 func (a *api) GetMemory(ctx context.Context, r gen.GetMemoryRequestObject) (gen.GetMemoryResponseObject, error) {

@@ -10,10 +10,10 @@ func TestConfigDirWindows(t *testing.T) {
 		environ []string
 		want    string
 	}{
-		{"explicit wins", []string{`APPDATA=C:\a`, `AGENTBUS2_CONFIG_DIR=C:\c`}, `C:\c`},
-		{"appdata", []string{`APPDATA=C:\a`}, `C:\a\agentbus2`},
-		{"userprofile fallback", []string{`USERPROFILE=C:\u`, `HOME=C:\h`}, `C:\u\AppData\Roaming\agentbus2`},
-		{"home fallback", []string{`HOME=C:\h`}, `C:\h\AppData\Roaming\agentbus2`},
+		{"explicit wins", []string{`APPDATA=C:\a`, `AGENTMESH_CONFIG_DIR=C:\c`}, `C:\c`},
+		{"appdata", []string{`APPDATA=C:\a`}, `C:\a\agentmesh`},
+		{"userprofile fallback", []string{`USERPROFILE=C:\u`, `HOME=C:\h`}, `C:\u\AppData\Roaming\agentmesh`},
+		{"home fallback", []string{`HOME=C:\h`}, `C:\h\AppData\Roaming\agentmesh`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -31,9 +31,9 @@ func TestDataDirWindows(t *testing.T) {
 		environ []string
 		want    string
 	}{
-		{"explicit wins", []string{`LOCALAPPDATA=C:\l`, `AGENTBUS2_DATA_DIR=C:\d`}, `C:\d`},
-		{"localappdata", []string{`LOCALAPPDATA=C:\l`}, `C:\l\agentbus2`},
-		{"userprofile fallback", []string{`USERPROFILE=C:\u`, `APPDATA=C:\a`}, `C:\u\AppData\Local\agentbus2`},
+		{"explicit wins", []string{`LOCALAPPDATA=C:\l`, `AGENTMESH_DATA_DIR=C:\d`}, `C:\d`},
+		{"localappdata", []string{`LOCALAPPDATA=C:\l`}, `C:\l\agentmesh`},
+		{"userprofile fallback", []string{`USERPROFILE=C:\u`, `APPDATA=C:\a`}, `C:\u\AppData\Local\agentmesh`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

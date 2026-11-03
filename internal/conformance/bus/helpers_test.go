@@ -13,11 +13,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/postgres"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
-	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/postgres"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/store/sqlstore"
 )
 
 // testSchemaRE matches the per-test Postgres schemas this package creates.
@@ -79,7 +79,7 @@ func sweepStale(ctx context.Context, db *sql.DB, now time.Time) (int, error) {
 // new file under t.TempDir(). postgres: a schema b_<unix seconds>_<8 hex>
 // created on e.Open(t) and dropped in t.Cleanup after every store has been
 // closed (cleanups run last in, first out), after the once-per-process sweep
-// when AGENTBUS2_TEST_POSTGRES_DSN names a developer's own server (a
+// when AGENTMESH_TEST_POSTGRES_DSN names a developer's own server (a
 // testcontainer is discarded). reopen opens another handle on the same
 // database (a second Store over the same file or schema); every handle is
 // closed at cleanup.

@@ -1,10 +1,10 @@
 package cli
 
-// The harness configuration of `agentbus2 init --global`: the MCP entry, the
+// The harness configuration of `agentmesh init --global`: the MCP entry, the
 // hooks, the skill and the prompts. Ported from v1 internal/cli/init.go
 // (initer, write with .bak, run, wants, global, claude, codex, grok, mcpEntry,
 // codexTimeout, hook, hasHookCommand, mcpConfigured, requireOnPath) with the
-// agentbus2 names and no identity file (Decision 14). The SessionStart hook
+// agentmesh names and no identity file (Decision 14). The SessionStart hook
 // returned without the identity it carried in v1 (Eric, 2026-10-24).
 //
 // Every edit is idempotent: a file whose content would not change is not
@@ -20,111 +20,111 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 const (
-	stopHookCommand = "agentbus2 stop-hook"
+	stopHookCommand = "agentmesh stop-hook"
 	// subagentHookCommand is Claude Code only (v1 ADR 0016): Codex subagents get
 	// their own MCP process, and no other harness has a SubagentStart prompt.
-	subagentHookCommand = "agentbus2 subagent-hook"
+	subagentHookCommand = "agentmesh subagent-hook"
 	// unparkHookCommand is the UserPromptSubmit hook of every harness
 	// (decision 18): a prompt from the user unparks the session.
-	unparkHookCommand = "agentbus2 unpark"
+	unparkHookCommand = "agentmesh unpark"
 	// sessionStartHookCommand is the SessionStart hook of Claude Code and
 	// Codex; Grok ignores SessionStart stdout, so grokRule does its job.
-	sessionStartHookCommand = "agentbus2 session-start-hook"
+	sessionStartHookCommand = "agentmesh session-start-hook"
 	// codexSessionStartMatcher is v1's: every Codex session source.
 	codexSessionStartMatcher = "startup|resume|clear"
 )
 
 // InitPrompt is what the `init` MCP prompt (Claude Code) and the Codex custom
 // prompt tell the agent to do. It names no file step: the repository's profile
-// is already written by `agentbus2 init`.
+// is already written by `agentmesh init`.
 const InitPrompt = initPromptHead + initStepWait + initPromptTail
 
-const initPromptHead = `Set up Agentbus2 for this repository:
-1. Run ` + "`agentbus2 init`" + ` in a shell. Inside a git repository it selects a profile
-   for the repository and prints the next step: ` + "`agentbus2 register`" + ` when the
+const initPromptHead = `Set up Agentmesh for this repository:
+1. Run ` + "`agentmesh init`" + ` in a shell. Inside a git repository it selects a profile
+   for the repository and prints the next step: ` + "`agentmesh register`" + ` when the
    profile talks to a server and holds no credential yet.
 2. Call the register tool, then pass the returned "session" on every later
-   Agentbus2 call. Call receive right after registering, whenever you finish
+   Agentmesh call. Call receive right after registering, whenever you finish
    a task and before you ask the user a question; pass each batch's token as
    ack on your next receive.
 `
 
 // initStepWait is step 3 for every harness except Codex; initStepCodex is
 // Codex's (no idle wake, so no background wait).
-const initStepWait = `3. So new messages wake you while idle, run ` + "`agentbus2 wait`" + ` with Bash
+const initStepWait = `3. So new messages wake you while idle, run ` + "`agentmesh wait`" + ` with Bash
    run_in_background; no timeout is needed. When it exits 0, call receive,
    handle what concerns you, and start it again; on exit 3 or 4 do nothing; on
    exit 2 read stderr, do not restart it in a loop, and tell the user if it
-   persists. Never poll receive from model turns to wait. The using-agentbus2
+   persists. Never poll receive from model turns to wait. The using-agentmesh
    skill is the full protocol.
 `
 
 const initStepCodex = `3. Codex has no idle wake: call receive at the end of each task. The
-   using-agentbus2 skill is the full protocol.
+   using-agentmesh skill is the full protocol.
 `
 
 const initPromptTail = `Set your status with set_status at the start of each task; a subagent or a
 session registered with a hint does not. Before ending a session with a handoff,
-set your status to idle with set_status, then run ` + "`agentbus2 park`" + ` as your last
-agentbus2 action, after the final send or memory write; your next prompt,
-register, or any agentbus2 tool call except receive unparks.
-If the register tool is missing, tell the user to run ` + "`agentbus2 init --global`" + `
+set your status to idle with set_status, then run ` + "`agentmesh park`" + ` as your last
+agentmesh action, after the final send or memory write; your next prompt,
+register, or any agentmesh tool call except receive unparks.
+If the register tool is missing, tell the user to run ` + "`agentmesh init --global`" + `
 from a shell and restart the harness.`
 
-// codexPrompt is the in-session agentbus2 command. Codex does not surface MCP
-// prompts, so init writes it to ~/.codex/prompts/agentbus2.md
-// (/prompts:agentbus2). Codex has no idle wake, so its step 3 is receive at
+// codexPrompt is the in-session agentmesh command. Codex does not surface MCP
+// prompts, so init writes it to ~/.codex/prompts/agentmesh.md
+// (/prompts:agentmesh). Codex has no idle wake, so its step 3 is receive at
 // the end of each task. Grok Build gets grokCommand at
-// ~/.grok/commands/agentbus2.md; its command files follow Claude's $ARGUMENTS
+// ~/.grok/commands/agentmesh.md; its command files follow Claude's $ARGUMENTS
 // placeholder.
-const codexPrompt = "# Agentbus2\n\nThe user asked for: agentbus2 $ARGUMENTS\n\n" +
+const codexPrompt = "# Agentmesh\n\nThe user asked for: agentmesh $ARGUMENTS\n\n" +
 	"For `init`:\n" + initPromptHead + initStepCodex + initPromptTail + "\n\n" +
-	"For anything else, run `agentbus2 $ARGUMENTS` in a shell and report the output.\n"
+	"For anything else, run `agentmesh $ARGUMENTS` in a shell and report the output.\n"
 
 // grokCommand is codexPrompt with the background-wait step 3.
-const grokCommand = "# Agentbus2\n\nThe user asked for: agentbus2 $ARGUMENTS\n\n" +
+const grokCommand = "# Agentmesh\n\nThe user asked for: agentmesh $ARGUMENTS\n\n" +
 	"For `init`:\n" + InitPrompt + "\n\n" +
-	"For anything else, run `agentbus2 $ARGUMENTS` in a shell and report the output.\n"
+	"For anything else, run `agentmesh $ARGUMENTS` in a shell and report the output.\n"
 
-// grokRule is written to ~/.grok/rules/agentbus2.md. Grok loads every file
+// grokRule is written to ~/.grok/rules/agentmesh.md. Grok loads every file
 // there into the session.
-const grokRule = "# Agentbus2\n\n" +
-	"At the start of a session, call the Agentbus2 register tool and pass the\n" +
-	"returned \"session\" on every later Agentbus2 call. So new messages wake you\n" +
-	"while idle, run `agentbus2 wait` in a background shell (on Claude Code, Bash with run_in_background);\n" +
+const grokRule = "# Agentmesh\n\n" +
+	"At the start of a session, call the Agentmesh register tool and pass the\n" +
+	"returned \"session\" on every later Agentmesh call. So new messages wake you\n" +
+	"while idle, run `agentmesh wait` in a background shell (on Claude Code, Bash with run_in_background);\n" +
 	"when it exits 0, call receive, handle what concerns you, and start it again;\n" +
 	"on exit 3 or 4 do nothing; on exit 2 read stderr, do not restart it in a loop,\n" +
 	"and tell the user if it persists. Never poll receive from model turns to wait.\n" +
 	"Set your status with set_status at the start of each task; a subagent or a\n" +
 	"session registered with a hint does not. Before ending a session with a handoff,\n" +
-	"set your status to idle with set_status, then run `agentbus2 park` as your last\n" +
-	"agentbus2 action, after the final send or memory write. The using-agentbus2 skill\n" +
+	"set your status to idle with set_status, then run `agentmesh park` as your last\n" +
+	"agentmesh action, after the final send or memory write. The using-agentmesh skill\n" +
 	"is the full protocol. If the register tool is missing, tell the user to run\n" +
-	"`agentbus2 init --global` and restart Grok.\n"
+	"`agentmesh init --global` and restart Grok.\n"
 
-// installPS1 is the Windows installer one-liner; it puts agentbus2.exe on the
+// installPS1 is the Windows installer one-liner; it puts agentmesh.exe on the
 // user PATH.
-const installPS1 = "irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1 | iex"
+const installPS1 = "irm https://github.com/ericfitz/agentmesh/releases/latest/download/install.ps1 | iex"
 
-// requireOnPath refuses unless the agentbus2 that PATH resolves is this
-// binary. The harness configs and hooks start "agentbus2" by name, and an
-// unzipped agentbus2.exe is on no PATH, so on Windows init would otherwise
+// requireOnPath refuses unless the agentmesh that PATH resolves is this
+// binary. The harness configs and hooks start "agentmesh" by name, and an
+// unzipped agentmesh.exe is on no PATH, so on Windows init would otherwise
 // configure harnesses that cannot start it (or that start an older copy).
 func requireOnPath(lookPath func(string) (string, error), executable func() (string, error)) error {
-	found, err := lookPath("agentbus2")
+	found, err := lookPath("agentmesh")
 	if err != nil {
-		return fmt.Errorf("agentbus2.exe is not on your PATH, so the harnesses could not start it. Install it with:\n  %s\nthen open a new terminal and run agentbus2 init again", installPS1)
+		return fmt.Errorf("agentmesh.exe is not on your PATH, so the harnesses could not start it. Install it with:\n  %s\nthen open a new terminal and run agentmesh init again", installPS1)
 	}
 	self, err := executable()
 	if err != nil {
-		return fmt.Errorf("finding this agentbus2.exe: %w", err)
+		return fmt.Errorf("finding this agentmesh.exe: %w", err)
 	}
 	if !sameFile(found, self) {
-		return fmt.Errorf("the agentbus2.exe on your PATH (%s) is not this agentbus2.exe (%s), so the harnesses would start that one. Install with:\n  %s\nor put this one's directory first on PATH, then open a new terminal and run agentbus2 init again", found, self, installPS1)
+		return fmt.Errorf("the agentmesh.exe on your PATH (%s) is not this agentmesh.exe (%s), so the harnesses would start that one. Install with:\n  %s\nor put this one's directory first on PATH, then open a new terminal and run agentmesh init again", found, self, installPS1)
 	}
 	return nil
 }
@@ -232,7 +232,7 @@ func (in *initer) global() error {
 	if err := in.defaultProfile(); err != nil {
 		return err
 	}
-	in.say("done: restart the harness, then run `agentbus2 init` inside each repository")
+	in.say("done: restart the harness, then run `agentmesh init` inside each repository")
 	return nil
 }
 
@@ -264,8 +264,8 @@ func (in *initer) defaultProfile() error {
 
 func (in *initer) claude(dir string) error {
 	in.say("Claude Code:")
-	if err := in.mcpEntry("claude", []string{"mcp", "remove", "-s", "user", "agentbus2"}, []string{"mcp", "add", "-s", "user", "agentbus2", "--", "agentbus2", "mcp"},
-		`{ "mcpServers": { "agentbus2": { "command": "agentbus2", "args": ["mcp"] } } }`+" in ~/.claude.json"); err != nil {
+	if err := in.mcpEntry("claude", []string{"mcp", "remove", "-s", "user", "agentmesh"}, []string{"mcp", "add", "-s", "user", "agentmesh", "--", "agentmesh", "mcp"},
+		`{ "mcpServers": { "agentmesh": { "command": "agentmesh", "args": ["mcp"] } } }`+" in ~/.claude.json"); err != nil {
 		return err
 	}
 	if err := in.hooks(filepath.Join(dir, "settings.json"),
@@ -278,8 +278,8 @@ func (in *initer) claude(dir string) error {
 
 func (in *initer) codex(dir string) error {
 	in.say("Codex:")
-	if err := in.mcpEntry("codex", []string{"mcp", "remove", "agentbus2"}, []string{"mcp", "add", "agentbus2", "--", "agentbus2", "mcp"},
-		"[mcp_servers.agentbus2]\n  command = \"agentbus2\"\n  args = [\"mcp\"]\n  tool_timeout_sec = 300\n  in ~/.codex/config.toml"); err != nil {
+	if err := in.mcpEntry("codex", []string{"mcp", "remove", "agentmesh"}, []string{"mcp", "add", "agentmesh", "--", "agentmesh", "mcp"},
+		"[mcp_servers.agentmesh]\n  command = \"agentmesh\"\n  args = [\"mcp\"]\n  tool_timeout_sec = 300\n  in ~/.codex/config.toml"); err != nil {
 		return err
 	}
 	if err := in.codexTimeout(filepath.Join(dir, "config.toml")); err != nil {
@@ -289,7 +289,7 @@ func (in *initer) codex(dir string) error {
 		hookSpec{"Stop", stopHookCommand, ""}, hookSpec{"UserPromptSubmit", unparkHookCommand, ""}); err != nil {
 		return err
 	}
-	if err := in.write(filepath.Join(dir, "prompts", "agentbus2.md"), []byte(codexPrompt)); err != nil {
+	if err := in.write(filepath.Join(dir, "prompts", "agentmesh.md"), []byte(codexPrompt)); err != nil {
 		return err
 	}
 	if err := in.write(filepath.Join(in.Home, ".agents", skillPath), SkillMD); err != nil {
@@ -303,22 +303,22 @@ func (in *initer) grok(dir string) error {
 	in.say("Grok Build:")
 	// Default tool_timeout_sec is 6000, already above any receive wait.
 	if err := in.mcpEntry("grok",
-		[]string{"mcp", "remove", "--scope", "user", "agentbus2"},
-		[]string{"mcp", "add", "--scope", "user", "agentbus2", "--", "agentbus2", "mcp"},
-		"[mcp_servers.agentbus2]\n  command = \"agentbus2\"\n  args = [\"mcp\"]\n  in ~/.grok/config.toml"); err != nil {
+		[]string{"mcp", "remove", "--scope", "user", "agentmesh"},
+		[]string{"mcp", "add", "--scope", "user", "agentmesh", "--", "agentmesh", "mcp"},
+		"[mcp_servers.agentmesh]\n  command = \"agentmesh\"\n  args = [\"mcp\"]\n  in ~/.grok/config.toml"); err != nil {
 		return err
 	}
 	// Grok reads Stop hook stdout, and ~/.grok/hooks/*.json is trusted.
-	if err := in.hooks(filepath.Join(dir, "hooks", "agentbus2.json"), hookSpec{"Stop", stopHookCommand, ""}, hookSpec{"UserPromptSubmit", unparkHookCommand, ""}); err != nil {
+	if err := in.hooks(filepath.Join(dir, "hooks", "agentmesh.json"), hookSpec{"Stop", stopHookCommand, ""}, hookSpec{"UserPromptSubmit", unparkHookCommand, ""}); err != nil {
 		return err
 	}
 	if err := in.write(filepath.Join(dir, skillPath), SkillMD); err != nil {
 		return err
 	}
-	if err := in.write(filepath.Join(dir, "commands", "agentbus2.md"), []byte(grokCommand)); err != nil {
+	if err := in.write(filepath.Join(dir, "commands", "agentmesh.md"), []byte(grokCommand)); err != nil {
 		return err
 	}
-	return in.write(filepath.Join(dir, "rules", "agentbus2.md"), []byte(grokRule))
+	return in.write(filepath.Join(dir, "rules", "agentmesh.md"), []byte(grokRule))
 }
 
 // mcpEntry registers the MCP server through the harness's own CLI so the
@@ -334,12 +334,12 @@ func (in *initer) mcpEntry(cli string, remove, add []string, snippet string) err
 		return fmt.Errorf("%s %s: %w", cli, strings.Join(add, " "), err)
 	}
 	if !in.DryRun {
-		in.say("  registered the agentbus2 MCP server via %s %s", cli, strings.Join(add, " "))
+		in.say("  registered the agentmesh MCP server via %s %s", cli, strings.Join(add, " "))
 	}
 	return nil
 }
 
-// codexTimeout ensures tool_timeout_sec = 300 under [mcp_servers.agentbus2] (a
+// codexTimeout ensures tool_timeout_sec = 300 under [mcp_servers.agentmesh] (a
 // text edit; no TOML parser). A long receive wait must not be cut off by
 // Codex's default tool timeout.
 func (in *initer) codexTimeout(path string) error {
@@ -353,7 +353,7 @@ func (in *initer) codexTimeout(path string) error {
 	lines := strings.Split(string(body), "\n")
 	start := -1
 	for i, l := range lines {
-		if strings.TrimSpace(l) == "[mcp_servers.agentbus2]" {
+		if strings.TrimSpace(l) == "[mcp_servers.agentmesh]" {
 			start = i
 			break
 		}
@@ -474,8 +474,8 @@ func decodeObject(body []byte) (map[string]any, error) {
 }
 
 // hasHookCommand reports whether a hook entry already runs cmd (as the whole
-// command or followed by arguments, so "agentbus2 stop-hook" does not match
-// "agentbus2 stop-hook-x").
+// command or followed by arguments, so "agentmesh stop-hook" does not match
+// "agentmesh stop-hook-x").
 func hasHookCommand(entry any, cmd string) bool {
 	m, _ := entry.(map[string]any)
 	inner, _ := m["hooks"].([]any)
@@ -489,14 +489,14 @@ func hasHookCommand(entry any, cmd string) bool {
 	return false
 }
 
-// mcpConfigured is a cheap check that some harness knows about agentbus2.
+// mcpConfigured is a cheap check that some harness knows about agentmesh.
 func (in *initer) mcpConfigured() bool {
 	for _, p := range []string{
 		filepath.Join(in.Home, ".claude.json"),
 		filepath.Join(in.Home, ".codex", "config.toml"),
 		filepath.Join(in.Home, ".grok", "config.toml"),
 	} {
-		if body, err := os.ReadFile(p); err == nil && strings.Contains(string(body), "agentbus2") {
+		if body, err := os.ReadFile(p); err == nil && strings.Contains(string(body), "agentmesh") {
 			return true
 		}
 	}

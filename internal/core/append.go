@@ -4,9 +4,9 @@ import (
 	"context"
 	"errors"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/rules"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/rules"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // AppendInput is one message to append. Tags are already normalized.

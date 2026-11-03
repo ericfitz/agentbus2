@@ -3,7 +3,7 @@
 .claude
 .local
 dist
-agentbus2
+agentmesh
 HANDOFF.md
 **/*.test
 .env

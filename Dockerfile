@@ -7,14 +7,14 @@ COPY . .
 ARG VERSION=dev
 # open note: signing-keys 1: the image carries every key-provider backend; the release archives carry none
 ARG BUILD_TAGS=awskms,gcpkms,azurekms,hashivault
-RUN CGO_ENABLED=0 go build -trimpath -tags "${BUILD_TAGS}" -ldflags "-s -w -X github.com/ericfitz/agentbus2/internal/version.Version=${VERSION}" -o /out/agentbus2 . \
+RUN CGO_ENABLED=0 go build -trimpath -tags "${BUILD_TAGS}" -ldflags "-s -w -X github.com/ericfitz/agentmesh/internal/version.Version=${VERSION}" -o /out/agentmesh . \
     && mkdir -p /out/data
 
 FROM cgr.dev/chainguard/static:latest@sha256:c12f0107f8afb0bbc1b0eff96ff8675e85a10c6083d039b777c51fef5c27420f
-COPY --from=build /out/agentbus2 /agentbus2
+COPY --from=build /out/agentmesh /agentmesh
 # 65532 is Chainguard's nonroot uid and gid; numeric, so this does not depend on the base image's /etc/passwd.
 COPY --from=build --chown=65532:65532 /out/data /data
 VOLUME ["/data"]
 USER nonroot
-ENTRYPOINT ["/agentbus2", "server"]
+ENTRYPOINT ["/agentmesh", "server"]
 CMD []

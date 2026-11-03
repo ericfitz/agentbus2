@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/ericfitz/agentbus2/internal/repoconfig"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/repoconfig"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // ErrIdentityRequired is wrapped by ResolveIdentity's final error: no source
@@ -16,8 +16,8 @@ var ErrIdentityRequired = errors.New("identity is required")
 // Selection holds the inputs of the profile selection order (Decision 21).
 type Selection struct {
 	Flag string // -profile
-	Env  string // the AGENTBUS2_PROFILE value
-	Cwd  string // where the nearest .local/agentbus2.json search starts
+	Env  string // the AGENTMESH_PROFILE value
+	Cwd  string // where the nearest .local/agentmesh.json search starts
 }
 
 // Where a selected profile name came from.
@@ -90,5 +90,5 @@ func (p Profile) ResolveIdentity(sel IdentitySelection) (identity, source string
 	case sel.Fallback != "" && slices.Contains(sel.Credentials, sel.Fallback):
 		return pick(sel.Fallback, "os-user")
 	}
-	return "", "", fmt.Errorf("%w: pass -identity, set AGENTBUS2_IDENTITY, or set identity in profile %q", ErrIdentityRequired, p.Name)
+	return "", "", fmt.Errorf("%w: pass -identity, set AGENTMESH_IDENTITY, or set identity in profile %q", ErrIdentityRequired, p.Name)
 }

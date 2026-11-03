@@ -1,6 +1,6 @@
 # Configuration reference
 
-`agentbus2 server` and `agentbus2 server admin` read one set of settings. The tables below are checked against `config.Settings()` and `config.Default()` by `go test ./internal/server/config/` (`docs_test.go`): a missing, duplicated or unknown row, a wrong environment name, type or default fails the test.
+`agentmesh server` and `agentmesh server admin` read one set of settings. The tables below are checked against `config.Settings()` and `config.Default()` by `go test ./internal/server/config/` (`docs_test.go`): a missing, duplicated or unknown row, a wrong environment name, type or default fails the test.
 
 ## Precedence
 
@@ -8,7 +8,7 @@ Later wins:
 
 1. the built-in defaults;
 2. the JSON file named by `-config`;
-3. environment variables: the prefix AGENTBUS2_SERVER_ plus the upper-cased setting name (`token_lifetime_seconds` is `AGENTBUS2_SERVER_TOKEN_LIFETIME_SECONDS`);
+3. environment variables: the prefix AGENTMESH_SERVER_ plus the upper-cased setting name (`token_lifetime_seconds` is `AGENTMESH_SERVER_TOKEN_LIFETIME_SECONDS`);
 4. flags.
 
 Flags:
@@ -30,7 +30,7 @@ One JSON object whose members are setting names, matched exact-case. `deploy/con
 ```json
 {
   "listen": "0.0.0.0:8420",
-  "sqlite": "/data/agentbus2.db",
+  "sqlite": "/data/agentmesh.db",
   "registration": "enrollment"
 }
 ```
@@ -40,11 +40,11 @@ One JSON object whose members are setting names, matched exact-case. `deploy/con
 `issuers` and `default_acl` are JSON text (a JSON array) in the environment and in `-set`:
 
 ```sh
-AGENTBUS2_SERVER_DEFAULT_ACL='[{"identity":"everyone","permissions":["read"]},{"identity":"<creator>","permissions":["read","write","admin"]},{"identity":"admins","permissions":["admin"]}]'
+AGENTMESH_SERVER_DEFAULT_ACL='[{"identity":"everyone","permissions":["read"]},{"identity":"<creator>","permissions":["read","write","admin"]},{"identity":"admins","permissions":["admin"]}]'
 ```
 
 ```sh
-AGENTBUS2_SERVER_ISSUERS='[{"name":"corp","issuer":"https://idp.example.com","jwks_uri":"https://idp.example.com/keys","audience":"agentbus2","algorithms":["ES256"],"claims":{"email":"email","groups":"groups","subject":"sub"},"human_token_lifetime_seconds":900}]'
+AGENTMESH_SERVER_ISSUERS='[{"name":"corp","issuer":"https://idp.example.com","jwks_uri":"https://idp.example.com/keys","audience":"agentmesh","algorithms":["ES256"],"claims":{"email":"email","groups":"groups","subject":"sub"},"human_token_lifetime_seconds":900}]'
 ```
 
 ## Settings
@@ -53,59 +53,59 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 
 | Setting | Environment variable | Type | Default | Bounds and meaning |
 | --- | --- | --- | --- | --- |
-| `listen` | `AGENTBUS2_SERVER_LISTEN` | string | `(unset)` | Required to serve (no default port). `host:port`, or `unix:<path>` (mode 0600). A loopback, unix or all-loopback-hostname address is local; anything else (including `0.0.0.0` and an empty host) is not, which decides the default `registration` and whether `issuer` must be set. |
-| `registration` | `AGENTBUS2_SERVER_REGISTRATION` | string | `(unset)` | `open` or `enrollment`. Unset means `open` on a local listener and `enrollment` otherwise. |
-| `sqlite` | `AGENTBUS2_SERVER_SQLITE` | string | `(unset)` | Database file. Exactly one of `sqlite` and `postgres`. A new file is created with mode 0600. |
-| `postgres` | `AGENTBUS2_SERVER_POSTGRES` | string | `(unset)` | Postgres DSN. The database needs a UTF-8 ctype. |
-| `issuer` | `AGENTBUS2_SERVER_ISSUER` | string | `(unset)` | Absolute `http` or `https` URL with no path, query, fragment or trailing slash. Unset means `http://<bound address>`, which is wrong behind a proxy or in a container: set it on every non-local server. Required for a unix socket. Replicas must share it. |
-| `token_lifetime_seconds` | `AGENTBUS2_SERVER_TOKEN_LIFETIME_SECONDS` | int | `3600` | 1 to 86400. Lifetime of a bearer token the server issues. |
-| `jwks_refresh_seconds` | `AGENTBUS2_SERVER_JWKS_REFRESH_SECONDS` | int | `300` | 10 to 86400. How long an external issuer's key set is cached. |
-| `signing_key_uri` | `AGENTBUS2_SERVER_SIGNING_KEY_URI` | string | `(unset)` | Where the token signing key lives. Unset keeps the key in the database. Otherwise a key URI whose scheme is one of `awskms`, `gcpkms`, `azurekms` or `hashivault` and which names a key after `://`; any other value is refused at start. A scheme whose backend is not in the binary stops the start with `the <scheme> backend is not in this build`. |
-| `signing_key_rotation_hours` | `AGENTBUS2_SERVER_SIGNING_KEY_ROTATION_HOURS` | int | `720` | 0 or 48 to 8760. The age at which the `signing key rotation` maintenance job replaces an active key kept in the database, and the age after which it reports an error for an external key that the key URI still names (the server cannot rotate an external key itself; it adopts the key the URI names once the URI is changed). 0 turns scheduled rotation off. |
-| `signing_key_rotation_cooldown_seconds` | `AGENTBUS2_SERVER_SIGNING_KEY_ROTATION_COOLDOWN_SECONDS` | int | `3600` | 1 to 86400. The least age of the active signing key before a rotation is allowed. |
-| `issuers` | `AGENTBUS2_SERVER_ISSUERS` | JSON list | `(see below)` | Corporate token issuers, whose tokens are exchanged for agentbus2 bearers (Decision 57, federated identity spec 5.1). Per entry: `name` (required, unique; the handle `users add -issuer` uses), `issuer` and `jwks_uri` (absolute URLs), `audience` (required), `algorithms` (any of `EdDSA`, `ES256`, `RS256`; empty means all three), `claims` (optional object `email`, `groups`, `subject` naming the token claims to read; defaults `email`, `groups`, `sub`), `human_token_lifetime_seconds` (0 or unset means 900; 1 to 86400). |
-| `default_acl` | `AGENTBUS2_SERVER_DEFAULT_ACL` | JSON list | `(see below)` | ACL of a new channel when its creator gives none (Decision 88). |
-| `channel_creation` | `AGENTBUS2_SERVER_CHANNEL_CREATION` | string | `"open"` | `open` (any registered identity) or `admins` (Decision 93). |
-| `receipt_retention_minutes` | `AGENTBUS2_SERVER_RECEIPT_RETENTION_MINUTES` | int | `60` | 1 to 1440. How long the idempotency receipt of a mutation is kept. |
-| `session_retention_hours` | `AGENTBUS2_SERVER_SESSION_RETENTION_HOURS` | int | `72` | 1 to 8760. How long a lapsed session is kept so it can be resumed. |
-| `send_messages_per_second` | `AGENTBUS2_SERVER_SEND_MESSAGES_PER_SECOND` | int | `100` | 1 to 10000. Per-identity send rate (Decision 86); per process, see `deploy.md`. |
-| `send_kib_per_second` | `AGENTBUS2_SERVER_SEND_KIB_PER_SECOND` | int | `1024` | 64 to 65536. Per-identity send bandwidth; per process. |
-| `message_retention_hours` | `AGENTBUS2_SERVER_MESSAGE_RETENTION_HOURS` | int | `168` | 1 to 8760. Age at which ordinary messages are deleted. |
-| `tombstone_min_hours` | `AGENTBUS2_SERVER_TOMBSTONE_MIN_HOURS` | int | `72` | 72 to 720. Minimum age before a tombstone is purged. |
-| `task_expiry_hours` | `AGENTBUS2_SERVER_TASK_EXPIRY_HOURS` | int | `720` | 0 to 87600. 0 disables the rule. |
-| `memory_expiry_hours` | `AGENTBUS2_SERVER_MEMORY_EXPIRY_HOURS` | int | `8760` | 0 to 87600. Memories not accessed for this long are tombstoned; 0 disables the rule. |
-| `empty_channel_reap_hours` | `AGENTBUS2_SERVER_EMPTY_CHANNEL_REAP_HOURS` | int | `24` | 1 to 8760. Age after which an ordinary channel with no messages and no subscriber that has a live or resumable session is deleted (the Slack bridge's subscription never counts). |
-| `scope_idle_hours` | `AGENTBUS2_SERVER_SCOPE_IDLE_HOURS` | int | `336` | 1 to 8760. A scope with no message on any of its channels, in either direction, for this long is retired with everything in it (a bridged Slack channel is archived first). |
-| `status_history_count` | `AGENTBUS2_SERVER_STATUS_HISTORY_COUNT` | int | `20` | 1 to 1000. How many statuses each agent keeps, its current one included; older ones are deleted at its next status. |
-| `session_lease_seconds` | `AGENTBUS2_SERVER_SESSION_LEASE_SECONDS` | int | `90` | 1 to 86400. A session's lease; open, receive and watch extend it. |
-| `lease_skew_seconds` | `AGENTBUS2_SERVER_LEASE_SKEW_SECONDS` | int | `5` | 0 to 300. Grace added to a lease before the session counts as lapsed. |
-| `watch_max_seconds` | `AGENTBUS2_SERVER_WATCH_MAX_SECONDS` | int | `50` | 1 to 240. Cap on a watch (long-poll) timeout; a proxy must allow at least this long. |
-| `watch_merge_seconds` | `AGENTBUS2_SERVER_WATCH_MERGE_SECONDS` | int | `2` | 0 to 60. Window in which a wake merges further messages. |
-| `maintenance_interval_seconds` | `AGENTBUS2_SERVER_MAINTENANCE_INTERVAL_SECONDS` | int | `60` | 1 to 3600. Maintenance tick period. |
-| `max_message_kib` | `AGENTBUS2_SERVER_MAX_MESSAGE_KIB` | int | `64` | 1 to 1024. Largest message. |
-| `receive_default_count` | `AGENTBUS2_SERVER_RECEIVE_DEFAULT_COUNT` | int | `100` | 1 to 1000, and at most `receive_max_count`. |
-| `receive_max_count` | `AGENTBUS2_SERVER_RECEIVE_MAX_COUNT` | int | `1000` | 1 to 10000. |
-| `result_default_kib` | `AGENTBUS2_SERVER_RESULT_DEFAULT_KIB` | int | `64` | 1 to 4096. Default size cap of a history or task result. |
-| `sqlite_budget_mib` | `AGENTBUS2_SERVER_SQLITE_BUDGET_MIB` | int | `2048` | 64 to 1048576. Used file bytes of the SQLite database above which the budget backstop deletes (see "Retention and the budget backstop" below). Enforced on SQLite; `postgres_budget_mib` is its counterpart on Postgres, and the setting of the other engine is accepted and has no effect. |
-| `postgres_budget_mib` | `AGENTBUS2_SERVER_POSTGRES_BUDGET_MIB` | int | `2048` | 64 to 1048576. Logical size (the bytes of every row eviction can delete, with a fixed per-row overhead) above which the budget backstop deletes, on Postgres. Disk use is a multiple of it; `GET /v1/health` reports the ratio. |
-| `idle_window_hours` | `AGENTBUS2_SERVER_IDLE_WINDOW_HOURS` | int | `168` | 72 to 8760 (not below the 72-hour tombstone floor). Under space pressure, a task list or memory with no new message, task change or read for this long may be deleted. |
-| `cleanup_free_percent` | `AGENTBUS2_SERVER_CLEANUP_FREE_PERCENT` | int | `25` | 5 to 90. How far below the engine's budget (`sqlite_budget_mib` or `postgres_budget_mib`) an eviction sweep goes. |
-| `embedding_endpoint` | `AGENTBUS2_SERVER_EMBEDDING_ENDPOINT` | string | `(unset)` | Absolute URL of an embeddings API. When set, `embedding_model` is required. |
-| `embedding_model` | `AGENTBUS2_SERVER_EMBEDDING_MODEL` | string | `(unset)` | Model name sent to the endpoint. |
-| `embedding_api_key_file` | `AGENTBUS2_SERVER_EMBEDDING_API_KEY_FILE` | string | `(unset)` | File holding the API key. At most one of this and `embedding_api_key_env`. A blank key is refused at start. |
-| `embedding_api_key_env` | `AGENTBUS2_SERVER_EMBEDDING_API_KEY_ENV` | string | `(unset)` | Name of the environment variable that holds the API key (it must be set when named). A blank key is refused at start. |
-| `embedding_query_timeout_seconds` | `AGENTBUS2_SERVER_EMBEDDING_QUERY_TIMEOUT_SECONDS` | float | `10` | 0.1 to 120. Time allowed to embed a search query. |
-| `inspection_endpoint` | `AGENTBUS2_SERVER_INSPECTION_ENDPOINT` | string | `(unset)` | URL of the write inspector (a webhook). `https`, or `http` only on a loopback host (`localhost`, `127.0.0.0/8`, `::1`); no credentials in the URL. Unset means no inspection. See `inspection.md`. |
-| `inspection_api_key_file` | `AGENTBUS2_SERVER_INSPECTION_API_KEY_FILE` | string | `(unset)` | File holding the bearer token sent to the inspector. At most one of this and `inspection_api_key_env`; either needs `inspection_endpoint`. A blank key is refused at start. |
-| `inspection_api_key_env` | `AGENTBUS2_SERVER_INSPECTION_API_KEY_ENV` | string | `(unset)` | Name of the environment variable that holds that token (it must be set when named). A blank key is refused at start. |
-| `inspection_timeout_seconds` | `AGENTBUS2_SERVER_INSPECTION_TIMEOUT_SECONDS` | float | `5` | 0.1 to 60. Time allowed for one inspection, the whole call. |
-| `inspection_on_failure` | `AGENTBUS2_SERVER_INSPECTION_ON_FAILURE` | string | `"closed"` | `closed` refuses a write the inspector could not judge (retryable `unavailable`); `open` writes it uninspected. |
-| `inspection_notice_ttl_seconds` | `AGENTBUS2_SERVER_INSPECTION_NOTICE_TTL_SECONDS` | int | `300` | 120 to 86400. An `inspection` notice that no failing replica has rewritten for this long no longer counts toward `degraded`. |
-| `slack_app_token_file` | `AGENTBUS2_SERVER_SLACK_APP_TOKEN_FILE` | string | `(unset)` | File holding the Slack app-level token (`xapp-`, scope `connections:write`) for Socket Mode. Set together with `slack_bot_token_file` or not at all; neither set means the Slack bridge is off. See `slack-bridge.md`. |
-| `slack_bot_token_file` | `AGENTBUS2_SERVER_SLACK_BOT_TOKEN_FILE` | string | `(unset)` | File holding the Slack bot token (`xoxb-`) for the Web API. Every replica needs both files to serve bridge calls. |
-| `slack_archive_after_done_hours` | `AGENTBUS2_SERVER_SLACK_ARCHIVE_AFTER_DONE_HOURS` | int | `168` | 1 to 8760. How long after its scope is marked done a bridged Slack channel is archived (earlier when no human remains in it). |
-| `slack_max_message_chars` | `AGENTBUS2_SERVER_SLACK_MAX_MESSAGE_CHARS` | int | `3000` | 200 to 3000 (3000 is Slack's limit for a section's text). A longer bus message is cut and ends with a note pointing to agentbus2. |
-| `log_level` | `AGENTBUS2_SERVER_LOG_LEVEL` | string | `"info"` | `debug`, `info`, `warn` or `error`. Logs are text on stderr. |
+| `listen` | `AGENTMESH_SERVER_LISTEN` | string | `(unset)` | Required to serve (no default port). `host:port`, or `unix:<path>` (mode 0600). A loopback, unix or all-loopback-hostname address is local; anything else (including `0.0.0.0` and an empty host) is not, which decides the default `registration` and whether `issuer` must be set. |
+| `registration` | `AGENTMESH_SERVER_REGISTRATION` | string | `(unset)` | `open` or `enrollment`. Unset means `open` on a local listener and `enrollment` otherwise. |
+| `sqlite` | `AGENTMESH_SERVER_SQLITE` | string | `(unset)` | Database file. Exactly one of `sqlite` and `postgres`. A new file is created with mode 0600. |
+| `postgres` | `AGENTMESH_SERVER_POSTGRES` | string | `(unset)` | Postgres DSN. The database needs a UTF-8 ctype. |
+| `issuer` | `AGENTMESH_SERVER_ISSUER` | string | `(unset)` | Absolute `http` or `https` URL with no path, query, fragment or trailing slash. Unset means `http://<bound address>`, which is wrong behind a proxy or in a container: set it on every non-local server. Required for a unix socket. Replicas must share it. |
+| `token_lifetime_seconds` | `AGENTMESH_SERVER_TOKEN_LIFETIME_SECONDS` | int | `3600` | 1 to 86400. Lifetime of a bearer token the server issues. |
+| `jwks_refresh_seconds` | `AGENTMESH_SERVER_JWKS_REFRESH_SECONDS` | int | `300` | 10 to 86400. How long an external issuer's key set is cached. |
+| `signing_key_uri` | `AGENTMESH_SERVER_SIGNING_KEY_URI` | string | `(unset)` | Where the token signing key lives. Unset keeps the key in the database. Otherwise a key URI whose scheme is one of `awskms`, `gcpkms`, `azurekms` or `hashivault` and which names a key after `://`; any other value is refused at start. A scheme whose backend is not in the binary stops the start with `the <scheme> backend is not in this build`. |
+| `signing_key_rotation_hours` | `AGENTMESH_SERVER_SIGNING_KEY_ROTATION_HOURS` | int | `720` | 0 or 48 to 8760. The age at which the `signing key rotation` maintenance job replaces an active key kept in the database, and the age after which it reports an error for an external key that the key URI still names (the server cannot rotate an external key itself; it adopts the key the URI names once the URI is changed). 0 turns scheduled rotation off. |
+| `signing_key_rotation_cooldown_seconds` | `AGENTMESH_SERVER_SIGNING_KEY_ROTATION_COOLDOWN_SECONDS` | int | `3600` | 1 to 86400. The least age of the active signing key before a rotation is allowed. |
+| `issuers` | `AGENTMESH_SERVER_ISSUERS` | JSON list | `(see below)` | Corporate token issuers, whose tokens are exchanged for agentmesh bearers (Decision 57, federated identity spec 5.1). Per entry: `name` (required, unique; the handle `users add -issuer` uses), `issuer` and `jwks_uri` (absolute URLs), `audience` (required), `algorithms` (any of `EdDSA`, `ES256`, `RS256`; empty means all three), `claims` (optional object `email`, `groups`, `subject` naming the token claims to read; defaults `email`, `groups`, `sub`), `human_token_lifetime_seconds` (0 or unset means 900; 1 to 86400). |
+| `default_acl` | `AGENTMESH_SERVER_DEFAULT_ACL` | JSON list | `(see below)` | ACL of a new channel when its creator gives none (Decision 88). |
+| `channel_creation` | `AGENTMESH_SERVER_CHANNEL_CREATION` | string | `"open"` | `open` (any registered identity) or `admins` (Decision 93). |
+| `receipt_retention_minutes` | `AGENTMESH_SERVER_RECEIPT_RETENTION_MINUTES` | int | `60` | 1 to 1440. How long the idempotency receipt of a mutation is kept. |
+| `session_retention_hours` | `AGENTMESH_SERVER_SESSION_RETENTION_HOURS` | int | `72` | 1 to 8760. How long a lapsed session is kept so it can be resumed. |
+| `send_messages_per_second` | `AGENTMESH_SERVER_SEND_MESSAGES_PER_SECOND` | int | `100` | 1 to 10000. Per-identity send rate (Decision 86); per process, see `deploy.md`. |
+| `send_kib_per_second` | `AGENTMESH_SERVER_SEND_KIB_PER_SECOND` | int | `1024` | 64 to 65536. Per-identity send bandwidth; per process. |
+| `message_retention_hours` | `AGENTMESH_SERVER_MESSAGE_RETENTION_HOURS` | int | `168` | 1 to 8760. Age at which ordinary messages are deleted. |
+| `tombstone_min_hours` | `AGENTMESH_SERVER_TOMBSTONE_MIN_HOURS` | int | `72` | 72 to 720. Minimum age before a tombstone is purged. |
+| `task_expiry_hours` | `AGENTMESH_SERVER_TASK_EXPIRY_HOURS` | int | `720` | 0 to 87600. 0 disables the rule. |
+| `memory_expiry_hours` | `AGENTMESH_SERVER_MEMORY_EXPIRY_HOURS` | int | `8760` | 0 to 87600. Memories not accessed for this long are tombstoned; 0 disables the rule. |
+| `empty_channel_reap_hours` | `AGENTMESH_SERVER_EMPTY_CHANNEL_REAP_HOURS` | int | `24` | 1 to 8760. Age after which an ordinary channel with no messages and no subscriber that has a live or resumable session is deleted (the Slack bridge's subscription never counts). |
+| `scope_idle_hours` | `AGENTMESH_SERVER_SCOPE_IDLE_HOURS` | int | `336` | 1 to 8760. A scope with no message on any of its channels, in either direction, for this long is retired with everything in it (a bridged Slack channel is archived first). |
+| `status_history_count` | `AGENTMESH_SERVER_STATUS_HISTORY_COUNT` | int | `20` | 1 to 1000. How many statuses each agent keeps, its current one included; older ones are deleted at its next status. |
+| `session_lease_seconds` | `AGENTMESH_SERVER_SESSION_LEASE_SECONDS` | int | `90` | 1 to 86400. A session's lease; open, receive and watch extend it. |
+| `lease_skew_seconds` | `AGENTMESH_SERVER_LEASE_SKEW_SECONDS` | int | `5` | 0 to 300. Grace added to a lease before the session counts as lapsed. |
+| `watch_max_seconds` | `AGENTMESH_SERVER_WATCH_MAX_SECONDS` | int | `50` | 1 to 240. Cap on a watch (long-poll) timeout; a proxy must allow at least this long. |
+| `watch_merge_seconds` | `AGENTMESH_SERVER_WATCH_MERGE_SECONDS` | int | `2` | 0 to 60. Window in which a wake merges further messages. |
+| `maintenance_interval_seconds` | `AGENTMESH_SERVER_MAINTENANCE_INTERVAL_SECONDS` | int | `60` | 1 to 3600. Maintenance tick period. |
+| `max_message_kib` | `AGENTMESH_SERVER_MAX_MESSAGE_KIB` | int | `64` | 1 to 1024. Largest message. |
+| `receive_default_count` | `AGENTMESH_SERVER_RECEIVE_DEFAULT_COUNT` | int | `100` | 1 to 1000, and at most `receive_max_count`. |
+| `receive_max_count` | `AGENTMESH_SERVER_RECEIVE_MAX_COUNT` | int | `1000` | 1 to 10000. |
+| `result_default_kib` | `AGENTMESH_SERVER_RESULT_DEFAULT_KIB` | int | `64` | 1 to 4096. Default size cap of a history or task result. |
+| `sqlite_budget_mib` | `AGENTMESH_SERVER_SQLITE_BUDGET_MIB` | int | `2048` | 64 to 1048576. Used file bytes of the SQLite database above which the budget backstop deletes (see "Retention and the budget backstop" below). Enforced on SQLite; `postgres_budget_mib` is its counterpart on Postgres, and the setting of the other engine is accepted and has no effect. |
+| `postgres_budget_mib` | `AGENTMESH_SERVER_POSTGRES_BUDGET_MIB` | int | `2048` | 64 to 1048576. Logical size (the bytes of every row eviction can delete, with a fixed per-row overhead) above which the budget backstop deletes, on Postgres. Disk use is a multiple of it; `GET /v1/health` reports the ratio. |
+| `idle_window_hours` | `AGENTMESH_SERVER_IDLE_WINDOW_HOURS` | int | `168` | 72 to 8760 (not below the 72-hour tombstone floor). Under space pressure, a task list or memory with no new message, task change or read for this long may be deleted. |
+| `cleanup_free_percent` | `AGENTMESH_SERVER_CLEANUP_FREE_PERCENT` | int | `25` | 5 to 90. How far below the engine's budget (`sqlite_budget_mib` or `postgres_budget_mib`) an eviction sweep goes. |
+| `embedding_endpoint` | `AGENTMESH_SERVER_EMBEDDING_ENDPOINT` | string | `(unset)` | Absolute URL of an embeddings API. When set, `embedding_model` is required. |
+| `embedding_model` | `AGENTMESH_SERVER_EMBEDDING_MODEL` | string | `(unset)` | Model name sent to the endpoint. |
+| `embedding_api_key_file` | `AGENTMESH_SERVER_EMBEDDING_API_KEY_FILE` | string | `(unset)` | File holding the API key. At most one of this and `embedding_api_key_env`. A blank key is refused at start. |
+| `embedding_api_key_env` | `AGENTMESH_SERVER_EMBEDDING_API_KEY_ENV` | string | `(unset)` | Name of the environment variable that holds the API key (it must be set when named). A blank key is refused at start. |
+| `embedding_query_timeout_seconds` | `AGENTMESH_SERVER_EMBEDDING_QUERY_TIMEOUT_SECONDS` | float | `10` | 0.1 to 120. Time allowed to embed a search query. |
+| `inspection_endpoint` | `AGENTMESH_SERVER_INSPECTION_ENDPOINT` | string | `(unset)` | URL of the write inspector (a webhook). `https`, or `http` only on a loopback host (`localhost`, `127.0.0.0/8`, `::1`); no credentials in the URL. Unset means no inspection. See `inspection.md`. |
+| `inspection_api_key_file` | `AGENTMESH_SERVER_INSPECTION_API_KEY_FILE` | string | `(unset)` | File holding the bearer token sent to the inspector. At most one of this and `inspection_api_key_env`; either needs `inspection_endpoint`. A blank key is refused at start. |
+| `inspection_api_key_env` | `AGENTMESH_SERVER_INSPECTION_API_KEY_ENV` | string | `(unset)` | Name of the environment variable that holds that token (it must be set when named). A blank key is refused at start. |
+| `inspection_timeout_seconds` | `AGENTMESH_SERVER_INSPECTION_TIMEOUT_SECONDS` | float | `5` | 0.1 to 60. Time allowed for one inspection, the whole call. |
+| `inspection_on_failure` | `AGENTMESH_SERVER_INSPECTION_ON_FAILURE` | string | `"closed"` | `closed` refuses a write the inspector could not judge (retryable `unavailable`); `open` writes it uninspected. |
+| `inspection_notice_ttl_seconds` | `AGENTMESH_SERVER_INSPECTION_NOTICE_TTL_SECONDS` | int | `300` | 120 to 86400. An `inspection` notice that no failing replica has rewritten for this long no longer counts toward `degraded`. |
+| `slack_app_token_file` | `AGENTMESH_SERVER_SLACK_APP_TOKEN_FILE` | string | `(unset)` | File holding the Slack app-level token (`xapp-`, scope `connections:write`) for Socket Mode. Set together with `slack_bot_token_file` or not at all; neither set means the Slack bridge is off. See `slack-bridge.md`. |
+| `slack_bot_token_file` | `AGENTMESH_SERVER_SLACK_BOT_TOKEN_FILE` | string | `(unset)` | File holding the Slack bot token (`xoxb-`) for the Web API. Every replica needs both files to serve bridge calls. |
+| `slack_archive_after_done_hours` | `AGENTMESH_SERVER_SLACK_ARCHIVE_AFTER_DONE_HOURS` | int | `168` | 1 to 8760. How long after its scope is marked done a bridged Slack channel is archived (earlier when no human remains in it). |
+| `slack_max_message_chars` | `AGENTMESH_SERVER_SLACK_MAX_MESSAGE_CHARS` | int | `3000` | 200 to 3000 (3000 is Slack's limit for a section's text). A longer bus message is cut and ends with a note pointing to agentmesh. |
+| `log_level` | `AGENTMESH_SERVER_LOG_LEVEL` | string | `"info"` | `debug`, `info`, `warn` or `error`. Logs are text on stderr. |
 
 ### Write inspection
 
@@ -125,9 +125,9 @@ Age comes first: the age settings above (`message_retention_hours`, `tombstone_m
 
 ### Defaults of the two lists
 
-`issuers` defaults to the empty list. Rules: an entry whose `issuer` equals the server's own `issuer`, or repeats another entry's `issuer`, is rejected. A `jwks_uri` that is plain `http` on a host other than `localhost` or a loopback address starts the server with a warning (anyone on the path can substitute the key set); use `https`. Each `name` must be a valid identity name (1 to 128 bytes, no `/`, no control characters), not `everyone` or `admins`, and unique across entries. The old `subjects` member is gone and an entry that has it fails to load. A token from an issuer is never accepted directly as a bearer; the token endpoint exchanges it for an agentbus2 bearer, and a human's identity is created at the first sign-in in every registration mode.
+`issuers` defaults to the empty list. Rules: an entry whose `issuer` equals the server's own `issuer`, or repeats another entry's `issuer`, is rejected. A `jwks_uri` that is plain `http` on a host other than `localhost` or a loopback address starts the server with a warning (anyone on the path can substitute the key set); use `https`. Each `name` must be a valid identity name (1 to 128 bytes, no `/`, no control characters), not `everyone` or `admins`, and unique across entries. The old `subjects` member is gone and an entry that has it fails to load. A token from an issuer is never accepted directly as a bearer; the token endpoint exchanges it for an agentmesh bearer, and a human's identity is created at the first sign-in in every registration mode.
 
-An `issuers` entry serves the token exchange only (RFC 8693, `POST /v1/auth/token` with `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`). The caller sends the provider's access token as `subject_token` with `subject_token_type=urn:ietf:params:oauth:token-type:access_token`; the server finds the entry whose `issuer` equals the token's `iss`, verifies the signature against the entry's `jwks_uri`, then `iss`, `aud` (must equal the entry's `audience`) and `exp`, reads the email, groups and subject claims, runs the `users` gate and answers an agentbus2 human bearer that lives `human_token_lifetime_seconds`. Refusals are RFC 6749 bodies: `invalid_request` for a bad or unknown token, an unknown issuer, an ID token (`urn:ietf:params:oauth:token-type:id_token` is refused; present the access token), an `actor_token`, or a person the `users` list does not admit (Decision 13); `invalid_target` when `audience` or `resource` is set and is not this server's `issuer`; `temporarily_unavailable` (503) when the provider's key set cannot be fetched or when the server's own signing key is unavailable ("the signing key is unavailable": an external key provider is down; retry). Every refusal is logged at warn with the reason, and with the entry name (the claimed issuer URL when no entry matches, empty when the request fails before its issuer is read) and the identity when known, each cut to 200 bytes; a token is never logged.
+An `issuers` entry serves the token exchange only (RFC 8693, `POST /v1/auth/token` with `grant_type=urn:ietf:params:oauth:grant-type:token-exchange`). The caller sends the provider's access token as `subject_token` with `subject_token_type=urn:ietf:params:oauth:token-type:access_token`; the server finds the entry whose `issuer` equals the token's `iss`, verifies the signature against the entry's `jwks_uri`, then `iss`, `aud` (must equal the entry's `audience`) and `exp`, reads the email, groups and subject claims, runs the `users` gate and answers an agentmesh human bearer that lives `human_token_lifetime_seconds`. Refusals are RFC 6749 bodies: `invalid_request` for a bad or unknown token, an unknown issuer, an ID token (`urn:ietf:params:oauth:token-type:id_token` is refused; present the access token), an `actor_token`, or a person the `users` list does not admit (Decision 13); `invalid_target` when `audience` or `resource` is set and is not this server's `issuer`; `temporarily_unavailable` (503) when the provider's key set cannot be fetched or when the server's own signing key is unavailable ("the signing key is unavailable": an external key provider is down; retry). Every refusal is logged at warn with the reason, and with the entry name (the claimed issuer URL when no entry matches, empty when the request fails before its issuer is read) and the identity when known, each cut to 200 bytes; a token is never logged.
 
 Example for a provider whose access token carries the person's identity in `user_id` instead of `sub` (an OCI-shaped entry; the claim names are the provider's, shown for illustration):
 
@@ -136,7 +136,7 @@ Example for a provider whose access token carries the person's identity in `user
   "name": "corp",
   "issuer": "https://idp.example.com/oauth2",
   "jwks_uri": "https://idp.example.com/oauth2/keys",
-  "audience": "agentbus2",
+  "audience": "agentmesh",
   "algorithms": ["RS256"],
   "claims": {"email": "email", "groups": "groups", "subject": "user_id"},
   "human_token_lifetime_seconds": 900

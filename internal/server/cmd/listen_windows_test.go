@@ -8,7 +8,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/fileacl/acltest"
+	"github.com/ericfitz/agentmesh/internal/fileacl/acltest"
 	"golang.org/x/sys/windows"
 )
 

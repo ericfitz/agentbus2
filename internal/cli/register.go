@@ -7,11 +7,11 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/client"
 )
 
-// RunRegister is `agentbus2 register [-profile P] [-identity I] [-server URL]
+// RunRegister is `agentmesh register [-profile P] [-identity I] [-server URL]
 // [-enrollment-token T] [-algorithm EdDSA|ES256]` (Milestone 6 choice 14;
 // Decision (Eric, 2026-10-21), item 6): generate a key, write it to the
 // pending file (credential.Store.PendingPath), register its public half and,
@@ -35,7 +35,7 @@ func RunRegister(ctx context.Context, args []string, environ []string, stdin io.
 		return parseExit(err)
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 register: unexpected argument %q\n", fs.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "agentmesh register: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
 	alg := keys.Algorithm(algName)
@@ -50,13 +50,13 @@ func RunRegister(ctx context.Context, args []string, environ []string, stdin io.
 	if err != nil {
 		var re *client.ResolveError
 		if errors.As(err, &re) {
-			_, _ = fmt.Fprintf(stderr, "agentbus2 register: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "agentmesh register: %v\n", err)
 			return 2
 		}
 		var pc *client.PendingConflictError
 		if errors.As(err, &pc) {
 			code := fail(stderr, pc.Err)
-			_, _ = fmt.Fprintf(stderr, "agentbus2 register: %s\n", pc.Hint())
+			_, _ = fmt.Fprintf(stderr, "agentmesh register: %s\n", pc.Hint())
 			return code
 		}
 		return fail(stderr, err)

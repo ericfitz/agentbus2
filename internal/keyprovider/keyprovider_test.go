@@ -13,7 +13,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
 )
 
 func TestStoreProviderRoundTrip(t *testing.T) {
@@ -159,8 +159,8 @@ func TestExternalKey(t *testing.T) {
 
 func TestKeyNameDropsCredentialsAndQuery(t *testing.T) {
 	for _, tc := range []struct{ in, want string }{
-		{"awskms:///alias/agentbus2", "/alias/agentbus2"},
-		{"awskms://alias/agentbus2", "alias/agentbus2"},
+		{"awskms:///alias/agentmesh", "/alias/agentmesh"},
+		{"awskms://alias/agentmesh", "alias/agentmesh"},
 		{"hashivault://transit-key?address=https://v:8200&token=s3cret", "transit-key"},
 		{"hashivault://user:pw@vault.example/key#frag", "vault.example/key"},
 		{"azurekms://v.vault.azure.net/k?x=1", "v.vault.azure.net/k"},

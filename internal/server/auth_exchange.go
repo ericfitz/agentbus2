@@ -9,10 +9,10 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 const (
@@ -55,7 +55,7 @@ func (a *api) refuseExchange(issuer string, e oauthError, reason, identity strin
 }
 
 // tokenExchange is the RFC 8693 grant for humans (spec 5.2, 8): a provider
-// access token in, an agentbus2 human bearer out. The provider token is
+// access token in, an agentmesh human bearer out. The provider token is
 // verified, never stored and never logged.
 func (a *api) tokenExchange(ctx context.Context, b *gen.TokenFormdataRequestBody) gen.TokenResponseObject {
 	iss := a.opts.Issuer

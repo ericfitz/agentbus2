@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // MaxTags is the per-message (and per-subscription) tag ceiling (v1 ADR 0009).

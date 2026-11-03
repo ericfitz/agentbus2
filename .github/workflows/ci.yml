@@ -14,15 +14,15 @@ jobs:
       postgres:
         image: cgr.dev/chainguard/postgres:latest@sha256:0926ac7262a2c1963179eb939cd5d610e1be3ecca90b4b5cad8db8df16fab87e # Postgres 18
         env:
-          POSTGRES_USER: agentbus2
-          POSTGRES_PASSWORD: agentbus2
-          POSTGRES_DB: agentbus2
+          POSTGRES_USER: agentmesh
+          POSTGRES_PASSWORD: agentmesh
+          POSTGRES_DB: agentmesh
         ports: ["5432:5432"]
         options: >-
-          --health-cmd "pg_isready -U agentbus2" --health-interval 5s
+          --health-cmd "pg_isready -U agentmesh" --health-interval 5s
           --health-timeout 5s --health-retries 10
     env:
-      AGENTBUS2_TEST_POSTGRES_DSN: postgres://agentbus2:agentbus2@127.0.0.1:5432/agentbus2?sslmode=disable
+      AGENTMESH_TEST_POSTGRES_DSN: postgres://agentmesh:agentmesh@127.0.0.1:5432/agentmesh?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -45,7 +45,7 @@ jobs:
   gate-negative: # negative half of the exit criterion: no service, unreachable DSN, verify must fail for that reason
     runs-on: ubuntu-latest
     env:
-      AGENTBUS2_TEST_POSTGRES_DSN: postgres://agentbus2:agentbus2@127.0.0.1:1/agentbus2?sslmode=disable&connect_timeout=2
+      AGENTMESH_TEST_POSTGRES_DSN: postgres://agentmesh:agentmesh@127.0.0.1:1/agentmesh?sslmode=disable&connect_timeout=2
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -54,7 +54,7 @@ jobs:
         with: { go-version-file: go.mod }
       - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with: { version: v2.14.0, install-only: true }
-      - run: bash scripts/ci-gate-negative.sh 'postgres from AGENTBUS2_TEST_POSTGRES_DSN is unreachable'
+      - run: bash scripts/ci-gate-negative.sh 'postgres from AGENTMESH_TEST_POSTGRES_DSN is unreachable'
   gates-selftest: # the harness test: one mutation per gate check in a throwaway worktree (minutes; not part of verify)
     runs-on: ubuntu-latest
     steps:
@@ -144,4 +144,4 @@ jobs:
           sudo systemctl stop docker.socket docker.service || true
           if docker info >/dev/null 2>&1; then echo "::error::docker still reachable after stop"; exit 1; fi
       - name: make verify must fail for want of Postgres
-        run: bash scripts/ci-gate-negative.sh 'AGENTBUS2_TEST_POSTGRES_DSN is unset and testcontainers could not start cgr.dev/chainguard/postgres'
+        run: bash scripts/ci-gate-negative.sh 'AGENTMESH_TEST_POSTGRES_DSN is unset and testcontainers could not start cgr.dev/chainguard/postgres'

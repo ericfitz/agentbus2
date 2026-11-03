@@ -1,6 +1,6 @@
 package core
 
-import "github.com/ericfitz/agentbus2/internal/core/notify"
+import "github.com/ericfitz/agentmesh/internal/core/notify"
 
 // Publish passes a hint to the Notifier (Decision 52). Callers publish after
 // the transaction commits; Publish never blocks.

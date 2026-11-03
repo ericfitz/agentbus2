@@ -17,20 +17,20 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/fileacl"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
-	"github.com/ericfitz/agentbus2/internal/testkit"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/fileacl"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/server/cmd"
+	"github.com/ericfitz/agentmesh/internal/testkit"
 )
 
 var listeningRE = regexp.MustCompile(`listening on (\S+) `)
 
-// startServer runs `agentbus2 server` on a loopback port over a temp SQLite
+// startServer runs `agentmesh server` on a loopback port over a temp SQLite
 // file (open registration) and returns its base URL.
 func startServer(t *testing.T) string {
 	t.Helper()
@@ -230,8 +230,8 @@ func TestServerStaleCacheRefreshes(t *testing.T) {
 func TestServerOpenWithoutCredentialNamesCaller(t *testing.T) {
 	e := testkit.NewProfileEnv(t)
 	e.Save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
-	_, err := Open(context.Background(), Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat", RegisterCommand: "agentbus2-mcponly register"})
-	if err == nil || !strings.Contains(err.Error(), "run agentbus2-mcponly register") || strings.Contains(err.Error(), "run agentbus2 register") {
+	_, err := Open(context.Background(), Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat", RegisterCommand: "agentmesh-mcponly register"})
+	if err == nil || !strings.Contains(err.Error(), "run agentmesh-mcponly register") || strings.Contains(err.Error(), "run agentmesh register") {
 		t.Fatalf("err %v", err)
 	}
 }
@@ -240,7 +240,7 @@ func TestServerOpenWithoutCredential(t *testing.T) {
 	e := testkit.NewProfileEnv(t)
 	e.Save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
 	_, err := Open(context.Background(), Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat"})
-	if err == nil || !strings.Contains(err.Error(), "run agentbus2 register") || !strings.Contains(err.Error(), `"pat"`) || !strings.Contains(err.Error(), `"lab"`) {
+	if err == nil || !strings.Contains(err.Error(), "run agentmesh register") || !strings.Contains(err.Error(), `"pat"`) || !strings.Contains(err.Error(), `"lab"`) {
 		t.Fatalf("err %v", err)
 	}
 	var re *ResolveError

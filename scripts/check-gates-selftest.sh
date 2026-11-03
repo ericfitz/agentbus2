@@ -9,13 +9,13 @@
 # block runs even after a failure so one run reports every broken check.
 # Overlapping runs are unsupported (fixed container name and port in block 6);
 # a killed run leaves a worktree under $TMPDIR and maybe one container:
-# `git worktree prune` and `docker rm -f agentbus2-ci-sim-selftest` clear them.
+# `git worktree prune` and `docker rm -f agentmesh-ci-sim-selftest` clear them.
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SIM_NAME=agentbus2-ci-sim-selftest
+SIM_NAME=agentmesh-ci-sim-selftest
 SIM_PORT=5434
-BAD_DSN='postgres://agentbus2:agentbus2@127.0.0.1:1/agentbus2?sslmode=disable&connect_timeout=2'
+BAD_DSN='postgres://agentmesh:agentmesh@127.0.0.1:1/agentmesh?sslmode=disable&connect_timeout=2'
 CHECKS=(postgres-unreachable-fails unit-tests-exclude-conformance no-skip-in-test-wiring generator-reacts-to-schema postgres-no-docker-fails transport-env-rejects-unknown)
 
 tmp="$(mktemp -d)"
@@ -150,13 +150,13 @@ block_gen_spec_edited() {
 block_ci_gate_negative() {
 	local label=ci-gate-negative-fires log="$tmp/b5a.log" rc
 	begin
-	if AGENTBUS2_TEST_POSTGRES_DSN="$BAD_DSN" bash "$wt/scripts/ci-gate-negative.sh" 'postgres from AGENTBUS2_TEST_POSTGRES_DSN is unreachable' >"$log" 2>&1; then
+	if AGENTMESH_TEST_POSTGRES_DSN="$BAD_DSN" bash "$wt/scripts/ci-gate-negative.sh" 'postgres from AGENTMESH_TEST_POSTGRES_DSN is unreachable' >"$log" 2>&1; then
 		grep -qF 'gate-negative: ok' "$log" || problem "$label" "matching run exited 0 but did not print 'gate-negative: ok'"
 	else
 		problem "$label" "matching run should exit 0: $(tail -n 3 "$log" | tr '\n' ' ')"
 	fi
 	log="$tmp/b5b.log"
-	if AGENTBUS2_TEST_POSTGRES_DSN="$BAD_DSN" bash "$wt/scripts/ci-gate-negative.sh" 'selftest: text that never appears' >"$log" 2>&1; then
+	if AGENTMESH_TEST_POSTGRES_DSN="$BAD_DSN" bash "$wt/scripts/ci-gate-negative.sh" 'selftest: text that never appears' >"$log" 2>&1; then
 		problem "$label" "non-matching run exited 0, expected 1"
 	else
 		rc=$?
@@ -184,7 +184,7 @@ block_ci_sim() {
 # search_mutation_block LABEL FILE SED_EXPR PROOF_PATTERN BROKEN_ENGINE OTHER_ENGINE:
 # mutate one engine's search translation in the worktree and require the
 # corpus test to FAIL on that engine and PASS on the other (the suite is
-# load-bearing per engine). Uses the ambient AGENTBUS2_TEST_POSTGRES_DSN
+# load-bearing per engine). Uses the ambient AGENTMESH_TEST_POSTGRES_DSN
 # (testcontainers when unset), like make test-conformance.
 search_mutation_block() {
 	local label="$1" file="$2" expr="$3" proof="$4" broken="$5" other="$6"
@@ -276,11 +276,11 @@ block_inproc_crosses_the_wire() {
 			problem "$label" "mutation changed nothing (IdempotencyKey: nil absent)"
 		else
 			log="$tmp/b11a.log"
-			(cd "$wt" && AGENTBUS2_BUS_TRANSPORT=inproc go test -count=1 -p 1 -v -run "^${t}\$" ./internal/conformance/bus/ >"$log" 2>&1) || true
+			(cd "$wt" && AGENTMESH_BUS_TRANSPORT=inproc go test -count=1 -p 1 -v -run "^${t}\$" ./internal/conformance/bus/ >"$log" 2>&1) || true
 			grep -qF -- "--- FAIL: $t/sqlite" "$log" || problem "$label" "inproc log lacks '--- FAIL: $t/sqlite': $(tail -n 3 "$log" | tr '\n' ' ')"
 			grep -qF -- "--- FAIL: $t/postgres" "$log" || problem "$label" "inproc log lacks '--- FAIL: $t/postgres'"
 			log="$tmp/b11b.log"
-			(cd "$wt" && AGENTBUS2_BUS_TRANSPORT=local go test -count=1 -p 1 -v -run "^${t}\$" ./internal/conformance/bus/ >"$log" 2>&1) || true
+			(cd "$wt" && AGENTMESH_BUS_TRANSPORT=local go test -count=1 -p 1 -v -run "^${t}\$" ./internal/conformance/bus/ >"$log" 2>&1) || true
 			grep -qF -- "--- PASS: $t/sqlite" "$log" || problem "$label" "local log lacks '--- PASS: $t/sqlite': $(tail -n 3 "$log" | tr '\n' ' ')"
 			grep -qF -- "--- PASS: $t/postgres" "$log" || problem "$label" "local log lacks '--- PASS: $t/postgres'"
 			if grep -qF -- '--- FAIL' "$log"; then problem "$label" "local run has a FAIL: the mutation must be invisible to the local path"; fi
@@ -308,7 +308,7 @@ deps_probe() {
 }
 
 block_deps_rule_fires() {
-	local label=deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b12z.log"
+	local label=deps-rule-fires m=github.com/ericfitz/agentmesh log="$tmp/b12z.log"
 	begin
 	deps_probe "$label" internal/core/probe_m4.go "$m/internal/gen" "deps_violation=$m/internal/core imports $m/internal/gen"
 	deps_probe "$label" internal/bus/remote/probe_m4.go "$m/internal/server" "deps_violation=$m/internal/bus/remote imports $m/internal/server"
@@ -327,7 +327,7 @@ block_deps_rule_fires() {
 # caught only by the prefix match, a third-party import under internal/auth
 # only by the allowlist.
 block_m5_deps_rule_fires() {
-	local label=m5-deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b16z.log"
+	local label=m5-deps-rule-fires m=github.com/ericfitz/agentmesh log="$tmp/b16z.log"
 	begin
 	deps_probe "$label" internal/core/maintenance/probe_m5.go "$m/internal/server/config" "deps_violation=$m/internal/core/maintenance imports $m/internal/server" m5-exit-checks.sh
 	deps_probe "$label" internal/bus/probe_m5.go "$m/internal/gen" "deps_violation=$m/internal/bus imports $m/internal/gen" m5-exit-checks.sh
@@ -389,7 +389,7 @@ m7_stub_pkg() {
 # tagged file cannot hide an import (the tagged pass). An import go list cannot resolve must exit 2, never
 # pass as a package with no imports.
 block_m7_deps_rule_fires() {
-	local label=m7-deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b22z.log" rc=0
+	local label=m7-deps-rule-fires m=github.com/ericfitz/agentmesh log="$tmp/b22z.log" rc=0
 	begin
 	# Each probe must trip exactly one rule (the [rule NAME] tag on every
 	# violation line). A probe host must be a package no other probe's rule
@@ -474,7 +474,7 @@ block_m7_deps_rule_fires() {
 
 # --- 13. transport-check-fires -----------------------------------------------------------
 # Without the os.Exit(2) of the transport selection an unknown
-# AGENTBUS2_BUS_TRANSPORT falls through to the suite; check 6 must FAIL.
+# AGENTMESH_BUS_TRANSPORT falls through to the suite; check 6 must FAIL.
 block_transport_check_fires() {
 	local label=transport-check-fires log="$tmp/b13.log" f="$wt/internal/conformance/bus/main_test.go"
 	begin
@@ -645,7 +645,7 @@ m6_log() {
 	for n in "${M6_SEQUENCE_STEPS[@]}"; do printf '    --- PASS: TestSection24Sequence/%s (0.00s)\n' "$n" >>"$f"; done
 	printf -- '--- PASS: TestExitCodeTable (20.00s)\n' >>"$f"
 	for n in "${M6_CELLS[@]}"; do printf '    --- PASS: TestExitCodeTable/%s (0.00s)\n' "$n" >>"$f"; done
-	printf 'PASS\nok  \tgithub.com/ericfitz/agentbus2/internal/e2e\t25.000s\n' >>"$f"
+	printf 'PASS\nok  \tgithub.com/ericfitz/agentmesh/internal/e2e\t25.000s\n' >>"$f"
 }
 
 # m6_expect LABEL WHAT WANT_RC PRESENT [ABSENT]: runs the log form of the script
@@ -659,7 +659,7 @@ m6_expect() {
 }
 
 block_m6_exit_script_fires() {
-	local label=m6-exit-script-fires m=github.com/ericfitz/agentbus2 log="$tmp/b23z.log" rc
+	local label=m6-exit-script-fires m=github.com/ericfitz/agentmesh log="$tmp/b23z.log" rc
 	begin
 	if bash "$wt/scripts/m6-exit-checks.sh" --deps-only >"$log" 2>&1; then
 		grep -qF 'deps_ok=1' "$log" || problem "$label" "clean tree: exit 0 without deps_ok=1"
@@ -694,13 +694,13 @@ block_m6_exit_script_fires() {
 	sed 's/TestSection24Sequence\/7-receive /TestSection24Sequence\/6-wake /' "$tmp/m6.log" >"$tmp/m6x.log" && cp "$tmp/m6x.log" "$tmp/m6.log"
 	m6_expect "$label" "a repeated step line in place of a missing one" 1 'sequence=12'
 	m6_log "$tmp/m6.log"
-	sed 's/^ok  .*internal\/e2e.*$/FAIL\tgithub.com\/ericfitz\/agentbus2\/internal\/e2e\t25.000s/' "$tmp/m6.log" >"$tmp/m6x.log" && cp "$tmp/m6x.log" "$tmp/m6.log"
+	sed 's/^ok  .*internal\/e2e.*$/FAIL\tgithub.com\/ericfitz\/agentmesh\/internal\/e2e\t25.000s/' "$tmp/m6.log" >"$tmp/m6x.log" && cp "$tmp/m6x.log" "$tmp/m6.log"
 	m6_expect "$label" "a package FAIL with every leaf passing (TestMain teardown)" 1 'pkg_ok=0'
 	m6_log "$tmp/m6.log"
 	grep -vE '^(PASS|ok )' "$tmp/m6.log" >"$tmp/m6x.log" && cp "$tmp/m6x.log" "$tmp/m6.log"
 	m6_expect "$label" "no package ok line" 1 'pkg_ok=0'
 	m6_log "$tmp/m6.log"
-	printf '\ndm/ is gone in v2\n' >>"$wt/internal/cli/skills/using-agentbus2/SKILL.md"
+	printf '\ndm/ is gone in v2\n' >>"$wt/internal/cli/skills/using-agentmesh/SKILL.md"
 	m6_expect "$label" "word check" 1 'words_hit' 'words_ok'
 	finish "$label"
 	revert
@@ -791,7 +791,7 @@ m8_expect() {
 }
 
 block_m8_exit_script_fires() {
-	local label=m8-exit-script-fires m=github.com/ericfitz/agentbus2 log="$tmp/b25z.log" rc=0 real="$tmp/b25-m8.log"
+	local label=m8-exit-script-fires m=github.com/ericfitz/agentmesh log="$tmp/b25z.log" rc=0 real="$tmp/b25-m8.log"
 	begin
 	if bash "$wt/scripts/m8-exit-checks.sh" --deps-only >"$log" 2>&1; then
 		grep -qF 'deps_ok=1' "$log" || problem "$label" "clean tree: exit 0 without deps_ok=1"
@@ -1064,7 +1064,7 @@ m10_log() {
 	for n in "${M10_LEAVES[@]}"; do printf '    --- PASS: TestMCPOnly/%s (0.00s)\n' "$n" >>"$f"; done
 	printf '=== RUN   TestHelpExamples\n--- PASS: TestHelpExamples (1.00s)\n' >>"$f"
 	for n in "${M10_HELP_LEAVES[@]}"; do printf '    --- PASS: TestHelpExamples/%s (0.00s)\n' "$n" >>"$f"; done
-	printf 'PASS\nok  \tgithub.com/ericfitz/agentbus2/internal/e2e\t25.000s\n' >>"$f"
+	printf 'PASS\nok  \tgithub.com/ericfitz/agentmesh/internal/e2e\t25.000s\n' >>"$f"
 }
 
 # m10_expect LABEL WHAT WANT_RC PRESENT: runs the log form of the script on
@@ -1077,7 +1077,7 @@ m10_expect() {
 }
 
 block_m10_deps_rule_fires() {
-	local label=m10-deps-rule-fires m=github.com/ericfitz/agentbus2 log="$tmp/b33z.log" rc
+	local label=m10-deps-rule-fires m=github.com/ericfitz/agentmesh log="$tmp/b33z.log" rc
 	begin
 	if bash "$wt/scripts/m10-exit-checks.sh" --deps-only >"$log" 2>&1; then
 		grep -qF 'deps_ok=1' "$log" || problem "$label" "clean tree: exit 0 without deps_ok=1"
@@ -1131,10 +1131,10 @@ block_m10_deps_rule_fires() {
 	sed 's/TestHelpExamples\/connect /TestHelpExamples\/overview /' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
 	m10_expect "$label" "a repeated help leaf line in place of a missing one" 1 'help=5'
 	m10_log "$tmp/m10.log"
-	sed 's/^ok  .*internal\/e2e.*$/FAIL\tgithub.com\/ericfitz\/agentbus2\/internal\/e2e\t25.000s/' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
+	sed 's/^ok  .*internal\/e2e.*$/FAIL\tgithub.com\/ericfitz\/agentmesh\/internal\/e2e\t25.000s/' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
 	m10_expect "$label" "a package FAIL with every leaf passing" 1 'pkg_ok=0'
 	m10_log "$tmp/m10.log"
-	printf 'FAIL\tgithub.com/ericfitz/agentbus2/internal/e2e\t25.000s\n' >>"$tmp/m10.log"
+	printf 'FAIL\tgithub.com/ericfitz/agentmesh/internal/e2e\t25.000s\n' >>"$tmp/m10.log"
 	m10_expect "$label" "the ok line kept and a package FAIL line added" 1 'pkg_ok=0'
 	finish "$label"
 	revert

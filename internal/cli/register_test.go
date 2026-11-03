@@ -14,13 +14,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/server/cmd"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
 func TestRegisterCreatesServerProfile(t *testing.T) {
@@ -192,7 +192,7 @@ func TestRegisterCreatesServerProfile(t *testing.T) {
 	}
 }
 
-// startServer runs `agentbus2 server` on a loopback port over db and returns
+// startServer runs `agentmesh server` on a loopback port over db and returns
 // its base URL.
 func startServer(t *testing.T, db string, extra ...string) string {
 	t.Helper()

@@ -9,8 +9,8 @@
 package statuses
 
 import (
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/sessions"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/sessions"
 )
 
 // Service is the agent status aggregate over a Core.

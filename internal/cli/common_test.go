@@ -13,28 +13,28 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/procs"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 func TestFailFormatsBusError(t *testing.T) {
 	var b bytes.Buffer
 	be := &bus.Error{Code: bus.CodeForbidden, Message: "nope"}
-	if code := fail(&b, be); code != 1 || b.String() != "agentbus2: forbidden: nope\n" {
+	if code := fail(&b, be); code != 1 || b.String() != "agentmesh: forbidden: nope\n" {
 		t.Fatalf("code %d, output %q", code, b.String())
 	}
 	b.Reset()
-	if code := fail(&b, fmt.Errorf("wrapped: %w", be)); code != 1 || b.String() != "agentbus2: forbidden: nope\n" {
+	if code := fail(&b, fmt.Errorf("wrapped: %w", be)); code != 1 || b.String() != "agentmesh: forbidden: nope\n" {
 		t.Fatalf("wrapped: code %d, output %q", code, b.String())
 	}
 	b.Reset()
-	if code := fail(&b, errors.New("plain")); code != 1 || b.String() != "agentbus2: plain\n" {
+	if code := fail(&b, errors.New("plain")); code != 1 || b.String() != "agentmesh: plain\n" {
 		t.Fatalf("plain: code %d, output %q", code, b.String())
 	}
 }
@@ -42,7 +42,7 @@ func TestFailFormatsBusError(t *testing.T) {
 func TestFailFormatsInspectionRejected(t *testing.T) {
 	var b bytes.Buffer
 	be := &bus.Error{Code: bus.CodeInspectionRejected, Message: "rejected by inspection (pii): contains a key"}
-	if code := fail(&b, be); code != 1 || b.String() != "agentbus2: inspection_rejected: rejected by inspection (pii): contains a key\n" {
+	if code := fail(&b, be); code != 1 || b.String() != "agentmesh: inspection_rejected: rejected by inspection (pii): contains a key\n" {
 		t.Fatalf("code %d, output %q", code, b.String())
 	}
 }
@@ -66,7 +66,7 @@ func TestParseExit(t *testing.T) {
 	if err := fs.Parse([]string{"-z"}); err == nil || parseExit(err) != 2 {
 		t.Fatalf("an unknown flag: %v", err)
 	}
-	if !strings.Contains(stderr.String(), "agentbus2 probe") {
+	if !strings.Contains(stderr.String(), "agentmesh probe") {
 		t.Fatalf("usage output %q lacks the command name", stderr.String())
 	}
 	if err := newFlagSet("probe", &stderr).Parse([]string{"-h"}); parseExit(err) != 0 {
@@ -99,7 +99,7 @@ func TestOpenUsageVersusRuntimeExit(t *testing.T) {
 	e.writeProfile(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1", Identity: "pat"})
 	stderr.Reset()
 	if c, code = open(ctx, client.Options{Environ: e.Environ, Cwd: e.Home, Profile: "lab"}, &stderr); c != nil || code != 2 ||
-		!strings.Contains(stderr.String(), "run agentbus2 register") {
+		!strings.Contains(stderr.String(), "run agentmesh register") {
 		t.Fatalf("no credential: code %d, stderr %q", code, stderr.String())
 	}
 

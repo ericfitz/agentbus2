@@ -3,7 +3,7 @@ package slackfake
 import (
 	"context"
 
-	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
 )
 
 // RunSocket delivers queued events to handle, acking each envelope first, and

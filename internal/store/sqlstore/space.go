@@ -3,7 +3,7 @@ package sqlstore
 import (
 	"context"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Usage: see store.Space.

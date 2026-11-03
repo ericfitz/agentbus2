@@ -7,8 +7,8 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
 )
 
 func TestSlackChannelName(t *testing.T) {
@@ -81,7 +81,7 @@ func TestIconEmojiStable(t *testing.T) {
 // runes counts the characters Slack limits.
 func runes(s string) int { return utf8.RuneCountInString(s) }
 
-const note = "(truncated; the full message is seq 7 on agentbus2 channel c)"
+const note = "(truncated; the full message is seq 7 on agentmesh channel c)"
 
 func TestTruncateKeepsMarkup(t *testing.T) {
 	const max = 200
@@ -312,7 +312,7 @@ func TestFormatPost(t *testing.T) {
 
 	// truncated note names the seq and channel; within the limit
 	big := FormatPost(bus.Message{Seq: 9, Channel: "chan", Sender: "a", Subject: "s", Content: strings.Repeat("日", 5000)}, "", 300, "")
-	if runes(big.Section) > 300 || !strings.HasSuffix(big.Section, "(truncated; the full message is seq 9 on agentbus2 channel chan)") {
+	if runes(big.Section) > 300 || !strings.HasSuffix(big.Section, "(truncated; the full message is seq 9 on agentmesh channel chan)") {
 		t.Errorf("truncation: %d runes, tail %q", runes(big.Section), big.Section[len(big.Section)-70:])
 	}
 	if !strings.HasPrefix(big.Section, "*s*\n") {
@@ -403,7 +403,7 @@ func TestFormatPostLongNoteLeavesContent(t *testing.T) {
 	}
 	// A short channel name keeps the full note.
 	p := FormatPost(bus.Message{Seq: 9, Channel: "chan", Sender: "a", Content: strings.Repeat("word ", 400)}, "", 200, "")
-	if !strings.HasSuffix(p.Section, "(truncated; the full message is seq 9 on agentbus2 channel chan)") {
+	if !strings.HasSuffix(p.Section, "(truncated; the full message is seq 9 on agentmesh channel chan)") {
 		t.Errorf("full note dropped: %q", p.Section)
 	}
 }

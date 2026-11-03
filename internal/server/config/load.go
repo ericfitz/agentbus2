@@ -13,10 +13,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/strictjson"
+	"github.com/ericfitz/agentmesh/internal/strictjson"
 )
 
-const envPrefix = "AGENTBUS2_SERVER_"
+const envPrefix = "AGENTMESH_SERVER_"
 
 // EnvName is the environment variable of a setting.
 func EnvName(setting string) string { return envPrefix + strings.ToUpper(setting) }
@@ -29,7 +29,7 @@ func unknownSetting(name, source string) error {
 }
 
 // Load builds the configuration: defaults, the file when path is not empty
-// (a missing file is an error), AGENTBUS2_SERVER_* variables in environ, then
+// (a missing file is an error), AGENTMESH_SERVER_* variables in environ, then
 // flags; then Validate.
 func Load(path string, environ []string, flags Overrides) (Config, error) {
 	c := Default()

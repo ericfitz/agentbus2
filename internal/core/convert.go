@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // ToBusMessages converts stored messages. Channel names and display names

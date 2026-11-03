@@ -10,9 +10,9 @@ import (
 
 // channelExpr names the LISTEN/NOTIFY channel of the current schema. A
 // Postgres identifier is at most 63 bytes, so the name is a fixed 34 bytes
-// ("agentbus2_" plus 24 hex digits of a SHA-256 of the schema name) however
+// ("agentmesh_" plus 24 hex digits of a SHA-256 of the schema name) however
 // long the schema is; replicas on other schemas hear nothing (Decision 52).
-const channelExpr = "'agentbus2_' || left(encode(sha256(convert_to(current_schema()::text, 'UTF8')), 'hex'), 24)"
+const channelExpr = "'agentmesh_' || left(encode(sha256(convert_to(current_schema()::text, 'UTF8')), 'hex'), 24)"
 
 // ChannelQuery yields the channel name; the listener runs it on its own
 // connection and then LISTENs on the result.

@@ -17,13 +17,13 @@
 #
 # --deps-only checks three things and prints deps_ok=1 and modules=13 when all
 # hold; otherwise one line per hit and exit 1:
-#   (a) transitive: every package of `go list -deps ./cmd/agentbus2-mcponly`
+#   (a) transitive: every package of `go list -deps ./cmd/agentmesh-mcponly`
 #       that is internal/core/... (except internal/core/notify, a leaf),
 #       internal/{server,tui,cli,slackapi,slackbridge,bus/local,client/localmode},
 #       internal/store/{sqlite,postgres,sqlstore}, internal/gen/spec, pgx,
 #       kin-openapi, gorilla/mux, slack-go, modernc.org/ or charm.land/ prints
 #       deps_violation=<pkg> [rule transitive]
-#   (b) direct: the imports of ./internal/mcpcli and ./cmd/agentbus2-mcponly
+#   (b) direct: the imports of ./internal/mcpcli and ./cmd/agentmesh-mcponly
 #       that are internal/{cli,gen,store}/... print
 #       deps_violation=<pkg> imports <imp> [rule direct]
 #   (c) modules: the built binary's `go version -m` dep lines name only the
@@ -31,8 +31,8 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MOD=github.com/ericfitz/agentbus2
-BIN=./cmd/agentbus2-mcponly
+MOD=github.com/ericfitz/agentmesh
+BIN=./cmd/agentmesh-mcponly
 # The 13 modules the binary may link (plan Global Constraints; extending the
 # list is Eric's decision, never an implementer's).
 ALLOWED_MODULES=(
@@ -85,7 +85,7 @@ if [ "$1" != "--deps-only" ]; then
 	done
 	fail="$(grep -c -E '^[[:space:]]*--- FAIL' "$log" || true)"
 	pkg_ok=0
-	if grep -qE '^ok[[:space:]]+github\.com/ericfitz/agentbus2/internal/e2e([[:space:]]|$)' "$log" && ! grep -qE '^FAIL([[:space:]]|$)' "$log"; then
+	if grep -qE '^ok[[:space:]]+github\.com/ericfitz/agentmesh/internal/e2e([[:space:]]|$)' "$log" && ! grep -qE '^FAIL([[:space:]]|$)' "$log"; then
 		pkg_ok=1
 	fi
 	echo "mcponly=$mcponly"
@@ -133,8 +133,8 @@ while IFS= read -r line; do
 done <"$tmp/direct.txt"
 
 # (c) the linked modules of the built binary.
-go build -trimpath -o "$tmp/agentbus2-mcponly" "$BIN"
-go version -m "$tmp/agentbus2-mcponly" | awk '$1 == "dep" { print $2 }' >"$tmp/modules.txt"
+go build -trimpath -o "$tmp/agentmesh-mcponly" "$BIN"
+go version -m "$tmp/agentmesh-mcponly" | awk '$1 == "dep" { print $2 }' >"$tmp/modules.txt"
 while IFS= read -r m; do
 	[ -n "$m" ] || continue
 	ok=0

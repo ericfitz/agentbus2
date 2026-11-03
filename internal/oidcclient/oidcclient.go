@@ -109,12 +109,12 @@ type callbackResult struct {
 	err  error
 }
 
-const donePage = `<!doctype html><meta charset="utf-8"><title>agentbus2</title><p>Sign-in complete. You may close this window.</p>`
+const donePage = `<!doctype html><meta charset="utf-8"><title>agentmesh</title><p>Sign-in complete. You may close this window.</p>`
 
-const ignoredPage = `<!doctype html><meta charset="utf-8"><title>agentbus2</title><p>This request does not belong to the sign-in in progress and was ignored.</p>`
+const ignoredPage = `<!doctype html><meta charset="utf-8"><title>agentmesh</title><p>This request does not belong to the sign-in in progress and was ignored.</p>`
 
 func failPage(msg string) string {
-	return `<!doctype html><meta charset="utf-8"><title>agentbus2</title><p>Sign-in failed: ` + html.EscapeString(msg) + `. You may close this window.</p>`
+	return `<!doctype html><meta charset="utf-8"><title>agentmesh</title><p>Sign-in failed: ` + html.EscapeString(msg) + `. You may close this window.</p>`
 }
 
 // clip bounds text taken from the callback before it goes in an error.

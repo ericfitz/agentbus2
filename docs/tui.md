@@ -1,24 +1,24 @@
 # The terminal UI
 
-`agentbus2 tui` is a dashboard for a human: channels, messages, memories, task lists, search, and the health of the bus. Unlike an agent, it sees memories: agents never receive memory channels (decision 20), and the TUI, the bus observer, is the exception. It is a port of the agentbus 1.x TUI that runs over the `Bus` interfaces, so it behaves the same against a local SQLite file and against a server.
+`agentmesh tui` is a dashboard for a human: channels, messages, memories, task lists, search, and the health of the bus. Unlike an agent, it sees memories: agents never receive memory channels (decision 20), and the TUI, the bus observer, is the exception. It is a port of the agentbus 1.x TUI that runs over the `Bus` interfaces, so it behaves the same against a local SQLite file and against a server.
 
 ## Start
 
 ```sh
-agentbus2 tui [-profile P] [-identity I]
+agentmesh tui [-profile P] [-identity I]
 ```
 
 On a server profile the TUI is a human who signs in through the corporate provider; see "Server profiles and sign-in" below. The rest of this section is the local-profile rule.
 
-`-profile` and `-identity` select the profile as they do for every other command (`AGENTBUS2_PROFILE`, then `.local/agentbus2.json`, then `default`). The identity order is the TUI's own: `-identity`, `AGENTBUS2_IDENTITY`, the profile's `identity` only when the profile was not selected by the repository file (so inside a repository the TUI is not the repository's agent identity), the profile's only credential (also skipped when the repository file selected the profile, because it is the agent's), then the OS login name (a Windows `DOMAIN\name` is cut to `name`, a `/` becomes `-`, and an unknown user leaves the "identity is required" error). There are no other flags: v1's `-config` and `-as` are rejected (exit 2), and so is a positional argument. `-h` prints the flags and exits 0.
+`-profile` and `-identity` select the profile as they do for every other command (`AGENTMESH_PROFILE`, then `.local/agentmesh.json`, then `default`). The identity order is the TUI's own: `-identity`, `AGENTMESH_IDENTITY`, the profile's `identity` only when the profile was not selected by the repository file (so inside a repository the TUI is not the repository's agent identity), the profile's only credential (also skipped when the repository file selected the profile, because it is the agent's), then the OS login name (a Windows `DOMAIN\name` is cut to `name`, a `/` becomes `-`, and an unknown user leaves the "identity is required" error). There are no other flags: v1's `-config` and `-as` are rejected (exit 2), and so is a positional argument. `-h` prints the flags and exits 0.
 
 In local mode the TUI also runs the maintenance loop, as v1's TUI ran its background loops; when several local processes run it, a lease row in the database lets one tick at a time. A server runs its own maintenance, so server mode does not.
 
-Exit codes: 0 on a clean quit, 1 with `agentbus2: <error>` on stderr when the session is lost or the program fails, 2 for a usage or profile/identity resolution error.
+Exit codes: 0 on a clean quit, 1 with `agentmesh: <error>` on stderr when the session is lost or the program fails, 2 for a usage or profile/identity resolution error.
 
 ### Server profiles and sign-in
 
-On a server profile `tui` does not select an agent identity: the profile needs an `oidc` setting, and the identity is the one the server binds to the signed-in email (Decision 11; spec 5.3). `-identity` is refused (exit 2); `AGENTBUS2_IDENTITY`, the profile's `identity` and the profile's credentials, which belong to agents, are ignored; a server profile without `oidc` exits 2 naming the missing setting. Local profiles are unchanged.
+On a server profile `tui` does not select an agent identity: the profile needs an `oidc` setting, and the identity is the one the server binds to the signed-in email (Decision 11; spec 5.3). `-identity` is refused (exit 2); `AGENTMESH_IDENTITY`, the profile's `identity` and the profile's credentials, which belong to agents, are ignored; a server profile without `oidc` exits 2 naming the missing setting. Local profiles are unchanged.
 
 ```json
 {"profiles": {"lab": {"mode": "server", "server": "https://bus.example.com",
@@ -27,9 +27,9 @@ On a server profile `tui` does not select an agent identity: the profile needs a
 
 `oidc` is valid in server mode only. `issuer` is an absolute `https` URL; `http` is accepted only for a loopback host (`127.0.0.1`, `::1`, `localhost`, for tests with a fake provider), because the authorization code and the PKCE verifier must not cross a network in cleartext. `client_id` is the provider's public client (no secret). `redirect_port` (1 to 65535) is the fixed port of the loopback redirect `http://127.0.0.1:<port>/callback`, which the provider's client registration must list exactly. `scopes` is a non-empty list of scope names without whitespace.
 
-With no usable session the TUI prints `agentbus2 tui: sign in at <url>` on stderr, opens the system browser at that URL (authorization code flow with PKCE) and waits for the callback for up to 5 minutes. It exchanges the provider's access token at the server and caches the server's bearer in `<data dir>/tokens/<profile>/human/session.json` (mode 0600, directory 0700; an owner-only ACL on Windows), together with the provider's refresh token when one was issued. The corporate token itself is never stored or logged. The next start reuses the cached bearer until 60 seconds before it expires, then refreshes through the provider's refresh token without the browser, and reopens the browser only when there is none or the provider rejects it. `agentbus2 login -profile P -human` always runs the browser sign-in and prints `logged in as <identity> at <server> (token expires <time>)`.
+With no usable session the TUI prints `agentmesh tui: sign in at <url>` on stderr, opens the system browser at that URL (authorization code flow with PKCE) and waits for the callback for up to 5 minutes. It exchanges the provider's access token at the server and caches the server's bearer in `<data dir>/tokens/<profile>/human/session.json` (mode 0600, directory 0700; an owner-only ACL on Windows), together with the provider's refresh token when one was issued. The corporate token itself is never stored or logged. The next start reuses the cached bearer until 60 seconds before it expires, then refreshes through the provider's refresh token without the browser, and reopens the browser only when there is none or the provider rejects it. `agentmesh login -profile P -human` always runs the browser sign-in and prints `logged in as <identity> at <server> (token expires <time>)`.
 
-The sign-in URL is announced only before the screen opens. A bearer the server refuses mid-session is refreshed once; when that needs the browser, the request that triggered it (a screen update, a send) blocks for up to 5 minutes, with nothing shown on the screen, until the sign-in completes or times out. The TUI gives its synchronous bus calls a 10 second deadline; the sign-in ignores that deadline, so the browser has the full 5 minutes, but the call that triggered it fails with a timeout and the next one uses the new bearer. Quitting stops a sign-in only while the 10 second deadline has not yet fired (quit cancels the call's context); once it has fired, the wait for the browser runs on until the sign-in completes, its 5 minutes pass or the process exits. Run `agentbus2 login -human` before that happens if the session is long.
+The sign-in URL is announced only before the screen opens. A bearer the server refuses mid-session is refreshed once; when that needs the browser, the request that triggered it (a screen update, a send) blocks for up to 5 minutes, with nothing shown on the screen, until the sign-in completes or times out. The TUI gives its synchronous bus calls a 10 second deadline; the sign-in ignores that deadline, so the browser has the full 5 minutes, but the call that triggered it fails with a timeout and the next one uses the new bearer. Quitting stops a sign-in only while the 10 second deadline has not yet fired (quit cancels the call's context); once it has fired, the wait for the browser runs on until the sign-in completes, its 5 minutes pass or the process exits. Run `agentmesh login -human` before that happens if the session is long.
 
 ### Trying the sign-in against a local Dex
 
@@ -44,14 +44,14 @@ enablePasswordDB: true
 staticPasswords:
   - {email: you@example.com, hash: "<bcrypt $2a$ hash>", username: you, userID: local-human-1}
 staticClients:
-  - {id: agentbus2-tui, name: agentbus2 TUI, public: true, redirectURIs: ["http://127.0.0.1:8765/callback"]}
+  - {id: agentmesh-tui, name: agentmesh TUI, public: true, redirectURIs: ["http://127.0.0.1:8765/callback"]}
 ```
 
-Server side, in a container next to Dex: `AGENTBUS2_SERVER_ISSUERS='[{"name":"dex","issuer":"http://localhost:5556/dex","jwks_uri":"http://dex:5556/dex/keys","audience":"agentbus2-tui","algorithms":["RS256"],"claims":{"email":"email","subject":"sub"}}]'` (the `issuer` is what the token says as seen from the host; `jwks_uri` is how the server container reaches Dex; Dex puts the client id in `aud`, so the entry's `audience` is the client id), then `agentbus2 server admin users add -issuer dex -email you@example.com`. Client profile: `"oidc": {"issuer": "http://localhost:5556/dex", "client_id": "agentbus2-tui", "redirect_port": 8765, "scopes": ["openid", "email", "offline_access"]}`. Notes: without `offline_access` Dex issues no refresh token, so every expiry reopens the browser; Dex v2.46.0 and later (checked up to the 2026-10 `latest`) hang on a refresh-token request (a nested storage transaction in the refresh rotation; the token endpoint never answers, with the memory and sqlite stores alike; the local stack pins v2.45.1), so a hang on the refresh step is the provider, not the client.
+Server side, in a container next to Dex: `AGENTMESH_SERVER_ISSUERS='[{"name":"dex","issuer":"http://localhost:5556/dex","jwks_uri":"http://dex:5556/dex/keys","audience":"agentmesh-tui","algorithms":["RS256"],"claims":{"email":"email","subject":"sub"}}]'` (the `issuer` is what the token says as seen from the host; `jwks_uri` is how the server container reaches Dex; Dex puts the client id in `aud`, so the entry's `audience` is the client id), then `agentmesh server admin users add -issuer dex -email you@example.com`. Client profile: `"oidc": {"issuer": "http://localhost:5556/dex", "client_id": "agentmesh-tui", "redirect_port": 8765, "scopes": ["openid", "email", "offline_access"]}`. Notes: without `offline_access` Dex issues no refresh token, so every expiry reopens the browser; Dex v2.46.0 and later (checked up to the 2026-10 `latest`) hang on a refresh-token request (a nested storage transaction in the refresh rotation; the token endpoint never answers, with the memory and sqlite stores alike; the local stack pins v2.45.1), so a hang on the refresh step is the provider, not the client.
 
 ### Terminal
 
-The TUI is built on Bubble Tea v2 (`charm.land/bubbletea/v2` v2.0.10, Bubbles v2.2.1, Lip Gloss v2.0.6). It draws on the alternate screen and quits on `q` or `ctrl+c`. Only `agentbus2 tui` talks to the terminal: once it starts it asks for the background color (OSC 11), which picks the compose line's light or dark colors (dark until the terminal answers), and Bubble Tea asks for its own capabilities. No other command queries the terminal; with Bubble Tea v1 every `agentbus2` process did so at package init and stalled for up to 5 s on a pty that never answered (post-build decision 2; `TestVersionOnSilentPTY` proves the fix).
+The TUI is built on Bubble Tea v2 (`charm.land/bubbletea/v2` v2.0.10, Bubbles v2.2.1, Lip Gloss v2.0.6). It draws on the alternate screen and quits on `q` or `ctrl+c`. Only `agentmesh tui` talks to the terminal: once it starts it asks for the background color (OSC 11), which picks the compose line's light or dark colors (dark until the terminal answers), and Bubble Tea asks for its own capabilities. No other command queries the terminal; with Bubble Tea v1 every `agentmesh` process did so at package init and stalled for up to 5 s on a pty that never answered (post-build decision 2; `TestVersionOnSilentPTY` proves the fix).
 
 Colors follow the terminal's color profile: on a terminal without color (`NO_COLOR`, `TERM=dumb`, or output that is not a terminal) tag chips fall back to dim `#tag` words. The TUI turns on Unicode core mode 2027 so Bubble Tea measures emoji the way the layout does; a terminal without that mode ignores it.
 
@@ -61,13 +61,13 @@ Terminal.app draws the `emoji` set's agent gear (`⚙️`) and the in-progress s
 
 The TUI opens a session with the host's short name as the hint (the hostname lowercased and cut at the first `.`), so a human running it as identity `eric` on `MacMini.local` shows as `eric/macmini`, and as `eric/laptop` on another host (`eric/macmini-2` for a second TUI on one host). A hostname that is unavailable or fails the name rule (empty, over 128 bytes, a `/` or a control character) falls back to the hint `tui` (`eric/tui`). The status bar says `as eric`, the identity; the health overlay shows the session's display name. Agents can tell the TUI from the identity's agent sessions. The session is closed on quit, which frees the name at once. A TUI that is killed leaves its session lapsed until the server's retention removes it, and the next start is then `eric/macmini-2`; nothing is lost, because a new session catches up from the identity's acked mark.
 
-Subscriptions and the acked mark belong to the identity, not the session. A human who runs the TUI under the identity the agents use shares their subscriptions and acks with them. Use a distinct identity for the human (`-identity eric`). When `Identities` shows other live sessions of the TUI's identity, `agentbus2 tui` prints one line on stderr before the screen opens and repeats it in the health overlay:
+Subscriptions and the acked mark belong to the identity, not the session. A human who runs the TUI under the identity the agents use shares their subscriptions and acks with them. Use a distinct identity for the human (`-identity eric`). When `Identities` shows other live sessions of the TUI's identity, `agentmesh tui` prints one line on stderr before the screen opens and repeats it in the health overlay:
 
 ```
-agentbus2 tui: identity eric has 1 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)
+agentmesh tui: identity eric has 1 other live session(s); subscriptions and acks are shared with them (pass -identity for a separate name)
 ```
 
-On a local profile, when nothing else selects an identity, and also whenever the repository file selected the profile (its `identity` and its single credential are skipped, so in a `$HOME` repository the agent `efitz-home` and the human `efitz` stay apart), `tui` (and only `tui`) falls back to the OS login name (source `os-user`, v1's `tui_name`). On a server profile there is no such fallback (see "Server profiles and sign-in"). In a local profile the OS-login row is marked human (an identity named with `-identity` is never turned human); a row that already holds keys cannot be, and the TUI exits 2 asking for `-identity`. Every other command has no such fallback. The login name is the human's: `agentbus2 mcp` refuses to run under it (Decision 16), and `agentbus2 init` in the home directory names the agent `<user>-home` (Decision 15).
+On a local profile, when nothing else selects an identity, and also whenever the repository file selected the profile (its `identity` and its single credential are skipped, so in a `$HOME` repository the agent `efitz-home` and the human `efitz` stay apart), `tui` (and only `tui`) falls back to the OS login name (source `os-user`, v1's `tui_name`). On a server profile there is no such fallback (see "Server profiles and sign-in"). In a local profile the OS-login row is marked human (an identity named with `-identity` is never turned human); a row that already holds keys cannot be, and the TUI exits 2 asking for `-identity`. Every other command has no such fallback. The login name is the human's: `agentmesh mcp` refuses to run under it (Decision 16), and `agentmesh init` in the home directory names the agent `<user>-home` (Decision 15).
 
 ## Layout
 
@@ -146,7 +146,7 @@ A channel of kind `tasks` shows the task tree. `space` cycles the draft state (n
 
 ## Settings
 
-The TUI's settings are the top-level `tui` object of `config.json` in the config directory (`$AGENTBUS2_CONFIG_DIR`, else `$XDG_CONFIG_HOME/agentbus2`, else `~/.config/agentbus2`; on Windows `%APPDATA%\agentbus2` in place of the last two), next to `profiles`:
+The TUI's settings are the top-level `tui` object of `config.json` in the config directory (`$AGENTMESH_CONFIG_DIR`, else `$XDG_CONFIG_HOME/agentmesh`, else `~/.config/agentmesh`; on Windows `%APPDATA%\agentmesh` in place of the last two), next to `profiles`:
 
 ```json
 {
@@ -228,7 +228,7 @@ A JSON string has no `\U` escape, so a glyph beyond the Basic Multilingual Plane
 
 ### Using a Nerd Font
 
-`nerdfont` needs a Nerd Font installed and selected as the terminal's font for the codepoints above; agentbus2 installs no font. Install a Mono variant: the non-Mono build advances two columns for these glyphs where the rail and the task rows assume one.
+`nerdfont` needs a Nerd Font installed and selected as the terminal's font for the codepoints above; agentmesh installs no font. Install a Mono variant: the non-Mono build advances two columns for these glyphs where the rail and the task rows assume one.
 
 ```sh
 brew install --cask font-sauce-code-pro-nerd-font
@@ -243,7 +243,7 @@ Three Font Awesome glyphs (`fa-face-sleeping`, `fa-microchip-ai`, `fa-user-robot
 - No direct messages and no inbox view (spec 1.3, ADR 0006): a session row shows details only, never messages (TUI decision 14).
 - A session row is selectable only to show its details (TUI decision 14); there is no session view of messages.
 - Kinds, not prefixes: a task list is a channel of kind `tasks`, a memory channel of kind `memory` (ADR 0008). v1's `general/`, `memory/` and `tasks/` prefixes are not read, and names are shown in full.
-- Identity comes from `-identity`, `AGENTBUS2_IDENTITY` and the profile (Decision 71, with the repository-file exception above), then the OS login name as the last step, on a local profile; on a server profile it comes from the corporate sign-in; not from `tui_name` or `-as`.
+- Identity comes from `-identity`, `AGENTMESH_IDENTITY` and the profile (Decision 71, with the repository-file exception above), then the OS login name as the last step, on a local profile; on a server profile it comes from the corporate sign-in; not from `tui_name` or `-as`.
 - Names shown for messages and sessions are the server's (`Message.Display`, `Session.DisplayName`; ADR 0003).
 - Task release is its own operation (`u`), and assigning picks from identities (owners are identities).
 - The TUI reads from `Watch` and `Receive` with acks (Decision 83) rather than a blocking `Receive`, and has no per-session repo or context.

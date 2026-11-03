@@ -5,11 +5,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/storetest"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/storetest"
 )
 
-// TestRunStoreLogsToMCPLog (issue #20): in agentbus2 mcp the Store's
+// TestRunStoreLogsToMCPLog (issue #20): in agentmesh mcp the Store's
 // read-normalization error goes to <data dir>/logs/mcp-<pid>.log, never to
 // stderr.
 func TestRunStoreLogsToMCPLog(t *testing.T) {

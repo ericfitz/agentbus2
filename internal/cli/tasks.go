@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // opTaskStatus rejects a status other than the three the core defines.
@@ -17,7 +17,7 @@ func opTaskStatus(s string) error {
 	return fmt.Errorf("-status %q: want pending, in_progress or completed", s)
 }
 
-// RunTasks implements `agentbus2 tasks create|list|get|update|claim|release`.
+// RunTasks implements `agentmesh tasks create|list|get|update|claim|release`.
 func RunTasks(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	subs := map[string]opRunFunc{}
 	for _, sub := range []string{"create", "list", "get", "update", "claim", "release"} {

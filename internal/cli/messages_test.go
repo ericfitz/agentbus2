@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 func TestSendReceiveAck(t *testing.T) {
@@ -355,7 +355,7 @@ func TestOperatorGrammarIsUniform(t *testing.T) {
 	if err := json.Unmarshal([]byte(out), &ms); code != 0 || err != nil || len(ms) != 1 || ms[0].Content != "-5 degrees" || ms[0].Subject != "s" {
 		t.Fatalf("history with trailing flags: %d %q %q %v", code, out, er, err)
 	}
-	if code, _, er := run(RunSession, "close", "-identity", "sam"); code != 2 || !strings.Contains(er, "agentbus2 session close: want 1 argument(s), got 0") {
+	if code, _, er := run(RunSession, "close", "-identity", "sam"); code != 2 || !strings.Contains(er, "agentmesh session close: want 1 argument(s), got 0") {
 		t.Fatalf("session close without an id: %d %q", code, er)
 	}
 }

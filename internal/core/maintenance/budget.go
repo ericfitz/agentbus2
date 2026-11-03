@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/rules"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/rules"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // capacityKind is the notice kind Status and Receive report.
@@ -394,12 +394,12 @@ func diskRatio(u store.Usage) float64 {
 // overBudgetText is the notice while usage is over the budget and something
 // is still evictable.
 func overBudgetText(setting string, budget int64, u store.Usage) string {
-	return fmt.Sprintf("agentbus2 storage is over budget: %s=%d MiB holds %d MiB (disk %d MiB, %.2fx); orphaned and expired rows, idle task lists and memories, and ordinary messages older than 1 hour are being deleted to make room",
+	return fmt.Sprintf("agentmesh storage is over budget: %s=%d MiB holds %d MiB (disk %d MiB, %.2fx); orphaned and expired rows, idle task lists and memories, and ordinary messages older than 1 hour are being deleted to make room",
 		setting, budget>>20, u.Bytes>>20, u.DiskBytes>>20, diskRatio(u))
 }
 
 // exhaustedText is the notice when nothing is left to evict.
 func exhaustedText(setting string, budget int64, u store.Usage) string {
-	return fmt.Sprintf("agentbus2 capacity exhausted: %s=%d MiB (disk %d MiB, %.2fx) is filled by task lists and memories active within idle_window_hours, ordinary messages younger than 1 hour, tombstones younger than 72 hours and agent status history, which are never evicted; raise %s and restart every replica, lower idle_window_hours, or have an administrator reset the bus to discard all data",
+	return fmt.Sprintf("agentmesh capacity exhausted: %s=%d MiB (disk %d MiB, %.2fx) is filled by task lists and memories active within idle_window_hours, ordinary messages younger than 1 hour, tombstones younger than 72 hours and agent status history, which are never evicted; raise %s and restart every replica, lower idle_window_hours, or have an administrator reset the bus to discard all data",
 		setting, budget>>20, u.DiskBytes>>20, diskRatio(u), setting)
 }

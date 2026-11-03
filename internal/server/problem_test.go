@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/gen"
 )
 
 func TestStatusForEveryCode(t *testing.T) {
@@ -80,7 +80,7 @@ func TestWriteProblemShape(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := map[string]any{
-		"type": "urn:agentbus2:problem:conflict", "title": "Conflict", "status": float64(409),
+		"type": "urn:agentmesh:problem:conflict", "title": "Conflict", "status": float64(409),
 		"detail": detail, "instance": "/v1/things", "code": "conflict", "retryable": false,
 	}
 	for k, v := range want {

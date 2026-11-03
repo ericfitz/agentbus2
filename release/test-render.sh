@@ -2,7 +2,7 @@
 # Renders every release template with fake values, asserts no __PLACEHOLDER__
 # survives, and syntax-checks the result. No network. When brew is installed it
 # also runs a stubbed OS/CPU URL-selection check on the formula, and `brew style`
-# when AGENTBUS2_BREW_STYLE=1 (that one needs the network).
+# when AGENTMESH_BREW_STYLE=1 (that one needs the network).
 #   release/test-render.sh
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -32,38 +32,38 @@ has_line() {
 
 H64() { printf "$1%.0s" {1..64}; }
 BASE=https://example.invalid
-render_check "$HERE/agentbus2.rb.tmpl" agentbus2.rb ruby -c -- \
-    MACOS_URL=$BASE/agentbus2-v1.2.3-macos-universal.tar.gz MACOS_SHA256="$(H64 1)" \
-    LINUX_AMD64_URL=$BASE/agentbus2-v1.2.3-linux-amd64.tar.gz LINUX_AMD64_SHA256="$(H64 2)" \
-    LINUX_ARM64_URL=$BASE/agentbus2-v1.2.3-linux-arm64.tar.gz LINUX_ARM64_SHA256="$(H64 3)"
-for want in 'class Agentbus2 < Formula' 'elsif OS.linux? && Hardware::CPU.intel?' 'elsif OS.linux? && Hardware::CPU.arm?' \
-    'macos-universal.tar.gz' 'linux-amd64.tar.gz' 'linux-arm64.tar.gz' 'bin.install "agentbus2"' \
-    'agentbus2 init --global' 'shell_output("#{bin}/agentbus2 version")'; do
-    grep -qF "$want" "$WORK/agentbus2.rb" || { echo "FAIL formula lacks: $want"; FAIL=1; }
+render_check "$HERE/agentmesh.rb.tmpl" agentmesh.rb ruby -c -- \
+    MACOS_URL=$BASE/agentmesh-v1.2.3-macos-universal.tar.gz MACOS_SHA256="$(H64 1)" \
+    LINUX_AMD64_URL=$BASE/agentmesh-v1.2.3-linux-amd64.tar.gz LINUX_AMD64_SHA256="$(H64 2)" \
+    LINUX_ARM64_URL=$BASE/agentmesh-v1.2.3-linux-arm64.tar.gz LINUX_ARM64_SHA256="$(H64 3)"
+for want in 'class Agentmesh < Formula' 'elsif OS.linux? && Hardware::CPU.intel?' 'elsif OS.linux? && Hardware::CPU.arm?' \
+    'macos-universal.tar.gz' 'linux-amd64.tar.gz' 'linux-arm64.tar.gz' 'bin.install "agentmesh"' \
+    'agentmesh init --global' 'shell_output("#{bin}/agentmesh version")'; do
+    grep -qF "$want" "$WORK/agentmesh.rb" || { echo "FAIL formula lacks: $want"; FAIL=1; }
 done
 # on_macos/on_linux blocks may not contain url/sha256 (brew style rejects them).
-if grep -qE '^[[:space:]]*on_(macos|linux|intel|arm)[[:space:]]+do' "$WORK/agentbus2.rb"; then echo "FAIL formula uses on_* blocks for url"; FAIL=1; fi
-if grep -q 'depends_on :macos' "$WORK/agentbus2.rb"; then echo "FAIL formula still macOS only"; FAIL=1; fi
+if grep -qE '^[[:space:]]*on_(macos|linux|intel|arm)[[:space:]]+do' "$WORK/agentmesh.rb"; then echo "FAIL formula uses on_* blocks for url"; FAIL=1; fi
+if grep -q 'depends_on :macos' "$WORK/agentmesh.rb"; then echo "FAIL formula still macOS only"; FAIL=1; fi
 # Decision 32: nothing of v1 leaks into the v2 templates.
-if grep -hE '(^|[^a-z0-9])agentbus([^2a-z]|$)' "$HERE"/agentbus2.rb.tmpl "$HERE"/agentbus2.scoop.json.tmpl "$HERE"/agentbus2.winget.*.yaml.tmpl \
-    "$HERE"/agentbus2-mcponly.rb.tmpl "$HERE"/agentbus2-mcponly.scoop.json.tmpl "$HERE"/agentbus2-mcponly.winget.*.yaml.tmpl | grep -vE 'agentbus2' >/dev/null; then
+if grep -hE '(^|[^a-z0-9])agentbus([^2a-z]|$)' "$HERE"/agentmesh.rb.tmpl "$HERE"/agentmesh.scoop.json.tmpl "$HERE"/agentmesh.winget.*.yaml.tmpl \
+    "$HERE"/agentmesh-mcponly.rb.tmpl "$HERE"/agentmesh-mcponly.scoop.json.tmpl "$HERE"/agentmesh-mcponly.winget.*.yaml.tmpl | grep -vE 'agentmesh' >/dev/null; then
     echo "FAIL a template names the v1 product (agentbus without the 2)"; FAIL=1
 else
-    echo "PASS templates name only agentbus2"
+    echo "PASS templates name only agentmesh"
 fi
 
 # Optional: when brew is installed, the URL-selection checks below run offline.
 # brew style needs the network (its first run installs RuboCop gems from
-# rubygems.org), so it runs only with AGENTBUS2_BREW_STYLE=1; make verify must
+# rubygems.org), so it runs only with AGENTMESH_BREW_STYLE=1; make verify must
 # not depend on the network. brew only treats the file as a formula under a
 # Formula/ directory.
 if command -v brew >/dev/null 2>&1; then
-    mkdir -p "$WORK/Formula" && cp "$WORK/agentbus2.rb" "$WORK/Formula/agentbus2.rb"
-    case "${AGENTBUS2_BREW_STYLE:-}" in
+    mkdir -p "$WORK/Formula" && cp "$WORK/agentmesh.rb" "$WORK/Formula/agentmesh.rb"
+    case "${AGENTMESH_BREW_STYLE:-}" in
     1)
-        if brew style "$WORK/Formula/agentbus2.rb" >"$WORK/style.out" 2>&1; then echo "PASS brew style"; else echo "FAIL brew style"; cat "$WORK/style.out"; FAIL=1; fi ;;
-    "") echo "SKIP brew style (set AGENTBUS2_BREW_STYLE=1; it needs the network)" ;;
-    *) echo "FAIL AGENTBUS2_BREW_STYLE must be 1 or unset, got '${AGENTBUS2_BREW_STYLE}'"; FAIL=1 ;;
+        if brew style "$WORK/Formula/agentmesh.rb" >"$WORK/style.out" 2>&1; then echo "PASS brew style"; else echo "FAIL brew style"; cat "$WORK/style.out"; FAIL=1; fi ;;
+    "") echo "SKIP brew style (set AGENTMESH_BREW_STYLE=1; it needs the network)" ;;
+    *) echo "FAIL AGENTMESH_BREW_STYLE must be 1 or unset, got '${AGENTMESH_BREW_STYLE}'"; FAIL=1 ;;
     esac
     # Host-conditional URL selection with OS/CPU stubbed (SimulateSystem cannot
     # see host conditionals, so redefine the predicates themselves).
@@ -76,11 +76,11 @@ OS.define_singleton_method(:linux?) { !mac }
 Hardware::CPU.define_singleton_method(:arm?) { arm }
 Hardware::CPU.define_singleton_method(:intel?) { !arm }
 require "formula"
-puts Formulary.from_contents("agentbus2", Pathname(file), File.read(file)).stable.url
+puts Formulary.from_contents("agentmesh", Pathname(file), File.read(file)).stable.url
 RB
     for combo in "mac arm macos-universal" "mac intel macos-universal" "linux intel linux-amd64" "linux arm linux-arm64"; do
         read -r -a c <<<"$combo"
-        got="$(brew ruby "$WORK/select.rb" "$WORK/Formula/agentbus2.rb" "${c[0]}" "${c[1]}" 2>&1 | tail -1)"
+        got="$(brew ruby "$WORK/select.rb" "$WORK/Formula/agentmesh.rb" "${c[0]}" "${c[1]}" 2>&1 | tail -1)"
         if [[ "$got" == *"-${c[2]}.tar.gz" ]]; then echo "PASS url select ${c[0]}/${c[1]}"; else echo "FAIL url select ${c[0]}/${c[1]}: $got"; FAIL=1; fi
     done
 else
@@ -88,31 +88,31 @@ else
 fi
 
 # Scoop manifest.
-render_check "$HERE/agentbus2.scoop.json.tmpl" agentbus2.json python3 -I -m json.tool -- \
+render_check "$HERE/agentmesh.scoop.json.tmpl" agentmesh.json python3 -I -m json.tool -- \
     VERSION=1.2.3 AMD64_URL=$BASE/a.zip AMD64_SHA256=aaaa ARM64_URL=$BASE/r.zip ARM64_SHA256=bbbb
 if python3 -I -c "
 import json, sys
 m = json.load(open(sys.argv[1]))
 assert m['version'] == '1.2.3'
-assert m['bin'] == 'agentbus2.exe'
+assert m['bin'] == 'agentmesh.exe'
 assert m['architecture']['64bit']['hash'] == 'aaaa'
 assert m['architecture']['arm64']['hash'] == 'bbbb'
 assert m['architecture']['arm64']['url'] == '$BASE/r.zip'
-assert m['checkver']['github'] == 'https://github.com/ericfitz/agentbus2'
+assert m['checkver']['github'] == 'https://github.com/ericfitz/agentmesh'
 a = m['autoupdate']
-assert a['architecture']['64bit']['url'] == 'https://github.com/ericfitz/agentbus2/releases/download/v\$version/agentbus2-v\$version-windows-amd64.zip'
-assert a['architecture']['arm64']['url'].endswith('agentbus2-v\$version-windows-arm64.zip')
+assert a['architecture']['64bit']['url'] == 'https://github.com/ericfitz/agentmesh/releases/download/v\$version/agentmesh-v\$version-windows-amd64.zip'
+assert a['architecture']['arm64']['url'].endswith('agentmesh-v\$version-windows-arm64.zip')
 assert a['hash']['url'].endswith('/SHA256SUMS')
-" "$WORK/agentbus2.json"; then echo "PASS scoop fields"; else echo "FAIL scoop fields"; FAIL=1; fi
+" "$WORK/agentmesh.json"; then echo "PASS scoop fields"; else echo "FAIL scoop fields"; FAIL=1; fi
 
 # winget manifests: no YAML library, so the key lines are matched literally.
 VER="$WORK/v.yaml"; INS="$WORK/i.yaml"; LOC="$WORK/l.yaml"
-render_check "$HERE/agentbus2.winget.version.yaml.tmpl" v.yaml cat -- VERSION=1.2.3
-render_check "$HERE/agentbus2.winget.installer.yaml.tmpl" i.yaml cat -- \
+render_check "$HERE/agentmesh.winget.version.yaml.tmpl" v.yaml cat -- VERSION=1.2.3
+render_check "$HERE/agentmesh.winget.installer.yaml.tmpl" i.yaml cat -- \
     VERSION=1.2.3 AMD64_URL=$BASE/a.zip AMD64_SHA256=AAAA ARM64_URL=$BASE/r.zip ARM64_SHA256=BBBB
-render_check "$HERE/agentbus2.winget.locale.en-US.yaml.tmpl" l.yaml cat -- VERSION=1.2.3
+render_check "$HERE/agentmesh.winget.locale.en-US.yaml.tmpl" l.yaml cat -- VERSION=1.2.3
 for f in "$VER" "$INS" "$LOC"; do
-    has_line "winget $(basename "$f") identifier" "$f" 'PackageIdentifier: ericfitz.agentbus2'
+    has_line "winget $(basename "$f") identifier" "$f" 'PackageIdentifier: ericfitz.agentmesh'
     has_line "winget $(basename "$f") version" "$f" 'PackageVersion: 1.2.3'
     if grep -q '__' "$f"; then echo "FAIL winget $(basename "$f") holds a __ placeholder"; FAIL=1; fi
     has_line "winget $(basename "$f") manifest version" "$f" 'ManifestVersion: 1.12.0'
@@ -121,8 +121,8 @@ has_line "winget version DefaultLocale" "$VER" 'DefaultLocale: en-US'
 has_line "winget version ManifestType" "$VER" 'ManifestType: version'
 has_line "winget installer type" "$INS" 'InstallerType: zip'
 has_line "winget installer nested type" "$INS" 'NestedInstallerType: portable'
-has_line "winget installer relative path" "$INS" '- RelativeFilePath: agentbus2.exe'
-has_line "winget installer alias" "$INS" '  PortableCommandAlias: agentbus2'
+has_line "winget installer relative path" "$INS" '- RelativeFilePath: agentmesh.exe'
+has_line "winget installer alias" "$INS" '  PortableCommandAlias: agentmesh'
 has_line "winget installer x64" "$INS" '- Architecture: x64'
 has_line "winget installer x64 url" "$INS" "  InstallerUrl: $BASE/a.zip"
 has_line "winget installer x64 hash" "$INS" '  InstallerSha256: AAAA'
@@ -133,26 +133,26 @@ has_line "winget installer ManifestType" "$INS" 'ManifestType: installer'
 if [[ "$(grep -c 'InstallerSha256:' "$INS")" == 2 ]]; then echo "PASS winget installer has two hashes"; else echo "FAIL winget installer hash count"; FAIL=1; fi
 has_line "winget locale PackageLocale" "$LOC" 'PackageLocale: en-US'
 has_line "winget locale Publisher" "$LOC" 'Publisher: ericfitz'
-has_line "winget locale PackageName" "$LOC" 'PackageName: agentbus2'
+has_line "winget locale PackageName" "$LOC" 'PackageName: agentmesh'
 has_line "winget locale License" "$LOC" 'License: Apache-2.0'
-has_line "winget locale PackageUrl" "$LOC" 'PackageUrl: https://github.com/ericfitz/agentbus2'
+has_line "winget locale PackageUrl" "$LOC" 'PackageUrl: https://github.com/ericfitz/agentmesh'
 has_line "winget locale ManifestType" "$LOC" 'ManifestType: defaultLocale'
-desc="$(sed -n 's/^  desc "\(.*\)"$/\1/p' "$WORK/agentbus2.rb")"
+desc="$(sed -n 's/^  desc "\(.*\)"$/\1/p' "$WORK/agentmesh.rb")"
 has_line "winget ShortDescription equals the formula desc" "$LOC" "ShortDescription: $desc"
 
-# agentbus2-mcponly: the same five templates, the second package of each manager.
-M2=agentbus2-mcponly
+# agentmesh-mcponly: the same five templates, the second package of each manager.
+M2=agentmesh-mcponly
 render_check "$HERE/$M2.rb.tmpl" $M2.rb ruby -c -- \
     MACOS_URL=$BASE/$M2-v1.2.3-macos-universal.tar.gz MACOS_SHA256="$(H64 1)" \
     LINUX_AMD64_URL=$BASE/$M2-v1.2.3-linux-amd64.tar.gz LINUX_AMD64_SHA256="$(H64 2)" \
     LINUX_ARM64_URL=$BASE/$M2-v1.2.3-linux-arm64.tar.gz LINUX_ARM64_SHA256="$(H64 3)"
-for want in 'class Agentbus2Mcponly < Formula' 'bin.install "agentbus2-mcponly"' 'elsif OS.linux? && Hardware::CPU.intel?' \
-    'elsif OS.linux? && Hardware::CPU.arm?' 'Run agentbus2-mcponly help to connect an agent to an agentbus2 server.' \
-    'shell_output("#{bin}/agentbus2-mcponly version")'; do
+for want in 'class AgentmeshMcponly < Formula' 'bin.install "agentmesh-mcponly"' 'elsif OS.linux? && Hardware::CPU.intel?' \
+    'elsif OS.linux? && Hardware::CPU.arm?' 'Run agentmesh-mcponly help to connect an agent to an agentmesh server.' \
+    'shell_output("#{bin}/agentmesh-mcponly version")'; do
     grep -qF "$want" "$WORK/$M2.rb" || { echo "FAIL mcponly formula lacks: $want"; FAIL=1; }
 done
 if grep -qE '^[[:space:]]*on_(macos|linux|intel|arm)[[:space:]]+do' "$WORK/$M2.rb"; then echo "FAIL mcponly formula uses on_* blocks for url"; FAIL=1; fi
-if grep -q 'class Agentbus2 <' "$WORK/$M2.rb" || grep -q 'bin.install "agentbus2"' "$WORK/$M2.rb"; then echo "FAIL mcponly formula installs the full binary"; FAIL=1; else echo "PASS mcponly formula names only the mcponly binary"; fi
+if grep -q 'class Agentmesh <' "$WORK/$M2.rb" || grep -q 'bin.install "agentmesh"' "$WORK/$M2.rb"; then echo "FAIL mcponly formula installs the full binary"; FAIL=1; else echo "PASS mcponly formula names only the mcponly binary"; fi
 
 render_check "$HERE/$M2.scoop.json.tmpl" $M2.json python3 -I -m json.tool -- \
     VERSION=1.2.3 AMD64_URL=$BASE/a.zip AMD64_SHA256=aaaa ARM64_URL=$BASE/r.zip ARM64_SHA256=bbbb
@@ -160,15 +160,15 @@ if python3 -I -c "
 import json, sys
 m = json.load(open(sys.argv[1]))
 assert m['version'] == '1.2.3'
-assert m['bin'] == 'agentbus2-mcponly.exe'
+assert m['bin'] == 'agentmesh-mcponly.exe'
 assert m['architecture']['64bit']['hash'] == 'aaaa'
 assert m['architecture']['arm64']['hash'] == 'bbbb'
-assert m['checkver']['github'] == 'https://github.com/ericfitz/agentbus2'
+assert m['checkver']['github'] == 'https://github.com/ericfitz/agentmesh'
 a = m['autoupdate']
-assert a['architecture']['64bit']['url'] == 'https://github.com/ericfitz/agentbus2/releases/download/v\$version/agentbus2-mcponly-v\$version-windows-amd64.zip'
-assert a['architecture']['arm64']['url'].endswith('agentbus2-mcponly-v\$version-windows-arm64.zip')
+assert a['architecture']['64bit']['url'] == 'https://github.com/ericfitz/agentmesh/releases/download/v\$version/agentmesh-mcponly-v\$version-windows-amd64.zip'
+assert a['architecture']['arm64']['url'].endswith('agentmesh-mcponly-v\$version-windows-arm64.zip')
 assert a['hash']['url'].endswith('/SHA256SUMS')
-assert m['notes'].startswith('Stop agentbus2-mcponly serve processes before')
+assert m['notes'].startswith('Stop agentmesh-mcponly serve processes before')
 " "$WORK/$M2.json"; then echo "PASS mcponly scoop fields"; else echo "FAIL mcponly scoop fields"; FAIL=1; fi
 
 VER2="$WORK/v2.yaml"; INS2="$WORK/i2.yaml"; LOC2="$WORK/l2.yaml"
@@ -177,15 +177,15 @@ render_check "$HERE/$M2.winget.installer.yaml.tmpl" i2.yaml cat -- \
     VERSION=1.2.3 AMD64_URL=$BASE/a.zip AMD64_SHA256=AAAA ARM64_URL=$BASE/r.zip ARM64_SHA256=BBBB
 render_check "$HERE/$M2.winget.locale.en-US.yaml.tmpl" l2.yaml cat -- VERSION=1.2.3
 for f in "$VER2" "$INS2" "$LOC2"; do
-    has_line "mcponly winget $(basename "$f") identifier" "$f" 'PackageIdentifier: ericfitz.agentbus2-mcponly'
+    has_line "mcponly winget $(basename "$f") identifier" "$f" 'PackageIdentifier: ericfitz.agentmesh-mcponly'
     has_line "mcponly winget $(basename "$f") version" "$f" 'PackageVersion: 1.2.3'
     if grep -q '__' "$f"; then echo "FAIL mcponly winget $(basename "$f") holds a __ placeholder"; FAIL=1; fi
 done
-has_line "mcponly winget installer relative path" "$INS2" '- RelativeFilePath: agentbus2-mcponly.exe'
-has_line "mcponly winget installer alias" "$INS2" '  PortableCommandAlias: agentbus2-mcponly'
+has_line "mcponly winget installer relative path" "$INS2" '- RelativeFilePath: agentmesh-mcponly.exe'
+has_line "mcponly winget installer alias" "$INS2" '  PortableCommandAlias: agentmesh-mcponly'
 has_line "mcponly winget installer x64 hash" "$INS2" '  InstallerSha256: AAAA'
 has_line "mcponly winget installer arm64 hash" "$INS2" '  InstallerSha256: BBBB'
-has_line "mcponly winget locale PackageName" "$LOC2" 'PackageName: agentbus2-mcponly'
+has_line "mcponly winget locale PackageName" "$LOC2" 'PackageName: agentmesh-mcponly'
 desc2="$(sed -n 's/^  desc "\(.*\)"$/\1/p' "$WORK/$M2.rb")"
 has_line "mcponly winget ShortDescription equals the formula desc" "$LOC2" "ShortDescription: $desc2"
 

@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/maintenance"
-	"github.com/ericfitz/agentbus2/internal/core/scopes"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/slackapi"
-	"github.com/ericfitz/agentbus2/internal/slackbridge"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/maintenance"
+	"github.com/ericfitz/agentmesh/internal/core/scopes"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/slackbridge"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
 // bridgeCfg is the Config of the runner tests: fast pacing and renewal.
@@ -232,7 +232,7 @@ func TestSlackBridgeOutbound(t *testing.T) {
 			if len(got) != 1 {
 				t.Fatalf("posts = %+v", got)
 			}
-			if n := len([]rune(got[0].Section)); n > 200 || !strings.HasSuffix(got[0].Section, "the full message is seq "+itoa(seq)+" on agentbus2 channel job1-chat)") {
+			if n := len([]rune(got[0].Section)); n > 200 || !strings.HasSuffix(got[0].Section, "the full message is seq "+itoa(seq)+" on agentmesh channel job1-chat)") {
 				t.Errorf("section has %d runes: %q", n, got[0].Section)
 			}
 		})

@@ -13,14 +13,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/fileacl"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/oidcclient"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/fileacl"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/oidcclient"
 )
 
-// HumanSession is a human's cached sign-in: the agentbus2 bearer and, when
+// HumanSession is a human's cached sign-in: the agentmesh bearer and, when
 // the provider issued one, the provider's refresh token (spec 5.3). The
 // corporate access token is never stored. Server is the server the bearer was
 // minted for: a session for another server is a miss. AccessToken is empty

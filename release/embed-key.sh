@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 # Embed a PEM public key into install scripts, between the markers
-#   # BEGIN agentbus2 release public key
-#   # END agentbus2 release public key
+#   # BEGIN agentmesh release public key
+#   # END agentmesh release public key
 # A .sh script gets  PUBKEY_PEM='<pem>'  and a .ps1 script gets
 #   $PubKeyPem = @'
 #   <pem>
 #   '@
 # Idempotent: running it again with the same key changes nothing.
-#   release/embed-key.sh release/agentbus2-release-ed25519.pub install.sh install.ps1
+#   release/embed-key.sh release/agentmesh-release-ed25519.pub install.sh install.ps1
 set -euo pipefail
 
-BEGIN='# BEGIN agentbus2 release public key'
-END='# END agentbus2 release public key'
+BEGIN='# BEGIN agentmesh release public key'
+END='# END agentmesh release public key'
 
 [[ $# -ge 2 ]] || { echo "usage: embed-key.sh <pubkey.pem> <script>..." >&2; exit 2; }
 PUB="$1"; shift

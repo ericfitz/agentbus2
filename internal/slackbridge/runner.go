@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
 )
 
 const (

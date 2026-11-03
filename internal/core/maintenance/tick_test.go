@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/store/sqlite"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/store/sqlite"
 )
 
 const startMs = 1_700_000_000_000
@@ -33,7 +33,7 @@ func (c *testClock) advance(d time.Duration) {
 // twoCores opens two cores over one SQLite file sharing one fake clock.
 func twoCores(t *testing.T) (a, b Service, clk *testClock) {
 	t.Helper()
-	path := filepath.Join(t.TempDir(), "agentbus2.db")
+	path := filepath.Join(t.TempDir(), "agentmesh.db")
 	clk = &testClock{t: time.UnixMilli(startMs)}
 	mk := func() Service {
 		s, err := sqlite.Open(context.Background(), path, sqlite.Options{})

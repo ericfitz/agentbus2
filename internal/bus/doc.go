@@ -1,4 +1,4 @@
-// Package bus is the consumer-facing seam of agentbus2: the six interfaces
+// Package bus is the consumer-facing seam of agentmesh: the six interfaces
 // split by consumer (Messaging, Sessions, Memories, Tasks, Admin, Monitoring; Decision 7),
 // the domain types they exchange and the Error with its code and retryable
 // members (Decision 46). It imports neither the store nor the core, so no

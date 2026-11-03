@@ -1,4 +1,4 @@
-module github.com/ericfitz/agentbus2
+module github.com/ericfitz/agentmesh
 
 go 1.27
 

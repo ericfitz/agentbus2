@@ -13,7 +13,7 @@ import (
 	"syscall"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // withUmask sets the process umask for the test. Not parallel: the umask is

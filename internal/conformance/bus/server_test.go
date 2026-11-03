@@ -9,14 +9,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/server/cmd"
 )
 
-// TestServerServesBothEngines starts the agentbus2 server command's Serve over
+// TestServerServesBothEngines starts the agentmesh server command's Serve over
 // each engine. It is transport-independent: it runs the same under both
-// AGENTBUS2_BUS_TRANSPORT values.
+// AGENTMESH_BUS_TRANSPORT values.
 func TestServerServesBothEngines(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		s, _ := openStore(t, e)
@@ -46,7 +46,7 @@ func TestServerServesBothEngines(t *testing.T) {
 			b, _ := io.ReadAll(resp.Body)
 			return resp.StatusCode, string(b)
 		}
-		if code, body := get("/.well-known/agentbus2"); code != 200 {
+		if code, body := get("/.well-known/agentmesh"); code != 200 {
 			t.Fatalf("well-known: %d %s", code, body)
 		}
 		if code, body := get("/v1/discover"); code != 200 || !strings.Contains(body, "long_poll") {

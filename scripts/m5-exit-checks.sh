@@ -27,7 +27,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-MOD=github.com/ericfitz/agentbus2
+MOD=github.com/ericfitz/agentmesh
 WANT=12
 
 # check_deps PATTERN FORBIDDEN...: each forbidden entry is an in-module path

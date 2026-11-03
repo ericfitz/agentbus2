@@ -41,7 +41,7 @@ func TestProfileEnvLayout(t *testing.T) {
 			t.Errorf("%s: not a directory (%v)", d, err)
 		}
 	}
-	for _, want := range []string{"HOME=" + e.Home, "AGENTBUS2_CONFIG_DIR=" + e.Config, "AGENTBUS2_DATA_DIR=" + e.Data, "FOO=bar", "BAZ=qux"} {
+	for _, want := range []string{"HOME=" + e.Home, "AGENTMESH_CONFIG_DIR=" + e.Config, "AGENTMESH_DATA_DIR=" + e.Data, "FOO=bar", "BAZ=qux"} {
 		found := false
 		for _, kv := range e.Environ {
 			if kv == want {

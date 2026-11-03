@@ -5,10 +5,10 @@ import (
 	"errors"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
 )
 
-// RunHealth implements `agentbus2 health`: the server's health document as
+// RunHealth implements `agentmesh health`: the server's health document as
 // the caller's tier sees it, one JSON document on stdout (the wire member
 // names; members above the tier are omitted). Exit 0 for ok and degraded; a
 // bus.Error (unavailable among them) is exit 1.

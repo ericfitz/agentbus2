@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"slices"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // Config is the one configuration the rule reads. ChannelCreation is the

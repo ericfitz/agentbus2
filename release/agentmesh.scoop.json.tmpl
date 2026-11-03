@@ -1,0 +1,20 @@
+{
+    "version": "__VERSION__",
+    "description": "Message bus, shared memory and shared task queue for coding agents",
+    "homepage": "https://github.com/ericfitz/agentmesh",
+    "license": "Apache-2.0",
+    "architecture": {
+        "64bit": { "url": "__AMD64_URL__", "hash": "__AMD64_SHA256__" },
+        "arm64": { "url": "__ARM64_URL__", "hash": "__ARM64_SHA256__" }
+    },
+    "bin": "agentmesh.exe",
+    "checkver": { "github": "https://github.com/ericfitz/agentmesh" },
+    "autoupdate": {
+        "architecture": {
+            "64bit": { "url": "https://github.com/ericfitz/agentmesh/releases/download/v$version/agentmesh-v$version-windows-amd64.zip" },
+            "arm64": { "url": "https://github.com/ericfitz/agentmesh/releases/download/v$version/agentmesh-v$version-windows-arm64.zip" }
+        },
+        "hash": { "url": "https://github.com/ericfitz/agentmesh/releases/download/v$version/SHA256SUMS" }
+    },
+    "notes": "Stop agentmesh sessions (MCP servers, waits, the TUI) before `scoop update agentmesh`: Scoop cannot replace the files of a running program."
+}

@@ -3,7 +3,7 @@ package mcpserver_test
 import (
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
 )
 
 // The commands an edition's messages name are the ones that exist in its binary.
@@ -12,8 +12,8 @@ func TestEditionCommands(t *testing.T) {
 		e                 mcpserver.Edition
 		serve, registerOK string
 	}{
-		{mcpserver.EditionFull, "agentbus2 mcp", "agentbus2 register"},
-		{mcpserver.EditionMCPOnly, "agentbus2-mcponly serve", "agentbus2-mcponly register"},
+		{mcpserver.EditionFull, "agentmesh mcp", "agentmesh register"},
+		{mcpserver.EditionMCPOnly, "agentmesh-mcponly serve", "agentmesh-mcponly register"},
 	}
 	for _, c := range cases {
 		if got := c.e.Serve(); got != c.serve {

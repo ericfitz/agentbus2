@@ -2,18 +2,18 @@
 
 ## Version
 
-- `agentbus2 version` prints the binary's version (`2.0.0-dev` for a plain `go build`, `dev` for an image built by `make docker-image`).
+- `agentmesh version` prints the binary's version (`2.0.0-dev` for a plain `go build`, `dev` for an image built by `make docker-image`).
 - `GET /v1/discover` reports it as `server_version`.
 - `GET /v1/discover` and `GET /v1/health` report `protocol_version`, the wire protocol, independent of the build version.
-- For the Docker image the tag is the version: build with `--build-arg VERSION=<v>` and tag the image `agentbus2:<v>` (see `deploy.md`).
+- For the Docker image the tag is the version: build with `--build-arg VERSION=<v>` and tag the image `agentmesh:<v>` (see `deploy.md`).
 
 ## What happens to the database at start (Decision 34)
 
 The database carries a schema version in `schema_meta`. On open:
 
-- a database whose schema is newer than the binary is refused with `database schema is newer than this binary: upgrade agentbus2, or, if an earlier pre-release build created this database, recreate it (pre-release databases are not converted)` (exit 1): run the newer binary, or, for a database from a pre-release build, recreate it (see Schema versions);
+- a database whose schema is newer than the binary is refused with `database schema is newer than this binary: upgrade agentmesh, or, if an earlier pre-release build created this database, recreate it (pre-release databases are not converted)` (exit 1): run the newer binary, or, for a database from a pre-release build, recreate it (see Schema versions);
 - an older schema is migrated at start, under a lock (Decision 53; on SQLite an immediate transaction, on Postgres an advisory lock per schema), so two servers starting together migrate once and the second waits and then sees the new version;
-- a database that is not agentbus2's (a wrong or missing `app`, an agentbus 1.x database, another engine's) or whose `schema_meta` is otherwise invalid is refused. agentbus2 does not migrate from agentbus 1.x or between engines.
+- a database that is not agentmesh's (a wrong or missing `app`, an agentbus 1.x database, another engine's) or whose `schema_meta` is otherwise invalid is refused. agentmesh does not migrate from agentbus 1.x or between engines.
 
 Each migration step is a transaction of its own that re-reads the version under the lock. A failed step leaves the previous version, and the next start retries from there.
 

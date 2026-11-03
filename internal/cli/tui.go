@@ -6,9 +6,9 @@ import (
 	"io"
 	"path/filepath"
 
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/tui"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/tui"
 )
 
 // testOpenBrowser is nil in production. When set, tui and login -human open
@@ -20,11 +20,11 @@ var testOpenBrowser func(string) error
 // exactly as testClientOptions pins the Conn.
 var testTUIOptions func(*tui.Options)
 
-// RunTUI is `agentbus2 tui [-profile P] [-identity I]`. Ported from v1
+// RunTUI is `agentmesh tui [-profile P] [-identity I]`. Ported from v1
 // main.go's tui case at 906dec8, without -config and -as: the identity is
 // chosen by Decision 71 like every command. It runs the TUI over the Bus of
 // client.Open (local or server mode) and runs the maintenance loop in local
-// mode. Exit 0 on a clean quit, 1 with `agentbus2: <err>` on stderr, 2 on a
+// mode. Exit 0 on a clean quit, 1 with `agentmesh: <err>` on stderr, 2 on a
 // usage or resolution error.
 func RunTUI(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	fs := newFlagSet("tui", stderr)
@@ -34,7 +34,7 @@ func RunTUI(ctx context.Context, args []string, environ []string, stdin io.Reade
 		return parseExit(err)
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 tui: unexpected argument %q\n", fs.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "agentmesh tui: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
 	// Decision 11: on a local profile with no identity chosen, the TUI is the
@@ -49,12 +49,12 @@ func RunTUI(ctx context.Context, args []string, environ []string, stdin io.Reade
 	human := sel.Profile.Mode == profile.ModeServer
 	if human {
 		if o.Identity != "" {
-			_, _ = fmt.Fprintln(stderr, "agentbus2 tui: -identity does not apply on a server profile: the identity comes from sign-in")
+			_, _ = fmt.Fprintln(stderr, "agentmesh tui: -identity does not apply on a server profile: the identity comes from sign-in")
 			return 2
 		}
 		o.HumanSignIn = true
 		o.HumanOpenBrowser = testOpenBrowser
-		o.HumanAnnounce = func(u string) { _, _ = fmt.Fprintf(stderr, "agentbus2 tui: sign in at %s\n", u) }
+		o.HumanAnnounce = func(u string) { _, _ = fmt.Fprintf(stderr, "agentmesh tui: sign in at %s\n", u) }
 	} else {
 		o.FallbackIdentity = osUserName()
 	}
@@ -102,7 +102,7 @@ func RunTUI(ctx context.Context, args []string, environ []string, stdin io.Reade
 	if ids, err := conn.Bus.Identities(ctx); err == nil {
 		for _, id := range ids {
 			if id.Name == r.Identity && len(id.Sessions) > 0 {
-				w := fmt.Sprintf("agentbus2 tui: identity %s has %d other live session(s); subscriptions and acks are shared with them", r.Identity, len(id.Sessions))
+				w := fmt.Sprintf("agentmesh tui: identity %s has %d other live session(s); subscriptions and acks are shared with them", r.Identity, len(id.Sessions))
 				if !human {
 					w += " (pass -identity for a separate name)"
 				}

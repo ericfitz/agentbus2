@@ -3,8 +3,8 @@ package mcpserver_test
 import (
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/storetest"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/storetest"
 )
 
 // subscribeRaw writes a subscription into the default profile's SQLite file,

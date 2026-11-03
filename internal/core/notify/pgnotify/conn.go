@@ -5,7 +5,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
-	"github.com/ericfitz/agentbus2/internal/store/postgres"
+	"github.com/ericfitz/agentmesh/internal/store/postgres"
 )
 
 type connector interface {

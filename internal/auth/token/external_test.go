@@ -20,12 +20,12 @@ import (
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
 )
 
 const (
 	extIss = "https://idp.example"
-	extAud = "agentbus2"
+	extAud = "agentmesh"
 )
 
 type jwksServer struct {

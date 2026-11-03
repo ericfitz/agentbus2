@@ -5,9 +5,9 @@ import (
 	"net/http"
 	"sort"
 
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 type baseURLKey struct{}
@@ -42,7 +42,7 @@ const (
 	metadataPath            = "/.well-known/oauth-authorization-server"
 )
 
-// WellKnown answers GET /.well-known/agentbus2.
+// WellKnown answers GET /.well-known/agentmesh.
 func (a *api) WellKnown(context.Context, gen.WellKnownRequestObject) (gen.WellKnownResponseObject, error) {
 	return gen.WellKnown200JSONResponse{Discover: "/v1/discover"}, nil
 }

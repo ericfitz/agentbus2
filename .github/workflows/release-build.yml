@@ -1,5 +1,5 @@
-# Builds the Linux and Windows release archives of both binaries (agentbus2 and
-# agentbus2-mcponly) on runners of their own OS and architecture, runs each
+# Builds the Linux and Windows release archives of both binaries (agentmesh and
+# agentmesh-mcponly) on runners of their own OS and architecture, runs each
 # binary, attests build provenance, and uploads the archives to the draft
 # release for the tag. Dispatched by release/release.sh on the tag itself (gh
 # workflow run --ref <tag>), so the checked-out source and this file are the
@@ -55,7 +55,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        binary: [agentbus2, agentbus2-mcponly]
+        binary: [agentmesh, agentmesh-mcponly]
         platform: [linux-amd64, linux-arm64, windows-amd64, windows-arm64]
         include:
           - { platform: linux-amd64, runner: ubuntu-latest, goos: linux, goarch: amd64 }
@@ -175,7 +175,7 @@ jobs:
           AUTHENTICODE_SIGNER: ${{ vars.AUTHENTICODE_SIGNER }}
         run: |
           $ErrorActionPreference = 'Stop'
-          foreach ($f in 'exe\exe-agentbus2-windows-amd64\agentbus2.exe', 'exe\exe-agentbus2-windows-arm64\agentbus2.exe', 'exe\exe-agentbus2-mcponly-windows-amd64\agentbus2-mcponly.exe', 'exe\exe-agentbus2-mcponly-windows-arm64\agentbus2-mcponly.exe') {
+          foreach ($f in 'exe\exe-agentmesh-windows-amd64\agentmesh.exe', 'exe\exe-agentmesh-windows-arm64\agentmesh.exe', 'exe\exe-agentmesh-mcponly-windows-amd64\agentmesh-mcponly.exe', 'exe\exe-agentmesh-mcponly-windows-arm64\agentmesh-mcponly.exe') {
             $s = Get-AuthenticodeSignature -FilePath $f
             if ($s.Status -ne 'Valid') { Write-Host "::error::$f signature status is $($s.Status) ($($s.StatusMessage))"; exit 1 }
             $cn = $s.SignerCertificate.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false)
@@ -183,7 +183,7 @@ jobs:
             if (-not $s.TimeStamperCertificate) { Write-Host "::error::$f has no timestamp countersignature; the signature would expire with the certificate"; exit 1 }
             Write-Host "$f signed by $cn, timestamped by $($s.TimeStamperCertificate.Subject)"
           }
-          foreach ($f in 'exe\exe-agentbus2-windows-amd64\agentbus2.exe', 'exe\exe-agentbus2-mcponly-windows-amd64\agentbus2-mcponly.exe') {
+          foreach ($f in 'exe\exe-agentmesh-windows-amd64\agentmesh.exe', 'exe\exe-agentmesh-mcponly-windows-amd64\agentmesh-mcponly.exe') {
             $v = (& ".\$f" version | Select-Object -First 1)
             if ($v -ne $env:VERSION) { Write-Host "::error::signed $f version printed '$v', want $env:VERSION"; exit 1 }
           }
@@ -191,36 +191,36 @@ jobs:
         shell: pwsh
         run: |
           # Each zip holds its binary and its own README, named README.txt inside.
-          New-Item -ItemType Directory -Force -Path readme-agentbus2, readme-agentbus2-mcponly | Out-Null
-          Copy-Item -LiteralPath release\windows-zip-README.txt -Destination readme-agentbus2\README.txt
-          Copy-Item -LiteralPath release\windows-zip-README-mcponly.txt -Destination readme-agentbus2-mcponly\README.txt
-          Compress-Archive -LiteralPath exe\exe-agentbus2-windows-amd64\agentbus2.exe, readme-agentbus2\README.txt -DestinationPath "agentbus2-$env:TAG-windows-amd64.zip"
-          Compress-Archive -LiteralPath exe\exe-agentbus2-windows-arm64\agentbus2.exe, readme-agentbus2\README.txt -DestinationPath "agentbus2-$env:TAG-windows-arm64.zip"
-          Compress-Archive -LiteralPath exe\exe-agentbus2-mcponly-windows-amd64\agentbus2-mcponly.exe, readme-agentbus2-mcponly\README.txt -DestinationPath "agentbus2-mcponly-$env:TAG-windows-amd64.zip"
-          Compress-Archive -LiteralPath exe\exe-agentbus2-mcponly-windows-arm64\agentbus2-mcponly.exe, readme-agentbus2-mcponly\README.txt -DestinationPath "agentbus2-mcponly-$env:TAG-windows-arm64.zip"
+          New-Item -ItemType Directory -Force -Path readme-agentmesh, readme-agentmesh-mcponly | Out-Null
+          Copy-Item -LiteralPath release\windows-zip-README.txt -Destination readme-agentmesh\README.txt
+          Copy-Item -LiteralPath release\windows-zip-README-mcponly.txt -Destination readme-agentmesh-mcponly\README.txt
+          Compress-Archive -LiteralPath exe\exe-agentmesh-windows-amd64\agentmesh.exe, readme-agentmesh\README.txt -DestinationPath "agentmesh-$env:TAG-windows-amd64.zip"
+          Compress-Archive -LiteralPath exe\exe-agentmesh-windows-arm64\agentmesh.exe, readme-agentmesh\README.txt -DestinationPath "agentmesh-$env:TAG-windows-arm64.zip"
+          Compress-Archive -LiteralPath exe\exe-agentmesh-mcponly-windows-amd64\agentmesh-mcponly.exe, readme-agentmesh-mcponly\README.txt -DestinationPath "agentmesh-mcponly-$env:TAG-windows-amd64.zip"
+          Compress-Archive -LiteralPath exe\exe-agentmesh-mcponly-windows-arm64\agentmesh-mcponly.exe, readme-agentmesh-mcponly\README.txt -DestinationPath "agentmesh-mcponly-$env:TAG-windows-arm64.zip"
       - id: upload-amd64
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: archive-agentbus2-windows-amd64
-          path: agentbus2-${{ inputs.tag }}-windows-amd64.zip
+          name: archive-agentmesh-windows-amd64
+          path: agentmesh-${{ inputs.tag }}-windows-amd64.zip
           if-no-files-found: error
       - id: upload-arm64
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: archive-agentbus2-windows-arm64
-          path: agentbus2-${{ inputs.tag }}-windows-arm64.zip
+          name: archive-agentmesh-windows-arm64
+          path: agentmesh-${{ inputs.tag }}-windows-arm64.zip
           if-no-files-found: error
       - id: upload-mcponly-amd64
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: archive-agentbus2-mcponly-windows-amd64
-          path: agentbus2-mcponly-${{ inputs.tag }}-windows-amd64.zip
+          name: archive-agentmesh-mcponly-windows-amd64
+          path: agentmesh-mcponly-${{ inputs.tag }}-windows-amd64.zip
           if-no-files-found: error
       - id: upload-mcponly-arm64
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: archive-agentbus2-mcponly-windows-arm64
-          path: agentbus2-mcponly-${{ inputs.tag }}-windows-arm64.zip
+          name: archive-agentmesh-mcponly-windows-arm64
+          path: agentmesh-mcponly-${{ inputs.tag }}-windows-arm64.zip
           if-no-files-found: error
   publish:
     needs: [validate, build, package-windows]
@@ -243,7 +243,7 @@ jobs:
         run: |
           set -euo pipefail
           ls -l archives
-          for b in agentbus2 agentbus2-mcponly; do
+          for b in agentmesh agentmesh-mcponly; do
             for a in linux-amd64.tar.gz linux-arm64.tar.gz windows-amd64.zip windows-arm64.zip; do
               [[ -f "archives/$b-$TAG-$a" ]] || { echo "::error::missing archives/$b-$TAG-$a"; exit 1; }
             done

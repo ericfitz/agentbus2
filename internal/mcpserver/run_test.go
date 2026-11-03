@@ -15,10 +15,10 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 // errTable is a procs.Table whose every lookup fails with something other
@@ -30,11 +30,11 @@ func (errTable) Comm(int) (string, error)     { return "", errors.New("process t
 func (errTable) StartTime(int) (int64, error) { return 0, errors.New("process table unsupported") }
 
 // TestMain turns the test binary into the stdio MCP server when
-// AGENTBUS2_MCP_HELPER is set (v1 integration_test.go's pattern).
+// AGENTMESH_MCP_HELPER is set (v1 integration_test.go's pattern).
 func TestMain(m *testing.M) {
-	if os.Getenv("AGENTBUS2_MCP_HELPER") == "1" {
+	if os.Getenv("AGENTMESH_MCP_HELPER") == "1" {
 		o := mcpserver.Options{Client: client.Options{Environ: os.Environ(), Local: localmode.Open}, Edition: mcpserver.EditionFull}
-		if os.Getenv("AGENTBUS2_MCP_HELPER_TABLE") == "error" {
+		if os.Getenv("AGENTMESH_MCP_HELPER_TABLE") == "error" {
 			o.Table = errTable{}
 		}
 		if err := mcpserver.Run(context.Background(), o); err != nil {
@@ -43,10 +43,10 @@ func TestMain(m *testing.M) {
 		os.Exit(0)
 	}
 	// Run from an empty directory: the server finds the nearest
-	// .local/agentbus2.json from the working directory (the helper inherits
-	// it), so a checkout where `agentbus2 init` has run would otherwise select
+	// .local/agentmesh.json from the working directory (the helper inherits
+	// it), so a checkout where `agentmesh init` has run would otherwise select
 	// its profile.
-	dir, err := os.MkdirTemp("", "agentbus2-mcpserver-test-")
+	dir, err := os.MkdirTemp("", "agentmesh-mcpserver-test-")
 	if err == nil {
 		err = os.Chdir(dir)
 	}
@@ -64,7 +64,7 @@ func TestMain(m *testing.M) {
 func helperSession(t *testing.T, e *testEnv, extraEnv ...string) (*running, *syncBuf) {
 	t.Helper()
 	cmd := exec.Command(os.Args[0], "-test.run=^$")
-	cmd.Env = append(append([]string{"AGENTBUS2_MCP_HELPER=1"}, e.Environ...), extraEnv...)
+	cmd.Env = append(append([]string{"AGENTMESH_MCP_HELPER=1"}, e.Environ...), extraEnv...)
 	stderr := &syncBuf{}
 	cmd.Stderr = stderr
 	c := mcp.NewClient(&mcp.Implementation{Name: "claude-code", Version: "2.0.0"}, nil)
@@ -153,7 +153,7 @@ func TestRunServesStdio(t *testing.T) {
 
 func TestRunSurvivesHarnessLookupFailure(t *testing.T) {
 	e := newTestEnv(t)
-	r, _ := helperSession(t, e, "AGENTBUS2_MCP_HELPER_TABLE=error")
+	r, _ := helperSession(t, e, "AGENTMESH_MCP_HELPER_TABLE=error")
 	reg := r.must(t, "register", nil)
 	f, err := sessionstate.Read(e.DataDir, str(reg, "session"))
 	if err != nil {
@@ -164,7 +164,7 @@ func TestRunSurvivesHarnessLookupFailure(t *testing.T) {
 	}
 	// With no harness a restart cannot identify its file, so it starts anew.
 	_ = r.CS.Close()
-	r2, _ := helperSession(t, e, "AGENTBUS2_MCP_HELPER_TABLE=error")
+	r2, _ := helperSession(t, e, "AGENTMESH_MCP_HELPER_TABLE=error")
 	got := r2.must(t, "register", nil)
 	if got["resumed"] != false {
 		t.Errorf("resumed without a harness: %v", got)

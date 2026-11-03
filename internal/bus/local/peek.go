@@ -3,7 +3,7 @@ package local
 import (
 	"context"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // Peek is delivery.Service.Peek as b's identity.

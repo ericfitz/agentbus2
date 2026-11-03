@@ -5,10 +5,10 @@ import (
 	"io"
 	"maps"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
-// RunSend implements `agentbus2 send`. Content is the argument after the
+// RunSend implements `agentmesh send`. Content is the argument after the
 // channel, or stdin when it is "-" or absent.
 func RunSend(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	c := newOpCmd("send", stderr)

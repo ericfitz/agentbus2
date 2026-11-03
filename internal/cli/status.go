@@ -7,11 +7,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
-// RunStatus implements `agentbus2 status`: a human-readable report (the
+// RunStatus implements `agentmesh status`: a human-readable report (the
 // shape of v1 internal/cli/status.go with the profile and mode in place of
 // config and data). The administrator-only lines (notices, embedding and
 // storage usage) are printed when Admin.Status succeeds; a forbidden Status or

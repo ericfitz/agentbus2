@@ -36,12 +36,12 @@ import (
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/wrapperspb"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	"github.com/ericfitz/agentbus2/internal/keyprovider"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	"github.com/ericfitz/agentmesh/internal/keyprovider"
 )
 
-const keyPath = "projects/proj-1/locations/global/keyRings/ring-1/cryptoKeys/agentbus2"
+const keyPath = "projects/proj-1/locations/global/keyRings/ring-1/cryptoKeys/agentmesh"
 
 var keyURI = "gcpkms://" + keyPath
 

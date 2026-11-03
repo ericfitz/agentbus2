@@ -77,7 +77,7 @@ jobs:
         run: |
           set -euo pipefail
           docker build --build-arg "VERSION=$VERSION" -t "$IMAGE_REPOSITORY:$VERSION" .
-          test "$(docker run --rm --entrypoint /agentbus2 "$IMAGE_REPOSITORY:$VERSION" version)" = "$VERSION"
+          test "$(docker run --rm --entrypoint /agentmesh "$IMAGE_REPOSITORY:$VERSION" version)" = "$VERSION"
       - id: push
         name: Tag latest and push
         shell: bash

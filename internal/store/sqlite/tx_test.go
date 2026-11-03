@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 	sqlitedrv "modernc.org/sqlite"
 )
 

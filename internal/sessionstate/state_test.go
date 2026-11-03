@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/procs"
 )
 
 type fakeTable map[int]int64 // pid -> start time; absent = gone

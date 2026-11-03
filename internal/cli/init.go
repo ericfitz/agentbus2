@@ -11,9 +11,9 @@ import (
 	"runtime"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/repoconfig"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/repoconfig"
 )
 
 // InitOptions configures Init. Zero values mean "detect".
@@ -35,7 +35,7 @@ type InitOptions struct {
 	Executable func() (string, error)
 }
 
-// Init bootstraps Agentbus2 for the harnesses on this machine (global) or for
+// Init bootstraps Agentmesh for the harnesses on this machine (global) or for
 // the repository containing Cwd. Inside a git repository the repository step
 // runs unless Global is set; outside one the global step runs (Milestone 6
 // choice 13; ported from v1 internal/cli/init.go).
@@ -90,7 +90,7 @@ func Init(o InitOptions, out io.Writer) error {
 	return in.global()
 }
 
-// RunInit is `agentbus2 init [-global] [-harness H] [-dry-run] [-profile P]
+// RunInit is `agentmesh init [-global] [-harness H] [-dry-run] [-profile P]
 // [-identity I]`.
 func RunInit(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	_, _ = ctx, stdin
@@ -105,13 +105,13 @@ func RunInit(ctx context.Context, args []string, environ []string, stdin io.Read
 		return parseExit(err)
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 init: unexpected argument %q\n", fs.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "agentmesh init: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
 	switch o.Harness {
 	case "", "claude", "codex", "grok":
 	default:
-		_, _ = fmt.Fprintf(stderr, "agentbus2 init: -harness must be claude, codex, or grok, got %q\n", o.Harness)
+		_, _ = fmt.Fprintf(stderr, "agentmesh init: -harness must be claude, codex, or grok, got %q\n", o.Harness)
 		return 2
 	}
 	o.Environ = environ
@@ -123,7 +123,7 @@ func RunInit(ctx context.Context, args []string, environ []string, stdin io.Read
 	if err := Init(o, stdout); err != nil {
 		var ue *initUsageError
 		if errors.As(err, &ue) {
-			_, _ = fmt.Fprintf(stderr, "agentbus2 init: %v\n", err)
+			_, _ = fmt.Fprintf(stderr, "agentmesh init: %v\n", err)
 			return 2
 		}
 		return fail(stderr, err)
@@ -137,11 +137,11 @@ type initUsageError struct{ msg string }
 func (e *initUsageError) Error() string { return e.msg }
 
 // repo is the repository step (Decision (Eric, 2026-10-21), item 5): select
-// or create the repository's profile, write .local/agentbus2.json, git-ignore
+// or create the repository's profile, write .local/agentmesh.json, git-ignore
 // .local/ and print the next step.
 func (in *initer) repo(root string) error {
 	if !in.mcpConfigured() {
-		in.say("warning: no agentbus2 MCP entry found in ~/.claude.json, ~/.codex/config.toml, or ~/.grok/config.toml; run `agentbus2 init -global` first")
+		in.say("warning: no agentmesh MCP entry found in ~/.claude.json, ~/.codex/config.toml, or ~/.grok/config.toml; run `agentmesh init -global` first")
 	}
 	base := filepath.Base(root)
 	name := in.Profile
@@ -250,7 +250,7 @@ func (in *initer) addProfile(cfg profile.Config, p profile.Profile) error {
 	return nil
 }
 
-// repoFile writes <root>/.local/agentbus2.json unless it already selects name.
+// repoFile writes <root>/.local/agentmesh.json unless it already selects name.
 func (in *initer) repoFile(root string, existing *repoconfig.File, name string) error {
 	path := filepath.Join(root, filepath.FromSlash(repoconfig.FileName))
 	if existing != nil && existing.Profile == name {
@@ -273,7 +273,7 @@ func (in *initer) nextStep(cfgDir string, p profile.Profile) {
 	if p.Mode == profile.ModeServer {
 		cs := credential.Store{Dir: profile.CredentialDir(cfgDir, p.Name)}
 		if !cs.Exists(p.Identity) {
-			in.say("next: run `agentbus2 register` to create your credential on %s", p.Server)
+			in.say("next: run `agentmesh register` to create your credential on %s", p.Server)
 			return
 		}
 	}

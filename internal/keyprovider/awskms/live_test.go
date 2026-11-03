@@ -11,13 +11,13 @@ import (
 )
 
 // TestLive runs against a real AWS KMS key. It is opt-in and never runs in CI:
-// set AGENTBUS2_LIVE_AWSKMS_URI to an awskms:// key URI (an ECC_NIST_P256
+// set AGENTMESH_LIVE_AWSKMS_URI to an awskms:// key URI (an ECC_NIST_P256
 // SIGN_VERIFY key or alias) and give the default AWS credential chain
 // kms:DescribeKey, kms:GetPublicKey and kms:Sign on it.
 func TestLive(t *testing.T) {
-	uri := os.Getenv("AGENTBUS2_LIVE_AWSKMS_URI")
+	uri := os.Getenv("AGENTMESH_LIVE_AWSKMS_URI")
 	if uri == "" {
-		t.Skip("AGENTBUS2_LIVE_AWSKMS_URI is not set")
+		t.Skip("AGENTMESH_LIVE_AWSKMS_URI is not set")
 	}
 	p, err := New(uri)
 	if err != nil {
@@ -33,7 +33,7 @@ func TestLive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	digest := sha256.Sum256([]byte("agentbus2 live test"))
+	digest := sha256.Sum256([]byte("agentmesh live test"))
 	sig, err := sg.SignContext(ctx, digest[:], crypto.SHA256)
 	if err != nil {
 		t.Fatal(err)

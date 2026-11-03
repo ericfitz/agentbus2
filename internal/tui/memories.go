@@ -4,7 +4,7 @@ package tui
 
 import (
 	tea "charm.land/bubbletea/v2"
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 // memView is the version shown for the cursor's memory row: revs are its

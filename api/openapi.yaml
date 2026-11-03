@@ -1,9 +1,9 @@
 openapi: 3.1.0
 info:
-  title: agentbus2
+  title: agentmesh
   version: 1.0.0
   description: >-
-    The agentbus2 HTTP API (spec section 3, Decision 65). Path parameters: a
+    The agentmesh HTTP API (spec section 3, Decision 65). Path parameters: a
     client percent-encodes every path parameter exactly once (a space is %20,
     a percent sign %25, a slash inside a name %2F, a question mark %3F, a
     number sign %23); the server decodes each parameter exactly once, so a
@@ -23,7 +23,7 @@ tags:
   - name: admin
   - name: auth
 paths:
-  /.well-known/agentbus2:
+  /.well-known/agentmesh:
     get:
       operationId: wellKnown
       tags: [discovery]
@@ -1252,7 +1252,7 @@ components:
           type: string
         code:
           type: string
-          description: agentbus2 extension member (RFC 9457 section 3.2).
+          description: agentmesh extension member (RFC 9457 section 3.2).
           # open note: write-inspection 5
           enum:
             - validation
@@ -1270,7 +1270,7 @@ components:
             - inspection_rejected
         retryable:
           type: boolean
-          description: agentbus2 extension member (RFC 9457 section 3.2).
+          description: agentmesh extension member (RFC 9457 section 3.2).
     Wake:
       type: object
       required: [seq, count, channels]

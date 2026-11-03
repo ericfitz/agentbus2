@@ -8,13 +8,13 @@ import (
 	"strings"
 	"testing"
 
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
 // These tests run through the suite's transport (newBus): the local Bus, or
-// the remote Bus over the generated client when AGENTBUS2_BUS_TRANSPORT=inproc.
+// the remote Bus over the generated client when AGENTMESH_BUS_TRANSPORT=inproc.
 
 func TestScopesBus(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
@@ -188,7 +188,7 @@ func TestBridgesNotConfigured(t *testing.T) {
 	})
 }
 
-// TestBridgesNotConfiguredNotRetryable: under AGENTBUS2_BUS_TRANSPORT=inproc
+// TestBridgesNotConfiguredNotRetryable: under AGENTMESH_BUS_TRANSPORT=inproc
 // the retryable flag survives the problem+json round trip as false, so no
 // client retries on the unavailable code alone.
 func TestBridgesNotConfiguredNotRetryable(t *testing.T) {

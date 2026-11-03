@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/store/sqlstore"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/store/sqlstore"
 )
 
 // TestSchemaVersionMatchesMigrations proves Store.SchemaVersion, called on the

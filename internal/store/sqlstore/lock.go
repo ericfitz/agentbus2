@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // TryLock: see store.Locks. Both paths consult s.held under s.mu before any

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 func TestInitRepoCreatesProfile(t *testing.T) {
@@ -26,7 +26,7 @@ func TestInitRepoCreatesProfile(t *testing.T) {
 	if err := Init(o, &out); err != nil {
 		t.Fatalf("Init: %v\n%s", err, out.String())
 	}
-	body, err := os.ReadFile(filepath.Join(repo, ".local", "agentbus2.json"))
+	body, err := os.ReadFile(filepath.Join(repo, ".local", "agentmesh.json"))
 	if err != nil || strings.Join(strings.Fields(string(body)), "") != `{"profile":"lab-repo"}` {
 		t.Fatalf("repo file = %q, %v", body, err)
 	}
@@ -44,8 +44,8 @@ func TestInitRepoCreatesProfile(t *testing.T) {
 	if gi, _ := os.ReadFile(filepath.Join(repo, ".gitignore")); string(gi) != ".local/\n" {
 		t.Fatalf(".gitignore = %q", gi)
 	}
-	if !strings.Contains(out.String(), "agentbus2 register") {
-		t.Fatalf("output must say to run agentbus2 register:\n%s", out.String())
+	if !strings.Contains(out.String(), "agentmesh register") {
+		t.Fatalf("output must say to run agentmesh register:\n%s", out.String())
 	}
 	if _, err := os.Stat(filepath.Join(e.ConfigDir, "config.json.bak")); err != nil {
 		t.Fatalf("editing an existing config.json must leave a backup: %v", err)
@@ -88,7 +88,7 @@ func TestInitRepoCreatesProfile(t *testing.T) {
 	if err := Init(o3, &out); err != nil {
 		t.Fatal(err)
 	}
-	body, _ = os.ReadFile(filepath.Join(repo, ".local", "agentbus2.json"))
+	body, _ = os.ReadFile(filepath.Join(repo, ".local", "agentmesh.json"))
 	if !strings.Contains(string(body), `"x"`) {
 		t.Fatalf("repo file = %q", body)
 	}
@@ -169,7 +169,7 @@ func TestInitRepoLocalDefault(t *testing.T) {
 	if gi, _ := os.ReadFile(filepath.Join(repo, ".gitignore")); string(gi) != "node_modules\n.local/\n" {
 		t.Fatalf(".gitignore = %q", gi)
 	}
-	if strings.Contains(out.String(), "agentbus2 register") {
+	if strings.Contains(out.String(), "agentmesh register") {
 		t.Fatalf("a local profile needs no registration:\n%s", out.String())
 	}
 	// -global inside a repository runs the machine step instead.

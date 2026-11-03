@@ -1,5 +1,5 @@
 // Package repoconfig reads and writes the per-repository file
-// .local/agentbus2.json. Its one job is to select a profile (Decision 33): the
+// .local/agentmesh.json. Its one job is to select a profile (Decision 33): the
 // file lives in a cloned repository, so it may never carry anything that runs
 // or identifies, and every key but "profile" is rejected.
 package repoconfig
@@ -15,19 +15,19 @@ import (
 	"path/filepath"
 	"sort"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
-// File is a parsed .local/agentbus2.json.
+// File is a parsed .local/agentmesh.json.
 type File struct {
 	Path    string
 	Profile string
 }
 
 // FileName is the file's path relative to a repository root, as slashes.
-const FileName = ".local/agentbus2.json"
+const FileName = ".local/agentmesh.json"
 
-func pathIn(dir string) string { return filepath.Join(dir, ".local", "agentbus2.json") }
+func pathIn(dir string) string { return filepath.Join(dir, ".local", "agentmesh.json") }
 
 // ValidProfileName reports why name cannot name a profile: profile names
 // become directory names under credentials/ and tokens/, so they follow
@@ -36,7 +36,7 @@ func ValidProfileName(name string) error {
 	return store.FileNameRule(name)
 }
 
-// Find walks up from dir to the nearest .local/agentbus2.json, stopping at the
+// Find walks up from dir to the nearest .local/agentmesh.json, stopping at the
 // directory holding the nearest .git (a directory or, in a worktree, a file;
 // that directory's own file is still read). It returns (nil, nil) when no file
 // is found. A file that is unreadable or malformed, names a bad profile, or
@@ -113,7 +113,7 @@ func load(dir string) (*File, error) {
 	return &File{Path: p, Profile: name}, nil
 }
 
-// Write replaces dir/.local/agentbus2.json with {"profile": profile}, creating
+// Write replaces dir/.local/agentmesh.json with {"profile": profile}, creating
 // .local/ if needed. The write is a temp file in the same directory renamed
 // into place, so a reader sees the old file or the new one. The file holds no
 // secret, so it is 0644.
@@ -133,7 +133,7 @@ func Write(dir, profile string) (*File, error) {
 	if err != nil {
 		return nil, err
 	}
-	tmp, err := os.CreateTemp(d, ".agentbus2-*.tmp")
+	tmp, err := os.CreateTemp(d, ".agentmesh-*.tmp")
 	if err != nil {
 		return nil, err
 	}

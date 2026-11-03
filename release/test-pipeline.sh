@@ -57,9 +57,9 @@ USAGE='usage: test-pipeline.sh [--self-test]'
 TAG=v0.0.1
 VERSION=0.0.1
 UNSIGNED_NOTE="The Windows binaries in this release are not Authenticode-signed; they are covered by the signed SHA256SUMS and by build attestations."
-ARCHIVE_NAMES=("agentbus2-$TAG-macos-universal.tar.gz" "agentbus2-mcponly-$TAG-macos-universal.tar.gz"
-    "agentbus2-$TAG-linux-amd64.tar.gz" "agentbus2-$TAG-linux-arm64.tar.gz" "agentbus2-$TAG-windows-amd64.zip" "agentbus2-$TAG-windows-arm64.zip"
-    "agentbus2-mcponly-$TAG-linux-amd64.tar.gz" "agentbus2-mcponly-$TAG-linux-arm64.tar.gz" "agentbus2-mcponly-$TAG-windows-amd64.zip" "agentbus2-mcponly-$TAG-windows-arm64.zip")
+ARCHIVE_NAMES=("agentmesh-$TAG-macos-universal.tar.gz" "agentmesh-mcponly-$TAG-macos-universal.tar.gz"
+    "agentmesh-$TAG-linux-amd64.tar.gz" "agentmesh-$TAG-linux-arm64.tar.gz" "agentmesh-$TAG-windows-amd64.zip" "agentmesh-$TAG-windows-arm64.zip"
+    "agentmesh-mcponly-$TAG-linux-amd64.tar.gz" "agentmesh-mcponly-$TAG-linux-arm64.tar.gz" "agentmesh-mcponly-$TAG-windows-amd64.zip" "agentmesh-mcponly-$TAG-windows-arm64.zip")
 GUARDED=(curl wget ssh scp sftp nc ncat telnet ftp rsync gh komac)
 PASS=0
 FAILN=0
@@ -102,7 +102,7 @@ stop_server_in() { # <dir>: kill the server whose pid file is <dir>/server.pid
 
 cleanup() {
     local f d
-    [[ -n "$WORK" && -d "$WORK" && "$WORK" == *agentbus2-pipeline.* ]] || return 0
+    [[ -n "$WORK" && -d "$WORK" && "$WORK" == *agentmesh-pipeline.* ]] || return 0
     # Servers of this run and of any nested probe run live under $WORK; an
     # overlapping run's server lives elsewhere and is never touched.
     while IFS= read -r f; do stop_server_in "$(dirname "$f")"; done < <(find "$WORK" -name server.pid 2>/dev/null)
@@ -112,7 +112,7 @@ cleanup() {
 }
 
 setup_work() {
-    WORK="$(mktemp -d "${TMPDIR:-/tmp}/agentbus2-pipeline.XXXXXX")"
+    WORK="$(mktemp -d "${TMPDIR:-/tmp}/agentmesh-pipeline.XXXXXX")"
     WORK="$(cd "$WORK" && pwd -P)"
     trap cleanup EXIT
     trap 'exit 130' INT
@@ -152,8 +152,8 @@ strip_key() {
     local f="$1" tmp
     tmp="$(mktemp)"
     BLOCK="PUBKEY_PEM='-----BEGIN PUBLIC KEY-----"$'\n'"REPLACED-BY-release/embed-key.sh"$'\n'"-----END PUBLIC KEY-----'" awk '
-        $0 == "# BEGIN agentbus2 release public key" { print; print ENVIRON["BLOCK"]; skip = 1; next }
-        $0 == "# END agentbus2 release public key" { skip = 0 }
+        $0 == "# BEGIN agentmesh release public key" { print; print ENVIRON["BLOCK"]; skip = 1; next }
+        $0 == "# END agentmesh release public key" { skip = 0 }
         !skip { print }
     ' "$f" >"$tmp"
     cat "$tmp" >"$f"
@@ -167,7 +167,7 @@ build_fixture() {
     if [[ ! -d "$dir" ]]; then copy_tree "$ROOT" "$dir"; fi
     fgit -C "$dir" init -q -b main
     fgit -C "$dir" remote add origin "$bare"
-    cp "$WORK/key.pub" "$dir/release/agentbus2-release-ed25519.pub"
+    cp "$WORK/key.pub" "$dir/release/agentmesh-release-ed25519.pub"
     bash "$dir/release/embed-key.sh" "$WORK/key.pub" "$dir/install.sh" "$dir/install.ps1" >/dev/null
     if [[ "$mode" == placeholder ]]; then strip_key "$dir/install.sh"; fi
     echo "Release notes for $tag." >"$dir/release/notes-$tag.md"
@@ -290,13 +290,13 @@ gh() {
                 prev="$arg"
             done
             [[ -n "$dir" ]] || { echo "gh stub: release download without --dir" >&2; return 99; }
-            for bin in agentbus2 agentbus2-mcponly; do
+            for bin in agentmesh agentmesh-mcponly; do
                 for id in amd64 arm64; do
                     (cd "$SRC" && bash release/build-archive.sh "$bin" "$tag" linux "$id" "$WORK/linux-$bin-$id") >&2 || return 1
                     mv "$WORK/linux-$bin-$id/$bin-$tag-linux-$id.tar.gz" "$dir/"
                 done
                 readme="$SRC/release/windows-zip-README.txt"
-                [[ "$bin" == agentbus2 ]] || readme="$SRC/release/windows-zip-README-mcponly.txt"
+                [[ "$bin" == agentmesh ]] || readme="$SRC/release/windows-zip-README-mcponly.txt"
                 for id in amd64 arm64; do
                     (cd "$SRC" && bash release/build-archive.sh "$bin" "$tag" windows "$id" "$WORK/win-$bin-$id") >&2 || return 1
                     rm -rf "$WORK/win-$bin-$id/stage"; mkdir -p "$WORK/win-$bin-$id/stage"
@@ -335,7 +335,7 @@ EOF
 # overrides <repo> <dist> <signing-key>: assigned after both `source`s.
 overrides() {
     printf 'REPO_ROOT=%q PUBKEY=%q DIST=%q SIGNING_KEY=%q KOMAC_KEY_FILE=%q TAP_DIR=%q SCOOP_DIR=%q FIND_RUN_TRIES=1 FIND_RUN_SLEEP=0' \
-        "$1" "$WORK/repo/release/agentbus2-release-ed25519.pub" "$2" "$3" "$WORK/komac.key" "$WORK/tap" "$WORK/scoop"
+        "$1" "$WORK/repo/release/agentmesh-release-ed25519.pub" "$2" "$3" "$WORK/komac.key" "$WORK/tap" "$WORK/scoop"
 }
 
 # prelude: environment common to a stubbed process.
@@ -465,17 +465,17 @@ self_test_cases() {
     out="$(probe "SRC='$WORK/src'; GH_LOG='$WORK/gh.log'; gh release download v0.0.1 --repo x/y --dir '$WORK/dl' --clobber --pattern a 2>&1")" || rc=$?
     local listing
     listing="$(find "$WORK/dl" -maxdepth 1 -type f -exec basename {} \; | LC_ALL=C sort | tr '\n' ' ')"
-    if [[ "$rc" == 0 && "$listing" == "agentbus2-mcponly-v0.0.1-linux-amd64.tar.gz agentbus2-mcponly-v0.0.1-linux-arm64.tar.gz agentbus2-mcponly-v0.0.1-windows-amd64.zip agentbus2-mcponly-v0.0.1-windows-arm64.zip agentbus2-v0.0.1-linux-amd64.tar.gz agentbus2-v0.0.1-linux-arm64.tar.gz agentbus2-v0.0.1-windows-amd64.zip agentbus2-v0.0.1-windows-arm64.zip " && -z "$(find "$WORK/dl" -mindepth 1 -type d)" ]]; then
+    if [[ "$rc" == 0 && "$listing" == "agentmesh-mcponly-v0.0.1-linux-amd64.tar.gz agentmesh-mcponly-v0.0.1-linux-arm64.tar.gz agentmesh-mcponly-v0.0.1-windows-amd64.zip agentmesh-mcponly-v0.0.1-windows-arm64.zip agentmesh-v0.0.1-linux-amd64.tar.gz agentmesh-v0.0.1-linux-arm64.tar.gz agentmesh-v0.0.1-windows-amd64.zip agentmesh-v0.0.1-windows-arm64.zip " && -z "$(find "$WORK/dl" -mindepth 1 -type d)" ]]; then
         pass release-download-eight-files
     else
         bad release-download-eight-files "exit $rc: $listing $out"
     fi
     local zl
-    zl="$(python3 -I -m zipfile -l "$WORK/dl/agentbus2-v0.0.1-windows-arm64.zip" 2>&1)"
-    if [[ "$zl" == *agentbus2.exe* && "$zl" == *README.txt* && "$zl" != *mcponly* ]]; then pass zip-listing; else bad zip-listing "$zl"; fi
-    zl="$(python3 -I -m zipfile -l "$WORK/dl/agentbus2-mcponly-v0.0.1-windows-arm64.zip" 2>&1)"
-    if [[ "$zl" == *agentbus2-mcponly.exe* && "$zl" == *README.txt* ]]; then pass zip-listing-mcponly; else bad zip-listing-mcponly "$zl"; fi
-    if [[ "$(python3 -I -m zipfile -e "$WORK/dl/agentbus2-mcponly-v0.0.1-windows-amd64.zip" "$WORK/zx" >/dev/null 2>&1; head -n1 "$WORK/zx/README.txt")" == "agentbus2-mcponly for Windows" ]]; then pass zip-readme-mcponly; else bad zip-readme-mcponly; fi
+    zl="$(python3 -I -m zipfile -l "$WORK/dl/agentmesh-v0.0.1-windows-arm64.zip" 2>&1)"
+    if [[ "$zl" == *agentmesh.exe* && "$zl" == *README.txt* && "$zl" != *mcponly* ]]; then pass zip-listing; else bad zip-listing "$zl"; fi
+    zl="$(python3 -I -m zipfile -l "$WORK/dl/agentmesh-mcponly-v0.0.1-windows-arm64.zip" 2>&1)"
+    if [[ "$zl" == *agentmesh-mcponly.exe* && "$zl" == *README.txt* ]]; then pass zip-listing-mcponly; else bad zip-listing-mcponly "$zl"; fi
+    if [[ "$(python3 -I -m zipfile -e "$WORK/dl/agentmesh-mcponly-v0.0.1-windows-amd64.zip" "$WORK/zx" >/dev/null 2>&1; head -n1 "$WORK/zx/README.txt")" == "agentmesh-mcponly for Windows" ]]; then pass zip-readme-mcponly; else bad zip-readme-mcponly; fi
 
     # serve layout and fixture server
     printf 'sums\n' >"$WORK/dl/SHA256SUMS"
@@ -644,16 +644,16 @@ install_check() {
             bad install-check "docker is required on Darwin"
             return
         fi
-        out="$(docker build -q -t "agentbus2-itest-debian-$arch" -f "$WORK/repo/release/testdata/Dockerfile.debian" "$WORK/repo/release/testdata" 2>&1)" \
+        out="$(docker build -q -t "agentmesh-itest-debian-$arch" -f "$WORK/repo/release/testdata/Dockerfile.debian" "$WORK/repo/release/testdata" 2>&1)" \
             || { bad install-check "docker build failed: $out"; return; }
-        out="$(docker run --rm --add-host host.docker.internal:host-gateway -v "$dist:/dist:ro" "agentbus2-itest-debian-$arch" \
-            sh -c "AGENTBUS2_BASE_URL=http://host.docker.internal:$SERVER_PORT/valid sh /dist/install.sh && ~/.local/bin/agentbus2 version" 2>&1)" || rc=$?
+        out="$(docker run --rm --add-host host.docker.internal:host-gateway -v "$dist:/dist:ro" "agentmesh-itest-debian-$arch" \
+            sh -c "AGENTMESH_BASE_URL=http://host.docker.internal:$SERVER_PORT/valid sh /dist/install.sh && ~/.local/bin/agentmesh version" 2>&1)" || rc=$?
     else
         mkdir -p "$WORK/home"
-        out="$(HOME="$WORK/home" AGENTBUS2_BASE_URL="http://127.0.0.1:$SERVER_PORT/valid" AGENTBUS2_INSTALL_DIR="$WORK/home/bin" sh "$dist/install.sh" 2>&1 \
-            && "$WORK/home/bin/agentbus2" version 2>&1)" || rc=$?
+        out="$(HOME="$WORK/home" AGENTMESH_BASE_URL="http://127.0.0.1:$SERVER_PORT/valid" AGENTMESH_INSTALL_DIR="$WORK/home/bin" sh "$dist/install.sh" 2>&1 \
+            && "$WORK/home/bin/agentmesh" version 2>&1)" || rc=$?
     fi
-    if [[ "$rc" == 0 && "$out" == *"installed agentbus2 $VERSION"* && "$(tail -n1 <<<"$out")" == "$VERSION" ]]; then
+    if [[ "$rc" == 0 && "$out" == *"installed agentmesh $VERSION"* && "$(tail -n1 <<<"$out")" == "$VERSION" ]]; then
         pass install-check
     else
         bad install-check "exit $rc: $out"
@@ -676,8 +676,8 @@ install_ps1_check() {
     fi
     rm -rf "$d"
     mkdir -p "$d"
-    cp "$dist/SHA256SUMS" "$dist/SHA256SUMS.sig" "$dist/agentbus2-$TAG-windows-amd64.zip" "$dist/agentbus2-$TAG-windows-arm64.zip" \
-        "$dist/agentbus2-mcponly-$TAG-windows-amd64.zip" "$dist/agentbus2-mcponly-$TAG-windows-arm64.zip" "$d/"
+    cp "$dist/SHA256SUMS" "$dist/SHA256SUMS.sig" "$dist/agentmesh-$TAG-windows-amd64.zip" "$dist/agentmesh-$TAG-windows-arm64.zip" \
+        "$dist/agentmesh-mcponly-$TAG-windows-amd64.zip" "$dist/agentmesh-mcponly-$TAG-windows-arm64.zip" "$d/"
     # shellcheck disable=SC2016 # PowerShell variables, expanded by pwsh
     out="$(cd "$d" && PS1_FILE="$dist/install.ps1" OSSL="$OSSL" D="$d" TAG="$TAG" PATH="$WORK/guardbin:$PATH" \
         POWERSHELL_TELEMETRY_OPTOUT=1 POWERSHELL_UPDATECHECK=Off DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1 \
@@ -685,12 +685,12 @@ install_ps1_check() {
             $ErrorActionPreference = "Stop"
             . $env:PS1_FILE
             Test-Signature $env:OSSL $env:D "http://127.0.0.1:9"
-            foreach ($a in "amd64", "arm64") { Test-Hash $env:D "agentbus2-$($env:TAG)-windows-$a.zip"; Test-Hash $env:D "agentbus2-mcponly-$($env:TAG)-windows-$a.zip" }
+            foreach ($a in "amd64", "arm64") { Test-Hash $env:D "agentmesh-$($env:TAG)-windows-$a.zip"; Test-Hash $env:D "agentmesh-mcponly-$($env:TAG)-windows-$a.zip" }
             "ps1-verified"
             Add-Content -LiteralPath (Join-Path $env:D "SHA256SUMS") -Value "0000000000000000000000000000000000000000000000000000000000000000  extra"
             try { Test-Signature $env:OSSL $env:D "http://127.0.0.1:9"; "ps1-tamper-accepted" } catch { "ps1-tamper-refused: $_" }
         ' 2>&1)" || rc=$?
-    if [[ "$rc" == 0 && "$out" == *ps1-verified*"ps1-tamper-refused: agentbus2 install: signature check of SHA256SUMS failed"* ]]; then
+    if [[ "$rc" == 0 && "$out" == *ps1-verified*"ps1-tamper-refused: agentmesh install: signature check of SHA256SUMS failed"* ]]; then
         pass install-ps1-check
     else
         bad install-ps1-check "exit $rc: $out"
@@ -713,7 +713,7 @@ check_formula() {
     if ruby -c "$f" >/dev/null 2>&1 && grep -qxF "class $c < Formula" "$f" && grep -qF "bin.install \"$b\"" "$f" \
         && [[ "$(grep -c '^ *sha256 "' "$f")" == 3 ]] \
         && grep -qF "sha256 \"$sm\"" "$f" && grep -qF "sha256 \"$sla\"" "$f" && grep -qF "sha256 \"$slr\"" "$f" \
-        && grep -qF "url \"https://github.com/ericfitz/agentbus2/releases/download/$TAG/$b-$TAG-macos-universal.tar.gz\"" "$f"; then
+        && grep -qF "url \"https://github.com/ericfitz/agentmesh/releases/download/$TAG/$b-$TAG-macos-universal.tar.gz\"" "$f"; then
         pass "A-formula-$b"
     else
         bad "A-formula-$b"
@@ -737,7 +737,7 @@ check_scoop() {
 
 # check_winget <dist> <binary>: the three manifests under winget/ericfitz.<binary>/.
 check_winget() {
-    local dist="$1" b="$2" id="ericfitz.$2" wok=1 f up lo wa wr base="https://github.com/ericfitz/agentbus2/releases/download/$TAG"
+    local dist="$1" b="$2" id="ericfitz.$2" wok=1 f up lo wa wr base="https://github.com/ericfitz/agentmesh/releases/download/$TAG"
     wa="$(awk -v f="$b-$TAG-windows-amd64.zip" '$2 == f {print $1}' "$dist/SHA256SUMS")"
     wr="$(awk -v f="$b-$TAG-windows-arm64.zip" '$2 == f {print $1}' "$dist/SHA256SUMS")"
     for f in "$dist/winget/$id"/*; do
@@ -760,13 +760,13 @@ run_a() {
     if [[ "$RC" == 0 ]]; then pass A-exit; else bad A-exit "exit $RC: $(tail -n 20 "$log")"; return; fi
     run_guard_check A
 
-    want="$(printf '%s\n' "${ARCHIVE_NAMES[@]}" install.sh install.ps1 SHA256SUMS SHA256SUMS.sig notes.md notary-agentbus2.log notary-agentbus2-mcponly.log \
-        agentbus2.rb agentbus2-mcponly.rb agentbus2.scoop.json agentbus2-mcponly.scoop.json | LC_ALL=C sort)"
+    want="$(printf '%s\n' "${ARCHIVE_NAMES[@]}" install.sh install.ps1 SHA256SUMS SHA256SUMS.sig notes.md notary-agentmesh.log notary-agentmesh-mcponly.log \
+        agentmesh.rb agentmesh-mcponly.rb agentmesh.scoop.json agentmesh-mcponly.scoop.json | LC_ALL=C sort)"
     got="$(dist_files "$dist")"
     if [[ "$got" == "$want" ]]; then pass A-dist-files; else bad A-dist-files "got: $(tr '\n' ' ' <<<"$got")"; fi
     got="$(find "$dist/winget" -type f | sed "s#^$dist/winget/##" | LC_ALL=C sort)"
-    want="$(printf '%s\n' ericfitz.agentbus2/ericfitz.agentbus2.yaml ericfitz.agentbus2/ericfitz.agentbus2.installer.yaml ericfitz.agentbus2/ericfitz.agentbus2.locale.en-US.yaml \
-        ericfitz.agentbus2-mcponly/ericfitz.agentbus2-mcponly.yaml ericfitz.agentbus2-mcponly/ericfitz.agentbus2-mcponly.installer.yaml ericfitz.agentbus2-mcponly/ericfitz.agentbus2-mcponly.locale.en-US.yaml | LC_ALL=C sort)"
+    want="$(printf '%s\n' ericfitz.agentmesh/ericfitz.agentmesh.yaml ericfitz.agentmesh/ericfitz.agentmesh.installer.yaml ericfitz.agentmesh/ericfitz.agentmesh.locale.en-US.yaml \
+        ericfitz.agentmesh-mcponly/ericfitz.agentmesh-mcponly.yaml ericfitz.agentmesh-mcponly/ericfitz.agentmesh-mcponly.installer.yaml ericfitz.agentmesh-mcponly/ericfitz.agentmesh-mcponly.locale.en-US.yaml | LC_ALL=C sort)"
     if [[ "$got" == "$want" && "$(find "$dist/winget" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" == 2 && -z "$(find "$dist/winget" -mindepth 1 -maxdepth 1 -type f)" ]]; then
         pass A-winget-files
     else
@@ -793,7 +793,7 @@ run_a() {
 
     # host-native binary of each macOS/Linux archive
     local bn
-    for bn in agentbus2 agentbus2-mcponly; do
+    for bn in agentmesh agentmesh-mcponly; do
         rm -rf "$WORK/extract-$bn"
         mkdir -p "$WORK/extract-$bn"
         tar -xzf "$(host_archive "$dist" "$bn")" -C "$WORK/extract-$bn"
@@ -802,12 +802,12 @@ run_a() {
     done
 
     # formula, scoop and winget of each package
-    check_formula "$dist" agentbus2 Agentbus2
-    check_formula "$dist" agentbus2-mcponly Agentbus2Mcponly
-    check_scoop "$dist" agentbus2
-    check_scoop "$dist" agentbus2-mcponly
-    check_winget "$dist" agentbus2
-    check_winget "$dist" agentbus2-mcponly
+    check_formula "$dist" agentmesh Agentmesh
+    check_formula "$dist" agentmesh-mcponly AgentmeshMcponly
+    check_scoop "$dist" agentmesh
+    check_scoop "$dist" agentmesh-mcponly
+    check_winget "$dist" agentmesh
+    check_winget "$dist" agentmesh-mcponly
 
     # log
     if [[ "$(grep -c '^rendered:' "$log")" == 10 ]] && grep -qF 'stopping before publish; draft:' "$log"; then pass A-log; else bad A-log "$(grep -c '^rendered:' "$log") rendered lines"; fi
@@ -815,10 +815,10 @@ run_a() {
     # gh log
     local gl="$WORK/gh.log"
     if grep -Eq '^gh release create v0\.0\.1 .*--verify-tag.* --draft' "$gl" \
-        && grep -qxF "gh workflow run release-build.yml --repo ericfitz/agentbus2 --ref $TAG -f tag=$TAG -f windows_signing=off" "$gl" \
-        && [[ "$(grep -Ec '^gh attestation verify .* --signer-workflow ericfitz/agentbus2/\.github/workflows/release-build\.yml --source-ref refs/tags/v0\.0\.1' "$gl")" == 8 ]] \
-        && [[ "$(grep -c '^gh release upload v0\.0\.1 .*--clobber .*agentbus2-v0\.0\.1-macos-universal\.tar\.gz agentbus2-mcponly-v0\.0\.1-macos-universal\.tar\.gz install\.sh install\.ps1 SHA256SUMS SHA256SUMS\.sig' "$gl")" == 1 ]] \
-        && ! grep -qF "gh release edit $TAG --repo ericfitz/agentbus2 --draft=false" "$gl"; then
+        && grep -qxF "gh workflow run release-build.yml --repo ericfitz/agentmesh --ref $TAG -f tag=$TAG -f windows_signing=off" "$gl" \
+        && [[ "$(grep -Ec '^gh attestation verify .* --signer-workflow ericfitz/agentmesh/\.github/workflows/release-build\.yml --source-ref refs/tags/v0\.0\.1' "$gl")" == 8 ]] \
+        && [[ "$(grep -c '^gh release upload v0\.0\.1 .*--clobber .*agentmesh-v0\.0\.1-macos-universal\.tar\.gz agentmesh-mcponly-v0\.0\.1-macos-universal\.tar\.gz install\.sh install\.ps1 SHA256SUMS SHA256SUMS\.sig' "$gl")" == 1 ]] \
+        && ! grep -qF "gh release edit $TAG --repo ericfitz/agentmesh --draft=false" "$gl"; then
         pass A-gh-log
     else
         bad A-gh-log "$(cat "$gl")"
@@ -838,29 +838,29 @@ run_a() {
 }
 
 run_b() {
-    local dist="$WORK/dist" log="$WORK/run-B.log" url="https://github.com/ericfitz/agentbus2/releases/download/$TAG" want
+    local dist="$WORK/dist" log="$WORK/run-B.log" url="https://github.com/ericfitz/agentmesh/releases/download/$TAG" want
     run_main B "$WORK/repo" "$dist" "$WORK/key.pem" "$TAG" --windows-signing=off
     if [[ "$RC" == 0 ]]; then pass B-exit; else bad B-exit "exit $RC: $(tail -n 20 "$log")"; return; fi
     run_guard_check B
     if grep -qF "Reusing draft release $TAG" "$log" && grep -qF -- '--draft=false' "$WORK/gh.log"; then pass B-reuses-draft-and-publishes; else bad B-reuses-draft-and-publishes; fi
-    if [[ "$(fgit -C "$WORK/tap-origin.git" log -2 --format=%s main | tr '\n' ' ')" == "agentbus2-mcponly $VERSION agentbus2 $VERSION " ]] \
-        && fgit -C "$WORK/tap-origin.git" show main:Formula/agentbus2.rb | cmp -s - "$dist/agentbus2.rb" \
-        && fgit -C "$WORK/tap-origin.git" show main:Formula/agentbus2-mcponly.rb | cmp -s - "$dist/agentbus2-mcponly.rb"; then
+    if [[ "$(fgit -C "$WORK/tap-origin.git" log -2 --format=%s main | tr '\n' ' ')" == "agentmesh-mcponly $VERSION agentmesh $VERSION " ]] \
+        && fgit -C "$WORK/tap-origin.git" show main:Formula/agentmesh.rb | cmp -s - "$dist/agentmesh.rb" \
+        && fgit -C "$WORK/tap-origin.git" show main:Formula/agentmesh-mcponly.rb | cmp -s - "$dist/agentmesh-mcponly.rb"; then
         pass B-tap
     else
         bad B-tap
     fi
-    if [[ "$(fgit -C "$WORK/scoop-origin.git" log -2 --format=%s main | tr '\n' ' ')" == "agentbus2-mcponly $VERSION agentbus2 $VERSION " ]] \
-        && fgit -C "$WORK/scoop-origin.git" show main:bucket/agentbus2.json | cmp -s - "$dist/agentbus2.scoop.json" \
-        && fgit -C "$WORK/scoop-origin.git" show main:bucket/agentbus2-mcponly.json | cmp -s - "$dist/agentbus2-mcponly.scoop.json"; then
+    if [[ "$(fgit -C "$WORK/scoop-origin.git" log -2 --format=%s main | tr '\n' ' ')" == "agentmesh-mcponly $VERSION agentmesh $VERSION " ]] \
+        && fgit -C "$WORK/scoop-origin.git" show main:bucket/agentmesh.json | cmp -s - "$dist/agentmesh.scoop.json" \
+        && fgit -C "$WORK/scoop-origin.git" show main:bucket/agentmesh-mcponly.json | cmp -s - "$dist/agentmesh-mcponly.scoop.json"; then
         pass B-bucket
     else
         bad B-bucket
     fi
-    want="komac update ericfitz.agentbus2 --version $VERSION --urls $url/agentbus2-$TAG-windows-amd64.zip $url/agentbus2-$TAG-windows-arm64.zip --submit
-komac update ericfitz.agentbus2-mcponly --version $VERSION --urls $url/agentbus2-mcponly-$TAG-windows-amd64.zip $url/agentbus2-mcponly-$TAG-windows-arm64.zip --submit"
+    want="komac update ericfitz.agentmesh --version $VERSION --urls $url/agentmesh-$TAG-windows-amd64.zip $url/agentmesh-$TAG-windows-arm64.zip --submit
+komac update ericfitz.agentmesh-mcponly --version $VERSION --urls $url/agentmesh-mcponly-$TAG-windows-amd64.zip $url/agentmesh-mcponly-$TAG-windows-arm64.zip --submit"
     if [[ "$(cat "$WORK/komac.log" 2>/dev/null)" == "$want" ]]; then pass B-komac; else bad B-komac "$(cat "$WORK/komac.log" 2>/dev/null)"; fi
-    if [[ "$(tail -n1 "$log")" == *"brew install ericfitz/tap/agentbus2;"*"brew install ericfitz/tap/agentbus2-mcponly;"* ]]; then pass B-last-line; else bad B-last-line "$(tail -n1 "$log")"; fi
+    if [[ "$(tail -n1 "$log")" == *"brew install ericfitz/tap/agentmesh;"*"brew install ericfitz/tap/agentmesh-mcponly;"* ]]; then pass B-last-line; else bad B-last-line "$(tail -n1 "$log")"; fi
 }
 
 run_c() {

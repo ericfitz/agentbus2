@@ -9,8 +9,8 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
 )
 
 // SlackChannelName derives the Slack channel name for a bus channel (spec
@@ -247,7 +247,7 @@ const minContentRunes = 40
 // a shorter one that drops the channel (then the wording).
 func truncationNote(m bus.Message, maxChars int) string {
 	notes := []string{
-		fmt.Sprintf("(truncated; the full message is seq %d on agentbus2 channel %s)", m.Seq, m.Channel),
+		fmt.Sprintf("(truncated; the full message is seq %d on agentmesh channel %s)", m.Seq, m.Channel),
 		fmt.Sprintf("(truncated; the full message is seq %d)", m.Seq),
 		fmt.Sprintf("(truncated; seq %d)", m.Seq),
 	}

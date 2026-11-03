@@ -63,9 +63,9 @@ func TestHelpGolden(t *testing.T) {
 }
 
 // TestHelpWords: the MCP-only binary never tells the reader to use a command or
-// path that exists only in the full agentbus2 binary.
+// path that exists only in the full agentmesh binary.
 func TestHelpWords(t *testing.T) {
-	banned := []string{"agentbus2 wait", "agentbus2 watch", "run_in_background", "agentbus2 init", "agentbus2 mcp", "agentbus2 park", "stop-hook", "dm/", "-filter", "@<", "memory/", "tasks/", "general/"}
+	banned := []string{"agentmesh wait", "agentmesh watch", "run_in_background", "agentmesh init", "agentmesh mcp", "agentmesh park", "stop-hook", "dm/", "-filter", "@<", "memory/", "tasks/", "general/"}
 	for name, topic := range helpNames() {
 		text, _ := Help(topic)
 		for _, w := range banned {
@@ -77,7 +77,7 @@ func TestHelpWords(t *testing.T) {
 }
 
 var (
-	dollarRE = regexp.MustCompile(`^  \$ agentbus2-mcponly (\S+)`)
+	dollarRE = regexp.MustCompile(`^  \$ agentmesh-mcponly (\S+)`)
 	wantRE   = regexp.MustCompile(`^    > `)
 	exitRE   = regexp.MustCompile(`^    \(exit [1-9][0-9]*\)$`)
 )
@@ -160,7 +160,7 @@ func TestHelpNamesEveryFlagAndVariable(t *testing.T) {
 			}
 		}
 	}
-	for _, v := range []string{"AGENTBUS2_SERVER", "AGENTBUS2_IDENTITY", "AGENTBUS2_CREDENTIAL", "AGENTBUS2_ENROLLMENT_TOKEN", "AGENTBUS2_PROFILE"} {
+	for _, v := range []string{"AGENTMESH_SERVER", "AGENTMESH_IDENTITY", "AGENTMESH_CREDENTIAL", "AGENTMESH_ENROLLMENT_TOKEN", "AGENTMESH_PROFILE"} {
 		if !strings.Contains(overview, v) {
 			t.Errorf("the overview does not name %s", v)
 		}
@@ -176,7 +176,7 @@ func TestCommandHelpPointsAtTopic(t *testing.T) {
 	for c, topic := range want {
 		code, out, errs := run([]string{c, "-h"}, nil)
 		last := lastLine(errs)
-		if code != 0 || out != "" || last != "see: agentbus2-mcponly help "+topic {
+		if code != 0 || out != "" || last != "see: agentmesh-mcponly help "+topic {
 			t.Errorf("%s -h: code %d, stdout %q, last stderr line %q", c, code, out, last)
 		}
 		if !strings.Contains(errs, "\n  -server ") {

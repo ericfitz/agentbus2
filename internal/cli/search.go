@@ -4,10 +4,10 @@ import (
 	"context"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
-// RunSearch implements `agentbus2 search`. The mode is passed as given: an
+// RunSearch implements `agentmesh search`. The mode is passed as given: an
 // unknown one comes back from the core as validation.
 func RunSearch(ctx context.Context, args []string, environ []string, _ io.Reader, stdout, stderr io.Writer) int {
 	c := newOpCmd("search", stderr)

@@ -10,10 +10,10 @@ import (
 
 	"github.com/jmoiron/sqlx"
 
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
-const appName = "agentbus2"
+const appName = "agentmesh"
 
 // validateMigrations requires versions exactly 1..n in order (Decision 53).
 func validateMigrations(ms []Migration) error {
@@ -76,7 +76,7 @@ func open(ctx context.Context, db *sqlx.DB, d Dialect, opts Options) (*Store, er
 			return nil, err
 		}
 		if !ok {
-			return nil, fmt.Errorf("%w: no schema_meta table", store.ErrNotAgentbus2)
+			return nil, fmt.Errorf("%w: no schema_meta table", store.ErrNotAgentmesh)
 		}
 	}
 
@@ -128,14 +128,14 @@ func readMeta(ctx context.Context, db *sqlx.DB, d Dialect, latest int) (int, err
 	var version int64
 	err := db.QueryRowxContext(ctx, "SELECT app, schema_version, engine FROM schema_meta WHERE id = 1").Scan(&app, &version, &engine)
 	if errors.Is(err, sql.ErrNoRows) {
-		return 0, fmt.Errorf("%w: schema_meta has no row", store.ErrNotAgentbus2)
+		return 0, fmt.Errorf("%w: schema_meta has no row", store.ErrNotAgentmesh)
 	}
 	if err != nil {
 		return 0, err
 	}
 	switch {
 	case app != appName:
-		return 0, fmt.Errorf("%w: app %q", store.ErrNotAgentbus2, app)
+		return 0, fmt.Errorf("%w: app %q", store.ErrNotAgentmesh, app)
 	case engine != string(d.Name()):
 		return 0, fmt.Errorf("%w: engine %q, want %q", store.ErrSchemaInvalid, engine, d.Name())
 	case version < 0:

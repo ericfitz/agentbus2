@@ -17,7 +17,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 // openPTY opens a pseudo-terminal pair with golang.org/x/sys/unix alone (the
@@ -43,11 +43,11 @@ func openPTY() (master, slave *os.File, err error) {
 	return master, os.NewFile(uintptr(sfd), name), nil
 }
 
-// buildBinary builds agentbus2 into a temporary directory, as the release build
+// buildBinary builds agentmesh into a temporary directory, as the release build
 // does (no cgo, -trimpath).
 func buildBinary(t *testing.T) string {
 	t.Helper()
-	bin := filepath.Join(t.TempDir(), "agentbus2")
+	bin := filepath.Join(t.TempDir(), "agentmesh")
 	build := exec.Command("go", "build", "-trimpath", "-o", bin, ".")
 	build.Env = append(os.Environ(), "CGO_ENABLED=0")
 	if out, err := build.CombinedOutput(); err != nil {
@@ -56,13 +56,13 @@ func buildBinary(t *testing.T) string {
 	return bin
 }
 
-// silentPTYBudget is how long `agentbus2 version` may take on a terminal that
+// silentPTYBudget is how long `agentmesh version` may take on a terminal that
 // never answers. A package init that queries the terminal (Bubble Tea v1's
 // background-color and cursor-position probe) waits seconds for a reply; a
 // process that queries nothing exits in milliseconds.
 const silentPTYBudget = 500 * time.Millisecond
 
-// TestVersionOnSilentPTY is the proof of post-build decision 2: no agentbus2
+// TestVersionOnSilentPTY is the proof of post-build decision 2: no agentmesh
 // command queries the terminal at package init. It runs the built binary with
 // a pty that never answers as its controlling terminal and its stdin, stdout
 // and stderr, and requires `version` to print the version and exit well under
@@ -102,11 +102,11 @@ func TestVersionOnSilentPTY(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		_ = cmd.Process.Kill()
 		<-exited
-		t.Fatalf("agentbus2 version still running after 10s on a silent pty")
+		t.Fatalf("agentmesh version still running after 10s on a silent pty")
 	}
 	elapsed := time.Since(start)
 	if err != nil {
-		t.Fatalf("agentbus2 version: %v", err)
+		t.Fatalf("agentmesh version: %v", err)
 	}
 	// The slave is closed on both sides now, so the master reads EIO (Linux)
 	// or EOF: the drain ends.
@@ -116,17 +116,17 @@ func TestVersionOnSilentPTY(t *testing.T) {
 		_ = master.Close()
 		<-drained
 	}
-	t.Logf("agentbus2 version on a silent pty: %v", elapsed)
+	t.Logf("agentmesh version on a silent pty: %v", elapsed)
 
 	got := out.String()
 	if strings.ContainsRune(got, '\x1b') {
-		t.Errorf("agentbus2 version wrote an escape sequence to the terminal: %q", got)
+		t.Errorf("agentmesh version wrote an escape sequence to the terminal: %q", got)
 	}
 	if strings.TrimSpace(got) != version.Version {
 		t.Errorf("printed %q, want %q", got, version.Version)
 	}
 	if elapsed >= silentPTYBudget {
-		t.Fatalf("agentbus2 version took %v on a silent pty, want under %v: something queries the terminal at init", elapsed, silentPTYBudget)
+		t.Fatalf("agentmesh version took %v on a silent pty, want under %v: something queries the terminal at init", elapsed, silentPTYBudget)
 	}
 }
 

@@ -22,14 +22,14 @@ const (
 )
 
 var (
-	// A backticked environment name in prose or a table. `AGENTBUS2_SERVER_*`
+	// A backticked environment name in prose or a table. `AGENTMESH_SERVER_*`
 	// (a wildcard) does not match: the star precedes the closing backtick.
-	envToken = regexp.MustCompile("`(AGENTBUS2_SERVER_[A-Za-z0-9_]*)`")
+	envToken = regexp.MustCompile("`(AGENTMESH_SERVER_[A-Za-z0-9_]*)`")
 	// A settings-table row: | `name` | `ENV` | type | default | ...
 	settingRow = regexp.MustCompile("^\\| `([^`]+)` \\| `([^`]+)` \\| ([^|]+?) \\| ([^|]+?) \\|")
 	rowName    = regexp.MustCompile("^\\| `([^`]*)`")
-	// Any AGENTBUS2_SERVER_ name in the compose file (it is not parsed as YAML).
-	composeToken = regexp.MustCompile(`AGENTBUS2_SERVER_[A-Z_]+`)
+	// Any AGENTMESH_SERVER_ name in the compose file (it is not parsed as YAML).
+	composeToken = regexp.MustCompile(`AGENTMESH_SERVER_[A-Z_]+`)
 )
 
 func readFile(t *testing.T, path string) string {
@@ -139,7 +139,7 @@ func TestComposeExampleUsesKnownSettings(t *testing.T) {
 	compose := readFile(t, filepath.Join(deployDir, "docker-compose.yml"))
 	tokens := composeToken.FindAllString(compose, -1)
 	if len(tokens) == 0 {
-		t.Fatal("docker-compose.yml names no AGENTBUS2_SERVER_ variable; the scan is broken")
+		t.Fatal("docker-compose.yml names no AGENTMESH_SERVER_ variable; the scan is broken")
 	}
 	for _, tok := range tokens {
 		if _, ok := known[tok]; !ok {

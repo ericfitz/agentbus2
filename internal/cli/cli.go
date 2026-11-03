@@ -5,16 +5,16 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
-	"github.com/ericfitz/agentbus2/internal/version"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/version"
 )
 
 // Usage is the top-level usage: the command line, then OpGrammar. `server` is
 // dispatched by package main (it is the API server, not a client command);
 // every other name is a case of Main.
-const Usage = "usage: agentbus2 <init|register|login|mcp|server|watch|wait|stop-hook|subagent-hook|session-start-hook|park|unpark|session|channels|scopes|bridges|signing-keys|identities|send|receive|history|search|memories|tasks|health|status|agent-status|tui|version|help> [flags]\n" + OpGrammar
+const Usage = "usage: agentmesh <init|register|login|mcp|server|watch|wait|stop-hook|subagent-hook|session-start-hook|park|unpark|session|channels|scopes|bridges|signing-keys|identities|send|receive|history|search|memories|tasks|health|status|agent-status|tui|version|help> [flags]\n" + OpGrammar
 
 // runFunc is the shape of every command.
 type runFunc func(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int
@@ -68,13 +68,13 @@ func Main(ctx context.Context, args []string, environ []string, stdin io.Reader,
 	}
 	run, ok := commands[args[0]]
 	if !ok {
-		_, _ = fmt.Fprintf(stderr, "agentbus2: unknown command %q\n%s\n", args[0], Usage)
+		_, _ = fmt.Fprintf(stderr, "agentmesh: unknown command %q\n%s\n", args[0], Usage)
 		return 2
 	}
 	return run(ctx, args[1:], environ, stdin, stdout, stderr)
 }
 
-// runMCP is `agentbus2 mcp [-profile P] [-identity I]`: the stdio MCP server.
+// runMCP is `agentmesh mcp [-profile P] [-identity I]`: the stdio MCP server.
 // The protocol owns stdout, so a failure is exit 1 with one line on stderr and
 // nothing on stdout; the server's own diagnostics go to its log file.
 func runMCP(ctx context.Context, args []string, environ []string, _ io.Reader, _, stderr io.Writer) int {
@@ -85,7 +85,7 @@ func runMCP(ctx context.Context, args []string, environ []string, _ io.Reader, _
 		return parseExit(err)
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintf(stderr, "agentbus2 mcp: unexpected argument %q\n", fs.Arg(0))
+		_, _ = fmt.Fprintf(stderr, "agentmesh mcp: unexpected argument %q\n", fs.Arg(0))
 		return 2
 	}
 	if err := mcpIdentityGuard(o); err != nil {
@@ -104,7 +104,7 @@ func runMCP(ctx context.Context, args []string, environ []string, _ io.Reader, _
 // failure is left for mcpserver.Run to report; with no known login name there
 // is nothing to compare.
 func mcpIdentityGuard(o client.Options) error {
-	return mcpserver.IdentityGuard(o, osUserName(), "agentbus2 mcp")
+	return mcpserver.IdentityGuard(o, osUserName(), "agentmesh mcp")
 }
 
 // isOSLogin reports whether identity is the OS login name (Decision 16); with

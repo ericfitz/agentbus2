@@ -1,4 +1,4 @@
-// Package profile holds the client-side configuration of agentbus2: the
+// Package profile holds the client-side configuration of agentmesh: the
 // profiles in config.json (Decision 74), the config and data directories
 // (Decisions 32, 33), the profile selection order (Decision 21) and the
 // identity selection order (Decision 71).

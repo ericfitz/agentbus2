@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds one agentbus2 release binary for a GOOS/GOARCH pair and, for linux,
+# Builds one agentmesh release binary for a GOOS/GOARCH pair and, for linux,
 # its tar.gz. The one build step shared by release-build.yml and the local
 # dry run (release/test-pipeline.sh). Ported from the inline build and
 # package steps of v1 .github/workflows/release-build.yml.
@@ -7,15 +7,15 @@
 #   build-archive.sh <binary> <tag> <goos> <goarch> <outdir>
 #   build-archive.sh --self-test
 #
-# <binary> is agentbus2 or agentbus2-mcponly. Run it from the module root.
+# <binary> is agentmesh or agentmesh-mcponly. Run it from the module root.
 # Windows and darwin leave the bare binary in <outdir>: the zip is packaged
 # after signing (package-windows) and lipo runs in release.sh.
 set -euo pipefail
 
 USAGE='usage: build-archive.sh <binary> <tag> <goos> <goarch> <outdir> | --self-test'
-MODULE='github.com/ericfitz/agentbus2'
-MODULE_VERSION_VAR='github.com/ericfitz/agentbus2/internal/version.Version'
-BINARIES=(agentbus2 agentbus2-mcponly)
+MODULE='github.com/ericfitz/agentmesh'
+MODULE_VERSION_VAR='github.com/ericfitz/agentmesh/internal/version.Version'
+BINARIES=(agentmesh agentmesh-mcponly)
 
 usage_fail() {
   echo "$USAGE" >&2
@@ -25,16 +25,16 @@ usage_fail() {
 build() {
   local binary="$1" tag="$2" goos="$3" goarch="$4" outdir="$5" version ext="" bin got hostos hostarch pkg want path
   case "$binary" in
-    agentbus2)
+    agentmesh)
       pkg=.
       want="$MODULE"
       ;;
-    agentbus2-mcponly)
-      pkg=./cmd/agentbus2-mcponly
-      want="$MODULE/cmd/agentbus2-mcponly"
+    agentmesh-mcponly)
+      pkg=./cmd/agentmesh-mcponly
+      want="$MODULE/cmd/agentmesh-mcponly"
       ;;
     *)
-      echo "build-archive.sh: binary must be agentbus2 or agentbus2-mcponly, got '$binary'" >&2
+      echo "build-archive.sh: binary must be agentmesh or agentmesh-mcponly, got '$binary'" >&2
       exit 2
       ;;
   esac
@@ -115,14 +115,14 @@ self_test() {
   [[ "$SELF" == /* ]] || SELF="$PWD/$SELF"
 
   expect_refusal usage "$USAGE"
-  expect_refusal too-many-args "$USAGE" agentbus2 v0.0.1 linux amd64 "$tmp" extra
+  expect_refusal too-many-args "$USAGE" agentmesh v0.0.1 linux amd64 "$tmp" extra
   expect_refusal four-args "$USAGE" v0.0.1 linux amd64 "$tmp"
   expect_refusal bad-flag "$USAGE" --bogus
-  expect_refusal flag-in-position "$USAGE" agentbus2 v0.0.1 -linux amd64 "$tmp"
-  expect_refusal flag-as-binary "$USAGE" -agentbus2 v0.0.1 linux amd64 "$tmp"
-  expect_refusal bad-binary "binary must be agentbus2 or agentbus2-mcponly" bogus v0.0.1 linux amd64 "$tmp"
-  expect_refusal bad-binary-path "binary must be agentbus2 or agentbus2-mcponly" ./agentbus2 v0.0.1 linux amd64 "$tmp"
-  expect_refusal bad-binary-exe "binary must be agentbus2 or agentbus2-mcponly" agentbus2.exe v0.0.1 windows amd64 "$tmp"
+  expect_refusal flag-in-position "$USAGE" agentmesh v0.0.1 -linux amd64 "$tmp"
+  expect_refusal flag-as-binary "$USAGE" -agentmesh v0.0.1 linux amd64 "$tmp"
+  expect_refusal bad-binary "binary must be agentmesh or agentmesh-mcponly" bogus v0.0.1 linux amd64 "$tmp"
+  expect_refusal bad-binary-path "binary must be agentmesh or agentmesh-mcponly" ./agentmesh v0.0.1 linux amd64 "$tmp"
+  expect_refusal bad-binary-exe "binary must be agentmesh or agentmesh-mcponly" agentmesh.exe v0.0.1 windows amd64 "$tmp"
   for b in "${BINARIES[@]}"; do
     expect_refusal "bad-tag-$b" "tag must look like vX.Y.Z" "$b" v1.2 linux amd64 "$tmp"
     expect_refusal "bad-tag-prerelease-$b" "tag must look like vX.Y.Z" "$b" v1.2.3-rc1 linux amd64 "$tmp"
@@ -142,8 +142,8 @@ esac
 SHIM
   chmod +x "$tmp/shim/go"
   rc=0
-  out="$(PATH="$tmp/shim:$PATH" bash "$SELF" agentbus2 v0.0.8 linux amd64 "$tmp/wrongbin" 2>&1)" || rc=$?
-  if [[ "$rc" == 1 && "$out" == *"holds the wrong binary"* && ! -e "$tmp/wrongbin/agentbus2" ]]; then
+  out="$(PATH="$tmp/shim:$PATH" bash "$SELF" agentmesh v0.0.8 linux amd64 "$tmp/wrongbin" 2>&1)" || rc=$?
+  if [[ "$rc" == 1 && "$out" == *"holds the wrong binary"* && ! -e "$tmp/wrongbin/agentmesh" ]]; then
     echo "PASS wrong-binary-removed"
     SELF_PASS=$((SELF_PASS + 1))
   else
@@ -181,9 +181,9 @@ SHIM
   local mods want_path
   for b in "${BINARIES[@]}"; do
     want_path="$MODULE"
-    [[ "$b" == agentbus2-mcponly ]] && want_path="$MODULE/cmd/agentbus2-mcponly"
+    [[ "$b" == agentmesh-mcponly ]] && want_path="$MODULE/cmd/agentmesh-mcponly"
     if [[ -f "$tmp/native/$b$ext" ]]; then
-      if mods="$(go version -m "$tmp/native/$b$ext" 2>&1)" && [[ "$mods" == *"agentbus2"* ]] \
+      if mods="$(go version -m "$tmp/native/$b$ext" 2>&1)" && [[ "$mods" == *"agentmesh"* ]] \
         && [[ "$mods" != *sigstore* ]]; then
         echo "PASS archive-binary-links-no-sigstore-$b"
         SELF_PASS=$((SELF_PASS + 1))

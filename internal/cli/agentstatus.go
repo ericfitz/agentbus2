@@ -4,8 +4,8 @@ import (
 	"context"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 // statusJSON is one status revision in the output of agent-status. last_tag
@@ -38,7 +38,7 @@ func toStatusJSON(s bus.AgentStatus, withIdentity bool) statusJSON {
 	return o
 }
 
-// RunAgentStatus is `agentbus2 agent-status set|list|history` (issue #10):
+// RunAgentStatus is `agentmesh agent-status set|list|history` (issue #10):
 // set the calling agent's status, list every visible identity's current
 // status, or read one identity's history, oldest first. Each result is one
 // JSON document; a bus.Error is exit 1, a flag, arity or session-locate

@@ -1,33 +1,33 @@
 #!/bin/sh
-# install.sh: install agentbus2 on Linux into ~/.local/bin without root.
-#   curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh
-# The MCP-only client (agentbus2-mcponly: serve, register, check, config and
+# install.sh: install agentmesh on Linux into ~/.local/bin without root.
+#   curl -fsSL https://github.com/ericfitz/agentmesh/releases/latest/download/install.sh | sh
+# The MCP-only client (agentmesh-mcponly: serve, register, check, config and
 # version; no local mode) installs the same way beside the full binary, which it never touches:
-#   curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh -s -- --mcp-only
+#   curl -fsSL https://github.com/ericfitz/agentmesh/releases/latest/download/install.sh | sh -s -- --mcp-only
 # Environment:
-#   AGENTBUS2_VERSION        vX.Y.Z to install (default: the latest release)
-#   AGENTBUS2_INSTALL_DIR    absolute directory (default: $HOME/.local/bin)
-#   AGENTBUS2_BASE_URL       mirror or test server (default: https://github.com/ericfitz/agentbus2)
-#   AGENTBUS2_SKIP_SIGNATURE 1 skips the OpenSSL signature check (the checksum is still checked)
+#   AGENTMESH_VERSION        vX.Y.Z to install (default: the latest release)
+#   AGENTMESH_INSTALL_DIR    absolute directory (default: $HOME/.local/bin)
+#   AGENTMESH_BASE_URL       mirror or test server (default: https://github.com/ericfitz/agentmesh)
+#   AGENTMESH_SKIP_SIGNATURE 1 skips the OpenSSL signature check (the checksum is still checked)
 # Downloads the tarball, SHA256SUMS and SHA256SUMS.sig, verifies the Ed25519
 # signature with the public key below and the tarball's checksum, then
-# replaces <dir>/agentbus2 (or <dir>/agentbus2-mcponly) atomically. Never runs
-# sudo or agentbus2 init.
+# replaces <dir>/agentmesh (or <dir>/agentmesh-mcponly) atomically. Never runs
+# sudo or agentmesh init.
 # open note: mcp-only-client 10
 set -eu
 
-# BEGIN agentbus2 release public key
+# BEGIN agentmesh release public key
 PUBKEY_PEM='-----BEGIN PUBLIC KEY-----
 MCowBQYDK2VwAyEAXQGv11CrEIzH0muqwxbbXZPyNtPzt/5dRekDooj2eRk=
 -----END PUBLIC KEY-----'
-# END agentbus2 release public key
+# END agentmesh release public key
 
-BASE_URL="${AGENTBUS2_BASE_URL:-https://github.com/ericfitz/agentbus2}"
+BASE_URL="${AGENTMESH_BASE_URL:-https://github.com/ericfitz/agentmesh}"
 while [ "${BASE_URL%/}" != "$BASE_URL" ]; do BASE_URL="${BASE_URL%/}"; done
-BIN=agentbus2 SH_ARGS=""
+BIN=agentmesh SH_ARGS=""
 ARCH="" TAG="" ASSET="" OPENSSL="" OLD_OPENSSL="" SHA_CMD="" SKIP_SIG=0 INSTALL_DIR="" TMP="" UPGRADE=0 OLD_VERSION=""
 
-die() { printf 'agentbus2 install: %s\n' "$*" >&2; exit 1; }
+die() { printf 'agentmesh install: %s\n' "$*" >&2; exit 1; }
 
 cleanup() {
     [ -n "$TMP" ] && rm -rf "$TMP"
@@ -55,17 +55,17 @@ detect_platform() {
     if command -v sha256sum >/dev/null 2>&1; then SHA_CMD="sha256sum"
     elif command -v shasum >/dev/null 2>&1; then SHA_CMD="shasum -a 256"
     else die "sha256sum (or shasum) is required but not installed"; fi
-    case "${AGENTBUS2_SKIP_SIGNATURE:-}" in
+    case "${AGENTMESH_SKIP_SIGNATURE:-}" in
         "") SKIP_SIG=0 ;;
-        1) SKIP_SIG=1; printf 'agentbus2 install: AGENTBUS2_SKIP_SIGNATURE=1: skipping the signature check; the checksum is still verified\n' >&2 ;;
-        *) die "AGENTBUS2_SKIP_SIGNATURE must be 1 or unset, got '${AGENTBUS2_SKIP_SIGNATURE}'" ;;
+        1) SKIP_SIG=1; printf 'agentmesh install: AGENTMESH_SKIP_SIGNATURE=1: skipping the signature check; the checksum is still verified\n' >&2 ;;
+        *) die "AGENTMESH_SKIP_SIGNATURE must be 1 or unset, got '${AGENTMESH_SKIP_SIGNATURE}'" ;;
     esac
-    if [ -n "${AGENTBUS2_INSTALL_DIR:-}" ]; then
-        INSTALL_DIR="$AGENTBUS2_INSTALL_DIR"
-        case "$INSTALL_DIR" in /*) ;; *) die "AGENTBUS2_INSTALL_DIR must be an absolute path, got '$INSTALL_DIR'" ;; esac
+    if [ -n "${AGENTMESH_INSTALL_DIR:-}" ]; then
+        INSTALL_DIR="$AGENTMESH_INSTALL_DIR"
+        case "$INSTALL_DIR" in /*) ;; *) die "AGENTMESH_INSTALL_DIR must be an absolute path, got '$INSTALL_DIR'" ;; esac
         while [ "${INSTALL_DIR%/}" != "$INSTALL_DIR" ] && [ "$INSTALL_DIR" != / ]; do INSTALL_DIR="${INSTALL_DIR%/}"; done
     else
-        [ -n "${HOME:-}" ] || die "HOME is not set; set AGENTBUS2_INSTALL_DIR to an absolute directory"
+        [ -n "${HOME:-}" ] || die "HOME is not set; set AGENTMESH_INSTALL_DIR to an absolute directory"
         INSTALL_DIR="$HOME/.local/bin"
     fi
 }
@@ -82,9 +82,9 @@ find_openssl() {
         [ -n "$OLD_OPENSSL" ] || OLD_OPENSSL="$c ($("$c" version 2>/dev/null || echo unknown version))"
     done
     if [ -n "$OLD_OPENSSL" ]; then
-        die "found $OLD_OPENSSL, but verifying the release signature needs OpenSSL 3. Options: on RHEL 8 and its rebuilds install EPEL's openssl3 package (sudo dnf install openssl3); upgrade the distribution; or rerun with AGENTBUS2_SKIP_SIGNATURE=1 to verify the checksum only"
+        die "found $OLD_OPENSSL, but verifying the release signature needs OpenSSL 3. Options: on RHEL 8 and its rebuilds install EPEL's openssl3 package (sudo dnf install openssl3); upgrade the distribution; or rerun with AGENTMESH_SKIP_SIGNATURE=1 to verify the checksum only"
     fi
-    die "OpenSSL 3 is required to verify the release signature. $(suggest_openssl). Or rerun with AGENTBUS2_SKIP_SIGNATURE=1 to verify the checksum only"
+    die "OpenSSL 3 is required to verify the release signature. $(suggest_openssl). Or rerun with AGENTMESH_SKIP_SIGNATURE=1 to verify the checksum only"
 }
 
 # suggest_openssl prints a package-manager suggestion from /etc/os-release
@@ -109,12 +109,12 @@ suggest_openssl() {
 }
 
 resolve_version() {
-    if [ -n "${AGENTBUS2_VERSION:-}" ]; then
-        TAG="$AGENTBUS2_VERSION"
+    if [ -n "${AGENTMESH_VERSION:-}" ]; then
+        TAG="$AGENTMESH_VERSION"
     else
         loc="$(curl -fsSI -o /dev/null -w '%{redirect_url}' "$BASE_URL/releases/latest" 2>/dev/null || true)"
         TAG="${loc##*/}"
-        [ -n "$TAG" ] || die "could not determine the latest release from $BASE_URL/releases/latest; set AGENTBUS2_VERSION=vX.Y.Z"
+        [ -n "$TAG" ] || die "could not determine the latest release from $BASE_URL/releases/latest; set AGENTMESH_VERSION=vX.Y.Z"
     fi
     case "$TAG" in *"
 "*) die "version must look like vX.Y.Z, got a value containing a newline" ;; esac
@@ -162,9 +162,9 @@ verify_checksum() {
 install_binary() {
     mkdir -p "$INSTALL_DIR" 2>/dev/null || true
     if [ ! -d "$INSTALL_DIR" ] || [ ! -w "$INSTALL_DIR" ]; then
-        die "cannot write to $INSTALL_DIR. Rerun with AGENTBUS2_INSTALL_DIR=<a writable directory>, or for a system-wide install: curl -fsSL $BASE_URL/releases/latest/download/install.sh | sudo env AGENTBUS2_INSTALL_DIR=/usr/local/bin sh$SH_ARGS"
+        die "cannot write to $INSTALL_DIR. Rerun with AGENTMESH_INSTALL_DIR=<a writable directory>, or for a system-wide install: curl -fsSL $BASE_URL/releases/latest/download/install.sh | sudo env AGENTMESH_INSTALL_DIR=/usr/local/bin sh$SH_ARGS"
     fi
-    [ ! -d "$INSTALL_DIR/$BIN" ] || die "$INSTALL_DIR/$BIN is a directory; remove it or choose another AGENTBUS2_INSTALL_DIR"
+    [ ! -d "$INSTALL_DIR/$BIN" ] || die "$INSTALL_DIR/$BIN is a directory; remove it or choose another AGENTMESH_INSTALL_DIR"
     if [ -x "$INSTALL_DIR/$BIN" ]; then
         UPGRADE=1
         # A binary that does not run counts as an upgrade with an unknown old version.
@@ -183,10 +183,10 @@ report() {
         *":$INSTALL_DIR:"*) ;;
         *) echo "note: $INSTALL_DIR is not on your PATH; add this to your shell profile: export PATH=\"$INSTALL_DIR:\$PATH\"" ;;
     esac
-    if [ "$BIN" = agentbus2-mcponly ]; then
-        echo "next: agentbus2-mcponly help (connect this agent to an agentbus2 server)"
+    if [ "$BIN" = agentmesh-mcponly ]; then
+        echo "next: agentmesh-mcponly help (connect this agent to an agentmesh server)"
     else
-        echo "next: agentbus2 init --global (once per machine), then agentbus2 init inside each repository"
+        echo "next: agentmesh init --global (once per machine), then agentmesh init inside each repository"
     fi
     if [ "$UPGRADE" = 1 ]; then
         if [ -n "$OLD_VERSION" ] && [ "$OLD_VERSION" = "$v" ]; then
@@ -203,8 +203,8 @@ report() {
 main() {
     case "$#:${1:-}" in
         0:) ;;
-        1:--mcp-only) BIN=agentbus2-mcponly SH_ARGS=" -s -- --mcp-only" ;;
-        *) die "usage: install.sh [--mcp-only]; configure it with AGENTBUS2_VERSION, AGENTBUS2_INSTALL_DIR, AGENTBUS2_BASE_URL, AGENTBUS2_SKIP_SIGNATURE" ;;
+        1:--mcp-only) BIN=agentmesh-mcponly SH_ARGS=" -s -- --mcp-only" ;;
+        *) die "usage: install.sh [--mcp-only]; configure it with AGENTMESH_VERSION, AGENTMESH_INSTALL_DIR, AGENTMESH_BASE_URL, AGENTMESH_SKIP_SIGNATURE" ;;
     esac
     detect_platform
     [ "$SKIP_SIG" = 1 ] || find_openssl

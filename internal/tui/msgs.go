@@ -1,6 +1,6 @@
 package tui
 
-import "github.com/ericfitz/agentbus2/internal/bus"
+import "github.com/ericfitz/agentmesh/internal/bus"
 
 // Messages delivered to Model.Update (ported from v1 internal/tui/msgs.go).
 // Every bus call the model makes runs in a tea.Cmd and comes back as one of

@@ -8,10 +8,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 // SelectedProfile is the profile a command works on, before any identity
@@ -42,7 +42,7 @@ func SelectProfile(o Options) (SelectedProfile, error) {
 	if cwd == "" {
 		cwd = "."
 	}
-	env, _ := profile.Getenv(o.Environ, "AGENTBUS2_PROFILE")
+	env, _ := profile.Getenv(o.Environ, "AGENTMESH_PROFILE")
 	if s.Name, _, err = profile.SelectName(profile.Selection{Flag: o.Profile, Env: env, Cwd: cwd}); err != nil {
 		return s, resolveErr(err)
 	}
@@ -144,7 +144,7 @@ func RegisterIdentity(ctx context.Context, req RegisterRequest) (RegisterOutcome
 			return out, resolveErr(err)
 		}
 	}
-	envID, _ := profile.Getenv(o.Environ, "AGENTBUS2_IDENTITY")
+	envID, _ := profile.Getenv(o.Environ, "AGENTMESH_IDENTITY")
 	identity, _, err := p.ResolveIdentity(profile.IdentitySelection{Flag: o.Identity, Env: envID, Credentials: have})
 	if err != nil {
 		return out, resolveErr(err)

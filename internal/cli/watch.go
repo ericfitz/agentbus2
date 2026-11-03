@@ -12,10 +12,10 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/procs"
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 // watchMinGap is the least time between two wake lines (v1). A var so tests do
@@ -28,7 +28,7 @@ func watchLine(display string, r bus.WatchResult) string {
 	chans := slices.Clone(r.Channels)
 	slices.Sort(chans)
 	chans = slices.Compact(chans)
-	return fmt.Sprintf("agentbus2: %d new message(s) for %s on %s; call receive", r.Count, display, strings.Join(chans, ", "))
+	return fmt.Sprintf("agentmesh: %d new message(s) for %s on %s; call receive", r.Count, display, strings.Join(chans, ", "))
 }
 
 // watchLoop arms Watch{After: floor} in a loop and stays armed: a wake raises
@@ -148,8 +148,8 @@ func (p probe) Watch(ctx context.Context, in bus.WatchInput) (bus.WatchResult, e
 	return r, err
 }
 
-// RunWatch is `agentbus2 watch` (choice 9, v1 ADR 0021; deprecated in favor
-// of a background `agentbus2 wait`, decision 17): one line per wake on
+// RunWatch is `agentmesh watch` (choice 9, v1 ADR 0021; deprecated in favor
+// of a background `agentmesh wait`, decision 17): one line per wake on
 // stdout, until replaced (3), the harness is gone (4) or an error (2). It
 // never exits 0 or 1.
 func RunWatch(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -158,7 +158,7 @@ func RunWatch(ctx context.Context, args []string, environ []string, stdin io.Rea
 	var includeOwn, noHarness bool
 	fs := newFlagSet("watch", stderr)
 	fs.Usage = func() {
-		_, _ = fmt.Fprintln(stderr, "usage: agentbus2 watch [flags]\n\nwatch is deprecated in favor of a background `agentbus2 wait` (decision 17).\nIt prints one line per wake and never exits 0 or 1.")
+		_, _ = fmt.Fprintln(stderr, "usage: agentmesh watch [flags]\n\nwatch is deprecated in favor of a background `agentmesh wait` (decision 17).\nIt prints one line per wake and never exits 0 or 1.")
 		fs.PrintDefaults()
 	}
 	client.Flags(fs, &o)
@@ -169,7 +169,7 @@ func RunWatch(ctx context.Context, args []string, environ []string, stdin io.Rea
 		return parseExit(err)
 	}
 	if fs.NArg() != 0 {
-		_, _ = fmt.Fprintln(stderr, "agentbus2 watch: unexpected argument", fs.Arg(0))
+		_, _ = fmt.Fprintln(stderr, "agentmesh watch: unexpected argument", fs.Arg(0))
 		return 2
 	}
 	ctx, stopSignals := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM, syscall.SIGHUP)

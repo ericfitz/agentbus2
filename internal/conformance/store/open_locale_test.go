@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
-	"github.com/ericfitz/agentbus2/internal/store/postgres"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
+	"github.com/ericfitz/agentmesh/internal/store/postgres"
 )
 
 // withDatabase returns dsn pointing at database name (URL or keyword/value).
@@ -36,7 +36,7 @@ func TestPostgresOpenRefusesNonUTF8Ctype(t *testing.T) {
 	}
 	admin := e.Open(t)
 	ctx := context.Background()
-	const name = "agentbus2_ctype_c"
+	const name = "agentmesh_ctype_c"
 	if _, err := admin.ExecContext(ctx, "DROP DATABASE IF EXISTS "+name+" WITH (FORCE)"); err != nil {
 		t.Fatal(err)
 	}

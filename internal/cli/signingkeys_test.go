@@ -6,8 +6,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
 )
 
 // fakeKeysBus answers the signing key operations from canned results and
@@ -118,7 +118,7 @@ func TestSigningKeysBusError(t *testing.T) {
 	fake.err = bus.Errorf(bus.CodeConflict, false, "inside the cooldown")
 	for _, args := range [][]string{{"list"}, {"rotate"}} {
 		code, out, er := run(args...)
-		if code != 1 || out != "" || !strings.Contains(er, "agentbus2: conflict: inside the cooldown") {
+		if code != 1 || out != "" || !strings.Contains(er, "agentmesh: conflict: inside the cooldown") {
 			t.Fatalf("%v: %d %q %q", args, code, out, er)
 		}
 	}
@@ -131,7 +131,7 @@ func TestSigningKeysCommandsUnavailableLocally(t *testing.T) {
 	run := runner(e, RunSigningKeys)
 	for _, args := range [][]string{{"list"}, {"rotate"}, {"rotate", "-revoke-previous"}} {
 		code, _, er := run(args...)
-		if code != 1 || !strings.Contains(er, "agentbus2: unavailable: "+bus.SigningKeysNotConfigured) {
+		if code != 1 || !strings.Contains(er, "agentmesh: unavailable: "+bus.SigningKeysNotConfigured) {
 			t.Fatalf("%v: %d %q", args, code, er)
 		}
 	}

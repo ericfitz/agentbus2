@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/credential"
-	"github.com/ericfitz/agentbus2/internal/fileacl"
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
-	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/credential"
+	"github.com/ericfitz/agentmesh/internal/fileacl"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/profile"
 )
 
 // checkTimeout bounds each network step of `check`.
@@ -46,7 +46,7 @@ func target(cmdName string, o client.Options, stderr io.Writer) (server string, 
 	case sel.Name == "default":
 		return exit(client.NoLocalModeError(sel.Name))
 	}
-	return exit(fmt.Errorf("profile %q is not defined in %s: pass -server URL, or run agentbus2-mcponly register -server URL -identity NAME", sel.Name, sel.Config.Path))
+	return exit(fmt.Errorf("profile %q is not defined in %s: pass -server URL, or run agentmesh-mcponly register -server URL -identity NAME", sel.Name, sel.Config.Path))
 }
 
 // checkReport prints the steps of `check`.
@@ -81,7 +81,7 @@ func codeDetail(err error) string {
 func busFix(err error, server, identity string) string {
 	switch bus.CodeOf(err) {
 	case bus.CodeUnauthenticated:
-		return fmt.Sprintf("%s register -server %s -identity %s (if %s already holds another key, an administrator runs agentbus2 server admin reset-credential %s first)", Binary, server, identity, identity, identity)
+		return fmt.Sprintf("%s register -server %s -identity %s (if %s already holds another key, an administrator runs agentmesh server admin reset-credential %s first)", Binary, server, identity, identity, identity)
 	case bus.CodeUnavailable:
 		return "retry later; the server is busy or its store is down"
 	}
@@ -105,7 +105,7 @@ func ownerOnlyFix(path string) string {
 	return "chmod 600 " + path
 }
 
-// runCheck is `agentbus2-mcponly check [-server URL] [-identity I]
+// runCheck is `agentmesh-mcponly check [-server URL] [-identity I]
 // [-credential FILE] [-profile P]`: reach, health, identity, credential,
 // token and access, one line each, stopping at the first FAIL (exit 1). It
 // creates no session and changes no configuration; the token step always

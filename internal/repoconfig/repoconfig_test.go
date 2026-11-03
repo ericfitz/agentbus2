@@ -13,7 +13,7 @@ func put(t *testing.T, dir, body string) {
 	if err := os.MkdirAll(filepath.Join(dir, ".local"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(dir, ".local", "agentbus2.json"), []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(dir, ".local", "agentmesh.json"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -36,7 +36,7 @@ func TestFindWalksToGitRoot(t *testing.T) {
 	}
 	put(t, repo, `{"profile":"lab"}`)
 	f, err = Find(sub)
-	if err != nil || f == nil || f.Profile != "lab" || f.Path != filepath.Join(repo, ".local", "agentbus2.json") {
+	if err != nil || f == nil || f.Profile != "lab" || f.Path != filepath.Join(repo, ".local", "agentmesh.json") {
 		t.Fatalf("Find = %+v, %v", f, err)
 	}
 	// The nearest file wins.
@@ -86,11 +86,11 @@ func TestRepoFileRejectsEverythingButProfile(t *testing.T) {
 		{"null profile", `{"profile":null}`, "profile"},
 		{"bad profile name", `{"profile":"a/b"}`, "a/b"},
 		{"dotdot profile", `{"profile":".."}`, ".."},
-		{"null file", `null`, "agentbus2.json"},
-		{"not an object", `[]`, "agentbus2.json"},
-		{"empty file", ``, "agentbus2.json"},
-		{"trailing", `{"profile":"a"} {}`, "agentbus2.json"},
-		{"malformed", `{`, "agentbus2.json"},
+		{"null file", `null`, "agentmesh.json"},
+		{"not an object", `[]`, "agentmesh.json"},
+		{"empty file", ``, "agentmesh.json"},
+		{"trailing", `{"profile":"a"} {}`, "agentmesh.json"},
+		{"malformed", `{`, "agentmesh.json"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -103,7 +103,7 @@ func TestRepoFileRejectsEverythingButProfile(t *testing.T) {
 			if err == nil || f != nil {
 				t.Fatalf("Find = %+v, %v; want an error", f, err)
 			}
-			if !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), filepath.Join(repo, ".local", "agentbus2.json")) {
+			if !strings.Contains(err.Error(), tc.want) || !strings.Contains(err.Error(), filepath.Join(repo, ".local", "agentmesh.json")) {
 				t.Fatalf("error %q must name the path and %q", err, tc.want)
 			}
 		})
@@ -120,7 +120,7 @@ func TestRepoFileRejectsEverythingButProfile(t *testing.T) {
 		repo := t.TempDir()
 		put(t, repo, `{"profile":"lab","credential_process":["x"]}`)
 		_, err := Find(repo)
-		if err == nil || !strings.Contains(err.Error(), `.local/agentbus2.json may only select a profile: unexpected key "credential_process"`) {
+		if err == nil || !strings.Contains(err.Error(), `.local/agentmesh.json may only select a profile: unexpected key "credential_process"`) {
 			t.Fatalf("error = %v", err)
 		}
 	})
@@ -129,7 +129,7 @@ func TestRepoFileRejectsEverythingButProfile(t *testing.T) {
 func TestWriteAndReload(t *testing.T) {
 	repo := t.TempDir()
 	f, err := Write(repo, "lab")
-	if err != nil || f.Profile != "lab" || f.Path != filepath.Join(repo, ".local", "agentbus2.json") {
+	if err != nil || f.Profile != "lab" || f.Path != filepath.Join(repo, ".local", "agentmesh.json") {
 		t.Fatalf("Write = %+v, %v", f, err)
 	}
 	if runtime.GOOS != "windows" {

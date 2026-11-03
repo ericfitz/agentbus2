@@ -10,14 +10,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core/notify"
-	"github.com/ericfitz/agentbus2/internal/store/postgres"
+	"github.com/ericfitz/agentmesh/internal/core/notify"
+	"github.com/ericfitz/agentmesh/internal/store/postgres"
 )
 
 const (
 	defaultMinBackoff = 100 * time.Millisecond
 	defaultMaxBackoff = 5 * time.Second
-	defaultAppName    = "agentbus2-listen"
+	defaultAppName    = "agentmesh-listen"
 )
 
 // Options configures New. The zero value is usable.
@@ -25,7 +25,7 @@ type Options struct {
 	Logger          *slog.Logger // nil: discard
 	MinBackoff      time.Duration
 	MaxBackoff      time.Duration // 0 values: 100 ms and 5 s
-	ApplicationName string        // "": agentbus2-listen
+	ApplicationName string        // "": agentmesh-listen
 	Connector       connector     // nil: pgx; tests pass a fake
 }
 

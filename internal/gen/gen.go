@@ -962,19 +962,19 @@ type PendingChannel struct {
 
 // Problem defines model for Problem.
 type Problem struct {
-	// Code agentbus2 extension member (RFC 9457 section 3.2).
+	// Code agentmesh extension member (RFC 9457 section 3.2).
 	Code     ProblemCode `json:"code"`
 	Detail   *string     `json:"detail,omitempty"`
 	Instance *string     `json:"instance,omitempty"`
 
-	// Retryable agentbus2 extension member (RFC 9457 section 3.2).
+	// Retryable agentmesh extension member (RFC 9457 section 3.2).
 	Retryable bool   `json:"retryable"`
 	Status    int    `json:"status"`
 	Title     string `json:"title"`
 	Type      string `json:"type"`
 }
 
-// ProblemCode agentbus2 extension member (RFC 9457 section 3.2).
+// ProblemCode agentmesh extension member (RFC 9457 section 3.2).
 type ProblemCode string
 
 // ReceiveRequest defines model for ReceiveRequest.
@@ -1643,7 +1643,7 @@ func WithRequestEditorFn(fn RequestEditorFn) ClientOption {
 // The interface specification for the client above.
 type ClientInterface interface {
 
-	// WellKnown performs a GET /.well-known/agentbus2 (the `WellKnown` operationId) request.
+	// WellKnown performs a GET /.well-known/agentmesh (the `WellKnown` operationId) request.
 	WellKnown(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// AuthorizationServerMetadata performs a GET /.well-known/oauth-authorization-server (the `AuthorizationServerMetadata` operationId) request.
@@ -1947,7 +1947,7 @@ type ClientInterface interface {
 	ReleaseTask(ctx context.Context, id IdParam, params *ReleaseTaskParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 }
 
-// WellKnown performs a GET /.well-known/agentbus2 (the `WellKnown` operationId) request.
+// WellKnown performs a GET /.well-known/agentmesh (the `WellKnown` operationId) request.
 func (c *Client) WellKnown(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewWellKnownRequest(c.Server)
 	if err != nil {
@@ -3029,7 +3029,7 @@ func NewWellKnownRequest(server string) (*http.Request, error) {
 		return nil, err
 	}
 
-	operationPath := fmt.Sprintf("/.well-known/agentbus2")
+	operationPath := fmt.Sprintf("/.well-known/agentmesh")
 	if operationPath[0] == '/' {
 		operationPath = "." + operationPath
 	}
@@ -5819,7 +5819,7 @@ func WithBaseURL(baseURL string) ClientOption {
 // ClientWithResponsesInterface is the interface specification for the client with responses above.
 type ClientWithResponsesInterface interface {
 
-	// WellKnownWithResponse performs a GET /.well-known/agentbus2 (the `WellKnown` operationId) request.
+	// WellKnownWithResponse performs a GET /.well-known/agentmesh (the `WellKnown` operationId) request.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	WellKnownWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*WellKnownResponse, error)
@@ -8924,7 +8924,7 @@ func (r ReleaseTaskResponse) ContentType() string {
 	return ""
 }
 
-// WellKnownWithResponse performs a GET /.well-known/agentbus2 (the `WellKnown` operationId) request.
+// WellKnownWithResponse performs a GET /.well-known/agentmesh (the `WellKnown` operationId) request.
 //
 // Returns a wrapper object for the known response body format(s).
 func (c *ClientWithResponses) WellKnownWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*WellKnownResponse, error) {
@@ -11674,7 +11674,7 @@ func ParseReleaseTaskResponse(rsp *http.Response) (*ReleaseTaskResponse, error) 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
 
-	// (GET /.well-known/agentbus2)
+	// (GET /.well-known/agentmesh)
 	WellKnown(w http.ResponseWriter, r *http.Request)
 
 	// (GET /.well-known/oauth-authorization-server)
@@ -14024,7 +14024,7 @@ func HandlerWithOptions(si ServerInterface, options StdHTTPServerOptions) http.H
 		ErrorHandlerFunc:   options.ErrorHandlerFunc,
 	}
 
-	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/agentbus2", wrapper.WellKnown)
+	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/agentmesh", wrapper.WellKnown)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/oauth-authorization-server", wrapper.AuthorizationServerMetadata)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/.well-known/openid-configuration", wrapper.OpenidConfiguration)
 	m.HandleFunc(http.MethodGet+" "+options.BaseURL+"/v1/discover", wrapper.Discover)
@@ -16330,7 +16330,7 @@ func (response ReleaseTaskdefaultApplicationProblemPlusJSONResponse) VisitReleas
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
 
-	// (GET /.well-known/agentbus2)
+	// (GET /.well-known/agentmesh)
 	WellKnown(ctx context.Context, request WellKnownRequestObject) (WellKnownResponseObject, error)
 
 	// (GET /.well-known/oauth-authorization-server)

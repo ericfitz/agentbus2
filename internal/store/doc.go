@@ -1,4 +1,4 @@
-// Package store is the persistence contract of agentbus2 (spec section 5).
+// Package store is the persistence contract of agentmesh (spec section 5).
 //
 // The interfaces are grouped by aggregate (Decision 25) and composed into Tx.
 // Store hands a Tx to a callback in one of three transaction kinds: Tx

@@ -13,7 +13,7 @@ Set-StrictMode -Version 2.0
 $ErrorActionPreference = 'Stop'
 $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = (Resolve-Path (Join-Path $Here '..')).Path
-$Work = Join-Path ([IO.Path]::GetTempPath()) ('agentbus2-itest-' + [guid]::NewGuid().ToString('N'))
+$Work = Join-Path ([IO.Path]::GetTempPath()) ('agentmesh-itest-' + [guid]::NewGuid().ToString('N'))
 $Fx = Join-Path $Work 'fixture'
 $Port = Get-Random -Minimum 20000 -Maximum 40000
 $Base = "http://127.0.0.1:$Port"
@@ -44,7 +44,7 @@ function Set-RawUserPath([hashtable]$Saved) {
         else { $k.SetValue('Path', $Saved.Value, $Saved.Kind) }
     } finally { $k.Close() }
     # Let running programs see the change, as setting a user variable does.
-    try { [Environment]::SetEnvironmentVariable('AGENTBUS2_PATH_REFRESH', $null, 'User') } catch { }
+    try { [Environment]::SetEnvironmentVariable('AGENTMESH_PATH_REFRESH', $null, 'User') } catch { }
 }
 
 $SavedUserPath = Get-RawUserPath
@@ -84,8 +84,8 @@ function Cleanup {
         $null = $script:Server.WaitForExit(3000)
         $script:Server = $null
     }
-    # Only stubs started from this run's work directory: never the user's real agentbus2 sessions (the VM runs them).
-    Get-Process -Name agentbus2, agentbus2-mcponly -ErrorAction SilentlyContinue | Where-Object { $p = $_.Path; $p -and ($p -like "$Work*") } | Stop-Process -Force -ErrorAction SilentlyContinue
+    # Only stubs started from this run's work directory: never the user's real agentmesh sessions (the VM runs them).
+    Get-Process -Name agentmesh, agentmesh-mcponly -ErrorAction SilentlyContinue | Where-Object { $p = $_.Path; $p -and ($p -like "$Work*") } | Stop-Process -Force -ErrorAction SilentlyContinue
     foreach ($i in 1..5) {
         if (-not (Test-Path -LiteralPath $Work)) { break }
         Remove-Item -LiteralPath $Work -Recurse -Force -ErrorAction SilentlyContinue
@@ -120,7 +120,7 @@ function Quote-Arg([string]$A) { return '"' + $A + '"' }
 # PowerShell twin of release/embed-key.sh).
 function Set-KeyBlock([string]$Script, [string]$Pem) {
     $text = Get-Content -LiteralPath $Script -Raw
-    $pattern = '(?s)(# BEGIN agentbus2 release public key\r?\n).*?(# END agentbus2 release public key)'
+    $pattern = '(?s)(# BEGIN agentmesh release public key\r?\n).*?(# END agentmesh release public key)'
     if (-not [regex]::IsMatch($text, $pattern)) { throw "test-install.ps1: no key block markers in $Script" }
     $block = "`$PubKeyPem = @'`n" + $Pem.Trim() + "`n'@`n"
     $new = [regex]::Replace($text, $pattern, { param($m) $m.Groups[1].Value + $block + $m.Groups[2].Value })
@@ -129,17 +129,17 @@ function Set-KeyBlock([string]$Script, [string]$Pem) {
 
 function Add-Byte([string]$Path) { $s = [IO.File]::Open($Path, 'Append'); try { $s.WriteByte(0) } finally { $s.Close() } }
 
-# Write-Sums writes SHA256SUMS for the four zips (agentbus2 and
-# agentbus2-mcponly, per architecture) and install.ps1 in a release directory and signs it with the throwaway key.
+# Write-Sums writes SHA256SUMS for the four zips (agentmesh and
+# agentmesh-mcponly, per architecture) and install.ps1 in a release directory and signs it with the throwaway key.
 function Write-Sums([string]$Dir, [string]$Tag) {
-    $sums = foreach ($f in "agentbus2-$Tag-windows-amd64.zip", "agentbus2-$Tag-windows-arm64.zip", "agentbus2-mcponly-$Tag-windows-amd64.zip", "agentbus2-mcponly-$Tag-windows-arm64.zip", 'install.ps1') {
+    $sums = foreach ($f in "agentmesh-$Tag-windows-amd64.zip", "agentmesh-$Tag-windows-arm64.zip", "agentmesh-mcponly-$Tag-windows-amd64.zip", "agentmesh-mcponly-$Tag-windows-arm64.zip", 'install.ps1') {
         (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $Dir $f)).Hash.ToLower() + '  ' + $f
     }
     [IO.File]::WriteAllText((Join-Path $Dir 'SHA256SUMS'), ($sums -join "`n") + "`n")
     Invoke-Ssl @('pkeyutl', '-sign', '-rawin', '-inkey', (Join-Path $Work 'key.pem'), '-in', (Join-Path $Dir 'SHA256SUMS'), '-out', (Join-Path $Dir 'SHA256SUMS.sig'))
 }
 
-# New-Stub builds the stub agentbus2.exe (or another stub, for a fake OpenSSL
+# New-Stub builds the stub agentmesh.exe (or another stub, for a fake OpenSSL
 # or git) reporting $Version.
 function New-Stub([string]$Version, [string]$Out) {
     $savedCgo = Set-EnvMap @{ 'CGO_ENABLED' = '0' }
@@ -163,8 +163,8 @@ function Get-HostArch {
     }
 }
 
-# New-Release writes one release directory: the zips of agentbus2 and of
-# agentbus2-mcponly per architecture. The zip for this machine's architecture
+# New-Release writes one release directory: the zips of agentmesh and of
+# agentmesh-mcponly per architecture. The zip for this machine's architecture
 # holds a stub reporting $Version; the other zip's stub reports
 # WRONGARCH-$Version, so installing the wrong asset fails every case that
 # checks the version.
@@ -175,10 +175,10 @@ function New-Release([string]$Variant, [string]$Tag, [string]$Version) {
     foreach ($a in 'amd64', 'arm64') {
         $bin = Join-Path $d "bin-$a"
         New-Item -ItemType Directory -Force -Path $bin | Out-Null
-        New-Stub $(if ($a -eq $hostArch) { $Version } else { "WRONGARCH-$Version" }) (Join-Path $bin 'agentbus2.exe')
-        Compress-Archive -LiteralPath (Join-Path $bin 'agentbus2.exe') -DestinationPath (Join-Path $d "agentbus2-$Tag-windows-$a.zip") -Force
-        New-Stub $(if ($a -eq $hostArch) { $Version } else { "WRONGARCH-$Version" }) (Join-Path $bin 'agentbus2-mcponly.exe')
-        Compress-Archive -LiteralPath (Join-Path $bin 'agentbus2-mcponly.exe') -DestinationPath (Join-Path $d "agentbus2-mcponly-$Tag-windows-$a.zip") -Force
+        New-Stub $(if ($a -eq $hostArch) { $Version } else { "WRONGARCH-$Version" }) (Join-Path $bin 'agentmesh.exe')
+        Compress-Archive -LiteralPath (Join-Path $bin 'agentmesh.exe') -DestinationPath (Join-Path $d "agentmesh-$Tag-windows-$a.zip") -Force
+        New-Stub $(if ($a -eq $hostArch) { $Version } else { "WRONGARCH-$Version" }) (Join-Path $bin 'agentmesh-mcponly.exe')
+        Compress-Archive -LiteralPath (Join-Path $bin 'agentmesh-mcponly.exe') -DestinationPath (Join-Path $d "agentmesh-mcponly-$Tag-windows-$a.zip") -Force
         Remove-Item -Recurse -Force $bin
     }
     Copy-Item (Join-Path $Fx 'install.ps1') (Join-Path $d 'install.ps1')
@@ -187,7 +187,7 @@ function New-Release([string]$Variant, [string]$Tag, [string]$Version) {
 
 # Build-Fixture: stub exe for two versions, zips, SHA256SUMS, signature, and
 # the variants valid, tampered-zip, tampered-sums, tampered-sig,
-# missing-entry, broken-exe (a zip whose agentbus2.exe cannot run), slow,
+# missing-entry, broken-exe (a zip whose agentmesh.exe cannot run), slow,
 # no-windows-build (SHA256SUMS and signature but no zips, like a release with
 # no Windows build) and no-sums (zips but no SHA256SUMS). Also
 # install-placeholder.ps1 (a copy still holding the placeholder key), fakes
@@ -236,12 +236,12 @@ function Build-Fixture {
         Set-Content -LiteralPath (Join-Path $Fx "$v/latest") -Value 'v9.0.1'
     }
     foreach ($a in 'amd64', 'arm64') {
-        Add-Byte (Join-Path $Fx "tampered-zip/v9.0.1/agentbus2-v9.0.1-windows-$a.zip")
-        Add-Byte (Join-Path $Fx "tampered-zip/v9.0.1/agentbus2-mcponly-v9.0.1-windows-$a.zip")
+        Add-Byte (Join-Path $Fx "tampered-zip/v9.0.1/agentmesh-v9.0.1-windows-$a.zip")
+        Add-Byte (Join-Path $Fx "tampered-zip/v9.0.1/agentmesh-mcponly-v9.0.1-windows-$a.zip")
     }
     foreach ($a in 'amd64', 'arm64') {
-        Remove-Item -LiteralPath (Join-Path $Fx "no-windows-build/v9.0.1/agentbus2-v9.0.1-windows-$a.zip") -Force
-        Remove-Item -LiteralPath (Join-Path $Fx "no-windows-build/v9.0.1/agentbus2-mcponly-v9.0.1-windows-$a.zip") -Force
+        Remove-Item -LiteralPath (Join-Path $Fx "no-windows-build/v9.0.1/agentmesh-v9.0.1-windows-$a.zip") -Force
+        Remove-Item -LiteralPath (Join-Path $Fx "no-windows-build/v9.0.1/agentmesh-mcponly-v9.0.1-windows-$a.zip") -Force
     }
     Remove-Item -LiteralPath (Join-Path $Fx 'no-sums/v9.0.1/SHA256SUMS') -Force
     $sums = Join-Path $Fx 'tampered-sums/v9.0.1/SHA256SUMS'
@@ -252,16 +252,16 @@ function Build-Fixture {
     $me = Join-Path $Fx 'missing-entry/v9.0.1'
     [IO.File]::WriteAllText((Join-Path $me 'SHA256SUMS'), ((Get-Content -LiteralPath (Join-Path $me 'SHA256SUMS') | Where-Object { $_ -match ' install.ps1$' }) -join "`n") + "`n")
     Invoke-Ssl @('pkeyutl', '-sign', '-rawin', '-inkey', (Join-Path $Work 'key.pem'), '-in', (Join-Path $me 'SHA256SUMS'), '-out', (Join-Path $me 'SHA256SUMS.sig'))
-    # broken-exe: correctly hashed and signed, but agentbus2.exe and
-    # agentbus2-mcponly.exe are text.
+    # broken-exe: correctly hashed and signed, but agentmesh.exe and
+    # agentmesh-mcponly.exe are text.
     $be = Join-Path $Fx 'broken-exe/v9.0.1'
     $junk = Join-Path $Work 'junk'
     New-Item -ItemType Directory -Force -Path $junk | Out-Null
-    Set-Content -LiteralPath (Join-Path $junk 'agentbus2.exe') -Value 'this is not an executable'
-    Copy-Item -LiteralPath (Join-Path $junk 'agentbus2.exe') -Destination (Join-Path $junk 'agentbus2-mcponly.exe')
+    Set-Content -LiteralPath (Join-Path $junk 'agentmesh.exe') -Value 'this is not an executable'
+    Copy-Item -LiteralPath (Join-Path $junk 'agentmesh.exe') -Destination (Join-Path $junk 'agentmesh-mcponly.exe')
     foreach ($a in 'amd64', 'arm64') {
-        Compress-Archive -LiteralPath (Join-Path $junk 'agentbus2.exe') -DestinationPath (Join-Path $be "agentbus2-v9.0.1-windows-$a.zip") -Force
-        Compress-Archive -LiteralPath (Join-Path $junk 'agentbus2-mcponly.exe') -DestinationPath (Join-Path $be "agentbus2-mcponly-v9.0.1-windows-$a.zip") -Force
+        Compress-Archive -LiteralPath (Join-Path $junk 'agentmesh.exe') -DestinationPath (Join-Path $be "agentmesh-v9.0.1-windows-$a.zip") -Force
+        Compress-Archive -LiteralPath (Join-Path $junk 'agentmesh-mcponly.exe') -DestinationPath (Join-Path $be "agentmesh-mcponly-v9.0.1-windows-$a.zip") -Force
     }
     Write-Sums $be 'v9.0.1'
 }
@@ -374,7 +374,7 @@ function Invoke-Child([string]$Mode, [string]$ScriptPath, [string[]]$ScriptArgs)
 # this process around the child; After returns the extra condition. A
 # non-empty WantNotOut must be absent from the output.
 function Invoke-Case([string]$Name, [int]$WantExit, [string]$WantOut, [hashtable]$Env, [string]$InstallDir, [scriptblock]$Before, [scriptblock]$After, [string]$Mode = 'file', [string]$ScriptName = 'install.ps1', [string[]]$ScriptArgs = @(), [string]$WantNotOut = '') {
-    $map = @{ 'AGENTBUS2_BASE_URL' = "$script:Base/valid"; 'AGENTBUS2_VERSION' = ''; 'AGENTBUS2_INSTALL_DIR' = $InstallDir; 'AGENTBUS2_SKIP_SIGNATURE' = ''; 'AGENTBUS2_TEST_OSARCH' = '' }
+    $map = @{ 'AGENTMESH_BASE_URL' = "$script:Base/valid"; 'AGENTMESH_VERSION' = ''; 'AGENTMESH_INSTALL_DIR' = $InstallDir; 'AGENTMESH_SKIP_SIGNATURE' = ''; 'AGENTMESH_TEST_OSARCH' = '' }
     if ($Env) { foreach ($k in $Env.Keys) { $map[$k] = $Env[$k] } }
     # 64-bit Windows resets a starting 64-bit process's ProgramFiles from
     # ProgramW6432, so an override has to set both to reach the child
@@ -401,8 +401,8 @@ function Get-UserPathEntries { return @(([Environment]::GetEnvironmentVariable('
 # here-string between the '@ delimiters joined with LF (or $null).
 function Get-KeyBlockState([string]$Script) {
     $lines = @(Get-Content -LiteralPath $Script)
-    $begin = @(0..($lines.Count - 1) | Where-Object { $lines[$_] -ceq '# BEGIN agentbus2 release public key' })
-    $end = @(0..($lines.Count - 1) | Where-Object { $lines[$_] -ceq '# END agentbus2 release public key' })
+    $begin = @(0..($lines.Count - 1) | Where-Object { $lines[$_] -ceq '# BEGIN agentmesh release public key' })
+    $end = @(0..($lines.Count - 1) | Where-Object { $lines[$_] -ceq '# END agentmesh release public key' })
     $state = @{ Begin = $begin.Count; End = $end.Count; Ordered = $false; Pem = $null }
     if ($begin.Count -eq 1 -and $end.Count -eq 1 -and $begin[0] -lt $end[0]) {
         $state.Ordered = $true
@@ -416,7 +416,7 @@ function Get-KeyBlockState([string]$Script) {
 
 # Test-KeyBlock is the key-block check of the real install.ps1: both markers
 # once, in order, around a block that holds either the placeholder or the PEM
-# of the committed release/agentbus2-release-ed25519.pub (when that exists).
+# of the committed release/agentmesh-release-ed25519.pub (when that exists).
 # Returns $null when it holds, else the reason.
 function Test-KeyBlock {
     $st = Get-KeyBlockState (Join-Path $RepoRoot 'install.ps1')
@@ -425,11 +425,11 @@ function Test-KeyBlock {
     if ($null -eq $st.Pem) { return "install.ps1's key block is not a `$PubKeyPem here-string" }
     $placeholder = "-----BEGIN PUBLIC KEY-----`nREPLACED-BY-release/embed-key.sh`n-----END PUBLIC KEY-----"
     if ($st.Pem -ceq $placeholder) { return $null }
-    $pub = Join-Path $RepoRoot 'release/agentbus2-release-ed25519.pub'
-    if (-not (Test-Path -LiteralPath $pub)) { return 'install.ps1 holds a key but release/agentbus2-release-ed25519.pub is missing' }
+    $pub = Join-Path $RepoRoot 'release/agentmesh-release-ed25519.pub'
+    if (-not (Test-Path -LiteralPath $pub)) { return 'install.ps1 holds a key but release/agentmesh-release-ed25519.pub is missing' }
     $want = ((Get-Content -LiteralPath $pub -Raw) -replace "`r", '').Trim()
     if ($st.Pem -ceq $want) { return $null }
-    return 'install.ps1 holds a key that differs from release/agentbus2-release-ed25519.pub'
+    return 'install.ps1 holds a key that differs from release/agentmesh-release-ed25519.pub'
 }
 
 function Invoke-SelfTest {
@@ -440,15 +440,15 @@ function Invoke-SelfTest {
     # Get-KeyBlockState and Test-KeyBlock against planted scripts.
     $kbDir = Join-Path $Work 'keyblock'
     New-Item -ItemType Directory -Force -Path $kbDir | Out-Null
-    $kbOk = "# BEGIN agentbus2 release public key`n`$PubKeyPem = @'`n-----BEGIN PUBLIC KEY-----`nREPLACED-BY-release/embed-key.sh`n-----END PUBLIC KEY-----`n'@`n# END agentbus2 release public key`n"
+    $kbOk = "# BEGIN agentmesh release public key`n`$PubKeyPem = @'`n-----BEGIN PUBLIC KEY-----`nREPLACED-BY-release/embed-key.sh`n-----END PUBLIC KEY-----`n'@`n# END agentmesh release public key`n"
     $kbCases = [ordered]@{
         'ok'            = @($kbOk, 1, 1, $true, $true)
-        'no-end'        = @(($kbOk -replace '# END agentbus2 release public key\n', ''), 1, 0, $false, $false)
-        'no-begin'      = @(($kbOk -replace '# BEGIN agentbus2 release public key\n', ''), 0, 1, $false, $false)
+        'no-end'        = @(($kbOk -replace '# END agentmesh release public key\n', ''), 1, 0, $false, $false)
+        'no-begin'      = @(($kbOk -replace '# BEGIN agentmesh release public key\n', ''), 0, 1, $false, $false)
         'duplicated'    = @(($kbOk + $kbOk), 2, 2, $false, $false)
-        'end-first'     = @(("# END agentbus2 release public key`n" + $kbOk.Replace("# END agentbus2 release public key`n", '')), 1, 1, $false, $false)
-        'near-miss'     = @(($kbOk -replace 'agentbus2 release public key', 'agentbus release public key'), 0, 0, $false, $false)
-        'not-here-string' = @("# BEGIN agentbus2 release public key`n`$PubKeyPem = 'x'`n# END agentbus2 release public key`n", 1, 1, $true, $false)
+        'end-first'     = @(("# END agentmesh release public key`n" + $kbOk.Replace("# END agentmesh release public key`n", '')), 1, 1, $false, $false)
+        'near-miss'     = @(($kbOk -replace 'agentmesh release public key', 'agentbus release public key'), 0, 0, $false, $false)
+        'not-here-string' = @("# BEGIN agentmesh release public key`n`$PubKeyPem = 'x'`n# END agentmesh release public key`n", 1, 1, $true, $false)
     }
     foreach ($name in $kbCases.Keys) {
         $c = $kbCases[$name]
@@ -461,17 +461,17 @@ function Invoke-SelfTest {
     Build-Fixture
     $v = Join-Path $Fx 'valid/v9.0.1'
     Assert 'self: sums list five files' (@(Get-Content -LiteralPath (Join-Path $v 'SHA256SUMS')).Count -eq 5)
-    Assert 'self: sums name the mcponly zips' ((@(Get-Content -LiteralPath (Join-Path $v 'SHA256SUMS')) | Where-Object { $_ -match ' agentbus2-mcponly-v9\.0\.1-windows-(amd64|arm64)\.zip$' }).Count -eq 2)
-    Assert 'self: tampered-zip differs from valid in the mcponly zip too' ((Get-FileHash -LiteralPath (Join-Path $v 'agentbus2-mcponly-v9.0.1-windows-amd64.zip')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $Fx 'tampered-zip/v9.0.1/agentbus2-mcponly-v9.0.1-windows-amd64.zip')).Hash)
+    Assert 'self: sums name the mcponly zips' ((@(Get-Content -LiteralPath (Join-Path $v 'SHA256SUMS')) | Where-Object { $_ -match ' agentmesh-mcponly-v9\.0\.1-windows-(amd64|arm64)\.zip$' }).Count -eq 2)
+    Assert 'self: tampered-zip differs from valid in the mcponly zip too' ((Get-FileHash -LiteralPath (Join-Path $v 'agentmesh-mcponly-v9.0.1-windows-amd64.zip')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $Fx 'tampered-zip/v9.0.1/agentmesh-mcponly-v9.0.1-windows-amd64.zip')).Hash)
     Assert 'self: valid signature verifies' (Test-Verify $v)
     Assert 'self: tampered-sig fails' (-not (Test-Verify (Join-Path $Fx 'tampered-sig/v9.0.1')))
     Assert 'self: tampered-sums fails' (-not (Test-Verify (Join-Path $Fx 'tampered-sums/v9.0.1')))
     Assert 'self: tampered-zip keeps sums' ((Get-FileHash -LiteralPath (Join-Path $v 'SHA256SUMS')).Hash -eq (Get-FileHash -LiteralPath (Join-Path $Fx 'tampered-zip/v9.0.1/SHA256SUMS')).Hash)
-    Assert 'self: tampered-zip differs from valid' ((Get-FileHash -LiteralPath (Join-Path $v 'agentbus2-v9.0.1-windows-amd64.zip')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $Fx 'tampered-zip/v9.0.1/agentbus2-v9.0.1-windows-amd64.zip')).Hash)
+    Assert 'self: tampered-zip differs from valid' ((Get-FileHash -LiteralPath (Join-Path $v 'agentmesh-v9.0.1-windows-amd64.zip')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $Fx 'tampered-zip/v9.0.1/agentmesh-v9.0.1-windows-amd64.zip')).Hash)
     Assert 'self: missing-entry verifies and lacks zips' ((Test-Verify (Join-Path $Fx 'missing-entry/v9.0.1')) -and -not ((Get-Content -LiteralPath (Join-Path $Fx 'missing-entry/v9.0.1/SHA256SUMS')) -match 'windows'))
     $be = Join-Path $Fx 'broken-exe/v9.0.1'
-    Assert 'self: broken-exe verifies and hashes its own zips' ((Test-Verify $be) -and (@(Get-Content -LiteralPath (Join-Path $be 'SHA256SUMS')) -contains ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $be 'agentbus2-v9.0.1-windows-amd64.zip')).Hash.ToLower() + '  agentbus2-v9.0.1-windows-amd64.zip')))
-    Assert 'self: broken-exe differs from valid' ((Get-FileHash -LiteralPath (Join-Path $be 'agentbus2-v9.0.1-windows-amd64.zip')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $v 'agentbus2-v9.0.1-windows-amd64.zip')).Hash)
+    Assert 'self: broken-exe verifies and hashes its own zips' ((Test-Verify $be) -and (@(Get-Content -LiteralPath (Join-Path $be 'SHA256SUMS')) -contains ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $be 'agentmesh-v9.0.1-windows-amd64.zip')).Hash.ToLower() + '  agentmesh-v9.0.1-windows-amd64.zip')))
+    Assert 'self: broken-exe differs from valid' ((Get-FileHash -LiteralPath (Join-Path $be 'agentmesh-v9.0.1-windows-amd64.zip')).Hash -ne (Get-FileHash -LiteralPath (Join-Path $v 'agentmesh-v9.0.1-windows-amd64.zip')).Hash)
     $nwb = Join-Path $Fx 'no-windows-build/v9.0.1'
     Assert 'self: no-windows-build keeps SHA256SUMS and its signature but has no zip' ((Test-Verify $nwb) -and (@(Get-ChildItem -LiteralPath $nwb -Filter '*.zip').Count -eq 0))
     $ns = Join-Path $Fx 'no-sums/v9.0.1'
@@ -484,16 +484,16 @@ function Invoke-SelfTest {
     $threw = $false
     try { Set-KeyBlock (Join-Path $Fx 'fakes/openssl.cmd') 'x' } catch { $threw = $true }
     Assert 'self: Set-KeyBlock refuses a file without markers' $threw
-    Expand-Archive -LiteralPath (Join-Path $Fx "valid/v9.0.0/agentbus2-v9.0.0-windows-$(Get-HostArch).zip") -DestinationPath (Join-Path $Work 'x') -Force
-    if (-not $IsWin) { & chmod +x (Join-Path $Work 'x/agentbus2.exe') } # Expand-Archive drops the mode on Unix
-    Assert 'self: stub prints its version' ((& (Join-Path $Work 'x/agentbus2.exe') version) -eq '9.0.0')
+    Expand-Archive -LiteralPath (Join-Path $Fx "valid/v9.0.0/agentmesh-v9.0.0-windows-$(Get-HostArch).zip") -DestinationPath (Join-Path $Work 'x') -Force
+    if (-not $IsWin) { & chmod +x (Join-Path $Work 'x/agentmesh.exe') } # Expand-Archive drops the mode on Unix
+    Assert 'self: stub prints its version' ((& (Join-Path $Work 'x/agentmesh.exe') version) -eq '9.0.0')
     $other = if ((Get-HostArch) -eq 'amd64') { 'arm64' } else { 'amd64' }
-    Expand-Archive -LiteralPath (Join-Path $Fx "valid/v9.0.0/agentbus2-v9.0.0-windows-$other.zip") -DestinationPath (Join-Path $Work 'y') -Force
-    if (-not $IsWin) { & chmod +x (Join-Path $Work 'y/agentbus2.exe') }
-    Expand-Archive -LiteralPath (Join-Path $Fx "valid/v9.0.0/agentbus2-mcponly-v9.0.0-windows-$(Get-HostArch).zip") -DestinationPath (Join-Path $Work 'm') -Force
-    if (-not $IsWin) { & chmod +x (Join-Path $Work 'm/agentbus2-mcponly.exe') }
-    Assert 'self: mcponly zip holds only agentbus2-mcponly.exe, which prints its version' ((@(Get-ChildItem -LiteralPath (Join-Path $Work 'm') | ForEach-Object { $_.Name }) -join ',') -eq 'agentbus2-mcponly.exe' -and ((& (Join-Path $Work 'm/agentbus2-mcponly.exe') version) -eq '9.0.0'))
-    Assert 'self: the non-host-arch zip holds a stub that reports WRONGARCH' ((& (Join-Path $Work 'y/agentbus2.exe') version) -eq 'WRONGARCH-9.0.0')
+    Expand-Archive -LiteralPath (Join-Path $Fx "valid/v9.0.0/agentmesh-v9.0.0-windows-$other.zip") -DestinationPath (Join-Path $Work 'y') -Force
+    if (-not $IsWin) { & chmod +x (Join-Path $Work 'y/agentmesh.exe') }
+    Expand-Archive -LiteralPath (Join-Path $Fx "valid/v9.0.0/agentmesh-mcponly-v9.0.0-windows-$(Get-HostArch).zip") -DestinationPath (Join-Path $Work 'm') -Force
+    if (-not $IsWin) { & chmod +x (Join-Path $Work 'm/agentmesh-mcponly.exe') }
+    Assert 'self: mcponly zip holds only agentmesh-mcponly.exe, which prints its version' ((@(Get-ChildItem -LiteralPath (Join-Path $Work 'm') | ForEach-Object { $_.Name }) -join ',') -eq 'agentmesh-mcponly.exe' -and ((& (Join-Path $Work 'm/agentmesh-mcponly.exe') version) -eq '9.0.0'))
+    Assert 'self: the non-host-arch zip holds a stub that reports WRONGARCH' ((& (Join-Path $Work 'y/agentmesh.exe') version) -eq 'WRONGARCH-9.0.0')
     if ($IsWin) {
         $fake3 = Join-Path $Fx 'fakes3/openssl.cmd'
         $ver3 = (& $fake3 version | Select-Object -First 1)
@@ -503,22 +503,22 @@ function Invoke-SelfTest {
     }
 
     # The environment helpers and the child runner.
-    $before = [Environment]::GetEnvironmentVariable('AGENTBUS2_VERSION')
-    [Environment]::SetEnvironmentVariable('AGENTBUS2_VERSION', 'keep-me')
-    [Environment]::SetEnvironmentVariable('AGENTBUS2_SELFTEST_B', 'b')
+    $before = [Environment]::GetEnvironmentVariable('AGENTMESH_VERSION')
+    [Environment]::SetEnvironmentVariable('AGENTMESH_VERSION', 'keep-me')
+    [Environment]::SetEnvironmentVariable('AGENTMESH_SELFTEST_B', 'b')
     try {
-        $s = Set-EnvMap @{ 'AGENTBUS2_VERSION' = 'changed'; 'AGENTBUS2_SELFTEST_A' = 'a'; 'AGENTBUS2_SELFTEST_B' = '' }
-        $inside = ([Environment]::GetEnvironmentVariable('AGENTBUS2_VERSION') -eq 'changed') -and ([Environment]::GetEnvironmentVariable('AGENTBUS2_SELFTEST_A') -eq 'a') -and ($null -eq [Environment]::GetEnvironmentVariable('AGENTBUS2_SELFTEST_B'))
+        $s = Set-EnvMap @{ 'AGENTMESH_VERSION' = 'changed'; 'AGENTMESH_SELFTEST_A' = 'a'; 'AGENTMESH_SELFTEST_B' = '' }
+        $inside = ([Environment]::GetEnvironmentVariable('AGENTMESH_VERSION') -eq 'changed') -and ([Environment]::GetEnvironmentVariable('AGENTMESH_SELFTEST_A') -eq 'a') -and ($null -eq [Environment]::GetEnvironmentVariable('AGENTMESH_SELFTEST_B'))
         Restore-EnvMap $s
-        Assert 'self: Set-EnvMap sets, empties and Restore-EnvMap restores' ($inside -and ([Environment]::GetEnvironmentVariable('AGENTBUS2_VERSION') -eq 'keep-me') -and ($null -eq [Environment]::GetEnvironmentVariable('AGENTBUS2_SELFTEST_A')) -and ([Environment]::GetEnvironmentVariable('AGENTBUS2_SELFTEST_B') -eq 'b'))
+        Assert 'self: Set-EnvMap sets, empties and Restore-EnvMap restores' ($inside -and ([Environment]::GetEnvironmentVariable('AGENTMESH_VERSION') -eq 'keep-me') -and ($null -eq [Environment]::GetEnvironmentVariable('AGENTMESH_SELFTEST_A')) -and ([Environment]::GetEnvironmentVariable('AGENTMESH_SELFTEST_B') -eq 'b'))
     } finally {
-        [Environment]::SetEnvironmentVariable('AGENTBUS2_VERSION', $(if ($null -eq $before) { [NullString]::Value } else { $before }))
-        [Environment]::SetEnvironmentVariable('AGENTBUS2_SELFTEST_A', [NullString]::Value)
-        [Environment]::SetEnvironmentVariable('AGENTBUS2_SELFTEST_B', [NullString]::Value)
+        [Environment]::SetEnvironmentVariable('AGENTMESH_VERSION', $(if ($null -eq $before) { [NullString]::Value } else { $before }))
+        [Environment]::SetEnvironmentVariable('AGENTMESH_SELFTEST_A', [NullString]::Value)
+        [Environment]::SetEnvironmentVariable('AGENTMESH_SELFTEST_B', [NullString]::Value)
     }
     $probe = Join-Path $Fx 'probe.ps1'
-    [IO.File]::WriteAllText($probe, "Write-Output ('args=' + `$args.Count + ' v=' + `$env:AGENTBUS2_VERSION)`nif (`$env:AGENTBUS2_SELFTEST_FAIL) { throw 'boom message' }`n")
-    $s = Set-EnvMap @{ 'AGENTBUS2_VERSION' = 'v1.2.3'; 'AGENTBUS2_SELFTEST_FAIL' = '' }
+    [IO.File]::WriteAllText($probe, "Write-Output ('args=' + `$args.Count + ' v=' + `$env:AGENTMESH_VERSION)`nif (`$env:AGENTMESH_SELFTEST_FAIL) { throw 'boom message' }`n")
+    $s = Set-EnvMap @{ 'AGENTMESH_VERSION' = 'v1.2.3'; 'AGENTMESH_SELFTEST_FAIL' = '' }
     try {
         $r = Invoke-Child 'file' $probe @('a', 'b')
         Assert 'self: Invoke-Child file mode passes arguments and environment' (($r.Exit -eq 0) -and $r.Squashed.Contains('args=2v=v1.2.3'))
@@ -530,7 +530,7 @@ function Invoke-SelfTest {
             $r = Invoke-Child $m $probe @()
             Assert "self: Invoke-Child $m mode runs the script with no arguments" (($r.Exit -eq 0) -and $r.Squashed.Contains('args=0v=v1.2.3'))
         }
-        [Environment]::SetEnvironmentVariable('AGENTBUS2_SELFTEST_FAIL', '1')
+        [Environment]::SetEnvironmentVariable('AGENTMESH_SELFTEST_FAIL', '1')
         $r = Invoke-Child 'file' $probe @()
         Assert 'self: Invoke-Child file mode reports a throw as exit 1 with the message' (($r.Exit -eq 1) -and $r.Squashed.Contains('boommessage'))
         $r = Invoke-Child 'iex-catch' $probe @()
@@ -543,27 +543,27 @@ function Invoke-SelfTest {
     # Invoke-Case itself: a match counts as a pass, any mismatch as a failure
     # (exit code, output, extra condition); the counters are put back after.
     $p0 = $script:Pass; $f0 = $script:Fail
-    Invoke-Case 'self-probe-match' 1 'boom   message' @{ 'AGENTBUS2_SELFTEST_FAIL' = '1' } '' $null { $true } 'file' 'probe.ps1'
+    Invoke-Case 'self-probe-match' 1 'boom   message' @{ 'AGENTMESH_SELFTEST_FAIL' = '1' } '' $null { $true } 'file' 'probe.ps1'
     $gotPass = $script:Pass - $p0
-    Invoke-Case 'self-probe-wrong-exit (expected FAIL, not counted)' 0 'boommessage' @{ 'AGENTBUS2_SELFTEST_FAIL' = '1' } '' $null $null 'file' 'probe.ps1'
-    Invoke-Case 'self-probe-wrong-output (expected FAIL, not counted)' 1 'not in the output' @{ 'AGENTBUS2_SELFTEST_FAIL' = '1' } '' $null $null 'file' 'probe.ps1'
-    Invoke-Case 'self-probe-wrong-extra (expected FAIL, not counted)' 1 'boommessage' @{ 'AGENTBUS2_SELFTEST_FAIL' = '1' } '' $null { $false } 'file' 'probe.ps1'
-    Invoke-Case -Name 'self-probe-forbidden-output-present (expected FAIL, not counted)' -WantExit 1 -WantOut 'boommessage' -Env @{ 'AGENTBUS2_SELFTEST_FAIL' = '1' } -InstallDir '' -Before $null -After $null -Mode 'file' -ScriptName 'probe.ps1' -WantNotOut 'boom message'
+    Invoke-Case 'self-probe-wrong-exit (expected FAIL, not counted)' 0 'boommessage' @{ 'AGENTMESH_SELFTEST_FAIL' = '1' } '' $null $null 'file' 'probe.ps1'
+    Invoke-Case 'self-probe-wrong-output (expected FAIL, not counted)' 1 'not in the output' @{ 'AGENTMESH_SELFTEST_FAIL' = '1' } '' $null $null 'file' 'probe.ps1'
+    Invoke-Case 'self-probe-wrong-extra (expected FAIL, not counted)' 1 'boommessage' @{ 'AGENTMESH_SELFTEST_FAIL' = '1' } '' $null { $false } 'file' 'probe.ps1'
+    Invoke-Case -Name 'self-probe-forbidden-output-present (expected FAIL, not counted)' -WantExit 1 -WantOut 'boommessage' -Env @{ 'AGENTMESH_SELFTEST_FAIL' = '1' } -InstallDir '' -Before $null -After $null -Mode 'file' -ScriptName 'probe.ps1' -WantNotOut 'boom message'
     $gotFail = $script:Fail - $f0
     $script:Pass = $p0; $script:Fail = $f0
     Assert 'self: Invoke-Case passes one match and fails four mismatches' (($gotPass -eq 1) -and ($gotFail -eq 4))
-    Assert 'self: Invoke-Case left no AGENTBUS2_ variable behind' (-not (@('AGENTBUS2_BASE_URL', 'AGENTBUS2_INSTALL_DIR', 'AGENTBUS2_SELFTEST_FAIL', 'AGENTBUS2_SKIP_SIGNATURE', 'AGENTBUS2_TEST_OSARCH') | Where-Object { [Environment]::GetEnvironmentVariable($_) }))
+    Assert 'self: Invoke-Case left no AGENTMESH_ variable behind' (-not (@('AGENTMESH_BASE_URL', 'AGENTMESH_INSTALL_DIR', 'AGENTMESH_SELFTEST_FAIL', 'AGENTMESH_SKIP_SIGNATURE', 'AGENTMESH_TEST_OSARCH') | Where-Object { [Environment]::GetEnvironmentVariable($_) }))
 
     # install.ps1's own entry point under every run form. The refusals tested
     # fire first in Main, so these run on any OS.
-    Invoke-Case 'self: -File runs Main' 1 'AGENTBUS2_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTBUS2_SKIP_SIGNATURE' = 'yes' } '' $null $null
-    Invoke-Case 'self: iex runs Main' 1 'AGENTBUS2_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTBUS2_SKIP_SIGNATURE' = 'yes' } '' $null $null 'iex'
-    Invoke-Case 'self: . { iex } runs Main' 1 'AGENTBUS2_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTBUS2_SKIP_SIGNATURE' = 'yes' } '' $null $null 'iex-dot'
+    Invoke-Case 'self: -File runs Main' 1 'AGENTMESH_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTMESH_SKIP_SIGNATURE' = 'yes' } '' $null $null
+    Invoke-Case 'self: iex runs Main' 1 'AGENTMESH_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTMESH_SKIP_SIGNATURE' = 'yes' } '' $null $null 'iex'
+    Invoke-Case 'self: . { iex } runs Main' 1 'AGENTMESH_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTMESH_SKIP_SIGNATURE' = 'yes' } '' $null $null 'iex-dot'
     # The argument refusal fires first in Main, so it runs on any OS too.
-    Invoke-Case 'self: an unknown argument is refused with the usage text' 1 'usage: install.ps1 [-McpOnly]; configure it with AGENTBUS2_VERSION' @{} '' $null $null 'file' 'install.ps1' @('-Bogus')
+    Invoke-Case 'self: an unknown argument is refused with the usage text' 1 'usage: install.ps1 [-McpOnly]; configure it with AGENTMESH_VERSION' @{} '' $null $null 'file' 'install.ps1' @('-Bogus')
     Invoke-Case 'self: -McpOnly twice is refused with the usage text' 1 'usage: install.ps1 [-McpOnly]' @{} '' $null $null 'scriptblock' 'install.ps1' @('-McpOnly', '-McpOnly')
-    Invoke-Case 'self: -McpOnly reaches Main (the next refusal is the environment one)' 1 'AGENTBUS2_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTBUS2_SKIP_SIGNATURE' = 'yes' } '' $null $null 'scriptblock' 'install.ps1' @('-McpOnly') -WantNotOut 'usage:'
-    Invoke-Case 'self: iex refusal is a throw' 7 'THROWN: agentbus2 install: AGENTBUS2_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTBUS2_SKIP_SIGNATURE' = 'yes' } '' $null $null 'iex-catch'
+    Invoke-Case 'self: -McpOnly reaches Main (the next refusal is the environment one)' 1 'AGENTMESH_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTMESH_SKIP_SIGNATURE' = 'yes' } '' $null $null 'scriptblock' 'install.ps1' @('-McpOnly') -WantNotOut 'usage:'
+    Invoke-Case 'self: iex refusal is a throw' 7 'THROWN: agentmesh install: AGENTMESH_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTMESH_SKIP_SIGNATURE' = 'yes' } '' $null $null 'iex-catch'
 
     # Find-OpenSsl with nothing on PATH and ProgramFiles unset must reach its
     # own "none was found" message, not a Join-Path binding error.
@@ -571,7 +571,7 @@ function Invoke-SelfTest {
     New-Item -ItemType Directory -Force -Path $emptyDir | Out-Null
     $pathVar = if ($IsWin) { 'Path' } else { 'PATH' }
     $noPrograms = Join-Path $Work 'no-programs'
-    Invoke-Case 'self: Find-OpenSsl with no OpenSSL on PATH or under ProgramFiles says none was found' 0 'THREW: agentbus2 install: OpenSSL 3 is required to verify the release signature and none was found' @{ $pathVar = $emptyDir; 'ProgramFiles' = $noPrograms } '' $null $null 'file' 'probe-find-openssl.ps1'
+    Invoke-Case 'self: Find-OpenSsl with no OpenSSL on PATH or under ProgramFiles says none was found' 0 'THREW: agentmesh install: OpenSSL 3 is required to verify the release signature and none was found' @{ $pathVar = $emptyDir; 'ProgramFiles' = $noPrograms } '' $null $null 'file' 'probe-find-openssl.ps1'
 
     Start-Server
     $srv = $script:Server
@@ -598,24 +598,24 @@ function Invoke-Cases {
     $noGit = @{ 'Path' = "$env:SystemRoot\System32;$env:SystemRoot"; 'ProgramFiles' = (Join-Path $Work 'no-programs') }
     $fakePath = @{ 'Path' = (Join-Path $Fx 'fakes') + ";$env:SystemRoot\System32;$env:SystemRoot"; 'ProgramFiles' = (Join-Path $Work 'no-programs') }
     $fake3Path = @{ 'Path' = (Join-Path $Fx 'fakes3') + ";$env:SystemRoot\System32;$env:SystemRoot"; 'ProgramFiles' = (Join-Path $Work 'no-programs') }
-    Invoke-Case 'valid' 0 'installed agentbus2 9.0.1' @{} $dir $null { (& (Join-Path $dir 'agentbus2.exe') version) -eq '9.0.1' }
+    Invoke-Case 'valid' 0 'installed agentmesh 9.0.1' @{} $dir $null { (& (Join-Path $dir 'agentmesh.exe') version) -eq '9.0.1' }
     Invoke-Case 'path-added' 0 'to your user PATH' @{} (Join-Path $Work 'bin2') $null { (Get-UserPathEntries) -contains (Join-Path $Work 'bin2') }
     # A %VAR% entry in the user Path survives the edit, and the value stays
     # REG_EXPAND_SZ.
     $dirX = Join-Path $Work 'bin-expand'
     Invoke-Case 'path-keeps-expand-entries' 0 'to your user PATH' @{} $dirX {
         $raw = Get-RawUserPath
-        Set-RawUserPath @{ Value = ('%USERPROFILE%\agentbus2-itest-marker;' + $raw.Value); Kind = [Microsoft.Win32.RegistryValueKind]::ExpandString }
+        Set-RawUserPath @{ Value = ('%USERPROFILE%\agentmesh-itest-marker;' + $raw.Value); Kind = [Microsoft.Win32.RegistryValueKind]::ExpandString }
     } {
         $raw = Get-RawUserPath
-        $raw.Value.Contains('%USERPROFILE%\agentbus2-itest-marker') -and ($raw.Kind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString) -and $raw.Value.Contains($dirX)
+        $raw.Value.Contains('%USERPROFILE%\agentmesh-itest-marker') -and ($raw.Kind -eq [Microsoft.Win32.RegistryValueKind]::ExpandString) -and $raw.Value.Contains($dirX)
     }
     # The directory already on the user PATH with a trailing backslash is the
     # same entry: it is not added a second time. The user PATH is put back by
     # After (and again by Cleanup).
     $dirT = Join-Path $Work 'bin-trailing'
     $script:TrailSavedPath = $null
-    Invoke-Case -Name 'path-trailing-backslash-not-duplicated' -WantExit 0 -WantOut 'installed agentbus2 9.0.1' -Env @{} -InstallDir $dirT -Before {
+    Invoke-Case -Name 'path-trailing-backslash-not-duplicated' -WantExit 0 -WantOut 'installed agentmesh 9.0.1' -Env @{} -InstallDir $dirT -Before {
         $script:TrailSavedPath = Get-RawUserPath
         $joined = (@($script:TrailSavedPath.Value, ($dirT + '\')) | Where-Object { $_ }) -join ';'
         Set-RawUserPath @{ Value = $joined; Kind = [Microsoft.Win32.RegistryValueKind]::ExpandString }
@@ -629,9 +629,9 @@ function Invoke-Cases {
     # removed. The user PATH is put back by After (and again by Cleanup).
     $v1Dir = Join-Path (Join-Path $Work 'Programs') 'agentbus'
     $v1Exe = Join-Path $v1Dir 'agentbus.exe'
-    $v2Dir = Join-Path (Join-Path $Work 'Programs') 'agentbus2'
+    $v2Dir = Join-Path (Join-Path $Work 'Programs') 'agentmesh'
     $script:V1Hash = $null; $script:V1SavedPath = $null
-    Invoke-Case 'v1-sibling-untouched' 0 'installed agentbus2 9.0.1' @{} $v2Dir {
+    Invoke-Case 'v1-sibling-untouched' 0 'installed agentmesh 9.0.1' @{} $v2Dir {
         New-Item -ItemType Directory -Force -Path $v1Dir | Out-Null
         New-Stub '1.0.0' $v1Exe
         $script:V1Hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $v1Exe).Hash
@@ -646,24 +646,24 @@ function Invoke-Cases {
         Set-RawUserPath $script:V1SavedPath
         $hashSame -and ($files.Count -eq 1) -and ($files[0] -eq 'agentbus.exe') -and $pathOnce -and $v2Added
     }
-    Invoke-Case 'pinned-version' 0 'installed agentbus2 9.0.0' @{ 'AGENTBUS2_VERSION' = 'v9.0.0' } $dir $null $null
-    Invoke-Case 'version-no-v' 1 'version must look like vX.Y.Z' @{ 'AGENTBUS2_VERSION' = '9.0.0' } $dir $null $null
-    Invoke-Case 'latest-404' 1 'could not determine the latest release' @{ 'AGENTBUS2_BASE_URL' = "$Base/nope" } $dir $null $null
-    Invoke-Case 'tampered-zip' 1 'checksum mismatch' @{ 'AGENTBUS2_BASE_URL' = "$Base/tampered-zip" } $dir $null $null
-    Invoke-Case 'tampered-sums' 1 'signature check of SHA256SUMS failed' @{ 'AGENTBUS2_BASE_URL' = "$Base/tampered-sums" } $dir $null $null
-    Invoke-Case 'tampered-sig' 1 'signature check of SHA256SUMS failed' @{ 'AGENTBUS2_BASE_URL' = "$Base/tampered-sig" } $dir $null $null
-    Invoke-Case 'sums-missing-entry' 1 'SHA256SUMS has no entry for' @{ 'AGENTBUS2_BASE_URL' = "$Base/missing-entry" } $dir $null $null
+    Invoke-Case 'pinned-version' 0 'installed agentmesh 9.0.0' @{ 'AGENTMESH_VERSION' = 'v9.0.0' } $dir $null $null
+    Invoke-Case 'version-no-v' 1 'version must look like vX.Y.Z' @{ 'AGENTMESH_VERSION' = '9.0.0' } $dir $null $null
+    Invoke-Case 'latest-404' 1 'could not determine the latest release' @{ 'AGENTMESH_BASE_URL' = "$Base/nope" } $dir $null $null
+    Invoke-Case 'tampered-zip' 1 'checksum mismatch' @{ 'AGENTMESH_BASE_URL' = "$Base/tampered-zip" } $dir $null $null
+    Invoke-Case 'tampered-sums' 1 'signature check of SHA256SUMS failed' @{ 'AGENTMESH_BASE_URL' = "$Base/tampered-sums" } $dir $null $null
+    Invoke-Case 'tampered-sig' 1 'signature check of SHA256SUMS failed' @{ 'AGENTMESH_BASE_URL' = "$Base/tampered-sig" } $dir $null $null
+    Invoke-Case 'sums-missing-entry' 1 'SHA256SUMS has no entry for' @{ 'AGENTMESH_BASE_URL' = "$Base/missing-entry" } $dir $null $null
     # A 404 for the zip is a release from before the Windows builds; a 404 for
     # anything else (here SHA256SUMS) stays a plain download failure.
-    Invoke-Case -Name 'release-without-windows-build' -WantExit 1 -WantOut 'release v9.0.1 has no Windows build: agentbus2-v9.0.1-windows-' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/no-windows-build" } -InstallDir $dir -Before $null -After $null -WantNotOut 'download failed'
-    Invoke-Case -Name 'sums-download-404-is-a-download-failure' -WantExit 1 -WantOut "download failed: $Base/no-sums/releases/download/v9.0.1/SHA256SUMS" -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/no-sums" } -InstallDir $dir -Before $null -After $null -WantNotOut 'no Windows build'
+    Invoke-Case -Name 'release-without-windows-build' -WantExit 1 -WantOut 'release v9.0.1 has no Windows build: agentmesh-v9.0.1-windows-' -Env @{ 'AGENTMESH_BASE_URL' = "$Base/no-windows-build" } -InstallDir $dir -Before $null -After $null -WantNotOut 'download failed'
+    Invoke-Case -Name 'sums-download-404-is-a-download-failure' -WantExit 1 -WantOut "download failed: $Base/no-sums/releases/download/v9.0.1/SHA256SUMS" -Env @{ 'AGENTMESH_BASE_URL' = "$Base/no-sums" } -InstallDir $dir -Before $null -After $null -WantNotOut 'no Windows build'
     Invoke-Case 'no-openssl' 1 'none was found' $noGit $dir $null $null
     $fakeErrPath = @{ 'Path' = (Join-Path $Fx 'fakes-stderr') + ";$env:SystemRoot\System32;$env:SystemRoot"; 'ProgramFiles' = (Join-Path $Work 'no-programs') }
     $fake1ErrPath = @{ 'Path' = (Join-Path $Fx 'fakes1-stderr') + ";$env:SystemRoot\System32;$env:SystemRoot"; 'ProgramFiles' = (Join-Path $Work 'no-programs') }
     $fakeGitPath = @{ 'Path' = (Join-Path $Fx 'fakegit\cmd') + ";$env:SystemRoot\System32;$env:SystemRoot"; 'ProgramFiles' = (Join-Path $Work 'no-programs') }
     Invoke-Case 'openssl-stderr-warning-still-found' 1 'signature check of SHA256SUMS failed' $fakeErrPath $dir $null $null
     Invoke-Case 'openssl-too-old-with-stderr' 1 'OpenSSL 1.1.1w' $fake1ErrPath $dir $null $null
-    Invoke-Case 'git-clangarm64-openssl-found' 0 'installed agentbus2 9.0.1' $fakeGitPath $dir $null $null
+    Invoke-Case 'git-clangarm64-openssl-found' 0 'installed agentmesh 9.0.1' $fakeGitPath $dir $null $null
     # No 'ProgramFiles unset' case: a 64-bit Windows child gets ProgramFiles
     # from ProgramW6432 (see Invoke-Case), and no-openssl covers an empty one.
     # A 32-bit PowerShell sees ProgramFiles as Program Files (x86) and the
@@ -683,36 +683,36 @@ function Invoke-Cases {
     Assert 'find-openssl-in-process-uses-programw6432' ("$inProc" -eq (Join-Path $fakePrograms 'Git\clangarm64\bin\openssl.exe'))
     if ("$inProc" -ne (Join-Path $fakePrograms 'Git\clangarm64\bin\openssl.exe')) { Write-Host "    Find-OpenSsl returned: '$inProc'" }
     Invoke-Case 'openssl-too-old' 1 'OpenSSL 1.1.1w' $fakePath $dir $null $null
-    Invoke-Case 'skip-signature-valid' 0 'skipping the signature check' ($noGit + @{ 'AGENTBUS2_SKIP_SIGNATURE' = '1' }) $dir $null $null
-    Invoke-Case 'skip-signature-tampered' 1 'checksum mismatch' @{ 'AGENTBUS2_SKIP_SIGNATURE' = '1'; 'AGENTBUS2_BASE_URL' = "$Base/tampered-zip" } $dir $null $null
-    Invoke-Case 'skip-signature-bad-value' 1 'AGENTBUS2_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTBUS2_SKIP_SIGNATURE' = 'yes' } $dir $null $null
-    Invoke-Case 'unknown-arch' 1 'unsupported architecture: Riscv64' @{ 'AGENTBUS2_TEST_OSARCH' = 'Riscv64' } $dir $null $null
+    Invoke-Case 'skip-signature-valid' 0 'skipping the signature check' ($noGit + @{ 'AGENTMESH_SKIP_SIGNATURE' = '1' }) $dir $null $null
+    Invoke-Case 'skip-signature-tampered' 1 'checksum mismatch' @{ 'AGENTMESH_SKIP_SIGNATURE' = '1'; 'AGENTMESH_BASE_URL' = "$Base/tampered-zip" } $dir $null $null
+    Invoke-Case 'skip-signature-bad-value' 1 'AGENTMESH_SKIP_SIGNATURE must be 1 or unset' @{ 'AGENTMESH_SKIP_SIGNATURE' = 'yes' } $dir $null $null
+    Invoke-Case 'unknown-arch' 1 'unsupported architecture: Riscv64' @{ 'AGENTMESH_TEST_OSARCH' = 'Riscv64' } $dir $null $null
     Invoke-Case 'relative-dir' 1 'must be an absolute path' @{} 'bin' $null $null
     # Reinstalls and upgrades. $dir holds 9.0.1 here; the installer reports a
     # same-version reinstall, an upgrade from the version the old binary
     # printed, or a plain upgrade when the old binary did not run. The
     # reinstall also proves the PATH edit is idempotent: $dir, added by
     # "valid", is still listed exactly once.
-    Invoke-Case -Name 'reinstall-same-version' -WantExit 0 -WantOut 'reinstalled: agentbus2 9.0.1 was already installed' -Env @{} -InstallDir $dir -Before $null -After { ((& (Join-Path $dir 'agentbus2.exe') version) -eq '9.0.1') -and (@(Get-UserPathEntries | Where-Object { $_ -eq $dir }).Count -eq 1) } -WantNotOut 'upgraded'
-    Invoke-Case -Name 'pin-older-over-newer' -WantExit 0 -WantOut 'upgraded from 9.0.1: restart every harness session' -Env @{ 'AGENTBUS2_VERSION' = 'v9.0.0' } -InstallDir $dir -Before $null -After { (& (Join-Path $dir 'agentbus2.exe') version) -eq '9.0.0' } -WantNotOut 'reinstalled'
+    Invoke-Case -Name 'reinstall-same-version' -WantExit 0 -WantOut 'reinstalled: agentmesh 9.0.1 was already installed' -Env @{} -InstallDir $dir -Before $null -After { ((& (Join-Path $dir 'agentmesh.exe') version) -eq '9.0.1') -and (@(Get-UserPathEntries | Where-Object { $_ -eq $dir }).Count -eq 1) } -WantNotOut 'upgraded'
+    Invoke-Case -Name 'pin-older-over-newer' -WantExit 0 -WantOut 'upgraded from 9.0.1: restart every harness session' -Env @{ 'AGENTMESH_VERSION' = 'v9.0.0' } -InstallDir $dir -Before $null -After { (& (Join-Path $dir 'agentmesh.exe') version) -eq '9.0.0' } -WantNotOut 'reinstalled'
     $script:Running = $null
-    Invoke-Case 'upgrade-while-running' 0 'upgraded from 9.0.0: restart' @{} $dir { $script:Running = Start-Process -FilePath (Join-Path $dir 'agentbus2.exe') -ArgumentList 'sleep' -PassThru @Hidden } {
-        ((& (Join-Path $dir 'agentbus2.exe') version) -eq '9.0.1') -and (@(Get-ChildItem -LiteralPath $dir -Filter 'agentbus2.exe.old-*').Count -eq 1)
+    Invoke-Case 'upgrade-while-running' 0 'upgraded from 9.0.0: restart' @{} $dir { $script:Running = Start-Process -FilePath (Join-Path $dir 'agentmesh.exe') -ArgumentList 'sleep' -PassThru @Hidden } {
+        ((& (Join-Path $dir 'agentmesh.exe') version) -eq '9.0.1') -and (@(Get-ChildItem -LiteralPath $dir -Filter 'agentmesh.exe.old-*').Count -eq 1)
     }
     if ($script:Running) { Stop-Process -Id $script:Running.Id -Force; Start-Sleep -Milliseconds 500 }
-    Invoke-Case 'leftover-old-cleaned' 0 'reinstalled: agentbus2 9.0.1 was already installed' @{} $dir $null { @(Get-ChildItem -LiteralPath $dir -Filter 'agentbus2.exe.old-*').Count -eq 0 }
+    Invoke-Case 'leftover-old-cleaned' 0 'reinstalled: agentmesh 9.0.1 was already installed' @{} $dir $null { @(Get-ChildItem -LiteralPath $dir -Filter 'agentmesh.exe.old-*').Count -eq 0 }
     $dirBroken = Join-Path $Work 'bin-broken-old'
     Invoke-Case -Name 'upgrade-over-binary-that-does-not-run' -WantExit 0 -WantOut 'upgraded: restart every harness session' -Env @{} -InstallDir $dirBroken -Before {
         New-Item -ItemType Directory -Force -Path $dirBroken | Out-Null
-        Set-Content -LiteralPath (Join-Path $dirBroken 'agentbus2.exe') -Value 'this is not an executable'
-    } -After { ((& (Join-Path $dirBroken 'agentbus2.exe') version) -eq '9.0.1') -and (@(Get-ChildItem -LiteralPath $dirBroken -Filter 'agentbus2.exe.old-*').Count -eq 0) } -WantNotOut 'upgraded from'
+        Set-Content -LiteralPath (Join-Path $dirBroken 'agentmesh.exe') -Value 'this is not an executable'
+    } -After { ((& (Join-Path $dirBroken 'agentmesh.exe') version) -eq '9.0.1') -and (@(Get-ChildItem -LiteralPath $dirBroken -Filter 'agentmesh.exe.old-*').Count -eq 0) } -WantNotOut 'upgraded from'
     # Two installers racing into a fresh directory. The environment is set
     # around both launches and put back at once: without it they would
     # install from github.com into the real install directory. Each child's
     # stdout and stderr go to files, printed when the case fails (windows.yml
     # run 37710180972 lost the exit-1 child's message).
     function Test-Concurrent([string]$Name, [string]$Dir, [string[]]$InstallerArgs, [string]$Exe) {
-        $saved = Set-EnvMap @{ 'AGENTBUS2_BASE_URL' = "$Base/valid"; 'AGENTBUS2_INSTALL_DIR' = $Dir; 'AGENTBUS2_VERSION' = ''; 'AGENTBUS2_SKIP_SIGNATURE' = ''; 'AGENTBUS2_TEST_OSARCH' = '' }
+        $saved = Set-EnvMap @{ 'AGENTMESH_BASE_URL' = "$Base/valid"; 'AGENTMESH_INSTALL_DIR' = $Dir; 'AGENTMESH_VERSION' = ''; 'AGENTMESH_SKIP_SIGNATURE' = ''; 'AGENTMESH_TEST_OSARCH' = '' }
         $logs = @(
             @{ Out = (Join-Path $Work "$Name-1.out"); Err = (Join-Path $Work "$Name-1.err") },
             @{ Out = (Join-Path $Work "$Name-2.out"); Err = (Join-Path $Work "$Name-2.err") }
@@ -742,17 +742,17 @@ function Invoke-Cases {
             }
         }
     }
-    Test-Concurrent 'concurrent' (Join-Path $Work 'bin3') @() 'agentbus2.exe'
+    Test-Concurrent 'concurrent' (Join-Path $Work 'bin3') @() 'agentmesh.exe'
     # The same race for -McpOnly (the sh side's mcponly-concurrent).
-    Test-Concurrent 'mcponly-concurrent' (Join-Path $Work 'bin-mcp-race') @('-McpOnly') 'agentbus2-mcponly.exe'
-    Invoke-Case 'failed-run-leaves-no-temp' 1 'checksum mismatch' @{ 'AGENTBUS2_BASE_URL' = "$Base/tampered-zip" } $dir $null { @(Get-ChildItem ([IO.Path]::GetTempPath()) -Filter 'agentbus2-install-*' -Directory).Count -eq 0 }
+    Test-Concurrent 'mcponly-concurrent' (Join-Path $Work 'bin-mcp-race') @('-McpOnly') 'agentmesh-mcponly.exe'
+    Invoke-Case 'failed-run-leaves-no-temp' 1 'checksum mismatch' @{ 'AGENTMESH_BASE_URL' = "$Base/tampered-zip" } $dir $null { @(Get-ChildItem ([IO.Path]::GetTempPath()) -Filter 'agentmesh-install-*' -Directory).Count -eq 0 }
 
     # Refusals and paths install.ps1 has beyond the plan.
-    Invoke-Case 'version-suffix' 1 'version must look like vX.Y.Z' @{ 'AGENTBUS2_VERSION' = 'v9.0.0-rc1' } $dir $null $null
-    Invoke-Case 'version-newline' 1 'a value containing a newline' @{ 'AGENTBUS2_VERSION' = "v9.0.0`n" } $dir $null $null
+    Invoke-Case 'version-suffix' 1 'version must look like vX.Y.Z' @{ 'AGENTMESH_VERSION' = 'v9.0.0-rc1' } $dir $null $null
+    Invoke-Case 'version-newline' 1 'a value containing a newline' @{ 'AGENTMESH_VERSION' = "v9.0.0`n" } $dir $null $null
     # Arguments: none or exactly -McpOnly. Anything else, repeated or extra
     # included, dies with the usage text before anything is downloaded.
-    $usagePs = 'usage: install.ps1 [-McpOnly]; configure it with AGENTBUS2_VERSION, AGENTBUS2_INSTALL_DIR, AGENTBUS2_BASE_URL, AGENTBUS2_SKIP_SIGNATURE'
+    $usagePs = 'usage: install.ps1 [-McpOnly]; configure it with AGENTMESH_VERSION, AGENTMESH_INSTALL_DIR, AGENTMESH_BASE_URL, AGENTMESH_SKIP_SIGNATURE'
     $dirArgs = Join-Path $Work 'bin-args'
     Invoke-Case 'positional-argument' 1 $usagePs @{} $dirArgs $null { -not (Test-Path -LiteralPath $dirArgs) } 'file' 'install.ps1' @('v9.0.0')
     Invoke-Case 'bad-argument' 1 $usagePs @{} $dirArgs $null { -not (Test-Path -LiteralPath $dirArgs) } 'file' 'install.ps1' @('-Bogus')
@@ -762,102 +762,102 @@ function Invoke-Cases {
     Invoke-Case 'bad-argument-extra-first' 1 $usagePs @{} $dirArgs $null { -not (Test-Path -LiteralPath $dirArgs) } 'file' 'install.ps1' @('x', '-McpOnly')
     Invoke-Case 'bad-argument-scriptblock' 1 $usagePs @{} $dirArgs $null { -not (Test-Path -LiteralPath $dirArgs) } 'scriptblock' 'install.ps1' @('-Bogus')
 
-    # The MCP-only client: -McpOnly installs agentbus2-mcponly.exe into the
-    # same directory as agentbus2.exe and leaves agentbus2.exe alone.
+    # The MCP-only client: -McpOnly installs agentmesh-mcponly.exe into the
+    # same directory as agentmesh.exe and leaves agentmesh.exe alone.
     $mcpDir = Join-Path $Work 'bin-mcp'
-    Invoke-Case -Name 'mcponly-install' -WantExit 0 -WantOut 'installed agentbus2-mcponly 9.0.1 to' -Env @{} -InstallDir $mcpDir -Before $null -After {
-        ((& (Join-Path $mcpDir 'agentbus2-mcponly.exe') version) -eq '9.0.1') -and -not (Test-Path -LiteralPath (Join-Path $mcpDir 'agentbus2.exe')) -and ((Get-UserPathEntries) -contains $mcpDir)
-    } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly') -WantNotOut 'agentbus2 init'
-    Invoke-Case -Name 'mcponly-prints-next-step' -WantExit 0 -WantOut 'next: agentbus2-mcponly help (connect this agent to an agentbus2 server)' -Env @{} -InstallDir $mcpDir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
-    Invoke-Case -Name 'mcponly-rerun' -WantExit 0 -WantOut 'reinstalled: agentbus2-mcponly 9.0.1 was already installed' -Env @{} -InstallDir $mcpDir -Before $null -After {
-        (@(Get-UserPathEntries | Where-Object { $_ -eq $mcpDir }).Count -eq 1) -and (@(Get-ChildItem -LiteralPath $mcpDir -Filter 'agentbus2-mcponly.exe.old-*').Count -eq 0)
+    Invoke-Case -Name 'mcponly-install' -WantExit 0 -WantOut 'installed agentmesh-mcponly 9.0.1 to' -Env @{} -InstallDir $mcpDir -Before $null -After {
+        ((& (Join-Path $mcpDir 'agentmesh-mcponly.exe') version) -eq '9.0.1') -and -not (Test-Path -LiteralPath (Join-Path $mcpDir 'agentmesh.exe')) -and ((Get-UserPathEntries) -contains $mcpDir)
+    } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly') -WantNotOut 'agentmesh init'
+    Invoke-Case -Name 'mcponly-prints-next-step' -WantExit 0 -WantOut 'next: agentmesh-mcponly help (connect this agent to an agentmesh server)' -Env @{} -InstallDir $mcpDir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-rerun' -WantExit 0 -WantOut 'reinstalled: agentmesh-mcponly 9.0.1 was already installed' -Env @{} -InstallDir $mcpDir -Before $null -After {
+        (@(Get-UserPathEntries | Where-Object { $_ -eq $mcpDir }).Count -eq 1) -and (@(Get-ChildItem -LiteralPath $mcpDir -Filter 'agentmesh-mcponly.exe.old-*').Count -eq 0)
     } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly') -WantNotOut 'upgraded'
-    Invoke-Case -Name 'mcponly-lowercase-flag' -WantExit 0 -WantOut 'installed agentbus2-mcponly 9.0.1 to' -Env @{} -InstallDir (Join-Path $Work 'bin-mcp2') -Before $null -After {
-        (& (Join-Path (Join-Path $Work 'bin-mcp2') 'agentbus2-mcponly.exe') version) -eq '9.0.1'
+    Invoke-Case -Name 'mcponly-lowercase-flag' -WantExit 0 -WantOut 'installed agentmesh-mcponly 9.0.1 to' -Env @{} -InstallDir (Join-Path $Work 'bin-mcp2') -Before $null -After {
+        (& (Join-Path (Join-Path $Work 'bin-mcp2') 'agentmesh-mcponly.exe') version) -eq '9.0.1'
     } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-mcponly')
-    Invoke-Case -Name 'mcponly-pinned-version' -WantExit 0 -WantOut 'installed agentbus2-mcponly 9.0.0 to' -Env @{ 'AGENTBUS2_VERSION' = 'v9.0.0' } -InstallDir (Join-Path $Work 'bin-mcp3') -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-pinned-version' -WantExit 0 -WantOut 'installed agentmesh-mcponly 9.0.0 to' -Env @{ 'AGENTMESH_VERSION' = 'v9.0.0' } -InstallDir (Join-Path $Work 'bin-mcp3') -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
     # The documented piped form with an argument:
     # & ([scriptblock]::Create((irm .../install.ps1))) -McpOnly
     $mcpSb = Join-Path $Work 'bin-mcp-sb'
-    Invoke-Case -Name 'mcponly-scriptblock' -WantExit 0 -WantOut 'installed agentbus2-mcponly 9.0.1 to' -Env @{} -InstallDir $mcpSb -Before $null -After {
-        ((& (Join-Path $mcpSb 'agentbus2-mcponly.exe') version) -eq '9.0.1') -and -not (Test-Path -LiteralPath (Join-Path $mcpSb 'agentbus2.exe'))
+    Invoke-Case -Name 'mcponly-scriptblock' -WantExit 0 -WantOut 'installed agentmesh-mcponly 9.0.1 to' -Env @{} -InstallDir $mcpSb -Before $null -After {
+        ((& (Join-Path $mcpSb 'agentmesh-mcponly.exe') version) -eq '9.0.1') -and -not (Test-Path -LiteralPath (Join-Path $mcpSb 'agentmesh.exe'))
     } -Mode 'scriptblock' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
-    Invoke-Case -Name 'scriptblock-without-argument-installs-full' -WantExit 0 -WantOut 'installed agentbus2 9.0.1 to' -Env @{} -InstallDir (Join-Path $Work 'bin-sb-full') -Before $null -After {
-        (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin-sb-full') 'agentbus2.exe')) -and -not (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin-sb-full') 'agentbus2-mcponly.exe'))
+    Invoke-Case -Name 'scriptblock-without-argument-installs-full' -WantExit 0 -WantOut 'installed agentmesh 9.0.1 to' -Env @{} -InstallDir (Join-Path $Work 'bin-sb-full') -Before $null -After {
+        (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin-sb-full') 'agentmesh.exe')) -and -not (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin-sb-full') 'agentmesh-mcponly.exe'))
     } -Mode 'scriptblock' -ScriptName 'install.ps1'
-    # Upgrading agentbus2-mcponly.exe while it runs, beside a full install: the
-    # running file is renamed aside; agentbus2.exe (byte for byte) and a planted
-    # agentbus2.exe.old-1234abcd are untouched.
+    # Upgrading agentmesh-mcponly.exe while it runs, beside a full install: the
+    # running file is renamed aside; agentmesh.exe (byte for byte) and a planted
+    # agentmesh.exe.old-1234abcd are untouched.
     $besideDir = Join-Path $Work 'bin-beside'
     $script:BesideHash = $null; $script:BesideRunning = $null
     Invoke-Case -Name 'mcponly-upgrade-beside-full' -WantExit 0 -WantOut 'upgraded from 9.0.0: restart' -Env @{} -InstallDir $besideDir -Before {
         New-Item -ItemType Directory -Force -Path $besideDir | Out-Null
-        New-Stub '1.0.0' (Join-Path $besideDir 'agentbus2.exe')
-        Set-Content -LiteralPath (Join-Path $besideDir 'agentbus2.exe.old-1234abcd') -Value 'planted'
-        New-Stub '9.0.0' (Join-Path $besideDir 'agentbus2-mcponly.exe')
-        $script:BesideHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $besideDir 'agentbus2.exe')).Hash
-        $script:BesideRunning = Start-Process -FilePath (Join-Path $besideDir 'agentbus2-mcponly.exe') -ArgumentList 'sleep' -PassThru @Hidden
+        New-Stub '1.0.0' (Join-Path $besideDir 'agentmesh.exe')
+        Set-Content -LiteralPath (Join-Path $besideDir 'agentmesh.exe.old-1234abcd') -Value 'planted'
+        New-Stub '9.0.0' (Join-Path $besideDir 'agentmesh-mcponly.exe')
+        $script:BesideHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $besideDir 'agentmesh.exe')).Hash
+        $script:BesideRunning = Start-Process -FilePath (Join-Path $besideDir 'agentmesh-mcponly.exe') -ArgumentList 'sleep' -PassThru @Hidden
     } -After {
-        ((& (Join-Path $besideDir 'agentbus2-mcponly.exe') version) -eq '9.0.1') -and
-        (@(Get-ChildItem -LiteralPath $besideDir -Filter 'agentbus2-mcponly.exe.old-*').Count -eq 1) -and
-        ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $besideDir 'agentbus2.exe')).Hash -eq $script:BesideHash) -and
-        (Test-Path -LiteralPath (Join-Path $besideDir 'agentbus2.exe.old-1234abcd')) -and
-        ((Get-Content -LiteralPath (Join-Path $besideDir 'agentbus2.exe.old-1234abcd')) -eq 'planted')
+        ((& (Join-Path $besideDir 'agentmesh-mcponly.exe') version) -eq '9.0.1') -and
+        (@(Get-ChildItem -LiteralPath $besideDir -Filter 'agentmesh-mcponly.exe.old-*').Count -eq 1) -and
+        ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $besideDir 'agentmesh.exe')).Hash -eq $script:BesideHash) -and
+        (Test-Path -LiteralPath (Join-Path $besideDir 'agentmesh.exe.old-1234abcd')) -and
+        ((Get-Content -LiteralPath (Join-Path $besideDir 'agentmesh.exe.old-1234abcd')) -eq 'planted')
     } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
     if ($script:BesideRunning) { Stop-Process -Id $script:BesideRunning.Id -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 500 }
-    # The full installer, in turn, sweeps only agentbus2.exe.old-*: a planted,
-    # non-running agentbus2-mcponly.exe.old-deadbeef and agentbus2-mcponly.exe
+    # The full installer, in turn, sweeps only agentmesh.exe.old-*: a planted,
+    # non-running agentmesh-mcponly.exe.old-deadbeef and agentmesh-mcponly.exe
     # itself survive it (the case plants its own; it depends on no other case).
     $fullDir = Join-Path $Work 'bin-full-beside'
     $script:McpBeforeHash = $null
     Invoke-Case -Name 'full-install-leaves-mcponly-alone' -WantExit 0 -WantOut 'upgraded from 1.0.0: restart' -Env @{} -InstallDir $fullDir -Before {
         New-Item -ItemType Directory -Force -Path $fullDir | Out-Null
-        New-Stub '1.0.0' (Join-Path $fullDir 'agentbus2.exe')
-        New-Stub '9.0.0' (Join-Path $fullDir 'agentbus2-mcponly.exe')
-        Set-Content -LiteralPath (Join-Path $fullDir 'agentbus2-mcponly.exe.old-deadbeef') -Value 'planted'
-        Set-Content -LiteralPath (Join-Path $fullDir 'agentbus2.exe.old-1234abcd') -Value 'planted'
-        $script:McpBeforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fullDir 'agentbus2-mcponly.exe')).Hash
+        New-Stub '1.0.0' (Join-Path $fullDir 'agentmesh.exe')
+        New-Stub '9.0.0' (Join-Path $fullDir 'agentmesh-mcponly.exe')
+        Set-Content -LiteralPath (Join-Path $fullDir 'agentmesh-mcponly.exe.old-deadbeef') -Value 'planted'
+        Set-Content -LiteralPath (Join-Path $fullDir 'agentmesh.exe.old-1234abcd') -Value 'planted'
+        $script:McpBeforeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fullDir 'agentmesh-mcponly.exe')).Hash
     } -After {
-        ((& (Join-Path $fullDir 'agentbus2.exe') version) -eq '9.0.1') -and
-        ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fullDir 'agentbus2-mcponly.exe')).Hash -eq $script:McpBeforeHash) -and
-        (Test-Path -LiteralPath (Join-Path $fullDir 'agentbus2-mcponly.exe.old-deadbeef')) -and
-        (-not (Test-Path -LiteralPath (Join-Path $fullDir 'agentbus2.exe.old-1234abcd')))
+        ((& (Join-Path $fullDir 'agentmesh.exe') version) -eq '9.0.1') -and
+        ((Get-FileHash -Algorithm SHA256 -LiteralPath (Join-Path $fullDir 'agentmesh-mcponly.exe')).Hash -eq $script:McpBeforeHash) -and
+        (Test-Path -LiteralPath (Join-Path $fullDir 'agentmesh-mcponly.exe.old-deadbeef')) -and
+        (-not (Test-Path -LiteralPath (Join-Path $fullDir 'agentmesh.exe.old-1234abcd')))
     }
     # And -McpOnly sweeps its own stale leftovers, not the full binary's.
     $sweepDir = Join-Path $Work 'bin-mcp-sweep'
     Invoke-Case -Name 'mcponly-sweeps-own-old-only' -WantExit 0 -WantOut 'upgraded from 9.0.0: restart' -Env @{} -InstallDir $sweepDir -Before {
         New-Item -ItemType Directory -Force -Path $sweepDir | Out-Null
-        New-Stub '9.0.0' (Join-Path $sweepDir 'agentbus2-mcponly.exe')
-        Set-Content -LiteralPath (Join-Path $sweepDir 'agentbus2-mcponly.exe.old-cafe0001') -Value 'stale'
-        Set-Content -LiteralPath (Join-Path $sweepDir 'agentbus2.exe.old-1234abcd') -Value 'planted'
+        New-Stub '9.0.0' (Join-Path $sweepDir 'agentmesh-mcponly.exe')
+        Set-Content -LiteralPath (Join-Path $sweepDir 'agentmesh-mcponly.exe.old-cafe0001') -Value 'stale'
+        Set-Content -LiteralPath (Join-Path $sweepDir 'agentmesh.exe.old-1234abcd') -Value 'planted'
     } -After {
-        ((& (Join-Path $sweepDir 'agentbus2-mcponly.exe') version) -eq '9.0.1') -and
-        (@(Get-ChildItem -LiteralPath $sweepDir -Filter 'agentbus2-mcponly.exe.old-*').Count -eq 0) -and
-        (Test-Path -LiteralPath (Join-Path $sweepDir 'agentbus2.exe.old-1234abcd'))
+        ((& (Join-Path $sweepDir 'agentmesh-mcponly.exe') version) -eq '9.0.1') -and
+        (@(Get-ChildItem -LiteralPath $sweepDir -Filter 'agentmesh-mcponly.exe.old-*').Count -eq 0) -and
+        (Test-Path -LiteralPath (Join-Path $sweepDir 'agentmesh.exe.old-1234abcd'))
     } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
-    Invoke-Case -Name 'mcponly-tampered-zip' -WantExit 1 -WantOut 'checksum mismatch for agentbus2-mcponly-v9.0.1-windows-' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/tampered-zip" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
-    Invoke-Case -Name 'mcponly-sums-missing-entry' -WantExit 1 -WantOut 'SHA256SUMS has no entry for agentbus2-mcponly-v9.0.1-windows-' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/missing-entry" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
-    Invoke-Case -Name 'mcponly-without-windows-build' -WantExit 1 -WantOut 'release v9.0.1 has no Windows build: agentbus2-mcponly-v9.0.1-windows-' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/no-windows-build" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly') -WantNotOut 'download failed'
-    Invoke-Case -Name 'mcponly-binary-does-not-run' -WantExit 1 -WantOut 'agentbus2-mcponly.exe does not run' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/broken-exe" } -InstallDir (Join-Path $Work 'bin-mcp-broken') -Before $null -After { -not (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin-mcp-broken') 'agentbus2-mcponly.exe')) } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
-    Invoke-Case -Name 'mcponly-install-path-is-directory' -WantExit 1 -WantOut 'agentbus2-mcponly.exe is a directory' -Env @{} -InstallDir (Join-Path $Work 'dirbin-mcp') -Before { New-Item -ItemType Directory -Force -Path (Join-Path (Join-Path $Work 'dirbin-mcp') 'agentbus2-mcponly.exe') | Out-Null } -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
-    Invoke-Case -Name 'mcponly-failed-run-leaves-no-temp' -WantExit 1 -WantOut 'checksum mismatch' -Env @{ 'AGENTBUS2_BASE_URL' = "$Base/tampered-zip" } -InstallDir $dir -Before $null -After { @(Get-ChildItem ([IO.Path]::GetTempPath()) -Filter 'agentbus2-install-*' -Directory).Count -eq 0 } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-tampered-zip' -WantExit 1 -WantOut 'checksum mismatch for agentmesh-mcponly-v9.0.1-windows-' -Env @{ 'AGENTMESH_BASE_URL' = "$Base/tampered-zip" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-sums-missing-entry' -WantExit 1 -WantOut 'SHA256SUMS has no entry for agentmesh-mcponly-v9.0.1-windows-' -Env @{ 'AGENTMESH_BASE_URL' = "$Base/missing-entry" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-without-windows-build' -WantExit 1 -WantOut 'release v9.0.1 has no Windows build: agentmesh-mcponly-v9.0.1-windows-' -Env @{ 'AGENTMESH_BASE_URL' = "$Base/no-windows-build" } -InstallDir $dir -Before $null -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly') -WantNotOut 'download failed'
+    Invoke-Case -Name 'mcponly-binary-does-not-run' -WantExit 1 -WantOut 'agentmesh-mcponly.exe does not run' -Env @{ 'AGENTMESH_BASE_URL' = "$Base/broken-exe" } -InstallDir (Join-Path $Work 'bin-mcp-broken') -Before $null -After { -not (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin-mcp-broken') 'agentmesh-mcponly.exe')) } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-install-path-is-directory' -WantExit 1 -WantOut 'agentmesh-mcponly.exe is a directory' -Env @{} -InstallDir (Join-Path $Work 'dirbin-mcp') -Before { New-Item -ItemType Directory -Force -Path (Join-Path (Join-Path $Work 'dirbin-mcp') 'agentmesh-mcponly.exe') | Out-Null } -After $null -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
+    Invoke-Case -Name 'mcponly-failed-run-leaves-no-temp' -WantExit 1 -WantOut 'checksum mismatch' -Env @{ 'AGENTMESH_BASE_URL' = "$Base/tampered-zip" } -InstallDir $dir -Before $null -After { @(Get-ChildItem ([IO.Path]::GetTempPath()) -Filter 'agentmesh-install-*' -Directory).Count -eq 0 } -Mode 'file' -ScriptName 'install.ps1' -ScriptArgs @('-McpOnly')
     Invoke-Case 'placeholder-key' 1 'no embedded release key' @{} $dir $null $null 'file' 'install-placeholder.ps1'
-    Invoke-Case 'install-path-is-directory' 1 'agentbus2.exe is a directory' @{} (Join-Path $Work 'dirbin') { New-Item -ItemType Directory -Force -Path (Join-Path (Join-Path $Work 'dirbin') 'agentbus2.exe') | Out-Null } $null
-    Invoke-Case 'trailing-backslash-installs' 0 'installed agentbus2 9.0.1 to' @{} "$Work\bin4\\\" $null {
-        (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin4') 'agentbus2.exe')) -and ((Get-UserPathEntries) -contains (Join-Path $Work 'bin4'))
+    Invoke-Case 'install-path-is-directory' 1 'agentmesh.exe is a directory' @{} (Join-Path $Work 'dirbin') { New-Item -ItemType Directory -Force -Path (Join-Path (Join-Path $Work 'dirbin') 'agentmesh.exe') | Out-Null } $null
+    Invoke-Case 'trailing-backslash-installs' 0 'installed agentmesh 9.0.1 to' @{} "$Work\bin4\\\" $null {
+        (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin4') 'agentmesh.exe')) -and ((Get-UserPathEntries) -contains (Join-Path $Work 'bin4'))
     }
-    Invoke-Case 'trailing-slash-installs' 0 'installed agentbus2 9.0.1 to' @{} "$Work\bin5/" $null {
-        (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin5') 'agentbus2.exe')) -and ((Get-UserPathEntries) -contains (Join-Path $Work 'bin5'))
+    Invoke-Case 'trailing-slash-installs' 0 'installed agentmesh 9.0.1 to' @{} "$Work\bin5/" $null {
+        (Test-Path -LiteralPath (Join-Path (Join-Path $Work 'bin5') 'agentmesh.exe')) -and ((Get-UserPathEntries) -contains (Join-Path $Work 'bin5'))
     }
     Invoke-Case 'empty-localappdata' 1 'LocalAppData is not set' @{ 'LocalAppData' = '' } '' $null $null
     Invoke-Case 'unwritable-install-dir' 1 'cannot write to' @{} (Join-Path (Join-Path $Work 'afile') 'sub') { [IO.File]::WriteAllText((Join-Path $Work 'afile'), 'x') } $null
-    Invoke-Case 'iex-plain' 0 'installed agentbus2 9.0.1' @{} (Join-Path $Work 'bin6') $null { (& (Join-Path (Join-Path $Work 'bin6') 'agentbus2.exe') version) -eq '9.0.1' } 'iex'
-    Invoke-Case 'iex-dot-block' 0 'installed agentbus2 9.0.1' @{} (Join-Path $Work 'bin7') $null { (& (Join-Path (Join-Path $Work 'bin7') 'agentbus2.exe') version) -eq '9.0.1' } 'iex-dot'
-    Invoke-Case 'iex-refusal-throws' 7 'THROWN: agentbus2 install: version must look like vX.Y.Z' @{ 'AGENTBUS2_VERSION' = '9.0.0' } $dir $null $null 'iex-catch'
-    Invoke-Case 'version-check-reports-binary' 0 ('installed agentbus2 9.0.1 to ' + (Join-Path (Join-Path $Work 'bin8') 'agentbus2.exe')) @{} (Join-Path $Work 'bin8') $null $null
-    Invoke-Case 'version-check-binary-does-not-run' 1 'agentbus2.exe does not run' @{ 'AGENTBUS2_BASE_URL' = "$Base/broken-exe" } (Join-Path $Work 'bin9') $null $null
+    Invoke-Case 'iex-plain' 0 'installed agentmesh 9.0.1' @{} (Join-Path $Work 'bin6') $null { (& (Join-Path (Join-Path $Work 'bin6') 'agentmesh.exe') version) -eq '9.0.1' } 'iex'
+    Invoke-Case 'iex-dot-block' 0 'installed agentmesh 9.0.1' @{} (Join-Path $Work 'bin7') $null { (& (Join-Path (Join-Path $Work 'bin7') 'agentmesh.exe') version) -eq '9.0.1' } 'iex-dot'
+    Invoke-Case 'iex-refusal-throws' 7 'THROWN: agentmesh install: version must look like vX.Y.Z' @{ 'AGENTMESH_VERSION' = '9.0.0' } $dir $null $null 'iex-catch'
+    Invoke-Case 'version-check-reports-binary' 0 ('installed agentmesh 9.0.1 to ' + (Join-Path (Join-Path $Work 'bin8') 'agentmesh.exe')) @{} (Join-Path $Work 'bin8') $null $null
+    Invoke-Case 'version-check-binary-does-not-run' 1 'agentmesh.exe does not run' @{ 'AGENTMESH_BASE_URL' = "$Base/broken-exe" } (Join-Path $Work 'bin9') $null $null
     Invoke-Case 'openssl-fails-to-run' 1 'signature check of SHA256SUMS failed' $fake3Path $dir $null $null
-    Invoke-Case 'base-url-trailing-slash' 0 'installed agentbus2 9.0.1' @{ 'AGENTBUS2_BASE_URL' = "$Base/valid/" } $dir $null $null
+    Invoke-Case 'base-url-trailing-slash' 0 'installed agentmesh 9.0.1' @{ 'AGENTMESH_BASE_URL' = "$Base/valid/" } $dir $null $null
 
     # PSReadLine 3.0 defines a lookalike System.Runtime.InteropServices.
     # RuntimeInformation (no OSArchitecture) that wins in an interactive

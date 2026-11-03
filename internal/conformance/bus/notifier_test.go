@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/core/notify"
-	"github.com/ericfitz/agentbus2/internal/core/notify/pgnotify"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/core/notify"
+	"github.com/ericfitz/agentmesh/internal/core/notify/pgnotify"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
 // randHex8 is 8 random hex digits, for application names.
@@ -34,7 +34,7 @@ func crossProcessNotifier(t *testing.T, e dbtest.Engine, dsn string) notify.Noti
 	case "postgres":
 		l := pgnotify.New(t.Context(), dsn, pgnotify.Options{
 			MinBackoff:      50 * time.Millisecond,
-			ApplicationName: "agentbus2-listen-test-" + randHex8(t),
+			ApplicationName: "agentmesh-listen-test-" + randHex8(t),
 		})
 		t.Cleanup(l.Close)
 		return l

@@ -17,29 +17,29 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ericfitz/agentbus2/internal/auth/assertion"
-	"github.com/ericfitz/agentbus2/internal/auth/keys"
-	"github.com/ericfitz/agentbus2/internal/auth/token"
-	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/bus/remote"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/identities"
-	"github.com/ericfitz/agentbus2/internal/core/maintenance"
-	"github.com/ericfitz/agentbus2/internal/dbtest"
-	"github.com/ericfitz/agentbus2/internal/gen"
-	"github.com/ericfitz/agentbus2/internal/server"
-	"github.com/ericfitz/agentbus2/internal/server/cmd"
-	ab2store "github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/auth/assertion"
+	"github.com/ericfitz/agentmesh/internal/auth/keys"
+	"github.com/ericfitz/agentmesh/internal/auth/token"
+	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus/remote"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/identities"
+	"github.com/ericfitz/agentmesh/internal/core/maintenance"
+	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/gen"
+	"github.com/ericfitz/agentmesh/internal/server"
+	"github.com/ericfitz/agentmesh/internal/server/cmd"
+	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
 
-const replicaIssuer = "http://agentbus2.test"
+const replicaIssuer = "http://agentmesh.test"
 
 // replicaListeningRE captures address, engine, registration mode, issuer and
-// kid from `agentbus2 server listening on ADDR (ENGINE, registration MODE,
+// kid from `agentmesh server listening on ADDR (ENGINE, registration MODE,
 // issuer URL, kid KID)`. The issuer here has no port, unlike auth_test.go's.
 var replicaListeningRE = regexp.MustCompile(`listening on (\S+) \((\w+), registration (\w+), issuer (\S+), kid (\S+)\)`)
 
-// replica is one `agentbus2 server` started through cmd.Run.
+// replica is one `agentmesh server` started through cmd.Run.
 type replica struct {
 	name           string
 	stdout, stderr syncBuffer
@@ -185,7 +185,7 @@ type watchOutcome struct {
 }
 
 // TestReplicasWake is the Milestone 7 exit criterion (spec section 10): two
-// `agentbus2 server` replicas over one database deliver and wake correctly.
+// `agentmesh server` replicas over one database deliver and wake correctly.
 // The leaves that need a NOTIFY (3 and 5) exist on postgres only: two servers
 // over one SQLite file share no hints (Milestone 4 choice 14), so on sqlite
 // they could only wait for nothing to happen, which no defect can fail. That
@@ -732,7 +732,7 @@ func TestReplicasSigningKeyRotation(t *testing.T) {
 	})
 }
 
-// TestReplicasInspection is the issue #5 replica check: two `agentbus2 server`
+// TestReplicasInspection is the issue #5 replica check: two `agentmesh server`
 // replicas set from inspection_endpoint each call the one inspector for their
 // own writes; a refusal is a 422 inspection_rejected and stores nothing; a
 // failing inspector makes a send retryable unavailable and health degraded. It

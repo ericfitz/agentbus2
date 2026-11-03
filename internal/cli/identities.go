@@ -4,7 +4,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 type opAgentIdentityOut struct {
@@ -15,7 +15,7 @@ type opAgentIdentityOut struct {
 	ExpiresAt       int64  `json:"expires_at"`
 }
 
-// RunIdentities implements `agentbus2 identities create [-scope S] NAME`
+// RunIdentities implements `agentmesh identities create [-scope S] NAME`
 // (administrator only): the one-time enrollment token it prints is bound to
 // NAME and shown once.
 func RunIdentities(ctx context.Context, args []string, environ []string, stdin io.Reader, stdout, stderr io.Writer) int {

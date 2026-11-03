@@ -38,7 +38,7 @@ type Authenticator interface {
 }
 
 // RefuseAll never attaches an identity. It is the default, and what
-// agentbus2 server uses until Milestone 5.
+// agentmesh server uses until Milestone 5.
 type RefuseAll struct{}
 
 // Authenticate returns no identity.

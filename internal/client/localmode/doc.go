@@ -1,5 +1,5 @@
 // Package localmode is local (SQLite) mode of the connect layer: the
-// client.LocalOpener the full agentbus2 binary passes as client.Options.Local.
+// client.LocalOpener the full agentmesh binary passes as client.Options.Local.
 // It composes the core, the HTTP handler and the in-process transport over the
 // profile's SQLite file (Decisions 35, 36, 68; Milestone 5 choice 17), so the
 // package internal/client itself links no core, server or Store engine and a

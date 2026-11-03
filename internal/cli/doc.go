@@ -1,7 +1,7 @@
-// Package cli holds the agentbus2 commands. Every command is
+// Package cli holds the agentmesh commands. Every command is
 // Run<Name>(ctx, args, environ, stdin, stdout, stderr) int: flag.ContinueOnError,
 // -h exits 0, a flag error exits 2, a bus.Error prints as
-// "agentbus2: <code>: <message>" and exits 1 (2 for watch and wait, whose table
+// "agentmesh: <code>: <message>" and exits 1 (2 for watch and wait, whose table
 // is spec 3.5), and a result is one JSON document on stdout. The environment
 // comes from environ only, so a test never reads the developer's directories.
 //

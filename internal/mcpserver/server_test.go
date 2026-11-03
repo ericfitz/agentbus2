@@ -14,14 +14,14 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/client"
-	"github.com/ericfitz/agentbus2/internal/client/localmode"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/mcpserver"
-	"github.com/ericfitz/agentbus2/internal/procs"
-	"github.com/ericfitz/agentbus2/internal/profile"
-	"github.com/ericfitz/agentbus2/internal/sessionstate"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/client"
+	"github.com/ericfitz/agentmesh/internal/client/localmode"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/mcpserver"
+	"github.com/ericfitz/agentmesh/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/profile"
+	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
 
 // pinned is core.Defaults with the wake merge window off, so a wake does not
@@ -49,7 +49,7 @@ func newTestEnv(t *testing.T) *testEnv {
 			t.Fatal(err)
 		}
 	}
-	e.Environ = []string{"HOME=" + e.Home, "AGENTBUS2_CONFIG_DIR=" + e.ConfigDir, "AGENTBUS2_DATA_DIR=" + e.DataDir, "PATH=" + os.Getenv("PATH")}
+	e.Environ = []string{"HOME=" + e.Home, "AGENTMESH_CONFIG_DIR=" + e.ConfigDir, "AGENTMESH_DATA_DIR=" + e.DataDir, "PATH=" + os.Getenv("PATH")}
 	e.Config = profile.Config{Path: e.ConfigDir + "/config.json", Profiles: map[string]profile.Profile{
 		"default": {Name: "default", Mode: profile.ModeLocal, Identity: "pat"},
 	}}
@@ -96,9 +96,9 @@ type fakeTable struct {
 func newFakeTable() *fakeTable {
 	t := &fakeTable{procs: map[int]fakeProc{}}
 	t.set(10, 1, 5, "claude")
-	t.set(42, 10, 7, "agentbus2")
-	t.set(43, 10, 8, "agentbus2")
-	t.set(44, 10, 9, "agentbus2")
+	t.set(42, 10, 7, "agentmesh")
+	t.set(43, 10, 8, "agentmesh")
+	t.set(44, 10, 9, "agentmesh")
 	return t
 }
 
@@ -231,11 +231,11 @@ const toolCount = 26
 // and the init prompt says the same steps. Both editions serve the same 26
 // tools with the same schemas.
 // open note: mcp-only-client 7 (the schemas are shared: wait_seconds keeps its
-// sentence on agentbus2 wait, set_status keeps its sentence on agentbus2 park;
+// sentence on agentmesh wait, set_status keeps its sentence on agentmesh park;
 // both say what a tool replaces, not what to run; only Instructions and the
 // init prompt differ by edition).
 func TestInstructionsByEdition(t *testing.T) {
-	banned := []string{"agentbus2 wait", "agentbus2 watch", "agentbus2 park", "run_in_background", "agentbus2 init", "agentbus2 mcp", "stop-hook", "Bash", "Codex", "using-agentbus2"}
+	banned := []string{"agentmesh wait", "agentmesh watch", "agentmesh park", "run_in_background", "agentmesh init", "agentmesh mcp", "stop-hook", "Bash", "Codex", "using-agentmesh"}
 	for _, tc := range []struct {
 		name         string
 		edition      mcpserver.Edition
@@ -273,14 +273,14 @@ func TestInstructionsByEdition(t *testing.T) {
 						t.Errorf("MCP-only text contains %q", w)
 					}
 				}
-				for _, w := range []string{"wait_seconds", "agentbus2-mcponly help protocol", "set_status", "idle"} {
+				for _, w := range []string{"wait_seconds", "agentmesh-mcponly help protocol", "set_status", "idle"} {
 					if !strings.Contains(got, w) {
 						t.Errorf("MCP-only instructions lack %q", w)
 					}
 				}
 				return
 			}
-			if !strings.Contains(mcpserver.RegisterSteps, "set_status") || !strings.Contains(mcpserver.RegisterSteps, "idle before agentbus2 park") {
+			if !strings.Contains(mcpserver.RegisterSteps, "set_status") || !strings.Contains(mcpserver.RegisterSteps, "idle before agentmesh park") {
 				t.Fatalf("RegisterSteps lacks the status sentence: %q", mcpserver.RegisterSteps)
 			}
 		})
@@ -663,7 +663,7 @@ func TestToolsReportUnresolvedIdentity(t *testing.T) {
 	} {
 		be := r.failure(t, name, args, bus.CodeValidation)
 		if !strings.Contains(be.Message, "identity is required") || !strings.Contains(be.Message, "-identity") ||
-			!strings.Contains(be.Message, "AGENTBUS2_IDENTITY") || !strings.Contains(be.Message, "profile") {
+			!strings.Contains(be.Message, "AGENTMESH_IDENTITY") || !strings.Contains(be.Message, "profile") {
 			t.Errorf("%s: message does not name the three ways: %q", name, be.Message)
 		}
 	}

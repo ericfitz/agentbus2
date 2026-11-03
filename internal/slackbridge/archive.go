@@ -5,16 +5,16 @@ import (
 	"errors"
 	"slices"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
-	"github.com/ericfitz/agentbus2/internal/core"
-	"github.com/ericfitz/agentbus2/internal/core/scopes"
-	"github.com/ericfitz/agentbus2/internal/slackapi"
-	"github.com/ericfitz/agentbus2/internal/store"
+	"github.com/ericfitz/agentmesh/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/core"
+	"github.com/ericfitz/agentmesh/internal/core/scopes"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/store"
 )
 
 // FinalLine is the last message posted in a Slack channel before it is
 // archived (spec 6.5).
-const FinalLine = "This channel is archived; the record stays in agentbus2 until its scope is retired."
+const FinalLine = "This channel is archived; the record stays in agentmesh until its scope is retired."
 
 // ArchiveBridge posts the final line, archives the Slack channel and marks
 // the bridge archived (spec 6.5). reason is one of the scopes.Reason*

@@ -4,10 +4,10 @@ import (
 	"context"
 	"io"
 
-	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
-// RunHistory implements `agentbus2 history`.
+// RunHistory implements `agentmesh history`.
 func RunHistory(ctx context.Context, args []string, environ []string, _ io.Reader, stdout, stderr io.Writer) int {
 	c := newOpCmd("history", stderr)
 	var before, after, thread opInt

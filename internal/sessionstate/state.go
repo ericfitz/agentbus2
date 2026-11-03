@@ -21,9 +21,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/ericfitz/agentbus2/internal/filelock"
-	"github.com/ericfitz/agentbus2/internal/procs"
-	"github.com/ericfitz/agentbus2/internal/strictjson"
+	"github.com/ericfitz/agentmesh/internal/filelock"
+	"github.com/ericfitz/agentmesh/internal/procs"
+	"github.com/ericfitz/agentmesh/internal/strictjson"
 )
 
 // File is the state of one session.
