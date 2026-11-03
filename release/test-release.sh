@@ -170,6 +170,7 @@ check brew-check-bad-arch-second 2 "unknown architecture 'bogus' (amd64 or arm64
 check brew-check-no-container-started 1 "" -- test -e "$WORK/docker-called"
 printf '#!/bin/sh\necho "$*" >> "%s/docker-args"\nexit 0\n' "$WORK" > "$WORK/stubbin/docker"
 check brew-check-installs-v2-formula 0 "linux/arm64: OK" -- env PATH="$WORK/stubbin:$PATH" "$HERE/check-linux-brew.sh" arm64
+# shellcheck disable=SC2016 # the formula loop is matched literally
 check brew-check-both-formulas 0 "" -- grep -qF 'for f in agentbus2 agentbus2-mcponly; do brew install "ericfitz/tap/$f" && brew test "$f" && "$f" version; done' "$WORK/docker-args"
 
 # --- copy_scripts and write_sums ---------------------------------------------
