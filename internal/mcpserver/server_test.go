@@ -222,6 +222,10 @@ func str(m map[string]any, k string) string { s, _ := m[k].(string); return s }
 
 func arr(m map[string]any, k string) []any { a, _ := m[k].([]any); return a }
 
+// toolCount is the number of tools both editions serve; TestToolListIsExact
+// pins the names and the other tests compare the count to it.
+const toolCount = 26
+
 // TestInstructionsByEdition: the initialize result carries the edition's
 // instructions, which embed that edition's register steps (Eric, 2026-10-24),
 // and the init prompt says the same steps. Both editions serve the same 26
@@ -260,12 +264,12 @@ func TestInstructionsByEdition(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(tools.Tools) != 26 {
-				t.Fatalf("%d tools, want 26", len(tools.Tools))
+			if len(tools.Tools) != toolCount {
+				t.Fatalf("%d tools, want %d", len(tools.Tools), toolCount)
 			}
 			if tc.mcpOnly {
 				for _, w := range banned {
-					if strings.Contains(got, w) || strings.Contains(tc.steps, w) {
+					if strings.Contains(got, w) { // got embeds the steps (asserted above)
 						t.Errorf("MCP-only text contains %q", w)
 					}
 				}
@@ -320,7 +324,7 @@ func TestToolListIsExact(t *testing.T) {
 			t.Errorf("tool %s has no description", tl.Name)
 		}
 	}
-	if len(want) != 26 {
+	if len(want) != toolCount {
 		t.Fatalf("test table has %d names", len(want))
 	}
 	for _, n := range want {
