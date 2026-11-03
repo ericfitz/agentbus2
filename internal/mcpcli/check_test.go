@@ -170,6 +170,10 @@ func TestCheckServerDisagreesWithProfile(t *testing.T) {
 	if code, out, errs := run([]string{"register", "-server", base, "-identity", "pat"}, environ); code != 0 {
 		t.Fatalf("register: %d %q %q", code, out, errs)
 	}
+	// A trailing slash is the same server.
+	if code, out, errs := run([]string{"check", "-server", base + "/"}, environ); code != 0 || errs != "" || len(lines(out)) != 6 {
+		t.Errorf("trailing slash: code %d, stdout %q, stderr %q", code, out, errs)
+	}
 	for _, c := range []string{"check", "config"} {
 		code, out, errs := run([]string{c, "-server", "http://127.0.0.1:1"}, environ)
 		if code != 2 || out != "" || !strings.Contains(errs, "disagrees") {

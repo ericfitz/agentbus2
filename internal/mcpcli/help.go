@@ -197,8 +197,20 @@ AGENTBUS2_CREDENTIAL). The file must be readable by you alone: mode 0600 on
 Linux and macOS, an owner-only access list on Windows. A relative path is made
 absolute when the command starts.
 
+The file is a PKCS#8 PEM private key ("BEGIN PRIVATE KEY"), either Ed25519
+(EdDSA) or ECDSA on P-256 (ES256). To make one, run
+openssl genpkey -algorithm ed25519 -out agent-key.pem, or for ES256
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out
+agent-key.pem, then restrict it as above (chmod 600 agent-key.pem on Linux and
+macOS).
+
   $ agentbus2-mcponly register -server https://agentbus.example.com -identity ci-agent -credential ./agent-key.pem -enrollment-token-file ./enrollment-token
     > registered ci-agent at https://agentbus.example.com (created)
+
+register writes the profile's identity only when it creates the profile, that
+is, for the first identity registered for a server. A second identity
+registered into an existing profile is not recorded there, so every later
+command for it needs -identity NAME (or AGENTBUS2_IDENTITY).
 
 Next: agentbus2-mcponly help configure.
 `
@@ -375,6 +387,15 @@ agentbus2 server admin reset-credential NAME first, and then you register.
     > FAIL token: unauthenticated: <message>; fix: agentbus2-mcponly register -server https://agentbus.example.com -identity ghost (if ghost already holds another key, an administrator runs agentbus2 server admin reset-credential ghost first)
     > agentbus2-mcponly: check: token failed
     (exit 1)
+
+conflict: identity "NAME" already has a credential (exit 1). register sent a
+key and the server already holds a different one for that name. If you have
+the key that registered NAME, use it: pass -credential FILE, or run register
+from the machine whose credential store holds it. If register then adds "the
+pending key PATH differs from the key the server holds", that pending key is
+the new one a failed run left: remove the file it names. If the original key
+is lost, an administrator runs agentbus2 server admin reset-credential NAME,
+and then you register.
 
 not_registered. A call from the agent answers not_registered when the
 identity's scope was retired while the agent still held a bearer that had not

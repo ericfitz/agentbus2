@@ -33,7 +33,19 @@ AGENTBUS2_CREDENTIAL). The file must be readable by you alone: mode 0600 on
 Linux and macOS, an owner-only access list on Windows. A relative path is made
 absolute when the command starts.
 
+The file is a PKCS#8 PEM private key ("BEGIN PRIVATE KEY"), either Ed25519
+(EdDSA) or ECDSA on P-256 (ES256). To make one, run
+openssl genpkey -algorithm ed25519 -out agent-key.pem, or for ES256
+openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out
+agent-key.pem, then restrict it as above (chmod 600 agent-key.pem on Linux and
+macOS).
+
   $ agentbus2-mcponly register -server https://agentbus.example.com -identity ci-agent -credential ./agent-key.pem -enrollment-token-file ./enrollment-token
     > registered ci-agent at https://agentbus.example.com (created)
+
+register writes the profile's identity only when it creates the profile, that
+is, for the first identity registered for a server. A second identity
+registered into an existing profile is not recorded there, so every later
+command for it needs -identity NAME (or AGENTBUS2_IDENTITY).
 
 Next: agentbus2-mcponly help configure.

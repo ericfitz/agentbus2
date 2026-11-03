@@ -46,6 +46,15 @@ agentbus2 server admin reset-credential NAME first, and then you register.
     > agentbus2-mcponly: check: token failed
     (exit 1)
 
+conflict: identity "NAME" already has a credential (exit 1). register sent a
+key and the server already holds a different one for that name. If you have
+the key that registered NAME, use it: pass -credential FILE, or run register
+from the machine whose credential store holds it. If register then adds "the
+pending key PATH differs from the key the server holds", that pending key is
+the new one a failed run left: remove the file it names. If the original key
+is lost, an administrator runs agentbus2 server admin reset-credential NAME,
+and then you register.
+
 not_registered. A call from the agent answers not_registered when the
 identity's scope was retired while the agent still held a bearer that had not
 expired. Retiring a scope deletes its identities and their keys, so ask the

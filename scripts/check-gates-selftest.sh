@@ -1093,6 +1093,14 @@ block_m10_deps_rule_fires() {
 	bash "$wt/scripts/m10-exit-checks.sh" --deps-only >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 0 ]; then problem "$label" "internal/core/notify probe: exit $rc, expected 0: $(tail -n 3 "$log" | tr '\n' ' ')"; fi
 	rm -f "$wt/internal/mcpcli/probe_m10.go"
+	deps_probe "$label" internal/mcpcli/probe_m10.go "$m/internal/store" "deps_violation=$m/internal/mcpcli imports $m/internal/store [rule direct]" m10-exit-checks.sh
+	for args in "" "a.log b.log" "--deps-only extra"; do
+		rc=0
+		# shellcheck disable=SC2086 # the cases are word lists
+		bash "$wt/scripts/m10-exit-checks.sh" $args >"$log" 2>&1 || rc=$?
+		if [ "$rc" -ne 2 ]; then problem "$label" "arguments '$args': exit $rc, expected 2 (usage)"; fi
+		grep -qF 'usage:' "$log" || problem "$label" "arguments '$args': no usage line: $(tail -n 2 "$log" | tr '\n' ' ')"
+	done
 	rc=0
 	bash "$wt/scripts/m10-exit-checks.sh" "$tmp/does-not-exist.log" >"$log" 2>&1 || rc=$?
 	if [ "$rc" -ne 2 ]; then problem "$label" "missing log: exit $rc, expected 2"; fi
@@ -1113,8 +1121,6 @@ block_m10_deps_rule_fires() {
 	m10_log "$tmp/m10.log"
 	sed 's/TestMCPOnly\/7-register-without-token /TestMCPOnly\/6-serve-stdio /' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
 	m10_expect "$label" "a repeated leaf line in place of a missing one" 1 'mcponly=8'
-	m10_log "$tmp/m10.log"
-	sed 's/^ok  .*internal\/e2e.*$/FAIL\tgithub.com\/ericfitz\/agentbus2\/internal\/e2e\t25.000s/' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
 	m10_log "$tmp/m10.log"
 	grep -vF 'TestHelpExamples/verify' "$tmp/m10.log" >"$tmp/m10x.log" && cp "$tmp/m10x.log" "$tmp/m10.log"
 	m10_expect "$label" "deleted help leaf line" 1 'help=5'

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode"
 )
 
 var update = flag.Bool("update", false, "rewrite the goldens in testdata/help")
@@ -94,9 +95,8 @@ func TestHelpGrammar(t *testing.T) {
 		}
 		lines := strings.Split(strings.TrimSuffix(text, "\n"), "\n")
 		dollars := 0
-		placeholder := regexp.MustCompile(`<[^>]*>`)
 		for i, l := range lines {
-			if wantRE.MatchString(l) && strings.TrimSpace(placeholder.ReplaceAllString(l[6:], "")) == "" {
+			if wantRE.MatchString(l) && !hasLiteral(l[6:]) {
 				t.Errorf("%s: %q has no literal character, so it matches any line", name, l)
 			}
 			if dollarRE.MatchString(l) {
@@ -191,4 +191,35 @@ func TestCommandHelpPointsAtTopic(t *testing.T) {
 func lastLine(s string) string {
 	lines := strings.Split(strings.TrimSuffix(s, "\n"), "\n")
 	return lines[len(lines)-1]
+}
+
+var placeholderRE = regexp.MustCompile(`<[^>]*>`)
+
+// hasLiteral reports whether an expected-output line (after "    > ") pins
+// what it matches. A line without placeholders is exact, so any text does
+// ("}" is fine); one with placeholders needs a letter or digit outside them,
+// since punctuation alone ("<a>: <b>") would match nearly any line.
+func hasLiteral(s string) bool {
+	if !placeholderRE.MatchString(s) {
+		return strings.TrimSpace(s) != ""
+	}
+	return strings.ContainsFunc(placeholderRE.ReplaceAllString(s, ""), func(r rune) bool {
+		return unicode.IsLetter(r) || unicode.IsDigit(r)
+	})
+}
+
+func TestHasLiteral(t *testing.T) {
+	for s, want := range map[string]bool{
+		"<a>: <b>":         false,
+		"<a>":              false,
+		"  ":               false,
+		"<a> - <b>, (<c>)": false,
+		"ok   reach: <x>":  true,
+		"<a> failed":       true,
+		"exit 1":           true,
+	} {
+		if got := hasLiteral(s); got != want {
+			t.Errorf("hasLiteral(%q) = %v, want %v", s, got, want)
+		}
+	}
 }

@@ -34,7 +34,7 @@ func TestRegisterTokenNeverEchoed(t *testing.T) {
 		t.Fatal(err)
 	}
 	code, out, errs = run([]string{"register", "-server", base, "-identity", "pat", "-enrollment-token-file", file}, environ)
-	if code != 1 {
+	if code != 1 || !strings.Contains(errs, "forbidden: enrollment token is invalid") {
 		t.Errorf("wrong token: code %d, stderr %q", code, errs)
 	}
 	for name, s := range map[string]string{"stdout": out, "stderr": errs} {
