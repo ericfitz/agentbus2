@@ -68,3 +68,12 @@ These are not Eric's decisions. The agent that wrote the plan settled them, and 
 ## Deferred
 
 Redact, hold and quarantine, a notify channel (or an events table), inspection in local mode, and a command adapter. Each needs its own design and Eric's decision.
+
+## Addendum: stale inspection notice (Eric, 2026-11-03)
+
+Eric's decision. It supersedes the "documented only" handling of agent choice 4. When a replica dies while inspection is failing, its `inspection` notice must no longer stay set until some replica restarts. Two rules apply together:
+
+1. **Expiry.** A replica that is still failing refreshes the notice. A notice that nobody has refreshed for a set time expires, and health stops reporting `degraded` for it.
+2. **Any success clears.** The next successful inspection on any replica clears the notice. That includes a replica that never saw the failure and has not restarted.
+
+The setting name, the default interval and the job that does the expiring (a maintenance job or an expiry check on read) belong to the implementation plan.

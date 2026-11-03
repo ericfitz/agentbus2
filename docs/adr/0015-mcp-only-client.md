@@ -73,3 +73,7 @@ The full ledger is not part of the repository; these are the rulings that differ
 - Without a background shell an agent waits with `receive` and `wait_seconds`; there is no idle wake and no Stop hook in this binary.
 - The sidecar (issue #21) is postponed; this ADR builds nothing toward it.
 - Verification on Windows (the `windows.yml` run and the PowerShell installer cases) happens after the push, because the development host has no PowerShell and no Windows.
+
+## Addendum: shared test helpers (Eric, 2026-11-03)
+
+Eric's decision. The test helpers that are now duplicated (`lockedBuf` in four packages, and the `internal/cli/env_test.go` copies of `resolve_test.go` helpers) move into one test-only helper package. That package may be added to the m6 and m10 import allowlists as needed, and the gate selftests are updated to match. It only extends the allowlists for test helpers. The rule that the 13-module list for the `agentbus2-mcponly` binary is Eric's to extend stays in force.
