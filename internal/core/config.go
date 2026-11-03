@@ -185,6 +185,9 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("inspection_on_failure must be %q or %q, got %q", InspectionClosed, InspectionOpen, c.InspectionOnFailure)
 	}
+	// The floor is 2 x noticeResetAge (inspect.go): a failing process rewrites
+	// the notice every noticeResetAge, so a shorter TTL could expire it between
+	// rewrites. TestInspectionNoticeTTLMinimum pins the relation.
 	if c.InspectionNoticeTTLSeconds < 120 || c.InspectionNoticeTTLSeconds > 86400 {
 		return fmt.Errorf("inspection_notice_ttl_seconds must be between 120 and 86400, got %d", c.InspectionNoticeTTLSeconds)
 	}

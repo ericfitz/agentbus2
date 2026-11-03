@@ -554,15 +554,19 @@ func TestRunInspectedCallerCanceled(t *testing.T) {
 type countingStore struct {
 	store.Store
 	calls atomic.Int64
+	reads atomic.Int64
+	txs   atomic.Int64
 }
 
 func (s *countingStore) Read(ctx context.Context, fn func(context.Context, store.Tx) error) error {
 	s.calls.Add(1)
+	s.reads.Add(1)
 	return s.Store.Read(ctx, fn)
 }
 
 func (s *countingStore) Tx(ctx context.Context, fn func(context.Context, store.Tx) error) error {
 	s.calls.Add(1)
+	s.txs.Add(1)
 	return s.Store.Tx(ctx, fn)
 }
 
@@ -626,7 +630,7 @@ func TestInspectionNoticeRateAndClear(t *testing.T) {
 	if got := setAt(); got != -1 {
 		t.Fatalf("an unknown-state process did not clear the old notice: SetAt = %d", got)
 	}
-	// Now ok: a success within the throttle window makes no Store call.
+	// A notice another replica sets while this process is ok.
 	err = c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		return tx.SetNotice(ctx, store.Notice{Kind: NoticeInspection, Message: "another replica", SetAt: startMs + 200_000})
 	})
@@ -636,13 +640,16 @@ func TestInspectionNoticeRateAndClear(t *testing.T) {
 	// The earlier success set noticeCheckedAt. Five minutes on, the next success
 	// reads, clears the other replica's notice whatever its age, and opens
 	// exactly one Tx.
-	before := cs.calls.Load()
+	beforeReads, beforeTxs := cs.reads.Load(), cs.txs.Load()
 	clk2.advance(5 * time.Minute)
 	if _, err := c2.inspect(ctx, "pat", testPrep()); err != nil {
 		t.Fatal(err)
 	}
-	if got := cs.calls.Load() - before; got != 2 {
-		t.Errorf("a success in state ok after the window made %d Store calls, want 2 (one Read, one Tx)", got)
+	if got := cs.reads.Load() - beforeReads; got != 1 {
+		t.Errorf("a success in state ok after the window made %d Reads, want 1", got)
+	}
+	if got := cs.txs.Load() - beforeTxs; got != 1 {
+		t.Errorf("a success in state ok after the window made %d write Tx, want 1", got)
 	}
 	if got := setAt(); got != -1 {
 		t.Errorf("a success in state ok left another replica's notice: SetAt = %d", got)
@@ -799,7 +806,7 @@ func TestInspectionFailureDuringSuccessClear(t *testing.T) {
 // state ok with the notice set.
 func TestInspectionSuccessDuringFailureWrite(t *testing.T) {
 	in := &stubInspector{reply: replyWith(`{"verdict":"allow"}`)}
-	c, clk, _ := newInspectCore(t, nil, in)
+	c, _, _ := newInspectCore(t, nil, in)
 	hs := &hookStore{Store: c.Store}
 	c.Store = hs
 	ctx := context.Background()
@@ -814,8 +821,7 @@ func TestInspectionSuccessDuringFailureWrite(t *testing.T) {
 	if st != inspectFailing {
 		t.Fatalf("state = %v with the notice set, want failing", st)
 	}
-	// The next success, once the notice is old enough, clears it.
-	clk.advance(2 * noticeResetAge)
+	// The next success clears it, whatever its age.
 	c.noteSuccess(ctx)
 	if _, ok := inspectionNotice(t, c); ok {
 		t.Fatal("the next success did not clear the notice")
@@ -855,5 +861,83 @@ func TestInspectionSuccessNoNoticeOpensNoTx(t *testing.T) {
 	c.noteSuccess(context.Background())
 	if hs.txs != 0 {
 		t.Fatalf("noteSuccess opened %d write Tx, want 0", hs.txs)
+	}
+}
+
+// TestNoticeWriteThrottleSurvivesClear: on one core an inspector that
+// alternates failure and success inside the window writes the notice once; a
+// clear does not reset the per-process write throttle.
+func TestNoticeWriteThrottleSurvivesClear(t *testing.T) {
+	in := &stubInspector{reply: replyWith(`{"verdict":"allow"}`)}
+	c, clk, _ := newInspectCore(t, nil, in)
+	hs := &hookStore{Store: c.Store}
+	c.Store = hs
+	ctx := context.Background()
+	const n = 6
+	for i := 0; i < n; i++ {
+		c.noteFailure(ctx, FailTransport)
+		c.noteSuccess(ctx)
+		clk.advance(5 * time.Second)
+	}
+	// One SetNotice and the one clear that removed it; every later success
+	// only reads (no notice) and every later failure is throttled.
+	if hs.txs != 2 {
+		t.Fatalf("%d failure/success pairs in %v opened %d write Tx, want 2", n, time.Duration(n)*5*time.Second, hs.txs)
+	}
+	clk.advance(noticeResetAge) // well past the last write
+	c.noteFailure(ctx, FailTransport)
+	if hs.txs != 3 {
+		t.Fatalf("a failure after the window opened %d write Tx in all, want 3", hs.txs)
+	}
+	if _, ok := inspectionNotice(t, c); !ok {
+		t.Fatal("a failure after the window did not write the notice")
+	}
+}
+
+// TestNoteSuccessReadFailureDoesNotThrottle: a failed Read in state ok must
+// not delay the next look by the throttle window.
+func TestNoteSuccessReadFailureDoesNotThrottle(t *testing.T) {
+	in := &stubInspector{reply: replyWith(`{"verdict":"allow"}`)}
+	c, clk, _ := newInspectCore(t, nil, in)
+	ctx := context.Background()
+	c.noteSuccess(ctx) // unknown -> ok
+	clk.advance(noticeResetAge)
+	fs := &failReadStore{Store: c.Store}
+	c.Store = fs
+	c.noteSuccess(ctx) // Read fails
+	if fs.reads != 1 {
+		t.Fatalf("reads = %d, want 1", fs.reads)
+	}
+	clk.advance(time.Second)
+	c.noteSuccess(ctx)
+	if fs.reads != 2 {
+		t.Fatalf("the next success after a failed read made %d reads in all, want 2", fs.reads)
+	}
+}
+
+type failReadStore struct {
+	store.Store
+	reads int
+}
+
+func (s *failReadStore) Read(ctx context.Context, fn func(context.Context, store.Tx) error) error {
+	s.reads++
+	if s.reads == 1 {
+		return errors.New("read failed")
+	}
+	return s.Store.Read(ctx, fn)
+}
+
+// TestInspectionNoticeTTLMinimum: the TTL floor must leave room for a failing
+// process to rewrite the notice (every noticeResetAge) before it expires.
+func TestInspectionNoticeTTLMinimum(t *testing.T) {
+	c := Defaults()
+	c.InspectionNoticeTTLSeconds = int(2 * noticeResetAge / time.Second)
+	if err := c.Validate(); err != nil {
+		t.Fatalf("2 x noticeResetAge is refused: %v", err)
+	}
+	c.InspectionNoticeTTLSeconds--
+	if c.Validate() == nil {
+		t.Fatal("a TTL under 2 x noticeResetAge is accepted")
 	}
 }

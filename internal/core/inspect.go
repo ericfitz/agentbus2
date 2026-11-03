@@ -415,7 +415,9 @@ func cutBytes(s string, n int) string {
 }
 
 // noteFailure marks the inspector failing and writes the inspection notice,
-// at most once a minute per process. A notice write error is a log line.
+// at most once a minute per process: noticeSetAt is the time of this process's
+// last write and a clear (noteSuccess) never resets it, so an inspector that
+// flaps cannot make every failure a write. A notice write error is a log line.
 func (c *Core) noteFailure(ctx context.Context, class string) {
 	now := c.Now()
 	c.inspectMu.Lock()
@@ -464,6 +466,7 @@ func (c *Core) noteFailure(ctx context.Context, class string) {
 // open note: write-inspection 4 is superseded by the 2026-11-03 addendum.
 func (c *Core) noteSuccess(ctx context.Context) {
 	now := c.Now()
+	var prevChecked time.Time
 	c.inspectMu.Lock()
 	ok := c.inspectState == inspectOK
 	if ok {
@@ -471,6 +474,7 @@ func (c *Core) noteSuccess(ctx context.Context) {
 			c.inspectMu.Unlock()
 			return
 		}
+		prevChecked = c.noticeCheckedAt
 		c.noticeCheckedAt = now
 	}
 	gen := c.failGen
@@ -507,6 +511,12 @@ func (c *Core) noteSuccess(ctx context.Context) {
 	}
 	if err != nil {
 		c.Log.Warn("write inspection notice not cleared", "error", err.Error())
+		if ok {
+			// A failed look must not delay the next one by the window.
+			c.inspectMu.Lock()
+			c.noticeCheckedAt = prevChecked
+			c.inspectMu.Unlock()
+		}
 		return
 	}
 	if cleared {
@@ -515,7 +525,7 @@ func (c *Core) noteSuccess(ctx context.Context) {
 		// after this read: stay failing.
 		if c.failGen == gen {
 			c.inspectState = inspectOK
-			c.noticeSetAt = time.Time{}
+			// noticeSetAt stays: it is the write throttle of noteFailure.
 			c.noticeCheckedAt = now
 		}
 		c.inspectMu.Unlock()
