@@ -62,3 +62,38 @@ func AssertOwnerOnly(t testing.TB, path string) {
 		t.Fatalf("%s: the entry allows %v, want the current user %v", path, sid, user.User.Sid)
 	}
 }
+
+// GrantEveryone replaces path's DACL with a protected one that reads-allows the
+// current user and Everyone (S-1-1-0), the exposed state the owner-only checks
+// must refuse.
+func GrantEveryone(t testing.TB, path string) {
+	t.Helper()
+	user, err := windows.GetCurrentProcessToken().GetTokenUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	everyone, err := windows.StringToSid("S-1-1-0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := func(sid *windows.SID) windows.EXPLICIT_ACCESS {
+		return windows.EXPLICIT_ACCESS{
+			AccessPermissions: windows.GENERIC_READ,
+			AccessMode:        windows.GRANT_ACCESS,
+			Inheritance:       windows.NO_INHERITANCE,
+			Trustee: windows.TRUSTEE{
+				TrusteeForm:  windows.TRUSTEE_IS_SID,
+				TrusteeType:  windows.TRUSTEE_IS_UNKNOWN,
+				TrusteeValue: windows.TrusteeValueFromSID(sid),
+			},
+		}
+	}
+	acl, err := windows.ACLFromEntries([]windows.EXPLICIT_ACCESS{entry(user.User.Sid), entry(everyone)}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := windows.SetNamedSecurityInfo(path, windows.SE_FILE_OBJECT,
+		windows.DACL_SECURITY_INFORMATION|windows.PROTECTED_DACL_SECURITY_INFORMATION, nil, nil, acl, nil); err != nil {
+		t.Fatal(err)
+	}
+}

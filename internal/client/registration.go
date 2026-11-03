@@ -128,8 +128,8 @@ func RegisterIdentity(ctx context.Context, req RegisterRequest) (RegisterOutcome
 		return out, resolveErr(fmt.Errorf("profile %q is not defined in %s; pass -server to create it", sel.Name, sel.Config.Path))
 	case p.Mode == profile.ModeLocal:
 		return out, resolveErr(errors.New("register applies to server profiles only; a local profile needs no registration"))
-	case o.Server != "" && server != p.Server:
-		return out, resolveErr(fmt.Errorf("profile %q uses server %s; -server %s disagrees", p.Name, p.Server, o.Server))
+	case serverDisagrees(p, o.Server):
+		return out, serverDisagreesError(p, o.Server)
 	}
 	if err := p.Validate(); err != nil {
 		return out, resolveErr(fmt.Errorf("profile %q: %w", p.Name, err))

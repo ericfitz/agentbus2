@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -91,29 +92,40 @@ func (e ownerOnlyError) Is(target error) bool { return target == ErrNotOwnerOnly
 // binary's -credential): a symlink is followed, so a mounted secret works, and
 // the target must be a regular file that only its owner can read (Unix mode
 // 0600 or narrower; on Windows fileacl.CheckOwnerOnly, read by path before the
-// file is opened again, a window acceptable for a file the user names).
+// the open file's check: a window acceptable for a file the user names).
 func LoadFile(path string) (crypto.Signer, keys.Algorithm, error) {
 	// A missing or non-regular path gets the same text on every OS, before the
 	// owner-only check; only the check's policy refusals are ErrNotOwnerOnly.
-	f, _, err := openRegular(path)
+	f, fi, err := openRegular(path)
 	if err != nil {
+		if errors.Is(err, fs.ErrPermission) {
+			// A DACL that denies this user's read fails at the open on Windows:
+			// name the ACL when it is the cause.
+			if cerr := fileacl.CheckOwnerOnly(path); errors.Is(cerr, fileacl.ErrExposed) {
+				return nil, "", ownerOnlyError("credential: " + cerr.Error())
+			}
+		}
 		return nil, "", err
 	}
-	_ = f.Close()
+	defer func() { _ = f.Close() }()
 	if err := fileacl.CheckOwnerOnly(path); err != nil {
 		if errors.Is(err, fileacl.ErrExposed) {
 			return nil, "", ownerOnlyError("credential: " + err.Error())
 		}
 		return nil, "", fmt.Errorf("credential: check %s: %w", path, err)
 	}
-	return loadFile(path)
+	return readKey(f, fi, path)
 }
 
 // openRegular opens path (following a symlink) and refuses anything that is
-// not a regular file; the errors are the same on every OS.
+// not a regular file; the errors are the same on every OS. A permission error
+// says what to fix.
 func openRegular(path string) (*os.File, os.FileInfo, error) {
 	f, err := os.Open(path)
 	if err != nil {
+		if errors.Is(err, fs.ErrPermission) {
+			return nil, nil, fmt.Errorf("credential: open %s: %w (the key file must be readable by the user running this program: fix its permissions, or its ACL on Windows)", path, err)
+		}
 		return nil, nil, fmt.Errorf("credential: open %s: %w", path, err)
 	}
 	fi, err := f.Stat()
@@ -136,6 +148,11 @@ func loadFile(path string) (crypto.Signer, keys.Algorithm, error) {
 		return nil, "", err
 	}
 	defer func() { _ = f.Close() }()
+	return readKey(f, fi, path)
+}
+
+// readKey applies the mode check and parses the key from the open file f.
+func readKey(f *os.File, fi os.FileInfo, path string) (crypto.Signer, keys.Algorithm, error) {
 	if runtime.GOOS != "windows" && fi.Mode().Perm()&^0o600 != 0 {
 		msg := fmt.Sprintf("credential: %s has mode %04o and must be mode 0600 (chmod 600 it)", path, fi.Mode().Perm())
 		return nil, "", ownerOnlyError(msg)

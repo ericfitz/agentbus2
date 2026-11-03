@@ -88,3 +88,21 @@ func TestLoadFileFollowsSymlinkAndChecksMode(t *testing.T) {
 		})
 	}
 }
+
+// TestLoadFileUnreadableSaysWhatToFix: a key file this user cannot read fails
+// at the open with an error naming the path and the fix (on Windows a
+// read-denied DACL fails the same way).
+func TestLoadFileUnreadableSaysWhatToFix(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "k.pem")
+	if err := os.WriteFile(p, []byte("x"), 0o000); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := os.Open(p); err == nil { // running as root
+		_ = f.Close()
+		t.Skip("the file is readable here")
+	}
+	_, _, err := LoadFile(p)
+	if err == nil || !strings.Contains(err.Error(), p) || !strings.Contains(err.Error(), "must be readable by the user") {
+		t.Fatalf("err = %v", err)
+	}
+}

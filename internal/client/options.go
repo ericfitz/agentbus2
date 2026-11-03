@@ -186,10 +186,21 @@ func resolveProfile(cfg profile.Config, name, server string) (profile.Profile, e
 		}
 	case p.Mode == profile.ModeLocal:
 		return profile.Profile{}, resolveErr(fmt.Errorf("profile %q is a local profile; -server applies to server profiles", name))
-	case p.Server != want:
-		return profile.Profile{}, resolveErr(fmt.Errorf("profile %q uses server %s; -server %s disagrees", name, p.Server, server))
+	case serverDisagrees(p, server):
+		return profile.Profile{}, serverDisagreesError(p, server)
 	}
 	return p, nil
+}
+
+// serverDisagrees reports whether the -server flag names another server than
+// the defined server profile p (a trailing slash does not count). It and
+// serverDisagreesError are the one rule for resolveProfile and RegisterIdentity.
+func serverDisagrees(p profile.Profile, flag string) bool {
+	return flag != "" && strings.TrimSuffix(flag, "/") != p.Server
+}
+
+func serverDisagreesError(p profile.Profile, flag string) error {
+	return resolveErr(fmt.Errorf("profile %q uses server %s; -server %s disagrees", p.Name, p.Server, flag))
 }
 
 // ErrCredentialProcessConflict matches (errors.Is) the resolution error for

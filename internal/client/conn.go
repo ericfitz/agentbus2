@@ -33,8 +33,8 @@ func NewConn(b bus.Bus, r Resolved, gc *gen.ClientWithResponses, local any, clos
 }
 
 // Open resolves the profile and identity and builds the Bus. In local mode it
-// calls Options.Local, which opens (creating) the SQLite file; in server mode nothing is dialed or
-// exchanged until the first call.
+// calls Options.Local, which opens (creating) the SQLite file; in server mode
+// nothing is dialed or exchanged until the first call.
 func Open(ctx context.Context, o Options) (*Conn, error) {
 	r, err := Resolve(o)
 	if err != nil {
