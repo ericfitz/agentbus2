@@ -63,6 +63,7 @@ build() {
   path="$(go version -m "$bin" | awk '$1 == "path" { print $2; exit }')"
   [[ "$path" == "$want" ]] || {
     echo "build-archive.sh: $bin holds the wrong binary: path $path, want $want" >&2
+    rm -f "$bin" # never leave a binary that failed its check where a later step packs it
     exit 1
   }
 
@@ -72,6 +73,7 @@ build() {
     got="$("$bin" version)"
     [[ "$got" == "$version" ]] || {
       echo "version mismatch: $got != $version" >&2
+      rm -f "$bin"
       exit 1
     }
     echo "ok: $bin prints $got"
@@ -127,6 +129,27 @@ self_test() {
     expect_refusal "bad-pair-$b" "plan9/amd64" "$b" v0.0.1 plan9 amd64 "$tmp"
     expect_refusal "bad-arch-$b" "linux/386" "$b" v0.0.1 linux 386 "$tmp"
   done
+
+  # A binary that fails the package-path check is removed, not left in outdir
+  # for a later step to pack (a go shim that builds a file and names another package).
+  mkdir -p "$tmp/shim"
+  cat >"$tmp/shim/go" <<'SHIM'
+#!/bin/sh
+case "$1" in
+  build) while [ $# -gt 0 ]; do if [ "$1" = -o ]; then echo x >"$2"; exit 0; fi; shift; done ;;
+  version) printf '%s: go1.0\n\tpath\texample.com/wrong\n' "$3" ;;
+esac
+SHIM
+  chmod +x "$tmp/shim/go"
+  rc=0
+  out="$(PATH="$tmp/shim:$PATH" bash "$SELF" agentbus2 v0.0.8 linux amd64 "$tmp/wrongbin" 2>&1)" || rc=$?
+  if [[ "$rc" == 1 && "$out" == *"holds the wrong binary"* && ! -e "$tmp/wrongbin/agentbus2" ]]; then
+    echo "PASS wrong-binary-removed"
+    SELF_PASS=$((SELF_PASS + 1))
+  else
+    echo "FAIL wrong-binary-removed: exit $rc, left: $(ls "$tmp/wrongbin" 2>&1): $out"
+    SELF_FAIL=$((SELF_FAIL + 1))
+  fi
 
   hostos="$(go env GOHOSTOS)"
   hostarch="$(go env GOHOSTARCH)"

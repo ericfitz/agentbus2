@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
 # Build, sign and publish a release of agentbus2 and agentbus2-mcponly, then
-# update Homebrew, Scoop and winget (three packages per binary). macOS is built, codesigned and notarized here; the Linux and
-# Windows archives are built, run and attested by .github/workflows/
-# release-build.yml on native runners, dispatched on the tag. Every archive
-# is listed in SHA256SUMS, signed with the Ed25519 release key.
+# update Homebrew, Scoop and winget (three packages per binary). macOS is built,
+# codesigned and notarized here; the Linux and Windows archives are built, run
+# and attested by .github/workflows/release-build.yml on native runners,
+# dispatched on the tag. Every archive is listed in SHA256SUMS, signed with the
+# Ed25519 release key.
 #   ./release/release.sh v2.0.0 --windows-signing=on                # full release
 #   ./release/release.sh v2.0.0 --windows-signing=off --no-publish  # stop with a draft release and the rendered
 #                                                                   # formula, Scoop and winget files (dry run)
@@ -456,7 +457,7 @@ verify_attestations() {
 # archives are already there, uploaded by the workflow.
 upload_assets() {
     echo "==> Uploading the macOS tarballs, the install scripts and SHA256SUMS"
-    (cd "$DIST" && gh release upload "$TAG" --repo "$GH_REPO" --clobber "${MACOS_ARCHIVES[@]}" install.sh install.ps1 SHA256SUMS SHA256SUMS.sig)
+    (cd "$DIST" && gh release upload "$TAG" --repo "$GH_REPO" --clobber ${MACOS_ARCHIVES[@]+"${MACOS_ARCHIVES[@]}"} install.sh install.ps1 SHA256SUMS SHA256SUMS.sig)
 }
 
 # render_template <tmpl> <out> KEY=VALUE... replaces every __KEY__ and fails
@@ -557,10 +558,14 @@ publish_release() {
     fi
     update_tap
     update_scoop
+    local winget_failed=()
     for b in "${BIN_NAMES[@]}"; do
-        submit_winget "$b"
+        submit_winget "$b" || winget_failed+=("$b")
     done
     echo "==> Released ${TAG}: brew install ericfitz/tap/${BIN_NAMES[0]}; brew install ericfitz/tap/${BIN_NAMES[1]}; curl -fsSL https://github.com/${GH_REPO}/releases/latest/download/install.sh | sh; irm https://github.com/${GH_REPO}/releases/latest/download/install.ps1 | iex"
+    if ((${#winget_failed[@]})); then
+        fail "the winget submission did not run for: ${winget_failed[*]}; the release stands, rerun release.sh once gh works (an open pull request is not duplicated)"
+    fi
 }
 
 # update_tap copies the rendered formulas into the tap clone, one commit per
@@ -614,7 +619,8 @@ update_scoop() {
 # of one package with `komac update`, which needs the package to exist in
 # winget-pkgs already: its first submission is manual (docs/release.md). An
 # open pull request for the version counts as done (rerun). A komac failure
-# does not fail the release: the exact rerun command is printed. The token is
+# does not fail the release: the exact rerun command is printed. A gh failure
+# returns 1 so publish_release still tries the other package. The token is
 # scoped to the one command, because exporting GITHUB_TOKEN would override
 # gh's own auth for the rest of the run.
 submit_winget() {
@@ -623,8 +629,10 @@ submit_winget() {
     local id="ericfitz.${b}"
     echo "==> Submitting ${id} ${VERSION} to winget"
     local open
-    open="$(gh pr list --repo microsoft/winget-pkgs --state open --search "\"${id} version ${VERSION}\" in:title" --json number --jq '.[].number')" \
-        || fail "could not list open pull requests in microsoft/winget-pkgs; rerun once gh works (an open pull request for ${VERSION} would make komac open a duplicate)"
+    open="$(gh pr list --repo microsoft/winget-pkgs --state open --search "\"${id} version ${VERSION}\" in:title" --json number --jq '.[].number')" || {
+        echo "error: could not list open pull requests in microsoft/winget-pkgs; rerun once gh works (an open pull request for ${VERSION} would make komac open a duplicate)" >&2
+        return 1
+    }
     if [[ -n "$open" ]]; then
         echo "winget: ${id}: an open pull request for ${VERSION} exists; nothing to do"; return
     fi

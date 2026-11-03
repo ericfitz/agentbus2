@@ -170,7 +170,7 @@ check brew-check-bad-arch-second 2 "unknown architecture 'bogus' (amd64 or arm64
 check brew-check-no-container-started 1 "" -- test -e "$WORK/docker-called"
 printf '#!/bin/sh\necho "$*" >> "%s/docker-args"\nexit 0\n' "$WORK" > "$WORK/stubbin/docker"
 check brew-check-installs-v2-formula 0 "linux/arm64: OK" -- env PATH="$WORK/stubbin:$PATH" "$HERE/check-linux-brew.sh" arm64
-check brew-check-formula-name 0 "" -- grep -q 'brew install ericfitz/tap/agentbus2 && brew test agentbus2 && agentbus2 version' "$WORK/docker-args"
+check brew-check-both-formulas 0 "" -- grep -qF 'for f in agentbus2 agentbus2-mcponly; do brew install "ericfitz/tap/$f" && brew test "$f" && "$f" version; done' "$WORK/docker-args"
 
 # --- copy_scripts and write_sums ---------------------------------------------
 mkdir -p "$WORK/cs/src" "$WORK/cs/dist"
@@ -374,6 +374,12 @@ check render-winget-missing-sum 1 "no SHA256SUMS entry for agentbus2-v1.2.3-wind
 check render-winget-mcponly-missing-sum 1 "no SHA256SUMS entry for agentbus2-mcponly-v1.2.3-windows-amd64.zip" -- with_render "grep -v 'agentbus2-mcponly-v1.2.3-windows-amd64' '$WORK/rdist/SHA256SUMS' > '$WORK/rdist-short/SHA256SUMS'; DIST='$WORK/rdist-short'; render_winget agentbus2-mcponly"
 check publish-undrafts-then-packagers 0 "TAP SCOOP WINGET:agentbus2 WINGET:agentbus2-mcponly" -- with_render ": > '$WORK/gh.log'; update_tap() { echo TAP >> '$WORK/order'; }; update_scoop() { echo SCOOP >> '$WORK/order'; }; submit_winget() { echo WINGET:\$1 >> '$WORK/order'; }; : > '$WORK/order'; publish_release >/dev/null && grep -q 'gh release edit v1.2.3 --repo ericfitz/agentbus2 --draft=false' '$WORK/gh.log' && echo \$(cat '$WORK/order')"
 check publish-renders-before-packagers 0 "" -- with_render "rm -f \"\$DIST/agentbus2.rb\" \"\$DIST/agentbus2-mcponly.rb\" \"\$DIST/agentbus2.scoop.json\" \"\$DIST/agentbus2-mcponly.scoop.json\"; update_tap() { [[ -f \"\$DIST/agentbus2.rb\" && -f \"\$DIST/agentbus2-mcponly.rb\" ]] || exit 9; }; update_scoop() { [[ -f \"\$DIST/agentbus2.scoop.json\" && -f \"\$DIST/agentbus2-mcponly.scoop.json\" ]] || exit 9; }; submit_winget() { [[ -d \"\$DIST/winget/ericfitz.\$1\" ]] || exit 9; }; publish_release >/dev/null"
+# upload_assets with no macOS tarball listed does not trip set -u (bash 3.2 empty array).
+check upload-assets-empty-macos-list 0 "" -- with_render ": > '$WORK/gh.log'; MACOS_ARCHIVES=(); upload_assets >/dev/null && grep -q 'release upload' '$WORK/gh.log'"
+# A winget failure for one package (gh could not list pull requests) does not skip the other, and the run exits 1 naming the failed one.
+check publish-winget-failure-tries-second 1 "WINGET:agentbus2-mcponly" -- with_render ": > '$WORK/gh.log'; update_tap() { :; }; update_scoop() { :; }; submit_winget() { echo WINGET:\$1; [[ \$1 != agentbus2 ]]; }; publish_release"
+check publish-winget-failure-exits-1 1 "the winget submission did not run for: agentbus2;" -- with_render ": > '$WORK/gh.log'; update_tap() { :; }; update_scoop() { :; }; submit_winget() { echo WINGET:\$1; [[ \$1 != agentbus2 ]]; }; publish_release"
+check publish-winget-ok-exits-0 0 "" -- with_render ": > '$WORK/gh.log'; update_tap() { :; }; update_scoop() { :; }; submit_winget() { :; }; publish_release >/dev/null"
 check publish-rerun-skips-edit 0 "" -- with_render ": > '$WORK/gh.log'; update_tap() { :; }; update_scoop() { :; }; submit_winget() { :; }; PUBLISHED=1 publish_release >/dev/null && ! grep -q 'release edit' '$WORK/gh.log'"
 check publish-edit-failure-stops 1 "could not publish v1.2.3; the draft stays" -- with_render "update_tap() { echo TAP; }; GH_RC=1 publish_release"
 check publish-closing-line 0 "brew install ericfitz/tap/agentbus2; brew install ericfitz/tap/agentbus2-mcponly; curl -fsSL https://github.com/ericfitz/agentbus2/releases/latest/download/install.sh | sh; irm https://github.com/ericfitz/agentbus2/releases/latest/download/install.ps1 | iex" -- with_render "update_tap() { :; }; update_scoop() { :; }; submit_winget() { :; }; publish_release"

@@ -711,36 +711,40 @@ function Invoke-Cases {
     # install from github.com into the real install directory. Each child's
     # stdout and stderr go to files, printed when the case fails (windows.yml
     # run 37710180972 lost the exit-1 child's message).
-    $dir3 = Join-Path $Work 'bin3'
-    $saved = Set-EnvMap @{ 'AGENTBUS2_BASE_URL' = "$Base/valid"; 'AGENTBUS2_INSTALL_DIR' = $dir3; 'AGENTBUS2_VERSION' = ''; 'AGENTBUS2_SKIP_SIGNATURE' = ''; 'AGENTBUS2_TEST_OSARCH' = '' }
-    $logs = @(
-        @{ Out = (Join-Path $Work 'concurrent-1.out'); Err = (Join-Path $Work 'concurrent-1.err') },
-        @{ Out = (Join-Path $Work 'concurrent-2.out'); Err = (Join-Path $Work 'concurrent-2.err') }
-    )
-    try {
-        $childArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Quote-Arg (Join-Path $Fx 'install.ps1')))
-        $c1 = Start-Process -FilePath $HostExe -ArgumentList $childArgs -PassThru -RedirectStandardOutput $logs[0].Out -RedirectStandardError $logs[0].Err @Hidden
-        $c2 = Start-Process -FilePath $HostExe -ArgumentList $childArgs -PassThru -RedirectStandardOutput $logs[1].Out -RedirectStandardError $logs[1].Err @Hidden
-        # Read Handle now: a redirected Start-Process child otherwise reports an
-        # empty ExitCode after it exits (windows.yml run 37723169379).
-        $null = $c1.Handle; $null = $c2.Handle
-    } finally { Restore-EnvMap $saved }
-    $done1 = $c1.WaitForExit(120000); $done2 = $c2.WaitForExit(120000)
-    if (-not ($done1 -and $done2)) { foreach ($c in $c1, $c2) { if (-not $c.HasExited) { Stop-Process -Id $c.Id -Force -ErrorAction SilentlyContinue } } }
-    $served = $null
-    if (Test-Path -LiteralPath (Join-Path $dir3 'agentbus2.exe')) { $served = "$(& (Join-Path $dir3 'agentbus2.exe') version)" }
-    $ok = $done1 -and $done2 -and ($c1.ExitCode -eq 0) -and ($c2.ExitCode -eq 0) -and ($served -eq '9.0.1')
-    Assert 'concurrent' $ok
-    if (-not $ok) {
-        Write-Host "    finished=$done1/$done2 exit codes: $(if ($done1) { $c1.ExitCode }) and $(if ($done2) { $c2.ExitCode }); served version: '$served' (want 9.0.1)"
-        Write-Host "    $dir3 holds: $((@(Get-ChildItem -LiteralPath $dir3 -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })) -join ', ')"
-        foreach ($log in $logs) {
-            foreach ($f in $log.Out, $log.Err) {
-                Write-Host "    --- $(Split-Path -Leaf $f)"
-                if (Test-Path -LiteralPath $f) { Get-Content -LiteralPath $f | ForEach-Object { Write-Host "    $_" } }
+    function Test-Concurrent([string]$Name, [string]$Dir, [string[]]$InstallerArgs, [string]$Exe) {
+        $saved = Set-EnvMap @{ 'AGENTBUS2_BASE_URL' = "$Base/valid"; 'AGENTBUS2_INSTALL_DIR' = $Dir; 'AGENTBUS2_VERSION' = ''; 'AGENTBUS2_SKIP_SIGNATURE' = ''; 'AGENTBUS2_TEST_OSARCH' = '' }
+        $logs = @(
+            @{ Out = (Join-Path $Work "$Name-1.out"); Err = (Join-Path $Work "$Name-1.err") },
+            @{ Out = (Join-Path $Work "$Name-2.out"); Err = (Join-Path $Work "$Name-2.err") }
+        )
+        try {
+            $childArgs = @('-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', (Quote-Arg (Join-Path $Fx 'install.ps1'))) + $InstallerArgs
+            $c1 = Start-Process -FilePath $HostExe -ArgumentList $childArgs -PassThru -RedirectStandardOutput $logs[0].Out -RedirectStandardError $logs[0].Err @Hidden
+            $c2 = Start-Process -FilePath $HostExe -ArgumentList $childArgs -PassThru -RedirectStandardOutput $logs[1].Out -RedirectStandardError $logs[1].Err @Hidden
+            # Read Handle now: a redirected Start-Process child otherwise reports an
+            # empty ExitCode after it exits (windows.yml run 37723169379).
+            $null = $c1.Handle; $null = $c2.Handle
+        } finally { Restore-EnvMap $saved }
+        $done1 = $c1.WaitForExit(120000); $done2 = $c2.WaitForExit(120000)
+        if (-not ($done1 -and $done2)) { foreach ($c in $c1, $c2) { if (-not $c.HasExited) { Stop-Process -Id $c.Id -Force -ErrorAction SilentlyContinue } } }
+        $served = $null
+        if (Test-Path -LiteralPath (Join-Path $Dir $Exe)) { $served = "$(& (Join-Path $Dir $Exe) version)" }
+        $ok = $done1 -and $done2 -and ($c1.ExitCode -eq 0) -and ($c2.ExitCode -eq 0) -and ($served -eq '9.0.1')
+        Assert $Name $ok
+        if (-not $ok) {
+            Write-Host "    finished=$done1/$done2 exit codes: $(if ($done1) { $c1.ExitCode }) and $(if ($done2) { $c2.ExitCode }); served version: '$served' (want 9.0.1)"
+            Write-Host "    $Dir holds: $((@(Get-ChildItem -LiteralPath $Dir -ErrorAction SilentlyContinue | ForEach-Object { $_.Name })) -join ', ')"
+            foreach ($log in $logs) {
+                foreach ($f in $log.Out, $log.Err) {
+                    Write-Host "    --- $(Split-Path -Leaf $f)"
+                    if (Test-Path -LiteralPath $f) { Get-Content -LiteralPath $f | ForEach-Object { Write-Host "    $_" } }
+                }
             }
         }
     }
+    Test-Concurrent 'concurrent' (Join-Path $Work 'bin3') @() 'agentbus2.exe'
+    # The same race for -McpOnly (the sh side's mcponly-concurrent).
+    Test-Concurrent 'mcponly-concurrent' (Join-Path $Work 'bin-mcp-race') @('-McpOnly') 'agentbus2-mcponly.exe'
     Invoke-Case 'failed-run-leaves-no-temp' 1 'checksum mismatch' @{ 'AGENTBUS2_BASE_URL' = "$Base/tampered-zip" } $dir $null { @(Get-ChildItem ([IO.Path]::GetTempPath()) -Filter 'agentbus2-install-*' -Directory).Count -eq 0 }
 
     # Refusals and paths install.ps1 has beyond the plan.

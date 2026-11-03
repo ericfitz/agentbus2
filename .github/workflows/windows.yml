@@ -29,6 +29,29 @@ jobs:
       - name: go test (unit packages)
         shell: bash
         run: go list ./... | grep -v internal/conformance | xargs go test
+      # Every tracked .ps1 must parse under both hosts, so a syntax error in a
+      # script the harness does not reach (test-windows.ps1, the fixture server)
+      # still fails here. The same script runs in both shells.
+      - name: PowerShell parse check (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          $bad = 0
+          foreach ($f in (git ls-files '*.ps1')) {
+              $tokens = $null; $errors = $null
+              $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $f).Path, [ref]$tokens, [ref]$errors)
+              foreach ($e in $errors) { Write-Host "${f}:$($e.Extent.StartLineNumber): $($e.Message)"; $bad++ }
+          }
+          if ($bad -gt 0) { exit 1 }
+      - name: PowerShell parse check (PowerShell 7)
+        shell: pwsh
+        run: |
+          $bad = 0
+          foreach ($f in (git ls-files '*.ps1')) {
+              $tokens = $null; $errors = $null
+              $null = [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path -LiteralPath $f).Path, [ref]$tokens, [ref]$errors)
+              foreach ($e in $errors) { Write-Host "${f}:$($e.Extent.StartLineNumber): $($e.Message)"; $bad++ }
+          }
+          if ($bad -gt 0) { exit 1 }
       - name: install.ps1 harness self-test (Windows PowerShell 5.1)
         shell: powershell
         run: .\release\test-install.ps1 -SelfTest

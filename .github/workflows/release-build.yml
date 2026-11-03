@@ -1,8 +1,9 @@
 # Builds the Linux and Windows release archives of both binaries (agentbus2 and
-# agentbus2-mcponly) on runners of their own OS and architecture, runs each binary, attests build provenance, and uploads
-# the archives to the draft release for the tag. Dispatched by
-# release/release.sh on the tag itself (gh workflow run --ref <tag>), so the
-# checked-out source and this file are the tag's. macOS is built locally.
+# agentbus2-mcponly) on runners of their own OS and architecture, runs each
+# binary, attests build provenance, and uploads the archives to the draft
+# release for the tag. Dispatched by release/release.sh on the tag itself (gh
+# workflow run --ref <tag>), so the checked-out source and this file are the
+# tag's. macOS is built locally.
 # Windows binaries are Authenticode-signed in package-windows when dispatched
 # with windows_signing=on (Microsoft Artifact Signing over OIDC; no stored
 # secret).
