@@ -236,6 +236,9 @@ review: cut model turns that carry no message.
     stays as a command but nothing recommends it. The protocol text, the Stop
     hook reason and the using-agentbus2 skill have one branch for every
     harness except Codex. Every subscribed message wakes an idle agent.
+    Pointer (2026-11-03): ADR 0016 (MCP events, build deferred) records a
+    design whose build may change this decision for Claude Code (its open
+    question "replace or supplement"); until then it stands.
 18. **Changed**: park. `agentbus2 park` marks the session parked (the
     session state file); while parked nothing wakes it: `wait` and `watch`
     ignore wakes and the Stop hook stays silent. agentbus2 has no direct

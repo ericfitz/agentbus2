@@ -27,6 +27,7 @@ NNNN" to keep the two series apart.
 | [0013](0013-write-inspection.md) | Write inspection | Accepted (Eric, 2026-10-27) |
 | [0014](0014-agent-status.md) | Agent status and history | Accepted (Eric, 2026-10-27) |
 | [0015](0015-mcp-only-client.md) | The MCP-only client | Accepted (Eric, 2026-10-27); open notes are agent choices |
+| [0016](0016-mcp-events.md) | MCP events (server-initiated notifications) | Accepted (Eric, 2026-10-27 and 2026-11-03); build deferred |
 
 Decisions 60 (TUI in a later milestone), 61 (release tooling in the
 final milestone) and 87 (Scoop and winget in that tooling) are scheduling

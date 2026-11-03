@@ -317,6 +317,9 @@ Decision 42 (Eric): `GET /v1/sessions/{session}/watch?after=<seq>&timeout=<s>`.
 - Decision 68 (Eric, 2026-10-20): the watch registration is a row per
   session in the store, so in local multi-process mode the newer watch
   marks the older one `replaced` through the shared database.
+  Pointer (2026-11-03): ADR 0016 (MCP events, build deferred) records a
+  design whose build may add non-replacing observer watches (its open
+  question "event source"); until then this stands.
 
 Decision 42 (Eric): client exit codes stay as in v1: 0 woke, 1 timeout,
 2 error, 3 replaced, 4 harness gone. The table below is elaboration; its

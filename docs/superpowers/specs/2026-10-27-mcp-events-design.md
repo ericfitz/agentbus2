@@ -5,7 +5,8 @@
 - Draft of 2026-10-27, written by an agent.
 - Nothing in it is a decision until Eric marks it so.
 - Issue: #13, "feat: support MCP events (server-initiated notifications)".
-- **Eric's decision 2026-10-27**: Decision 0 is **B**, an ADR only; implementation is deferred. The other decisions stay open and are moot until the issue is revisited. The ADR is not written yet.
+- **Eric's decision 2026-10-27**: Decision 0 is **B**, an ADR only; implementation is deferred. The other decisions stay open and are moot until the issue is revisited.
+- **Eric's decisions 2026-11-03**: Decision 4 is **C** (both mechanisms; Eric: "We need to maximize compatibility with agents/harnesses. I use claude and would love to have the best experience on claude, but we need broad compatibility."), Decision 8 is **A** (messages only), Decision 10 is **A**, written as ADR 0016 (`docs/adr/0016-mcp-events.md`), since 0012 was taken. Decisions 1 to 3, 5 to 7 and 9 stay open.
 - **Eric's decision 2026-10-27**: "Protocol version will be 1.0.0, end of discussion." Any addition in this brief ships in protocol 1.0.0, and `info.version` and `version.Protocol` stay `1.0.0` before the first release.
 
 ## 2. Problem and scope
