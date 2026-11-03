@@ -84,6 +84,9 @@ type Config struct {
 	// uninspected). A string so the zero value cannot silently mean open.
 	InspectionTimeoutSeconds float64
 	InspectionOnFailure      string
+	// InspectionNoticeTTLSeconds is how long an inspection notice that no
+	// failing replica has rewritten still counts (Notices leaves it out after).
+	InspectionNoticeTTLSeconds int
 }
 
 // The eviction floors (Eric, 2026-10-27): even under space pressure no message
@@ -126,6 +129,7 @@ func Defaults() Config {
 		EmbeddingQueryTimeoutSeconds: 10,
 		InspectionTimeoutSeconds:     5,
 		InspectionOnFailure:          InspectionClosed,
+		InspectionNoticeTTLSeconds:   300,
 	}
 }
 
@@ -180,6 +184,9 @@ func (c Config) Validate() error {
 	case InspectionClosed, InspectionOpen:
 	default:
 		return fmt.Errorf("inspection_on_failure must be %q or %q, got %q", InspectionClosed, InspectionOpen, c.InspectionOnFailure)
+	}
+	if c.InspectionNoticeTTLSeconds < 120 || c.InspectionNoticeTTLSeconds > 86400 {
+		return fmt.Errorf("inspection_notice_ttl_seconds must be between 120 and 86400, got %d", c.InspectionNoticeTTLSeconds)
 	}
 	switch c.ChannelCreation {
 	case ChannelCreationOpen, ChannelCreationAdmins:

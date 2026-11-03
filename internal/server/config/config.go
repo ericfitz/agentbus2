@@ -101,6 +101,8 @@ type Config struct {
 	InspectionAPIKeyEnv      string  `json:"inspection_api_key_env"`
 	InspectionTimeoutSeconds float64 `json:"inspection_timeout_seconds"`
 	InspectionOnFailure      string  `json:"inspection_on_failure"`
+	// InspectionNoticeTTLSeconds: 120 to 86400, see docs/ops/configuration.md.
+	InspectionNoticeTTLSeconds int `json:"inspection_notice_ttl_seconds"`
 
 	// The Slack bridge (Slack bridge spec 5.1). Both token files or neither.
 	SlackAppTokenFile          string `json:"slack_app_token_file"`
@@ -155,6 +157,7 @@ func Default() Config {
 		EmbeddingQueryTimeoutSeconds: d.EmbeddingQueryTimeoutSeconds,
 		InspectionTimeoutSeconds:     d.InspectionTimeoutSeconds,
 		InspectionOnFailure:          d.InspectionOnFailure,
+		InspectionNoticeTTLSeconds:   d.InspectionNoticeTTLSeconds,
 	}
 }
 
@@ -212,6 +215,7 @@ func (c Config) Core() (core.Config, error) {
 		EmbeddingQueryTimeoutSeconds: c.EmbeddingQueryTimeoutSeconds,
 		InspectionTimeoutSeconds:     c.InspectionTimeoutSeconds,
 		InspectionOnFailure:          c.InspectionOnFailure,
+		InspectionNoticeTTLSeconds:   c.InspectionNoticeTTLSeconds,
 	}
 	if !IsShippedDefault(c.DefaultACL) {
 		cc.DefaultACL = DefaultACLFunc(c.DefaultACL)

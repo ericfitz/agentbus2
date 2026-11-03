@@ -114,6 +114,26 @@ func TestConfigBounds(t *testing.T) {
 			}
 		}
 	})
+	t.Run("inspection_notice_ttl_seconds", func(t *testing.T) {
+		if d := Defaults(); d.InspectionNoticeTTLSeconds != 300 {
+			t.Errorf("default = %d, want 300", d.InspectionNoticeTTLSeconds)
+		}
+		for _, ok := range []int{120, 86400} {
+			c := Defaults()
+			c.InspectionNoticeTTLSeconds = ok
+			if err := c.Validate(); err != nil {
+				t.Errorf("inspection_notice_ttl_seconds = %d rejected: %v", ok, err)
+			}
+		}
+		for _, bad := range []int{119, 86401, 0, -1} {
+			c := Defaults()
+			c.InspectionNoticeTTLSeconds = bad
+			want := fmt.Sprintf("inspection_notice_ttl_seconds must be between 120 and 86400, got %d", bad)
+			if err := c.Validate(); err == nil || err.Error() != want {
+				t.Errorf("inspection_notice_ttl_seconds = %d: err = %v, want %q", bad, err, want)
+			}
+		}
+	})
 	t.Run("inspection_on_failure", func(t *testing.T) {
 		for _, ok := range []string{"closed", "open"} {
 			c := Defaults()

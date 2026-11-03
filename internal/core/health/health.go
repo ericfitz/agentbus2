@@ -71,15 +71,11 @@ func (s Service) Health(ctx context.Context, identity, serverVersion string) (bu
 				tier = bus.TierAdmin
 			}
 		}
-		for _, kind := range core.NoticeKinds() {
-			n, ok, err := tx.Notice(ctx, kind)
-			if err != nil {
-				return err
-			}
-			if ok {
-				notices = append(notices, bus.Notice{Kind: n.Kind, Message: n.Message, SetAt: n.SetAt})
-			}
+		ns, err := s.Notices(ctx, tx)
+		if err != nil {
+			return err
 		}
+		notices = append(notices, ns...)
 		if identity != "" {
 			rep, err := channels.EmbeddingReport(ctx, tx, s.Core)
 			if err != nil {

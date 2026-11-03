@@ -13,7 +13,7 @@ import (
 func (h *harness) setNotice(kind, msg string) {
 	h.t.Helper()
 	h.tx(func(ctx context.Context, tx ab2store.Tx) error {
-		return tx.SetNotice(ctx, ab2store.Notice{Kind: kind, Message: msg, SetAt: 7})
+		return tx.SetNotice(ctx, ab2store.Notice{Kind: kind, Message: msg, SetAt: h.clock.Now().UnixMilli()})
 	})
 }
 

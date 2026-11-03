@@ -79,6 +79,7 @@ func TestValidateRejects(t *testing.T) {
 		{"both stores", func(c *Config) { c.Postgres = "postgres://x" }, "exactly one of sqlite or postgres"},
 		{"no store", func(c *Config) { c.SQLite = "" }, "exactly one of sqlite or postgres"},
 		{"postgres budget bound", func(c *Config) { c.PostgresBudgetMiB = 1 }, "postgres_budget_mib"},
+		{"inspection notice ttl", func(c *Config) { c.InspectionNoticeTTLSeconds = 119 }, "inspection_notice_ttl_seconds"},
 		{"inspection on failure", func(c *Config) { c.InspectionOnFailure = "maybe" }, "inspection_on_failure"},
 		{"inspection timeout NaN", func(c *Config) { c.InspectionTimeoutSeconds = math.NaN() }, "inspection_timeout_seconds"},
 		{"inspection timeout Inf", func(c *Config) { c.InspectionTimeoutSeconds = math.Inf(1) }, "inspection_timeout_seconds"},

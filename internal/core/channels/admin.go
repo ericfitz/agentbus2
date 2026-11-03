@@ -53,15 +53,11 @@ func (s Service) Status(ctx context.Context, identity string) (bus.Status, error
 			info.Capabilities = capabilitiesOf(bridges, c.ID)
 			st.Channels = append(st.Channels, info)
 		}
-		for _, kind := range core.NoticeKinds() {
-			n, ok, err := tx.Notice(ctx, kind)
-			if err != nil {
-				return err
-			}
-			if ok {
-				st.Notices = append(st.Notices, bus.Notice{Kind: n.Kind, Message: n.Message, SetAt: n.SetAt})
-			}
+		ns, err := s.Notices(ctx, tx)
+		if err != nil {
+			return err
 		}
+		st.Notices = append(st.Notices, ns...)
 		if s.Embedder() == nil {
 			return nil
 		}
