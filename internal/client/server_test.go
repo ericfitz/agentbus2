@@ -1,7 +1,6 @@
 package client
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"encoding/json"
@@ -26,24 +25,8 @@ import (
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/profile"
 	"github.com/ericfitz/agentbus2/internal/server/cmd"
+	"github.com/ericfitz/agentbus2/internal/testkit"
 )
-
-type lockedBuf struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *lockedBuf) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *lockedBuf) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
 
 var listeningRE = regexp.MustCompile(`listening on (\S+) `)
 
@@ -52,7 +35,7 @@ var listeningRE = regexp.MustCompile(`listening on (\S+) `)
 func startServer(t *testing.T) string {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	out, errb := &lockedBuf{}, &lockedBuf{}
+	out, errb := &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	done := make(chan int, 1)
 	// The directory is made before the stop cleanup is registered, so its
 	// RemoveAll runs after the server has closed the database (Windows
@@ -118,7 +101,7 @@ func (c *countingRT) total() int {
 
 // registerServerProfile registers identity at base with a fresh key saved in
 // the credential store of profile "lab", and writes the profile.
-func (e *env) registerServerProfile(t *testing.T, base, identity string) {
+func registerServerProfile(t *testing.T, e *testkit.ProfileEnv, base, identity string) {
 	t.Helper()
 	k, err := keys.Generate(keys.EdDSA)
 	if err != nil {
@@ -131,19 +114,19 @@ func (e *env) registerServerProfile(t *testing.T, base, identity string) {
 	if _, err := remote.Register(context.Background(), c, identity, k.Public(), ""); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	if err := (credential.Store{Dir: profile.CredentialDir(e.config, "lab")}).Save(identity, k); err != nil {
+	if err := (credential.Store{Dir: profile.CredentialDir(e.Config, "lab")}).Save(identity, k); err != nil {
 		t.Fatal(err)
 	}
-	e.save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: base})
+	e.Save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: base})
 }
 
 func TestServerOpenExchangesAndCalls(t *testing.T) {
 	ctx := context.Background()
 	base := startServer(t)
-	e := newEnv(t)
-	e.registerServerProfile(t, base, "pat")
+	e := testkit.NewProfileEnv(t)
+	registerServerProfile(t, e, base, "pat")
 	rt := &countingRT{}
-	o := Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", HTTP: &http.Client{Transport: rt}}
+	o := Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", HTTP: &http.Client{Transport: rt}}
 
 	c, err := Open(ctx, o)
 	if err != nil {
@@ -160,7 +143,7 @@ func TestServerOpenExchangesAndCalls(t *testing.T) {
 	if len(chs) == 0 || chs[0].Name != "general" {
 		t.Fatalf("channels %+v", chs)
 	}
-	cache := filepath.Join(e.data, "tokens", "lab", "pat.json")
+	cache := filepath.Join(e.Data, "tokens", "lab", "pat.json")
 	fi, err := os.Stat(cache)
 	if err != nil {
 		t.Fatalf("token cache: %v", err)
@@ -193,10 +176,10 @@ func TestServerOpenExchangesAndCalls(t *testing.T) {
 func TestServerStaleCacheRefreshes(t *testing.T) {
 	ctx := context.Background()
 	base := startServer(t)
-	e := newEnv(t)
-	e.registerServerProfile(t, base, "pat")
+	e := testkit.NewProfileEnv(t)
+	registerServerProfile(t, e, base, "pat")
 	rt := &countingRT{}
-	o := Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", HTTP: &http.Client{Transport: rt}}
+	o := Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", HTTP: &http.Client{Transport: rt}}
 	c, err := Open(ctx, o)
 	if err != nil {
 		t.Fatal(err)
@@ -205,7 +188,7 @@ func TestServerStaleCacheRefreshes(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Corrupt the cached token but keep it valid-looking.
-	cache := filepath.Join(e.data, "tokens", "lab", "pat.json")
+	cache := filepath.Join(e.Data, "tokens", "lab", "pat.json")
 	raw, err := os.ReadFile(cache)
 	if err != nil {
 		t.Fatal(err)
@@ -245,18 +228,18 @@ func TestServerStaleCacheRefreshes(t *testing.T) {
 
 // The register command in the missing-credential error is the caller's.
 func TestServerOpenWithoutCredentialNamesCaller(t *testing.T) {
-	e := newEnv(t)
-	e.save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
-	_, err := Open(context.Background(), Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat", RegisterCommand: "agentbus2-mcponly register"})
+	e := testkit.NewProfileEnv(t)
+	e.Save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
+	_, err := Open(context.Background(), Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat", RegisterCommand: "agentbus2-mcponly register"})
 	if err == nil || !strings.Contains(err.Error(), "run agentbus2-mcponly register") || strings.Contains(err.Error(), "run agentbus2 register") {
 		t.Fatalf("err %v", err)
 	}
 }
 
 func TestServerOpenWithoutCredential(t *testing.T) {
-	e := newEnv(t)
-	e.save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
-	_, err := Open(context.Background(), Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat"})
+	e := testkit.NewProfileEnv(t)
+	e.Save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
+	_, err := Open(context.Background(), Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat"})
 	if err == nil || !strings.Contains(err.Error(), "run agentbus2 register") || !strings.Contains(err.Error(), `"pat"`) || !strings.Contains(err.Error(), `"lab"`) {
 		t.Fatalf("err %v", err)
 	}
@@ -272,24 +255,24 @@ func TestServerOpenRefusesWideCredential(t *testing.T) {
 		// owner-only ACL on save (credential.TestSaveSetsOwnerOnlyACL).
 		t.Skip("Unix modes")
 	}
-	e := newEnv(t)
-	e.save(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
-	e.credential(t, "lab", "pat")
-	path := filepath.Join(profile.CredentialDir(e.config, "lab"), "pat")
+	e := testkit.NewProfileEnv(t)
+	e.Save(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
+	saveCredential(t, e, "lab", "pat")
+	path := filepath.Join(profile.CredentialDir(e.Config, "lab"), "pat")
 	if err := os.Chmod(path, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Open(context.Background(), Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab"}); err == nil || !strings.Contains(err.Error(), "0600") {
+	if _, err := Open(context.Background(), Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab"}); err == nil || !strings.Contains(err.Error(), "0600") {
 		t.Fatalf("err %v", err)
 	}
 }
 
 func TestServerOpenNeverExchangesBeforeFirstCall(t *testing.T) {
-	e := newEnv(t)
-	e.save(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
-	e.credential(t, "lab", "pat")
+	e := testkit.NewProfileEnv(t)
+	e.Save(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
+	saveCredential(t, e, "lab", "pat")
 	rt := &countingRT{}
-	c, err := Open(context.Background(), Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", HTTP: &http.Client{Transport: rt}})
+	c, err := Open(context.Background(), Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", HTTP: &http.Client{Transport: rt}})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -297,7 +280,7 @@ func TestServerOpenNeverExchangesBeforeFirstCall(t *testing.T) {
 	if n := rt.total(); n != 0 {
 		t.Fatalf("%d requests during Open, want 0", n)
 	}
-	if _, err := os.Stat(filepath.Join(e.data, "tokens")); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(filepath.Join(e.Data, "tokens")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("Open created the token directory: %v", err)
 	}
 	// The first call dials (and fails: nothing listens on port 1).
@@ -326,10 +309,10 @@ func TestServerTokenEndpoint401IsNotRetried(t *testing.T) {
 		}
 	}))
 	defer srv.Close()
-	e := newEnv(t)
-	e.save(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: srv.URL})
-	e.credential(t, "lab", "pat")
-	c, err := Open(context.Background(), Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab"})
+	e := testkit.NewProfileEnv(t)
+	e.Save(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: srv.URL})
+	saveCredential(t, e, "lab", "pat")
+	c, err := Open(context.Background(), Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -373,7 +356,7 @@ func writeKeyFile(t *testing.T, k keys.Algorithm) (path string, signer interface
 func TestServerOpenWithCredentialFile(t *testing.T) {
 	ctx := context.Background()
 	base := startServer(t)
-	e := newEnv(t)
+	e := testkit.NewProfileEnv(t)
 	path, signer := writeKeyFile(t, keys.EdDSA)
 	gc, err := gen.NewClientWithResponses(base)
 	if err != nil {
@@ -382,7 +365,7 @@ func TestServerOpenWithCredentialFile(t *testing.T) {
 	if _, err := remote.Register(ctx, gc, "pat", signer.Public(), ""); err != nil {
 		t.Fatal(err)
 	}
-	c, err := Open(ctx, Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat", Server: base, Credential: path})
+	c, err := Open(ctx, Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat", Server: base, Credential: path})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -394,7 +377,7 @@ func TestServerOpenWithCredentialFile(t *testing.T) {
 	if h.Tier != bus.TierIdentity {
 		t.Fatalf("tier %q, want identity", h.Tier)
 	}
-	if _, err := os.Stat(filepath.Join(e.config, "credentials", "lab")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(e.Config, "credentials", "lab")); !os.IsNotExist(err) {
 		t.Fatalf("credentials/lab exists: %v", err)
 	}
 }
@@ -402,8 +385,8 @@ func TestServerOpenWithCredentialFile(t *testing.T) {
 // TestServerOpenCredentialFileRefusals: a missing file and a wide-mode file are
 // ResolveErrors; the latter wraps credential.ErrNotOwnerOnly.
 func TestServerOpenCredentialFileRefusals(t *testing.T) {
-	e := newEnv(t)
-	o := Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat", Server: "http://127.0.0.1:1"}
+	e := testkit.NewProfileEnv(t)
+	o := Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", Identity: "pat", Server: "http://127.0.0.1:1"}
 	o.Credential = filepath.Join(t.TempDir(), "absent.pem")
 	_, err := Open(context.Background(), o)
 	var re *ResolveError

@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/ericfitz/agentbus2/internal/bus"
+	"github.com/ericfitz/agentbus2/internal/testkit"
 )
 
 // fakeTerm is a cell-grid emulator for the byte stream run writes, with a
@@ -347,7 +348,7 @@ func railStream(t *testing.T, env []string, width, height int) string {
 	t.Cleanup(cancel)
 	pr, pw := io.Pipe()
 	t.Cleanup(func() { _ = pw.Close() })
-	out := &lockedBuf{}
+	out := &testkit.LockedBuffer{}
 	done := make(chan runResult, 1)
 	go func() {
 		_, err := run(ctx, Options{Bus: identityBus(t, c, "pat"), Identity: "pat", Input: pr, Output: out, Stderr: io.Discard, Width: width, Height: height, Environ: env})

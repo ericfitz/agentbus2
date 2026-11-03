@@ -20,6 +20,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/oidctest"
 	"github.com/ericfitz/agentbus2/internal/profile"
 	"github.com/ericfitz/agentbus2/internal/server/cmd"
+	"github.com/ericfitz/agentbus2/internal/testkit"
 )
 
 func freePort(t *testing.T) int {
@@ -58,7 +59,7 @@ func startHumanServer(t *testing.T, prov *oidctest.Provider) string {
 	}
 	set := "issuers=" + string(issuers)
 	ctx, cancel := context.WithCancel(context.Background())
-	out, errb := &lockedBuf{}, &lockedBuf{}
+	out, errb := &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	done := make(chan int, 1)
 	// Made before the stop cleanup is registered, so its RemoveAll runs after
 	// the server has closed the database (Windows refuses to delete an open file).
@@ -94,29 +95,29 @@ func startHumanServer(t *testing.T, prov *oidctest.Provider) string {
 }
 
 func TestResolveHumanSignInNeedsOIDC(t *testing.T) {
-	e := newEnv(t)
+	e := testkit.NewProfileEnv(t)
 	oidc := &profile.OIDC{Issuer: "https://idp.example", ClientID: "cid", RedirectPort: 8765, Scopes: []string{"openid"}}
-	e.save(t,
+	e.Save(t,
 		profile.Profile{Name: "default", Mode: profile.ModeLocal},
 		profile.Profile{Name: "plain", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"},
 		profile.Profile{Name: "corp", Mode: profile.ModeServer, Server: "http://127.0.0.1:1", Identity: "profid", OIDC: oidc},
 	)
-	e.credential(t, "corp", "pat") // agent keys in the same profile never select the identity
+	saveCredential(t, e, "corp", "pat") // agent keys in the same profile never select the identity
 	for _, name := range []string{"plain", "default"} {
-		_, err := Resolve(Options{Environ: e.environ, Cwd: t.TempDir(), Profile: name, HumanSignIn: true})
+		_, err := Resolve(Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: name, HumanSignIn: true})
 		var re *ResolveError
 		if !errors.As(err, &re) || !strings.Contains(err.Error(), "no oidc setting") || !strings.Contains(err.Error(), `"`+name+`"`) {
 			t.Errorf("profile %s: err %v, want a ResolveError naming the oidc setting", name, err)
 		}
 	}
 	// AGENTBUS2_IDENTITY, the profile's identity and its credentials never select the human's identity.
-	env := append(append([]string{}, e.environ...), "AGENTBUS2_IDENTITY=x")
+	env := append(append([]string{}, e.Environ...), "AGENTBUS2_IDENTITY=x")
 	r, err := Resolve(Options{Environ: env, Cwd: t.TempDir(), Profile: "corp", HumanSignIn: true, FallbackIdentity: "efitz"})
 	if err != nil || r.Identity != "" || r.IdentitySource != "sign-in" || r.Profile.OIDC == nil {
 		t.Fatalf("Resolve with oidc = %+v, %v", r, err)
 	}
 	// Without HumanSignIn the same profile still selects the agent's credential.
-	if r, err = Resolve(Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "corp"}); err != nil || r.Identity != "profid" {
+	if r, err = Resolve(Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "corp"}); err != nil || r.Identity != "profid" {
 		t.Fatalf("agent resolve = %q, %v", r.Identity, err)
 	}
 }
@@ -126,12 +127,12 @@ func TestOpenServerHumanSignIn(t *testing.T) {
 	prov := oidctest.New(t, oidctest.Options{Audience: "pai", ClientID: "cid", RefreshTokens: true,
 		Claims: map[string]any{"sub": "u1", "email": "eric@corp.example"}})
 	base := startHumanServer(t, prov)
-	e := newEnv(t)
-	e.save(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: base,
+	e := testkit.NewProfileEnv(t)
+	e.Save(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: base,
 		OIDC: &profile.OIDC{Issuer: prov.URL(), ClientID: "cid", RedirectPort: freePort(t), Scopes: []string{"openid", "email"}}})
 	b := &testBrowser{}
 	var announced atomic.Value
-	o := Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", HumanSignIn: true, HumanOpenBrowser: b.open,
+	o := Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", HumanSignIn: true, HumanOpenBrowser: b.open,
 		HumanAnnounce: func(u string) { announced.Store(u) }}
 
 	c, err := Open(ctx, o)
@@ -156,7 +157,7 @@ func TestOpenServerHumanSignIn(t *testing.T) {
 	if err != nil || len(msgs) == 0 || msgs[len(msgs)-1].Sender != "eric@corp.example" || msgs[len(msgs)-1].SenderKind != bus.IdentityHuman {
 		t.Fatalf("history %+v, %v: want the message from the human eric@corp.example", msgs, err)
 	}
-	cache := filepath.Join(e.data, "tokens", "lab", "human", "session.json")
+	cache := filepath.Join(e.Data, "tokens", "lab", "human", "session.json")
 	fi, err := os.Stat(cache)
 	if err != nil {
 		t.Fatalf("session cache: %v", err)
@@ -176,7 +177,7 @@ func TestOpenServerHumanSignIn(t *testing.T) {
 	}
 
 	// Deferred: Open obtains nothing and the caller drives the source.
-	e.save(t, profile.Profile{Name: "lab2", Mode: profile.ModeServer, Server: base,
+	e.Save(t, profile.Profile{Name: "lab2", Mode: profile.ModeServer, Server: base,
 		OIDC: &profile.OIDC{Issuer: prov.URL(), ClientID: "cid", RedirectPort: freePort(t), Scopes: []string{"openid"}}})
 	d := o
 	d.Profile, d.HumanDeferSignIn = "lab2", true
@@ -194,15 +195,15 @@ func TestOpenServerHumanSignIn(t *testing.T) {
 func TestOpenServerHumanSignInProviderRefusal(t *testing.T) {
 	prov := oidctest.New(t, oidctest.Options{Audience: "pai", AuthorizeError: "access_denied"})
 	base := startHumanServer(t, prov)
-	e := newEnv(t)
-	e.save(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: base,
+	e := testkit.NewProfileEnv(t)
+	e.Save(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: base,
 		OIDC: &profile.OIDC{Issuer: prov.URL(), ClientID: "cid", RedirectPort: freePort(t), Scopes: []string{"openid"}}})
-	_, err := Open(context.Background(), Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", HumanSignIn: true, HumanOpenBrowser: (&testBrowser{}).open})
+	_, err := Open(context.Background(), Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", HumanSignIn: true, HumanOpenBrowser: (&testBrowser{}).open})
 	var re *ResolveError
 	if err == nil || errors.As(err, &re) || !strings.Contains(err.Error(), "access_denied") {
 		t.Fatalf("err %v", err)
 	}
-	if _, serr := os.Stat(filepath.Join(e.data, "tokens", "lab", "human", "session.json")); !errors.Is(serr, os.ErrNotExist) {
+	if _, serr := os.Stat(filepath.Join(e.Data, "tokens", "lab", "human", "session.json")); !errors.Is(serr, os.ErrNotExist) {
 		t.Errorf("a failed sign-in left a session: %v", serr)
 	}
 }

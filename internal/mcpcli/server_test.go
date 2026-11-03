@@ -1,33 +1,15 @@
 package mcpcli
 
 import (
-	"bytes"
 	"context"
 	"path/filepath"
 	"regexp"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/ericfitz/agentbus2/internal/server/cmd"
+	"github.com/ericfitz/agentbus2/internal/testkit"
 )
-
-type lockedBuf struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *lockedBuf) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *lockedBuf) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
 
 var listeningRE = regexp.MustCompile(`listening on (\S+) `)
 
@@ -36,7 +18,7 @@ var listeningRE = regexp.MustCompile(`listening on (\S+) `)
 func startServer(t *testing.T, extra ...string) string {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	out, errb := &lockedBuf{}, &lockedBuf{}
+	out, errb := &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	done := make(chan int, 1)
 	db := filepath.Join(t.TempDir(), "srv.sqlite")
 	args := append([]string{"-listen", "127.0.0.1:0", "-sqlite", db}, extra...)

@@ -6,31 +6,13 @@ import (
 	"log/slog"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/client"
 	"github.com/ericfitz/agentbus2/internal/profile"
 	"github.com/ericfitz/agentbus2/internal/storetest"
+	"github.com/ericfitz/agentbus2/internal/testkit"
 )
-
-// lockedBuf is a mutex-guarded buffer a logger can write to from any goroutine.
-type lockedBuf struct {
-	mu sync.Mutex
-	b  strings.Builder
-}
-
-func (s *lockedBuf) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *lockedBuf) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
 
 // captureStderr points os.Stderr and the log package's output (the sink of
 // slog.Default) at a file until the returned func runs, which restores both
@@ -62,16 +44,16 @@ func captureStderr(t *testing.T) func() string {
 func TestLocalStoreLogger(t *testing.T) {
 	ctx := context.Background()
 	// pat is an administrator holding a scope: every call loads the principal.
-	scopedAdmin := func(t *testing.T) *env {
+	scopedAdmin := func(t *testing.T) *testkit.ProfileEnv {
 		e := localEnv(t)
-		storetest.ScopedAdminRaw(t, profile.SQLitePath(profile.Profile{Name: "default", Mode: profile.ModeLocal}, e.data), "pat", "acme")
+		storetest.ScopedAdminRaw(t, profile.SQLitePath(profile.Profile{Name: "default", Mode: profile.ModeLocal}, e.Data), "pat", "acme")
 		return e
 	}
 
 	t.Run("logger", func(t *testing.T) {
 		e := scopedAdmin(t)
-		var logs lockedBuf
-		c := e.openAs(t, "pat", func(o *opts) { o.Logger = slog.New(slog.NewTextHandler(&logs, nil)) })
+		var logs testkit.LockedBuffer
+		c := openAs(t, e, "pat", func(o *opts) { o.Logger = slog.New(slog.NewTextHandler(&logs, nil)) })
 		if _, err := c.Bus.ListChannels(ctx); err != nil {
 			t.Fatal(err)
 		}
@@ -82,9 +64,9 @@ func TestLocalStoreLogger(t *testing.T) {
 
 	t.Run("no logger", func(t *testing.T) {
 		e := scopedAdmin(t)
-		var term lockedBuf
+		var term testkit.LockedBuffer
 		done := captureStderr(t)
-		c, err := opts{Options: client.Options{Environ: e.environ, Cwd: t.TempDir(), Identity: "pat",
+		c, err := opts{Options: client.Options{Environ: e.Environ, Cwd: t.TempDir(), Identity: "pat",
 			OpenLogger: slog.New(slog.NewTextHandler(&term, &slog.HandlerOptions{Level: slog.LevelWarn}))}, Config: noMerge()}.open(ctx)
 		if err == nil {
 			_, err = c.Bus.ListChannels(ctx)

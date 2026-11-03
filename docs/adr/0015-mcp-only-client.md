@@ -77,3 +77,5 @@ The full ledger is not part of the repository; these are the rulings that differ
 ## Addendum: shared test helpers (Eric, 2026-11-03)
 
 Eric's decision. The test helpers that are now duplicated (`lockedBuf` in four packages, and the `internal/cli/env_test.go` copies of `resolve_test.go` helpers) move into one test-only helper package. That package may be added to the m6 and m10 import allowlists as needed, and the gate selftests are updated to match. It only extends the allowlists for test helpers. The rule that the 13-module list for the `agentbus2-mcponly` binary is Eric's to extend stays in force.
+
+No allowlist change was needed: the gates check non-test imports only, and `TestTestkitTestOnly` keeps `internal/testkit` out of them.

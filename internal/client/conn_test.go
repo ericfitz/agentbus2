@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentbus2/internal/testkit"
 )
 
 // TestOpenLocalWithoutOpener: a binary that passes no Options.Local has no
@@ -23,19 +24,19 @@ func TestOpenLocalWithoutOpener(t *testing.T) {
 		{"defined local profile", "lab", true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			e := newEnv(t)
+			e := testkit.NewProfileEnv(t)
 			if tc.define {
-				e.save(t, profile.Profile{Name: "lab", Mode: profile.ModeLocal})
+				e.Save(t, profile.Profile{Name: "lab", Mode: profile.ModeLocal})
 			}
-			_, err := Open(context.Background(), Options{Environ: e.environ, Cwd: t.TempDir(), Profile: tc.profile, Identity: "pat"})
+			_, err := Open(context.Background(), Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: tc.profile, Identity: "pat"})
 			var re *ResolveError
 			if !errors.As(err, &re) || !strings.Contains(err.Error(), "has no local mode") {
 				t.Fatalf("Open = %v, want a ResolveError saying the binary has no local mode", err)
 			}
-			if _, statErr := os.Stat(filepath.Join(e.data, "agentbus2.sqlite")); !errors.Is(statErr, os.ErrNotExist) {
+			if _, statErr := os.Stat(filepath.Join(e.Data, "agentbus2.sqlite")); !errors.Is(statErr, os.ErrNotExist) {
 				t.Fatalf("the data directory holds agentbus2.sqlite (%v)", statErr)
 			}
-			matches, _ := filepath.Glob(filepath.Join(e.data, "*.sqlite*"))
+			matches, _ := filepath.Glob(filepath.Join(e.Data, "*.sqlite*"))
 			if len(matches) != 0 {
 				t.Fatalf("the data directory holds %v", matches)
 			}

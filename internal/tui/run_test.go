@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -20,6 +19,7 @@ import (
 	"github.com/ericfitz/agentbus2/internal/core"
 	"github.com/ericfitz/agentbus2/internal/gen"
 	"github.com/ericfitz/agentbus2/internal/server"
+	"github.com/ericfitz/agentbus2/internal/testkit"
 )
 
 // countingHandler counts the long polls (requests whose path ends in /watch)
@@ -36,25 +36,6 @@ func (c *countingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	c.Handler.ServeHTTP(w, r)
 }
 
-// lockedBuf is the program's Output: written by Bubble Tea's goroutine, read
-// by the test.
-type lockedBuf struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (l *lockedBuf) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.Write(p)
-}
-
-func (l *lockedBuf) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.String()
-}
-
 type runResult struct {
 	m   Model
 	err error
@@ -63,7 +44,7 @@ type runResult struct {
 // runHandle is one run in a goroutine with a piped Input.
 type runHandle struct {
 	in     *io.PipeWriter
-	out    *lockedBuf
+	out    *testkit.LockedBuffer
 	done   chan runResult
 	cancel context.CancelFunc
 }
@@ -76,7 +57,7 @@ func startRun(t *testing.T, b bus.Bus, w, h int) *runHandle {
 	t.Cleanup(cancel)
 	pr, pw := io.Pipe()
 	t.Cleanup(func() { _ = pw.Close() })
-	rh := &runHandle{in: pw, out: &lockedBuf{}, done: make(chan runResult, 1), cancel: cancel}
+	rh := &runHandle{in: pw, out: &testkit.LockedBuffer{}, done: make(chan runResult, 1), cancel: cancel}
 	go func() {
 		m, err := run(ctx, Options{Bus: b, Identity: "pat", Input: pr, Output: rh.out, Stderr: io.Discard, Width: w, Height: h})
 		rh.done <- runResult{m, err}

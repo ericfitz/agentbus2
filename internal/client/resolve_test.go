@@ -10,60 +10,32 @@ import (
 	"github.com/ericfitz/agentbus2/internal/auth/keys"
 	"github.com/ericfitz/agentbus2/internal/credential"
 	"github.com/ericfitz/agentbus2/internal/profile"
+	"github.com/ericfitz/agentbus2/internal/testkit"
 )
 
-// env builds temp config and data directories and an environ naming them.
-type env struct {
-	home, config, data string
-	environ            []string
-}
-
-func newEnv(t *testing.T, extra ...string) *env {
-	t.Helper()
-	root := t.TempDir()
-	e := &env{home: filepath.Join(root, "home"), config: filepath.Join(root, "config"), data: filepath.Join(root, "data")}
-	for _, d := range []string{e.home, e.config, e.data} {
-		if err := os.MkdirAll(d, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	e.environ = append([]string{"HOME=" + e.home, "AGENTBUS2_CONFIG_DIR=" + e.config, "AGENTBUS2_DATA_DIR=" + e.data}, extra...)
-	return e
-}
-
-func (e *env) save(t *testing.T, ps ...profile.Profile) {
-	t.Helper()
-	c := profile.Config{Path: filepath.Join(e.config, "config.json"), Profiles: map[string]profile.Profile{}}
-	for _, p := range ps {
-		c.Profiles[p.Name] = p
-	}
-	if err := c.Save(); err != nil {
-		t.Fatal(err)
-	}
-}
-
-func (e *env) credential(t *testing.T, profileName, identity string) {
+// saveCredential writes a generated agent key for the profile and identity.
+func saveCredential(t *testing.T, e *testkit.ProfileEnv, profileName, identity string) {
 	t.Helper()
 	k, err := keys.Generate(keys.EdDSA)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := (credential.Store{Dir: profile.CredentialDir(e.config, profileName)}).Save(identity, k); err != nil {
+	if err := (credential.Store{Dir: profile.CredentialDir(e.Config, profileName)}).Save(identity, k); err != nil {
 		t.Fatal(err)
 	}
 }
 
 func TestResolveOrder(t *testing.T) {
-	e := newEnv(t)
-	e.save(t,
+	e := testkit.NewProfileEnv(t)
+	e.Save(t,
 		profile.Profile{Name: "default", Mode: profile.ModeLocal, Identity: "pat"},
 		profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"},
 		profile.Profile{Name: "repo", Mode: profile.ModeServer, Server: "http://127.0.0.1:2"},
 		profile.Profile{Name: "envp", Mode: profile.ModeServer, Server: "http://127.0.0.1:3"},
 	)
-	e.credential(t, "lab", "kim")
-	e.credential(t, "repo", "kim")
-	e.credential(t, "envp", "kim")
+	saveCredential(t, e, "lab", "kim")
+	saveCredential(t, e, "repo", "kim")
+	saveCredential(t, e, "envp", "kim")
 
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
@@ -83,12 +55,12 @@ func TestResolveOrder(t *testing.T) {
 		identity     string
 		idSrc        string
 	}{
-		{"flag over env over repo", Options{Profile: "lab", Cwd: repo, Environ: append(append([]string{}, e.environ...), "AGENTBUS2_PROFILE=envp")}, "lab", "flag", "kim", "credential"},
-		{"env over repo", Options{Cwd: repo, Environ: append(append([]string{}, e.environ...), "AGENTBUS2_PROFILE=envp")}, "envp", "env", "kim", "credential"},
-		{"repo over default", Options{Cwd: repo, Environ: e.environ}, "repo", "repo", "kim", "credential"},
-		{"default", Options{Cwd: t.TempDir(), Environ: e.environ}, "default", "default", "pat", "profile"},
-		{"identity flag over env over profile", Options{Cwd: t.TempDir(), Identity: "sam", Environ: append(append([]string{}, e.environ...), "AGENTBUS2_IDENTITY=lee")}, "default", "default", "sam", "flag"},
-		{"identity env over profile", Options{Cwd: t.TempDir(), Environ: append(append([]string{}, e.environ...), "AGENTBUS2_IDENTITY=lee")}, "default", "default", "lee", "env"},
+		{"flag over env over repo", Options{Profile: "lab", Cwd: repo, Environ: append(append([]string{}, e.Environ...), "AGENTBUS2_PROFILE=envp")}, "lab", "flag", "kim", "credential"},
+		{"env over repo", Options{Cwd: repo, Environ: append(append([]string{}, e.Environ...), "AGENTBUS2_PROFILE=envp")}, "envp", "env", "kim", "credential"},
+		{"repo over default", Options{Cwd: repo, Environ: e.Environ}, "repo", "repo", "kim", "credential"},
+		{"default", Options{Cwd: t.TempDir(), Environ: e.Environ}, "default", "default", "pat", "profile"},
+		{"identity flag over env over profile", Options{Cwd: t.TempDir(), Identity: "sam", Environ: append(append([]string{}, e.Environ...), "AGENTBUS2_IDENTITY=lee")}, "default", "default", "sam", "flag"},
+		{"identity env over profile", Options{Cwd: t.TempDir(), Environ: append(append([]string{}, e.Environ...), "AGENTBUS2_IDENTITY=lee")}, "default", "default", "lee", "env"},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -100,15 +72,15 @@ func TestResolveOrder(t *testing.T) {
 				t.Fatalf("got profile %q (%s) identity %q (%s), want %q (%s) %q (%s)",
 					r.Profile.Name, r.ProfileSource, r.Identity, r.IdentitySource, c.profile, c.src, c.identity, c.idSrc)
 			}
-			if r.ConfigDir != e.config || r.DataDir != e.data {
+			if r.ConfigDir != e.Config || r.DataDir != e.Data {
 				t.Fatalf("dirs %q %q", r.ConfigDir, r.DataDir)
 			}
 		})
 	}
 
 	t.Run("local default without identity", func(t *testing.T) {
-		e2 := newEnv(t)
-		_, err := Resolve(Options{Cwd: t.TempDir(), Environ: e2.environ})
+		e2 := testkit.NewProfileEnv(t)
+		_, err := Resolve(Options{Cwd: t.TempDir(), Environ: e2.Environ})
 		if err == nil || !strings.Contains(err.Error(), "identity is required") {
 			t.Fatalf("err %v, want the three-way identity error", err)
 		}
@@ -122,26 +94,26 @@ func TestResolveOrder(t *testing.T) {
 	})
 
 	t.Run("fallback identity", func(t *testing.T) {
-		e2 := newEnv(t)
-		r, err := Resolve(Options{Cwd: t.TempDir(), Environ: e2.environ, FallbackIdentity: "efitz"})
+		e2 := testkit.NewProfileEnv(t)
+		r, err := Resolve(Options{Cwd: t.TempDir(), Environ: e2.Environ, FallbackIdentity: "efitz"})
 		if err != nil || r.Identity != "efitz" || r.IdentitySource != "os-user" {
 			t.Fatalf("got %q (%s), %v", r.Identity, r.IdentitySource, err)
 		}
 	})
 
 	t.Run("two credentials and no setting", func(t *testing.T) {
-		e2 := newEnv(t)
-		e2.save(t, profile.Profile{Name: "default", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
-		e2.credential(t, "default", "kim")
-		e2.credential(t, "default", "lee")
-		if _, err := Resolve(Options{Cwd: t.TempDir(), Environ: e2.environ}); err == nil || !strings.Contains(err.Error(), "identity is required") {
+		e2 := testkit.NewProfileEnv(t)
+		e2.Save(t, profile.Profile{Name: "default", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
+		saveCredential(t, e2, "default", "kim")
+		saveCredential(t, e2, "default", "lee")
+		if _, err := Resolve(Options{Cwd: t.TempDir(), Environ: e2.Environ}); err == nil || !strings.Contains(err.Error(), "identity is required") {
 			t.Fatalf("err %v", err)
 		}
 	})
 
 	t.Run("undefined profile", func(t *testing.T) {
-		e2 := newEnv(t)
-		_, err := Resolve(Options{Profile: "nope", Cwd: t.TempDir(), Environ: e2.environ})
+		e2 := testkit.NewProfileEnv(t)
+		_, err := Resolve(Options{Profile: "nope", Cwd: t.TempDir(), Environ: e2.Environ})
 		if err == nil || !strings.Contains(err.Error(), `profile "nope" is not defined`) {
 			t.Fatalf("err %v", err)
 		}
@@ -149,7 +121,7 @@ func TestResolveOrder(t *testing.T) {
 }
 
 func TestResolveRepoFileError(t *testing.T) {
-	e := newEnv(t)
+	e := testkit.NewProfileEnv(t)
 	repo := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(repo, ".git"), 0o755); err != nil {
 		t.Fatal(err)
@@ -160,7 +132,7 @@ func TestResolveRepoFileError(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(repo, ".local", "agentbus2.json"), []byte(`{"profile":"lab","credential_process":["x"]}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	_, err := Resolve(Options{Cwd: repo, Environ: e.environ})
+	_, err := Resolve(Options{Cwd: repo, Environ: e.Environ})
 	if err == nil || !strings.Contains(err.Error(), "credential_process") {
 		t.Fatalf("err %v, want an error naming credential_process", err)
 	}
@@ -174,9 +146,9 @@ func TestResolveReadsOnlyGivenEnviron(t *testing.T) {
 	// The process environment names a directory; Resolve must ignore it.
 	t.Setenv("AGENTBUS2_PROFILE", "from-process-env")
 	t.Setenv("AGENTBUS2_IDENTITY", "from-process-env")
-	e := newEnv(t)
-	e.save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal, Identity: "pat"})
-	r, err := Resolve(Options{Cwd: t.TempDir(), Environ: e.environ})
+	e := testkit.NewProfileEnv(t)
+	e.Save(t, profile.Profile{Name: "default", Mode: profile.ModeLocal, Identity: "pat"})
+	r, err := Resolve(Options{Cwd: t.TempDir(), Environ: e.Environ})
 	if err != nil || r.Profile.Name != "default" || r.Identity != "pat" {
 		t.Fatalf("%+v, %v", r, err)
 	}
@@ -186,8 +158,8 @@ func TestResolveReadsOnlyGivenEnviron(t *testing.T) {
 // only when the profile was not chosen by the repository file (TUI decision
 // 11), so the human never shares the agent's identity.
 func TestResolveHumanIdentity(t *testing.T) {
-	e := newEnv(t)
-	e.save(t,
+	e := testkit.NewProfileEnv(t)
+	e.Save(t,
 		profile.Profile{Name: "default", Mode: profile.ModeLocal, Identity: "eric"},
 		profile.Profile{Name: "repo", Mode: profile.ModeLocal, Identity: "agentbus2"},
 		profile.Profile{Name: "homerepo", Mode: profile.ModeLocal, Identity: "efitz-home"},
@@ -216,7 +188,7 @@ func TestResolveHumanIdentity(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			c.o.Environ, c.o.HumanIdentity, c.o.FallbackIdentity = e.environ, true, "efitz"
+			c.o.Environ, c.o.HumanIdentity, c.o.FallbackIdentity = e.Environ, true, "efitz"
 			r, err := Resolve(c.o)
 			if err != nil || r.Identity != c.identity || r.IdentitySource != c.id {
 				t.Fatalf("got %q (%s), %v; want %q (%s)", r.Identity, r.IdentitySource, err, c.identity, c.id)
@@ -224,19 +196,19 @@ func TestResolveHumanIdentity(t *testing.T) {
 		})
 	}
 	t.Run("env profile keeps its identity", func(t *testing.T) {
-		r, err := Resolve(Options{Cwd: repoWith("repo"), Environ: append(append([]string{}, e.environ...), "AGENTBUS2_PROFILE=lab"), HumanIdentity: true, FallbackIdentity: "efitz"})
+		r, err := Resolve(Options{Cwd: repoWith("repo"), Environ: append(append([]string{}, e.Environ...), "AGENTBUS2_PROFILE=lab"), HumanIdentity: true, FallbackIdentity: "efitz"})
 		if err != nil || r.Identity != "eric" {
 			t.Fatalf("got %q, %v", r.Identity, err)
 		}
 	})
 	t.Run("env identity wins in a repo", func(t *testing.T) {
-		r, err := Resolve(Options{Cwd: repoWith("repo"), Environ: append(append([]string{}, e.environ...), "AGENTBUS2_IDENTITY=lee"), HumanIdentity: true, FallbackIdentity: "efitz"})
+		r, err := Resolve(Options{Cwd: repoWith("repo"), Environ: append(append([]string{}, e.Environ...), "AGENTBUS2_IDENTITY=lee"), HumanIdentity: true, FallbackIdentity: "efitz"})
 		if err != nil || r.Identity != "lee" || r.IdentitySource != "env" {
 			t.Fatalf("got %q (%s), %v", r.Identity, r.IdentitySource, err)
 		}
 	})
 	t.Run("other commands keep the repo identity", func(t *testing.T) {
-		r, err := Resolve(Options{Cwd: repoWith("repo"), Environ: e.environ})
+		r, err := Resolve(Options{Cwd: repoWith("repo"), Environ: e.Environ})
 		if err != nil || r.Identity != "agentbus2" || r.IdentitySource != "profile" {
 			t.Fatalf("got %q (%s), %v", r.Identity, r.IdentitySource, err)
 		}
@@ -247,9 +219,9 @@ func TestResolveHumanIdentity(t *testing.T) {
 // holds the agent's only credential; the TUI must not take it, other commands
 // still do.
 func TestResolveHumanIdentityServerRepo(t *testing.T) {
-	e := newEnv(t)
-	e.save(t, profile.Profile{Name: "repo", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
-	e.credential(t, "repo", "agentbus2")
+	e := testkit.NewProfileEnv(t)
+	e.Save(t, profile.Profile{Name: "repo", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
+	saveCredential(t, e, "repo", "agentbus2")
 	dir := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(dir, ".local"), 0o755); err != nil {
 		t.Fatal(err)
@@ -257,15 +229,15 @@ func TestResolveHumanIdentityServerRepo(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, ".local", "agentbus2.json"), []byte(`{"profile":"repo"}`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	human := Options{Cwd: dir, Environ: e.environ, HumanIdentity: true, FallbackIdentity: "efitz"}
+	human := Options{Cwd: dir, Environ: e.Environ, HumanIdentity: true, FallbackIdentity: "efitz"}
 	if _, err := Resolve(human); err == nil || !strings.Contains(err.Error(), "identity is required") {
 		t.Fatalf("err %v, want identity is required", err)
 	}
-	r, err := Resolve(Options{Cwd: dir, Environ: e.environ})
+	r, err := Resolve(Options{Cwd: dir, Environ: e.Environ})
 	if err != nil || r.Identity != "agentbus2" || r.IdentitySource != "credential" {
 		t.Fatalf("other commands: %q (%s), %v", r.Identity, r.IdentitySource, err)
 	}
-	e.credential(t, "repo", "efitz")
+	saveCredential(t, e, "repo", "efitz")
 	r, err = Resolve(human)
 	if err != nil || r.Identity != "efitz" || r.IdentitySource != "os-user" {
 		t.Fatalf("with an efitz credential: %q (%s), %v", r.Identity, r.IdentitySource, err)
@@ -293,11 +265,11 @@ func TestResolveServerFlag(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			e := newEnv(t)
+			e := testkit.NewProfileEnv(t)
 			if c.saved != nil {
-				e.save(t, c.saved...)
+				e.Save(t, c.saved...)
 			}
-			r, err := Resolve(Options{Environ: e.environ, Cwd: t.TempDir(), Profile: c.profile, Identity: "pat", Server: c.server})
+			r, err := Resolve(Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: c.profile, Identity: "pat", Server: c.server})
 			if c.wantInErr != "" {
 				var re *ResolveError
 				if !errors.As(err, &re) || !strings.Contains(err.Error(), c.wantInErr) {
@@ -312,7 +284,7 @@ func TestResolveServerFlag(t *testing.T) {
 				t.Fatalf("profile %+v", r.Profile)
 			}
 			if c.saved == nil {
-				if _, err := os.Stat(filepath.Join(e.config, "config.json")); !os.IsNotExist(err) {
+				if _, err := os.Stat(filepath.Join(e.Config, "config.json")); !os.IsNotExist(err) {
 					t.Fatalf("config.json exists after a -server resolve: %v", err)
 				}
 			}
@@ -337,9 +309,9 @@ func TestResolveCredentialFlag(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			e := newEnv(t)
-			e.save(t, c.p)
-			_, err := Resolve(Options{Environ: e.environ, Cwd: t.TempDir(), Profile: c.p.Name, Identity: "pat", Credential: "/k.pem", HumanSignIn: c.human})
+			e := testkit.NewProfileEnv(t)
+			e.Save(t, c.p)
+			_, err := Resolve(Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: c.p.Name, Identity: "pat", Credential: "/k.pem", HumanSignIn: c.human})
 			var re *ResolveError
 			if !errors.As(err, &re) || err.Error() != c.want {
 				t.Fatalf("err %v, want a ResolveError %q", err, c.want)
@@ -351,8 +323,8 @@ func TestResolveCredentialFlag(t *testing.T) {
 		})
 	}
 	t.Run("server profile resolves without a credential directory read", func(t *testing.T) {
-		e := newEnv(t)
-		r, err := Resolve(Options{Environ: e.environ, Cwd: t.TempDir(), Profile: "lab", Server: "http://h:1", Identity: "pat", Credential: "/k.pem"})
+		e := testkit.NewProfileEnv(t)
+		r, err := Resolve(Options{Environ: e.Environ, Cwd: t.TempDir(), Profile: "lab", Server: "http://h:1", Identity: "pat", Credential: "/k.pem"})
 		if err != nil || r.Identity != "pat" {
 			t.Fatalf("%+v, %v", r, err)
 		}
