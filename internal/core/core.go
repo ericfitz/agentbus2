@@ -61,8 +61,10 @@ type Core struct {
 	inspectMu    sync.Mutex
 	inspectState inspectState
 	noticeSetAt  time.Time
-	failGen      uint64
-	notifyTotal  atomic.Int64
+	// noticeCheckedAt is when a success in state ok last looked for a notice.
+	noticeCheckedAt time.Time
+	failGen         uint64
+	notifyTotal     atomic.Int64
 
 	tickMu   sync.Mutex
 	lastTick *MaintenanceTick

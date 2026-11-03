@@ -602,17 +602,12 @@ func TestInspectionNoticeRateAndClear(t *testing.T) {
 	in.set(replyWith(`{"verdict":"allow"}`))
 	clk.advance(29 * time.Second) // t0 + 90 s: the notice is 29 s old
 	run()
-	if got := setAt(); got != t0+61_000 {
-		t.Fatalf("a success with a 29 s old notice changed it: SetAt = %d", got)
-	}
-	clk.advance(35 * time.Second) // t0 + 125 s: 64 s old
-	run()
 	if got := setAt(); got != -1 {
-		t.Fatalf("a success with a 64 s old notice left it: SetAt = %d", got)
+		t.Fatalf("a success with a 29 s old notice left it: SetAt = %d", got)
 	}
 
-	// open note: write-inspection 4. A second process starts unknown and its
-	// first success clears a notice older than 60 s.
+	// A second process starts unknown and its first success clears a notice
+	// of any age.
 	err := c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		return tx.SetNotice(ctx, store.Notice{Kind: NoticeInspection, Message: "left by a dead replica", SetAt: t0 + 100_000})
 	})
@@ -631,24 +626,92 @@ func TestInspectionNoticeRateAndClear(t *testing.T) {
 	if got := setAt(); got != -1 {
 		t.Fatalf("an unknown-state process did not clear the old notice: SetAt = %d", got)
 	}
-	// Now ok: a success makes no Store call, and does not clear another
-	// process's fresh notice.
+	// Now ok: a success within the throttle window makes no Store call.
 	err = c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
 		return tx.SetNotice(ctx, store.Notice{Kind: NoticeInspection, Message: "another replica", SetAt: startMs + 200_000})
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The earlier success set noticeCheckedAt. Five minutes on, the next success
+	// reads, clears the other replica's notice whatever its age, and opens
+	// exactly one Tx.
 	before := cs.calls.Load()
 	clk2.advance(5 * time.Minute)
 	if _, err := c2.inspect(ctx, "pat", testPrep()); err != nil {
 		t.Fatal(err)
 	}
-	if cs.calls.Load() != before {
-		t.Errorf("a success in state ok made %d Store calls", cs.calls.Load()-before)
+	if got := cs.calls.Load() - before; got != 2 {
+		t.Errorf("a success in state ok after the window made %d Store calls, want 2 (one Read, one Tx)", got)
 	}
-	if got := setAt(); got != startMs+200_000 {
-		t.Errorf("a core in state ok touched another process's notice: SetAt = %d", got)
+	if got := setAt(); got != -1 {
+		t.Errorf("a success in state ok left another replica's notice: SetAt = %d", got)
+	}
+}
+
+// TestNoteSuccessOKThrottled: in state ok a second success within the window
+// makes no Store call, and one at the window's end makes one Read.
+func TestNoteSuccessOKThrottled(t *testing.T) {
+	in := &stubInspector{reply: replyWith(`{"verdict":"allow"}`)}
+	c, clk, _ := newInspectCore(t, nil, in)
+	cs := &countingStore{Store: c.Store}
+	c.Store = cs
+	ctx := context.Background()
+	c.noteSuccess(ctx) // unknown -> ok; reads once
+	before := cs.calls.Load()
+	clk.advance(59 * time.Second)
+	c.noteSuccess(ctx)
+	if got := cs.calls.Load() - before; got != 0 {
+		t.Fatalf("a success 59 s on made %d Store calls, want 0", got)
+	}
+	clk.advance(1 * time.Second) // 60 s after the check
+	c.noteSuccess(ctx)
+	if got := cs.calls.Load() - before; got != 1 {
+		t.Fatalf("a success 60 s on made %d Store calls, want 1 (a Read)", got)
+	}
+}
+
+// TestNoticeClearedByOtherReplicaReturns: replica B's success clears the
+// notice replica A set; A's next failure outside its window sets it again.
+func TestNoticeClearedByOtherReplicaReturns(t *testing.T) {
+	failing := &stubInspector{reply: func(context.Context, InspectRequest) ([]byte, error) {
+		return nil, &InspectError{Class: FailTransport, Err: errors.New("down")}
+	}}
+	a, clk, _ := newInspectCore(t, nil, failing)
+	ctx := context.Background()
+	setAt := func() int64 {
+		n, ok := inspectionNotice(t, a)
+		if !ok {
+			return -1
+		}
+		return n.SetAt
+	}
+	t0 := int64(startMs)
+	_, _ = a.inspect(ctx, "pat", testPrep())
+	if got := setAt(); got != t0 {
+		t.Fatalf("SetAt after A's failure = %d, want %d", got, t0)
+	}
+	okIn := &stubInspector{reply: replyWith(`{"verdict":"allow"}`)}
+	b, err := New(a.Store, Defaults(), Options{Now: clk.now, Inspector: okIn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	clk.advance(1 * time.Second)
+	if _, err := b.inspect(ctx, "pat", testPrep()); err != nil {
+		t.Fatal(err)
+	}
+	if got := setAt(); got != -1 {
+		t.Fatalf("B's success left the notice: SetAt = %d", got)
+	}
+	clk.advance(29 * time.Second) // t0 + 30 s: inside A's window
+	_, _ = a.inspect(ctx, "pat", testPrep())
+	if got := setAt(); got != -1 {
+		t.Fatalf("A rewrote the notice inside its window: SetAt = %d", got)
+	}
+	clk.advance(31 * time.Second) // t0 + 61 s
+	_, _ = a.inspect(ctx, "pat", testPrep())
+	if got := setAt(); got != t0+61_000 {
+		t.Fatalf("A's failure at 61 s: SetAt = %d, want %d", got, t0+61_000)
 	}
 }
 
@@ -759,9 +822,9 @@ func TestInspectionSuccessDuringFailureWrite(t *testing.T) {
 	}
 }
 
-// TestInspectionSuccessYoungNoticeOpensNoTx: a success in state failing, with a
-// notice younger than the reset age, only reads.
-func TestInspectionSuccessYoungNoticeOpensNoTx(t *testing.T) {
+// TestInspectionSuccessClearsYoungNotice: a success in state failing clears a
+// notice of any age, with one Tx; a success that finds none opens no Tx.
+func TestInspectionSuccessClearsYoungNotice(t *testing.T) {
 	in := &stubInspector{reply: replyWith(`{"verdict":"allow"}`)}
 	c, _, _ := newInspectCore(t, nil, in)
 	ctx := context.Background()
@@ -769,16 +832,28 @@ func TestInspectionSuccessYoungNoticeOpensNoTx(t *testing.T) {
 	hs := &hookStore{Store: c.Store}
 	c.Store = hs
 	c.noteSuccess(ctx)
-	if hs.txs != 0 {
-		t.Fatalf("noteSuccess opened %d write Tx, want 0", hs.txs)
+	if hs.txs != 1 {
+		t.Fatalf("noteSuccess opened %d write Tx, want 1", hs.txs)
 	}
-	if _, ok := inspectionNotice(t, c); !ok {
-		t.Fatal("a young notice was cleared")
+	if _, ok := inspectionNotice(t, c); ok {
+		t.Fatal("a young notice was not cleared")
 	}
 	c.inspectMu.Lock()
 	st := c.inspectState
 	c.inspectMu.Unlock()
-	if st != inspectFailing {
-		t.Fatalf("state = %v, want failing", st)
+	if st != inspectOK {
+		t.Fatalf("state = %v, want ok", st)
+	}
+}
+
+// TestInspectionSuccessNoNoticeOpensNoTx: a success that finds no notice only reads.
+func TestInspectionSuccessNoNoticeOpensNoTx(t *testing.T) {
+	in := &stubInspector{reply: replyWith(`{"verdict":"allow"}`)}
+	c, _, _ := newInspectCore(t, nil, in)
+	hs := &hookStore{Store: c.Store}
+	c.Store = hs
+	c.noteSuccess(context.Background())
+	if hs.txs != 0 {
+		t.Fatalf("noteSuccess opened %d write Tx, want 0", hs.txs)
 	}
 }

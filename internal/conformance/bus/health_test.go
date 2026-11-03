@@ -3,6 +3,7 @@ package bus
 import (
 	"context"
 	"testing"
+	"time"
 
 	ab2bus "github.com/ericfitz/agentbus2/internal/bus"
 	"github.com/ericfitz/agentbus2/internal/dbtest"
@@ -107,6 +108,33 @@ func TestStatusShowsInspectionNotice(t *testing.T) {
 		}
 		if len(st.Notices) != 1 || st.Notices[0].Kind != "inspection" || st.Notices[0].Message != "failing" {
 			t.Fatalf("status notices = %+v, want exactly the inspection notice", st.Notices)
+		}
+	})
+}
+
+// TestInspectionNoticeExpires: an inspection notice nobody rewrote for longer
+// than the default 300 s no longer shows in health (admin tier) or Status, and
+// health is ok again. Both call sites use the expiry.
+func TestInspectionNoticeExpires(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		root := h.admin("root")
+		h.setNotice("inspection", "failing")
+		if got := mustHealth(t, root); got.Status != ab2bus.HealthDegraded || len(got.Notices) != 1 {
+			t.Fatalf("before expiry: status %q, notices %+v, want degraded with one", got.Status, got.Notices)
+		}
+
+		h.clock.Advance(301 * time.Second)
+		got := mustHealth(t, root)
+		if got.Status != ab2bus.HealthOK || len(got.Notices) != 0 {
+			t.Fatalf("health after expiry: status %q, notices %+v, want ok with none", got.Status, got.Notices)
+		}
+		st, err := root.Status(context.Background())
+		if err != nil {
+			t.Fatalf("Status: %v", err)
+		}
+		if len(st.Notices) != 0 {
+			t.Fatalf("status notices after expiry = %+v, want none", st.Notices)
 		}
 	})
 }

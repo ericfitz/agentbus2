@@ -75,8 +75,9 @@ const (
 // maxReasonLog is the longest inspector reason a log line carries.
 const maxReasonLog = 256
 
-// noticeResetAge is how often the inspection notice is rewritten while
-// failing, and how old it must be before a success clears it.
+// noticeResetAge is how often a failing process rewrites the inspection
+// notice, and how often a process in state ok looks for a notice another
+// replica set.
 const noticeResetAge = 60 * time.Second
 
 // noticeTxTimeout bounds a notice transaction, which runs without the
@@ -454,53 +455,53 @@ func (c *Core) noteFailure(ctx context.Context, class string) {
 	}
 }
 
-// noteSuccess clears the inspection notice once the inspector works again. A
-// process in state ok returns at once. Otherwise it reads the notice: absent,
-// or at least a minute old, it is cleared and the state becomes ok; a younger
-// one stays (another replica may still be failing). A process starts unknown,
+// noteSuccess clears the inspection notice once the inspector works again,
+// whatever the notice's age and whichever replica set it (ADR 0013, addendum
+// of 2026-11-03). A process in state ok looks at most once per noticeResetAge.
+// Otherwise (unknown or failing) it reads the notice on every success and
+// clears one if present; the state then becomes ok. A process starts unknown,
 // so its first success also clears the notice a dead replica left behind.
+// open note: write-inspection 4 is superseded by the 2026-11-03 addendum.
 func (c *Core) noteSuccess(ctx context.Context) {
+	now := c.Now()
 	c.inspectMu.Lock()
 	ok := c.inspectState == inspectOK
+	if ok {
+		if now.Sub(c.noticeCheckedAt) < noticeResetAge {
+			c.inspectMu.Unlock()
+			return
+		}
+		c.noticeCheckedAt = now
+	}
 	gen := c.failGen
 	c.inspectMu.Unlock()
-	if ok {
-		return
-	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), noticeTxTimeout)
 	defer cancel()
-	// open note: write-inspection 4 (the unknown state is cleared by the first success)
 	// Read first: a success that will clear nothing opens no write Tx.
 	var cleared, needTx bool
 	err := c.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
-		n, found, err := tx.Notice(ctx, NoticeInspection)
+		_, found, err := tx.Notice(ctx, NoticeInspection)
 		if err != nil {
 			return err
 		}
-		switch {
-		case !found:
-			cleared = true
-		case c.Now().Sub(time.UnixMilli(n.SetAt)) >= noticeResetAge:
+		if found {
 			needTx = true
+		} else {
+			cleared = true
 		}
 		return nil
 	})
 	if err == nil && needTx {
-		// Re-check inside the Tx: the notice may have changed since the read.
+		// Re-check inside the Tx: the notice may have gone since the read.
 		err = c.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
-			cleared = false
-			n, found, err := tx.Notice(ctx, NoticeInspection)
+			_, found, err := tx.Notice(ctx, NoticeInspection)
 			if err != nil {
 				return err
 			}
-			if !found {
-				cleared = true
-				return nil
-			}
-			if c.Now().Sub(time.UnixMilli(n.SetAt)) < noticeResetAge {
-				return nil
-			}
 			cleared = true
+			if !found {
+				return nil
+			}
 			return tx.ClearNotice(ctx, NoticeInspection)
 		})
 	}
@@ -515,6 +516,7 @@ func (c *Core) noteSuccess(ctx context.Context) {
 		if c.failGen == gen {
 			c.inspectState = inspectOK
 			c.noticeSetAt = time.Time{}
+			c.noticeCheckedAt = now
 		}
 		c.inspectMu.Unlock()
 	}
