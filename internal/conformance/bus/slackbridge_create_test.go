@@ -101,6 +101,12 @@ func slEntry(id string, ps ...ab2store.Permission) ab2store.ACLEntry {
 // bridge ACL).
 func (x *slackFix) slChannel(name, scope string, acl []ab2store.ACLEntry) ab2store.Channel {
 	x.h.t.Helper()
+	return x.slKindChannel(name, scope, ab2store.KindOrdinary, acl)
+}
+
+// slKindChannel is slChannel with a channel kind (tasks, memory).
+func (x *slackFix) slKindChannel(name, scope string, kind ab2store.Kind, acl []ab2store.ACLEntry) ab2store.Channel {
+	x.h.t.Helper()
 	R, W, A := ab2store.PermRead, ab2store.PermWrite, ab2store.PermAdmin
 	if acl == nil {
 		acl = []ab2store.ACLEntry{
@@ -115,7 +121,7 @@ func (x *slackFix) slChannel(name, scope string, acl []ab2store.ACLEntry) ab2sto
 			return err
 		}
 		ch, err = tx.CreateChannel(ctx, ab2store.ChannelCreate{
-			Name: name, Kind: ab2store.KindOrdinary, Creator: "job1-coder", Scope: scope, ACL: acl, CreatedSeq: seq, CreatedAt: x.h.core.NowMs(),
+			Name: name, Kind: kind, Creator: "job1-coder", Scope: scope, ACL: acl, CreatedSeq: seq, CreatedAt: x.h.core.NowMs(),
 		})
 		return err
 	})
