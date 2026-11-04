@@ -250,7 +250,7 @@ func TestIssuerValidation(t *testing.T) {
 
 func TestSlackSettings(t *testing.T) {
 	d := Default()
-	if d.SlackArchiveAfterDoneHours != 168 || d.SlackMaxMessageChars != 3000 || d.SlackAppTokenFile != "" || d.SlackBotTokenFile != "" {
+	if d.SlackArchiveAfterDoneHours != 168 || d.SlackMaxMessageChars != 3000 || !d.SlackCanvasEnabled || d.SlackCanvasCoalesceSeconds != 30 || d.SlackAppTokenFile != "" || d.SlackBotTokenFile != "" {
 		t.Errorf("Slack defaults = %+v", d)
 	}
 	cases := []struct {
@@ -270,6 +270,10 @@ func TestSlackSettings(t *testing.T) {
 		{"chars 200", func(c *Config) { c.SlackMaxMessageChars = 200 }, ""},
 		{"chars 3000", func(c *Config) { c.SlackMaxMessageChars = 3000 }, ""},
 		{"chars 3001", func(c *Config) { c.SlackMaxMessageChars = 3001 }, "slack_max_message_chars"},
+		{"coalesce 4", func(c *Config) { c.SlackCanvasCoalesceSeconds = 4 }, "slack_canvas_coalesce_seconds"},
+		{"coalesce 5", func(c *Config) { c.SlackCanvasCoalesceSeconds = 5 }, ""},
+		{"coalesce 600", func(c *Config) { c.SlackCanvasCoalesceSeconds = 600 }, ""},
+		{"coalesce 601", func(c *Config) { c.SlackCanvasCoalesceSeconds = 601 }, "slack_canvas_coalesce_seconds"},
 	}
 	for _, tc := range cases {
 		c := valid()

@@ -29,7 +29,11 @@ type Config struct {
 	// RetryBase is the first requeue delay of an inbound Slack message that hit
 	// a transient failure; it doubles to 30 s. Zero takes 1 s.
 	RetryBase time.Duration
-	Logger    *slog.Logger
+	// CanvasEnabled turns the scope canvas on; CanvasCoalesce is the rebuild
+	// window (zero takes 30 s).
+	CanvasEnabled  bool
+	CanvasCoalesce time.Duration
+	Logger         *slog.Logger
 }
 
 const (
@@ -44,7 +48,7 @@ func (c Config) withDefaults() (Config, error) {
 	if c.MaxMessageChars < minMessageChars || c.MaxMessageChars > maxMessageChars {
 		return c, fmt.Errorf("slackbridge: MaxMessageChars must be between %d and %d, got %d", minMessageChars, maxMessageChars, c.MaxMessageChars)
 	}
-	for _, d := range []time.Duration{c.PostInterval, c.LockRenew, c.LifecycleInterval, c.RetryBase} {
+	for _, d := range []time.Duration{c.PostInterval, c.LockRenew, c.LifecycleInterval, c.RetryBase, c.CanvasCoalesce} {
 		if d < 0 {
 			return c, errors.New("slackbridge: durations must not be negative")
 		}
@@ -60,6 +64,9 @@ func (c Config) withDefaults() (Config, error) {
 	}
 	if c.RetryBase == 0 {
 		c.RetryBase = time.Second
+	}
+	if c.CanvasCoalesce == 0 {
+		c.CanvasCoalesce = 30 * time.Second
 	}
 	if c.Logger == nil {
 		c.Logger = slog.New(slog.NewTextHandler(io.Discard, nil))

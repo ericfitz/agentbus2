@@ -741,12 +741,12 @@ func TestRunSlackTokenFiles(t *testing.T) {
 	t.Run("valid files", func(t *testing.T) {
 		var got Config
 		var out, errb bytes.Buffer
-		code := run(context.Background(), set("slack_app_token_file="+app, "slack_bot_token_file="+bot, "slack_archive_after_done_hours=5", "slack_max_message_chars=500"),
+		code := run(context.Background(), set("slack_app_token_file="+app, "slack_bot_token_file="+bot, "slack_archive_after_done_hours=5", "slack_max_message_chars=500", "slack_canvas_enabled=false", "slack_canvas_coalesce_seconds=7"),
 			nil, &out, &errb, func(_ context.Context, c Config) error { got = c; return nil })
 		if code != 0 {
 			t.Fatalf("exit %d, stderr %q", code, errb.String())
 		}
-		if got.Slack == nil || got.SlackCfg.ArchiveAfterDone != 5*time.Hour || got.SlackCfg.MaxMessageChars != 500 {
+		if got.Slack == nil || got.SlackCfg.ArchiveAfterDone != 5*time.Hour || got.SlackCfg.MaxMessageChars != 500 || got.SlackCfg.CanvasEnabled || got.SlackCfg.CanvasCoalesce != 7*time.Second {
 			t.Errorf("Config = %+v", got)
 		}
 	})

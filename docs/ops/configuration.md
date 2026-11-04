@@ -106,6 +106,8 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | `slack_bot_token_file` | `AGENTMESH_SERVER_SLACK_BOT_TOKEN_FILE` | string | `(unset)` | File holding the Slack bot token (`xoxb-`) for the Web API. Every replica needs both files to serve bridge calls. |
 | `slack_archive_after_done_hours` | `AGENTMESH_SERVER_SLACK_ARCHIVE_AFTER_DONE_HOURS` | int | `168` | 1 to 8760. How long after its scope is marked done a bridged Slack channel is archived (earlier when no human remains in it). |
 | `slack_max_message_chars` | `AGENTMESH_SERVER_SLACK_MAX_MESSAGE_CHARS` | int | `3000` | 200 to 3000 (3000 is Slack's limit for a section's text). A longer bus message is cut and ends with a note pointing to agentmesh. |
+| `slack_canvas_enabled` | `AGENTMESH_SERVER_SLACK_CANVAS_ENABLED` | bool | `true` | `true` or `false`. Whether every live bridge's Slack channel carries the read-only scope canvas (tasks and memories). Ignored without the token files. See `slack-bridge.md`. |
+| `slack_canvas_coalesce_seconds` | `AGENTMESH_SERVER_SLACK_CANVAS_COALESCE_SECONDS` | int | `30` | 5 to 600. How long after the first change the canvas of a scope is rebuilt; changes in the window join one rebuild. |
 | `log_level` | `AGENTMESH_SERVER_LOG_LEVEL` | string | `"info"` | `debug`, `info`, `warn` or `error`. Logs are text on stderr. |
 
 ### Write inspection

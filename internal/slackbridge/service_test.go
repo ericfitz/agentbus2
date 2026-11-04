@@ -27,10 +27,20 @@ func TestConfigWithDefaults(t *testing.T) {
 		"negative renew":  {ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, LockRenew: -1},
 		"negative life":   {ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, LifecycleInterval: -1},
 		"negative retry":  {ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, RetryBase: -1},
+		"negative canvas": {ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, CanvasCoalesce: -time.Second},
 	} {
 		if _, err := c.withDefaults(); err == nil {
 			t.Errorf("%s: accepted", name)
 		}
+	}
+	if _, err := (Config{ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, CanvasCoalesce: -time.Second}).withDefaults(); err == nil || err.Error() != "slackbridge: durations must not be negative" {
+		t.Errorf("negative coalesce: %v", err)
+	}
+	if got.CanvasCoalesce != 30*time.Second || got.CanvasEnabled {
+		t.Errorf("canvas defaults = %v, %v", got.CanvasCoalesce, got.CanvasEnabled)
+	}
+	if on, err := (Config{ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, CanvasEnabled: true}).withDefaults(); err != nil || !on.CanvasEnabled {
+		t.Errorf("CanvasEnabled not kept: %+v, %v", on, err)
 	}
 	for _, n := range []int{200, 3000} {
 		if _, err := (Config{ArchiveAfterDone: time.Hour, MaxMessageChars: n}).withDefaults(); err != nil {

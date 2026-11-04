@@ -214,6 +214,8 @@ func run(ctx context.Context, args []string, environ []string, stdout, stderr io
 		SlackCfg: slackbridge.Config{
 			ArchiveAfterDone: time.Duration(cfg.SlackArchiveAfterDoneHours) * time.Hour,
 			MaxMessageChars:  cfg.SlackMaxMessageChars,
+			CanvasEnabled:    cfg.SlackCanvasEnabled,
+			CanvasCoalesce:   time.Duration(cfg.SlackCanvasCoalesceSeconds) * time.Second,
 			Logger:           logger,
 		},
 		Ready: func(a net.Addr) {

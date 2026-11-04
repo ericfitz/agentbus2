@@ -142,11 +142,14 @@ func set(c *Config, name, text, source string) error {
 		}
 		f.SetFloat(x)
 	case reflect.Bool:
-		b, err := strconv.ParseBool(text)
-		if err != nil {
-			return bad(err)
+		switch text {
+		case "true":
+			f.SetBool(true)
+		case "false":
+			f.SetBool(false)
+		default:
+			return bad(errors.New("must be true or false"))
 		}
-		f.SetBool(b)
 	case reflect.Slice:
 		v := reflect.New(f.Type())
 		dec := json.NewDecoder(strings.NewReader(text))

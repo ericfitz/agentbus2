@@ -110,6 +110,8 @@ type Config struct {
 	SlackBotTokenFile          string `json:"slack_bot_token_file"`
 	SlackArchiveAfterDoneHours int    `json:"slack_archive_after_done_hours"`
 	SlackMaxMessageChars       int    `json:"slack_max_message_chars"`
+	SlackCanvasEnabled         bool   `json:"slack_canvas_enabled"`
+	SlackCanvasCoalesceSeconds int    `json:"slack_canvas_coalesce_seconds"`
 
 	LogLevel string `json:"log_level"`
 }
@@ -130,6 +132,8 @@ func Default() Config {
 
 		SlackArchiveAfterDoneHours: 168,
 		SlackMaxMessageChars:       3000,
+		SlackCanvasEnabled:         true,
+		SlackCanvasCoalesceSeconds: 30,
 
 		ReceiptRetentionMinutes:      d.ReceiptRetentionMinutes,
 		SessionRetentionHours:        d.SessionRetentionHours,
@@ -322,6 +326,9 @@ func (c Config) Validate() error {
 	}
 	if c.SlackMaxMessageChars < 200 || c.SlackMaxMessageChars > 3000 {
 		return fmt.Errorf("slack_max_message_chars must be between 200 and 3000, got %d", c.SlackMaxMessageChars)
+	}
+	if c.SlackCanvasCoalesceSeconds < 5 || c.SlackCanvasCoalesceSeconds > 600 {
+		return fmt.Errorf("slack_canvas_coalesce_seconds must be between 5 and 600, got %d", c.SlackCanvasCoalesceSeconds)
 	}
 	return nil
 }

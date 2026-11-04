@@ -62,6 +62,8 @@ func defaultCell(t *testing.T, name string, v reflect.Value) (typ, def string) {
 		return "string", strconv.Quote(v.String())
 	case reflect.Int:
 		return "int", strconv.FormatInt(v.Int(), 10)
+	case reflect.Bool:
+		return "bool", strconv.FormatBool(v.Bool())
 	case reflect.Float64:
 		return "float", strconv.FormatFloat(v.Float(), 'f', -1, 64)
 	case reflect.Slice:

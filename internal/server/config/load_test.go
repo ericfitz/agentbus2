@@ -42,6 +42,8 @@ func TestPrecedenceTable(t *testing.T) {
 		{"registration", `"enrollment"`, "open", "enrollment", func(c Config) string { return c.Registration }},
 		{"token_lifetime_seconds", `10`, "20", "30", func(c Config) string { return strconv.Itoa(c.TokenLifetimeSeconds) }},
 		{"channel_creation", `"admins"`, "open", "admins", func(c Config) string { return c.ChannelCreation }},
+		{"slack_canvas_enabled", "false", "true", "false", func(c Config) string { return strconv.FormatBool(c.SlackCanvasEnabled) }},
+		{"slack_canvas_coalesce_seconds", "10", "20", "30", func(c Config) string { return strconv.Itoa(c.SlackCanvasCoalesceSeconds) }},
 		{"issuers", issuersA, issuersB, issuersC, func(c Config) string { return c.Issuers[0].Audience }},
 		{"default_acl", aclA, aclB, aclC, func(c Config) string { return c.DefaultACL[0].Identity + ":" + c.DefaultACL[0].Permissions[0] }},
 	}
@@ -237,5 +239,32 @@ func TestLoadStatusOfflineHoursEnv(t *testing.T) {
 	c, err := Load("", []string{"AGENTMESH_SERVER_STATUS_OFFLINE_HOURS=5"}, Overrides{"sqlite": "/x.db"})
 	if err != nil || c.StatusOfflineHours != 5 {
 		t.Fatalf("status_offline_hours = %d, %v; want 5", c.StatusOfflineHours, err)
+	}
+}
+
+func TestBoolSettingExact(t *testing.T) {
+	for _, v := range []string{"1", "t", "TRUE", "True", "yes", ""} {
+		_, err := Load("", []string{"AGENTMESH_SERVER_SLACK_CANVAS_ENABLED=" + v}, Overrides{"sqlite": "/x.db"})
+		if err == nil || !strings.Contains(err.Error(), "setting slack_canvas_enabled from environment: invalid value") || !strings.Contains(err.Error(), "must be true or false") {
+			t.Errorf("env %q: err = %v", v, err)
+		}
+		_, err = Load("", nil, Overrides{"sqlite": "/x.db", "slack_canvas_enabled": v})
+		if err == nil || !strings.Contains(err.Error(), "setting slack_canvas_enabled from flag: invalid value") || !strings.Contains(err.Error(), "must be true or false") {
+			t.Errorf("flag %q: err = %v", v, err)
+		}
+	}
+	for _, v := range []string{"true", "false"} {
+		c, err := Load("", []string{"AGENTMESH_SERVER_SLACK_CANVAS_ENABLED=" + v}, Overrides{"sqlite": "/x.db"})
+		if err != nil || strconv.FormatBool(c.SlackCanvasEnabled) != v {
+			t.Errorf("env %q: %v, %v", v, c.SlackCanvasEnabled, err)
+		}
+		c, err = Load("", nil, Overrides{"sqlite": "/x.db", "slack_canvas_enabled": v})
+		if err != nil || strconv.FormatBool(c.SlackCanvasEnabled) != v {
+			t.Errorf("flag %q: %v, %v", v, c.SlackCanvasEnabled, err)
+		}
+	}
+	path := writeFile(t, `{"sqlite":"/x.db","slack_canvas_enabled":"true"}`)
+	if _, err := Load(path, nil, nil); err == nil {
+		t.Error("a JSON string accepted for a bool setting")
 	}
 }
