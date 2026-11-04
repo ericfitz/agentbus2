@@ -10,6 +10,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
+	"github.com/charmbracelet/x/ansi"
+
 	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
@@ -25,9 +27,13 @@ import (
 type agentBoard struct {
 	focus bool   // the board takes the keys; otherwise the rail does
 	sel   string // selected identity; "" or one that left selects the first row
-	hist  string // identity whose history is shown; "" on the board
-	rows  []bus.AgentStatus
-	err   error
+	sort  boardSort
+	// expanded holds the identities whose full text and problem show below
+	// their row; kept until the TUI quits.
+	expanded map[string]bool
+	hist     string // identity whose history is shown; "" on the board
+	rows     []bus.AgentStatus
+	err      error
 }
 
 // boardRow is one line of the board. st is nil for a live agent that never
@@ -68,10 +74,63 @@ func needsAttention(t bus.StatusTag) bool {
 	return t == bus.StatusNeedsHuman || t == bus.StatusBlocked
 }
 
+// boardSort is the board's sort mode; `o` cycles it (ADR 0014 decision 19).
+type boardSort int
+
+const (
+	sortTime boardSort = iota // newest set_at first, never-set last
+	sortName                  // by identity
+	sortTag                   // by the displayed tag
+)
+
+func (s boardSort) String() string {
+	switch s {
+	case sortName:
+		return "name"
+	case sortTag:
+		return "tag"
+	}
+	return "time"
+}
+
+// next is the mode after s in the cycle time, name, tag.
+func (s boardSort) next() boardSort { return (s + 1) % 3 }
+
+// displayTag is the tag a row shows: offline for an offline agent, "-" for a
+// live agent that never set a status.
+func (r boardRow) displayTag() string {
+	switch {
+	case r.st == nil:
+		return "-"
+	case !r.live:
+		return string(bus.StatusOffline)
+	}
+	return string(r.tag)
+}
+
+// sortBoardRows orders rows by mode; every mode breaks ties by identity.
+func sortBoardRows(rows []boardRow, mode boardSort) {
+	sort.SliceStable(rows, func(i, j int) bool {
+		a, b := rows[i], rows[j]
+		switch mode {
+		case sortTime:
+			if (a.st == nil) != (b.st == nil) {
+				return a.st != nil
+			}
+			if a.st != nil && a.st.SetAt != b.st.SetAt {
+				return a.st.SetAt > b.st.SetAt
+			}
+		case sortTag:
+			if ta, tb := a.displayTag(), b.displayTag(); ta != tb {
+				return ta < tb
+			}
+		}
+		return a.identity < b.identity
+	})
+}
+
 // boardRows lists the board: the entries of the last status round plus each
-// live agent identity without one. Order: live needs-human, live blocked,
-// the other live agents (with or without a status) by identity, then the
-// offline ones by identity (open note: agent-status 6).
+// live agent identity without one, in the board's sort order.
 func (m Model) boardRows() []boardRow {
 	var rows []boardRow
 	have := map[string]bool{}
@@ -85,23 +144,7 @@ func (m Model) boardRows() []boardRow {
 			rows = append(rows, boardRow{identity: id.Name, live: true})
 		}
 	}
-	rank := func(r boardRow) int {
-		switch {
-		case !r.live:
-			return 3
-		case r.tag == bus.StatusNeedsHuman:
-			return 0
-		case r.tag == bus.StatusBlocked:
-			return 1
-		}
-		return 2
-	}
-	sort.SliceStable(rows, func(i, j int) bool {
-		if ri, rj := rank(rows[i]), rank(rows[j]); ri != rj {
-			return ri < rj
-		}
-		return rows[i].identity < rows[j].identity
-	})
+	sortBoardRows(rows, m.board.sort)
 	return rows
 }
 
@@ -199,6 +242,21 @@ func (m *Model) updateBoard(msg tea.Msg) tea.Cmd {
 			i = min(i+1, len(rows)-1)
 		}
 		m.board.sel = rows[i].identity
+	case "o":
+		m.board.sort = m.board.sort.next() // sel is an identity: it follows its agent
+	case "right", "left":
+		if m.board.hist != "" || len(m.boardRows()) == 0 {
+			return nil
+		}
+		if m.board.expanded == nil {
+			m.board.expanded = map[string]bool{}
+		}
+		id := m.boardRows()[m.boardSel()].identity
+		if keyString(msg) == "right" {
+			m.board.expanded[id] = true
+		} else {
+			delete(m.board.expanded, id)
+		}
 	case "enter":
 		rows := m.boardRows()
 		if m.board.hist != "" || len(rows) == 0 {
@@ -228,33 +286,74 @@ func (m Model) renderBoard() string {
 	return lipgloss.NewStyle().Width(w).Height(h).MaxHeight(h).Render(strings.Join(lines, "\n"))
 }
 
+// ageText is the age of a status: whole minutes, hours or days, floored.
+func ageText(d time.Duration) string {
+	if d >= 24*time.Hour {
+		return strconv.Itoa(int(d.Hours())/24) + "d"
+	}
+	return shortDur(d)
+}
+
+// boardFixedCols is the width of the columns before the text: the select
+// mark, AGENT, TAG, SINCE and their separators.
+const boardFixedCols = 1 + 16 + 1 + 17 + 1 + 6 + 1
+
+// boardNote is the NOW column cut to avail cells: text, then " · problem"
+// when there is one, each cut with an ellipsis. Text and problem share avail;
+// the problem takes at most half of what the separator leaves.
+func boardNote(text, problem string, avail int, warn lipgloss.Style, plain bool) string {
+	avail = max(avail, 1)
+	if problem == "" {
+		return cut(text, avail, "…")
+	}
+	const sep = " · "
+	rest := avail - lipgloss.Width(sep)
+	if rest < 2 || lipgloss.Width(text)+lipgloss.Width(problem) <= rest {
+		if rest < 2 {
+			return cut(text, avail, "…")
+		}
+		return noteJoin(text, problem, sep, warn, plain)
+	}
+	pw := min(lipgloss.Width(problem), max(rest/2, 1))
+	tw := rest - pw
+	if tw > lipgloss.Width(text) {
+		tw = lipgloss.Width(text)
+		pw = rest - tw
+	}
+	return noteJoin(cut(text, tw, "…"), cut(problem, pw, "…"), sep, warn, plain)
+}
+
+func noteJoin(text, problem, sep string, warn lipgloss.Style, plain bool) string {
+	if plain {
+		return text + sep + problem
+	}
+	return text + warn.Render(sep+problem)
+}
+
 // boardLines is the board for a pane h lines high: the title, the column
-// heads, one line per row and the offline divider before the first offline
-// row. When the rows do not fit, they scroll to keep the selected one visible
-// and the title and heads stay.
+// heads and one line per row, with an expanded row's full text and problem
+// wrapped below it. When the lines do not fit, they scroll to keep the
+// selected row visible and the title and heads stay.
 func (m Model) boardLines(w, h int) []string {
 	th := m.theme
 	dim, warn := th.Style(th.Dim), th.Style(th.Warn)
 	rows := m.boardRows()
 	lines := []string{
-		dim.Render(fmt.Sprintf("agents (%d) · enter history · esc back", len(rows))),
+		dim.Render(fmt.Sprintf("agents (%d) · sort: %s · o sort · →/← expand · enter history", len(rows), m.board.sort)),
 		dim.Render(fmt.Sprintf("%-16s %-17s %-6s %s", "AGENT", "TAG", "SINCE", "NOW")),
 	}
 	nowMs := time.Now().UnixMilli()
-	divided := false
 	sel := m.boardSel()
 	selLine := 0 // index of the selected row's line within body
 	var body []string
+	pad := func(s string, n int) string {
+		return s + strings.Repeat(" ", max(n-lipgloss.Width(s), 0))
+	}
 	for i, r := range rows {
-		if !r.live && !divided {
-			divided = true
-			body = append(body, dim.Render("── offline ──"))
-		}
-		tag, since, text := "-", "-", "-"
+		since, text := "-", "-"
 		var problem string
 		if r.st != nil {
-			tag = string(r.tag)
-			since = shortDur(time.Duration(nowMs-r.st.SetAt) * time.Millisecond)
+			since = ageText(time.Duration(nowMs-r.st.SetAt) * time.Millisecond)
 			text, problem = r.st.Text, r.st.Problem
 			if !r.live {
 				text = "last: " + text
@@ -264,21 +363,29 @@ func (m Model) boardLines(w, h int) []string {
 		if r.st == nil {
 			icon = iconAgent
 		}
-		note := text
-		if problem != "" {
-			note += warn.Render(" · " + problem)
-		}
-		pad := func(s string, n int) string {
-			return s + strings.Repeat(" ", max(n-lipgloss.Width(s), 0))
-		}
-		line := pad(cut(r.identity, 16, "…"), 16) + " " + pad(icon+cut(tag, 14, "…"), 17) + " " + pad(since, 6) + " " + note
-		if i == sel {
+		note := boardNote(text, problem, w-boardFixedCols, warn, !r.live)
+		line := pad(cut(r.identity, 16, "…"), 16) + " " + pad(icon+cut(r.displayTag(), 14, "…"), 17) + " " + pad(since, 6) + " " + note
+		switch {
+		case i == sel:
 			line = th.RailSel(true, cut(markSel+line, w, "…"), w)
 			selLine = len(body)
-		} else {
+		case !r.live:
+			line = dim.Render(" " + line)
+		default:
 			line = " " + line
 		}
 		body = append(body, line)
+		if m.board.expanded[r.identity] && r.st != nil {
+			indent := strings.Repeat(" ", 4)
+			for _, l := range strings.Split(ansi.Wrap(text, max(w-4, 8), ""), "\n") {
+				body = append(body, indent+l)
+			}
+			if problem != "" {
+				for _, l := range strings.Split(ansi.Wrap(problem, max(w-4, 8), ""), "\n") {
+					body = append(body, indent+warn.Render(l))
+				}
+			}
+		}
 	}
 	if len(rows) == 0 {
 		body = append(body, dim.Render("no agents"))

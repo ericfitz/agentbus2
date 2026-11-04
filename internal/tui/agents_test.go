@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ericfitz/agentmesh/internal/bus"
 )
@@ -222,30 +223,206 @@ func TestBoardHistoryLifetime(t *testing.T) {
 	}
 }
 
-// open note: agent-status 6
-func TestAgentsBoardOrder(t *testing.T) {
+// setAges pins each named agent's SetAt to now minus its age, so a test does
+// not depend on the order the fixture's statuses were set in the same
+// millisecond.
+func setAges(m *Model, ages map[string]time.Duration) {
+	now := time.Now().UnixMilli()
+	for i := range m.agents {
+		if d, ok := ages[m.agents[i].Identity]; ok {
+			m.agents[i].Status.SetAt = now - d.Milliseconds()
+		}
+	}
+}
+
+func boardView(f *fixture) []string {
+	return strings.Split(stripANSI(f.m.View().Content), "\n")
+}
+
+func lineWith(lines []string, sub string) string {
+	for _, l := range lines {
+		if strings.Contains(l, sub) {
+			return l
+		}
+	}
+	return ""
+}
+
+func TestBoardSortCycle(t *testing.T) {
 	f, _ := boardFixture(t)
-	want := []string{"bob", "amy", "cal", "zed", "old"}
-	if got := rowNames(f.m, want...); !slices.Equal(got, want) {
-		t.Fatalf("row order = %v, want %v", got, want)
+	setAges(&f.m, map[string]time.Duration{
+		"zed": 5 * time.Minute, "amy": 3 * time.Hour, "bob": 2 * time.Minute, "old": 50 * time.Hour,
+	})
+	all := []string{"amy", "bob", "cal", "old", "zed"}
+	check := func(mode string, want ...string) {
+		t.Helper()
+		if got := rowNames(f.m, all...); !slices.Equal(got, want) {
+			t.Fatalf("%s order = %v, want %v", mode, got, want)
+		}
+		if title := lineWith(boardView(f), "agents ("); !strings.Contains(title, "sort: "+mode) {
+			t.Fatalf("title lacks sort: %s: %q", mode, title)
+		}
 	}
-	lines := strings.Split(stripANSI(f.m.View().Content), "\n")
-	at := func(sub string) int {
-		return slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, sub) })
+	f.key("tab")
+	check("time", "bob", "zed", "amy", "old", "cal") // cal never set: last
+	f.key("down")
+	f.key("down") // amy
+	f.key("o")
+	check("name", "amy", "bob", "cal", "old", "zed")
+	if got := f.m.boardRows()[f.m.boardSel()].identity; got != "amy" {
+		t.Fatalf("selection moved to %q across o", got)
 	}
-	order := []int{at("bob"), at("amy"), at("cal"), at("zed"), at("── offline ──"), at("old")}
-	if !slices.IsSorted(order) || order[0] < 0 || slices.Contains(order[1:], order[0]) {
-		t.Fatalf("rendered order wrong (bob %d amy %d cal %d zed %d divider %d old %d):\n%s",
-			at("bob"), at("amy"), at("cal"), at("zed"), at("── offline ──"), at("old"), strings.Join(lines, "\n"))
+	f.key("o")
+	// displayed tags: blocked(amy) -(cal) needs-human(bob) offline(old) implementing(zed)
+	check("tag", "cal", "amy", "zed", "bob", "old")
+	if got := f.m.boardRows()[f.m.boardSel()].identity; got != "amy" {
+		t.Fatalf("selection moved to %q across o", got)
 	}
-	if l := lines[at("cal")]; !strings.Contains(l, " - ") {
-		t.Fatalf("cal has no status and must show -: %q", l)
+	f.key("o")
+	check("time", "bob", "zed", "amy", "old", "cal")
+	if f.m.board.focus != true || !f.m.boardShown() {
+		t.Fatal("o lost the board")
 	}
-	if l := lines[at("amy")]; !strings.Contains(l, "waiting on keys") || !strings.Contains(l, " · no token") {
-		t.Fatalf("amy's row lacks its text and problem: %q", l)
+}
+
+func TestBoardSortTiesByIdentity(t *testing.T) {
+	now := int64(1000)
+	mk := func(id string, live bool, tag bus.StatusTag, at int64) boardRow {
+		return boardRow{identity: id, live: live, tag: tag, st: &bus.AgentStatus{Tag: tag, SetAt: at}}
 	}
-	if l := lines[at("old")]; !strings.Contains(l, "last: was asking") {
-		t.Fatalf("old's row lacks its last text: %q", l)
+	rows := []boardRow{mk("b", true, bus.StatusIdle, now), mk("a", true, bus.StatusIdle, now), mk("c", true, bus.StatusIdle, now)}
+	for _, mode := range []boardSort{sortTime, sortName, sortTag} {
+		sortBoardRows(rows, mode)
+		if rows[0].identity != "a" || rows[1].identity != "b" || rows[2].identity != "c" {
+			t.Fatalf("mode %v: ties not by identity: %v %v %v", mode, rows[0].identity, rows[1].identity, rows[2].identity)
+		}
+	}
+}
+
+func TestBoardSelectionSurvivesStatusRound(t *testing.T) {
+	f, _ := boardFixture(t)
+	f.key("tab")
+	f.key("o") // name: amy bob cal old zed
+	f.key("down")
+	f.agentWithStatus(t, "aaa", true, statusSet{bus.StatusIdle, "x", ""})
+	f.run(f.m.statusCmd())
+	if got := f.m.boardRows()[f.m.boardSel()].identity; got != "bob" {
+		t.Fatalf("selection = %q after a status round, want bob", got)
+	}
+}
+
+func TestBoardRowColumns(t *testing.T) {
+	f, _ := boardFixture(t)
+	setAges(&f.m, map[string]time.Duration{
+		"zed": 3 * time.Minute, "amy": 5 * time.Hour, "bob": 49 * time.Hour, "old": 2 * time.Hour,
+	})
+	lines := boardView(f)
+	if l := lineWith(lines, "zed"); !strings.Contains(l, "implementing") || !strings.Contains(l, " 3m") || !strings.Contains(l, "wiring the board") {
+		t.Fatalf("zed row: %q", l)
+	}
+	if l := lineWith(lines, "amy"); !strings.Contains(l, " 5h") || !strings.Contains(l, "waiting on keys · no token") {
+		t.Fatalf("amy row: %q", l)
+	}
+	if l := lineWith(lines, "bob"); !strings.Contains(l, " 2d") {
+		t.Fatalf("bob row: %q", l)
+	}
+	if l := lineWith(lines, "old"); !strings.Contains(l, "offline") || !strings.Contains(l, "last: was asking") {
+		t.Fatalf("old row: %q", l)
+	}
+	if l := lineWith(lines, "cal"); !strings.Contains(l, " -") || strings.Count(l, "-") < 3 {
+		t.Fatalf("cal row must show - for tag, age and text: %q", l)
+	}
+	if lineWith(lines, "── offline ──") != "" {
+		t.Fatal("offline divider is gone")
+	}
+	// narrow: text and problem end with an ellipsis
+	f.m.width = 70
+	f.m.layout()
+	l := lineWith(boardView(f), "amy")
+	if !strings.Contains(l, "…") || !strings.Contains(l, "·") {
+		t.Fatalf("narrow amy row must cut text and problem: %q", l)
+	}
+	if strings.Count(l, "…") < 2 {
+		t.Fatalf("both text and problem must end with …: %q", l)
+	}
+}
+
+func TestBoardExpand(t *testing.T) {
+	f, _ := boardFixture(t)
+	f.m.width = 70
+	f.m.layout()
+	f.key("tab")
+	f.key("o") // name: amy first
+	f.key("right")
+	v := strings.Join(boardView(f), "\n")
+	if !strings.Contains(v, "waiting on keys") || !strings.Contains(v, "no token") {
+		t.Fatalf("expanded amy lacks full text and problem:\n%s", v)
+	}
+	if !f.m.board.expanded["amy"] {
+		t.Fatal("amy not expanded")
+	}
+	f.key("down") // bob is not expanded
+	if f.m.board.expanded["bob"] {
+		t.Fatal("expansion leaked to bob")
+	}
+	f.key("up")
+	f.key("left")
+	if f.m.board.expanded["amy"] {
+		t.Fatal("left did not collapse")
+	}
+}
+
+func TestBoardEmpty(t *testing.T) {
+	f, _ := newCountingFixture(t)
+	f.m.width = 200
+	f.m.layout()
+	f.toHeading(t, secSessions)
+	f.m.agents, f.m.identities = nil, nil
+	f.key("tab")
+	for _, k := range []string{"o", "right", "left", "up", "down", "enter", "esc"} {
+		f.key(k)
+	}
+	if v := stripANSI(f.m.View().Content); !strings.Contains(v, "no agents") {
+		t.Fatalf("empty board lacks no agents:\n%s", v)
+	}
+}
+
+func TestBoardSelectedRowGone(t *testing.T) {
+	f, _ := boardFixture(t)
+	f.key("tab")
+	f.key("o")
+	f.key("down") // bob
+	f.key("right")
+	f.m.agents = slices.DeleteFunc(f.m.agents, func(a bus.AgentStatusEntry) bool { return a.Identity == "bob" })
+	f.m.identities = slices.DeleteFunc(f.m.identities, func(i bus.IdentityInfo) bool { return i.Name == "bob" })
+	if got := f.m.boardRows()[f.m.boardSel()].identity; got != f.m.boardRows()[0].identity {
+		t.Fatalf("selection = %q, want the first row", got)
+	}
+	_ = f.m.View()
+	f.key("right")
+	f.key("left")
+}
+
+func TestOUnfocusedIsHarmless(t *testing.T) {
+	f, _ := boardFixture(t)
+	f.m.board.focus = false
+	before := f.m.board.sort
+	f.key("o")
+	if f.m.board.sort != before || f.m.mode != modeNormal || !f.m.boardShown() {
+		t.Fatalf("o unfocused changed state: sort=%v mode=%v", f.m.board.sort, f.m.mode)
+	}
+}
+
+func TestHelpListsBoardKeys(t *testing.T) {
+	f, _ := boardFixture(t)
+	help := stripANSI(strings.Join(f.m.helpLines(), "\n"))
+	for _, want := range []string{"agents board", "  b", "  o", "→ / ←", "enter", "esc", "sort"} {
+		if !strings.Contains(help, want) {
+			t.Errorf("help lacks %q", want)
+		}
+	}
+	if strings.Contains(help, "on the sessions heading, open the agents board") {
+		t.Error("help still says enter on the sessions heading opens the board")
 	}
 }
 
@@ -395,9 +572,10 @@ func TestStatusRoundCallsAgentStatuses(t *testing.T) {
 func TestAgentsBoardSelectionSurvivesResort(t *testing.T) {
 	f, _ := boardFixture(t)
 	f.key("tab")
-	f.key("down") // bob -> amy
-	if got := f.m.boardRows()[f.m.boardSel()].identity; got != "amy" {
-		t.Fatalf("selected %q, want amy", got)
+	f.key("o") // name: amy bob cal old zed
+	f.key("down")
+	if got := f.m.boardRows()[f.m.boardSel()].identity; got != "bob" {
+		t.Fatalf("selected %q, want bob", got)
 	}
 	f.agentWithStatus(t, "aaa", true, statusSet{bus.StatusNeedsHuman, "look here", ""})
 	f.run(f.m.statusCmd())
@@ -405,12 +583,12 @@ func TestAgentsBoardSelectionSurvivesResort(t *testing.T) {
 	if rows[0].identity != "aaa" {
 		t.Fatalf("aaa did not sort first: %v", rowNames(f.m, "aaa", "bob", "amy"))
 	}
-	if got := rows[f.m.boardSel()].identity; got != "amy" {
-		t.Fatalf("selection moved to %q after a re-sort, want amy", got)
+	if got := rows[f.m.boardSel()].identity; got != "bob" {
+		t.Fatalf("selection moved to %q after a re-sort, want bob", got)
 	}
 	f.key("enter")
-	if f.m.board.hist != "amy" {
-		t.Fatalf("enter opened %q, want amy", f.m.board.hist)
+	if f.m.board.hist != "bob" {
+		t.Fatalf("enter opened %q, want bob", f.m.board.hist)
 	}
 }
 
