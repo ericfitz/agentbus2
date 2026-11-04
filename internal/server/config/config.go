@@ -74,6 +74,7 @@ type Config struct {
 	EmptyChannelReapHours      int `json:"empty_channel_reap_hours"`
 	ScopeIdleHours             int `json:"scope_idle_hours"`
 	StatusHistoryCount         int `json:"status_history_count"`
+	StatusOfflineHours         int `json:"status_offline_hours"`
 	SessionLeaseSeconds        int `json:"session_lease_seconds"`
 	LeaseSkewSeconds           int `json:"lease_skew_seconds"`
 	WatchMaxSeconds            int `json:"watch_max_seconds"`
@@ -141,6 +142,7 @@ func Default() Config {
 		EmptyChannelReapHours:        d.EmptyChannelReapHours,
 		ScopeIdleHours:               d.ScopeIdleHours,
 		StatusHistoryCount:           d.StatusHistoryCount,
+		StatusOfflineHours:           d.StatusOfflineHours,
 		SessionLeaseSeconds:          d.SessionLeaseSeconds,
 		LeaseSkewSeconds:             d.LeaseSkewSeconds,
 		WatchMaxSeconds:              d.WatchMaxSeconds,
@@ -200,6 +202,7 @@ func (c Config) Core() (core.Config, error) {
 		EmptyChannelReapHours:        c.EmptyChannelReapHours,
 		ScopeIdleHours:               c.ScopeIdleHours,
 		StatusHistoryCount:           c.StatusHistoryCount,
+		StatusOfflineHours:           c.StatusOfflineHours,
 		ReceiptRetentionMinutes:      c.ReceiptRetentionMinutes,
 		MaxMessageKiB:                c.MaxMessageKiB,
 		SendMessagesPerSecond:        c.SendMessagesPerSecond,

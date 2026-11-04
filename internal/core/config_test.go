@@ -21,6 +21,9 @@ func TestDefaultsValidate(t *testing.T) {
 	if d.ScopeIdleHours != 336 {
 		t.Errorf("ScopeIdleHours default = %d, want 336", d.ScopeIdleHours)
 	}
+	if d.StatusOfflineHours != 24 {
+		t.Errorf("StatusOfflineHours default = %d, want 24", d.StatusOfflineHours)
+	}
 	if d.StatusHistoryCount != 20 {
 		t.Errorf("StatusHistoryCount default = %d, want 20", d.StatusHistoryCount)
 	}
@@ -59,6 +62,7 @@ func TestConfigBounds(t *testing.T) {
 		{"empty_channel_reap_hours", 1, 8760, func(c *Config, v int) { c.EmptyChannelReapHours = v }},
 		{"scope_idle_hours", 1, 8760, func(c *Config, v int) { c.ScopeIdleHours = v }},
 		{"status_history_count", 1, 1000, func(c *Config, v int) { c.StatusHistoryCount = v }},
+		{"status_offline_hours", 0, 720, func(c *Config, v int) { c.StatusOfflineHours = v }},
 		{"task_expiry_hours", 0, 87600, func(c *Config, v int) { c.TaskExpiryHours = v }},
 		{"memory_expiry_hours", 0, 87600, func(c *Config, v int) { c.MemoryExpiryHours = v }},
 	}

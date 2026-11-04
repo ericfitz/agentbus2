@@ -91,7 +91,9 @@ func (s Service) Set(ctx context.Context, identity string, in bus.SetAgentStatus
 // List returns the latest status of every identity the caller may see, by
 // identity in byte order. An entry is Live when the identity has a live
 // session; otherwise its Tag reads offline and LastTag keeps the stored tag
-// (open note: agent-status 2). The result is never nil.
+// (open note: agent-status 2). An offline entry whose status is older than
+// StatusOfflineHours is omitted (0 omits every offline entry). The result is
+// never nil.
 func (s Service) List(ctx context.Context, identity string) ([]bus.AgentStatusEntry, error) {
 	out := []bus.AgentStatusEntry{}
 	err := s.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
@@ -125,6 +127,11 @@ func (s Service) List(ctx context.Context, identity string) ([]bus.AgentStatusEn
 			st.LastTag = st.Tag
 			isLive := len(live) > 0
 			if !isLive {
+				// Past the window an offline agent drops off the list; hours 0
+				// keeps only live agents (issue #27, ADR 0014 decision 18).
+				if r.SetAt < s.NowMs()-int64(s.Cfg.StatusOfflineHours)*3_600_000 {
+					continue
+				}
 				st.Tag = bus.StatusOffline
 			}
 			out = append(out, bus.AgentStatusEntry{

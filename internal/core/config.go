@@ -55,7 +55,11 @@ type Config struct {
 	ScopeIdleHours int
 	// StatusHistoryCount is how many statuses each agent keeps, its current
 	// one included (issue #10; key status_history_count).
-	StatusHistoryCount      int
+	StatusHistoryCount int
+	// StatusOfflineHours is how long an offline agent stays on the agent status
+	// list after its last status; 0 lists only live agents (issue #27; key
+	// status_offline_hours).
+	StatusOfflineHours      int
 	ReceiptRetentionMinutes int
 	MaxMessageKiB           int
 	SendMessagesPerSecond   int
@@ -115,6 +119,7 @@ func Defaults() Config {
 		EmptyChannelReapHours:        24,
 		ScopeIdleHours:               336,
 		StatusHistoryCount:           20,
+		StatusOfflineHours:           24,
 		ReceiptRetentionMinutes:      60,
 		MaxMessageKiB:                64,
 		SendMessagesPerSecond:        100,
@@ -163,6 +168,7 @@ func (c Config) Validate() error {
 		{"empty_channel_reap_hours", c.EmptyChannelReapHours, 1, 8760},
 		{"scope_idle_hours", c.ScopeIdleHours, 1, 8760},
 		{"status_history_count", c.StatusHistoryCount, 1, 1000},
+		{"status_offline_hours", c.StatusOfflineHours, 0, 720},
 		{"task_expiry_hours", c.TaskExpiryHours, 0, 87600},
 		{"memory_expiry_hours", c.MemoryExpiryHours, 0, 87600},
 	}

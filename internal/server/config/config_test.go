@@ -43,6 +43,9 @@ func TestDefaultMatchesCore(t *testing.T) {
 	if d.ScopeIdleHours != 336 {
 		t.Errorf("scope_idle_hours default = %d, want 336", d.ScopeIdleHours)
 	}
+	if d.StatusOfflineHours != 24 {
+		t.Errorf("status_offline_hours default = %d, want 24", d.StatusOfflineHours)
+	}
 	if d.StatusHistoryCount != 20 {
 		t.Errorf("status_history_count default = %d, want 20", d.StatusHistoryCount)
 	}
@@ -133,6 +136,8 @@ func TestValidateRejects(t *testing.T) {
 		{"scope idle high", func(c *Config) { c.ScopeIdleHours = 8761 }, "scope_idle_hours"},
 		{"status history low", func(c *Config) { c.StatusHistoryCount = 0 }, "status_history_count"},
 		{"status history high", func(c *Config) { c.StatusHistoryCount = 1001 }, "status_history_count"},
+		{"status offline low", func(c *Config) { c.StatusOfflineHours = -1 }, "status_offline_hours"},
+		{"status offline high", func(c *Config) { c.StatusOfflineHours = 721 }, "status_offline_hours"},
 		{"default acl", func(c *Config) { c.DefaultACL = []ACLEntry{{"ghost", []string{"read"}}} }, "default_acl"},
 	}
 	for _, tc := range cases {

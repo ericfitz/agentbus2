@@ -232,3 +232,10 @@ func TestLoadIgnoresClientServerVariable(t *testing.T) {
 		t.Errorf("loaded settings differ from Default() plus sqlite:\n got %+v\nwant %+v", got, d)
 	}
 }
+
+func TestLoadStatusOfflineHoursEnv(t *testing.T) {
+	c, err := Load("", []string{"AGENTMESH_SERVER_STATUS_OFFLINE_HOURS=5"}, Overrides{"sqlite": "/x.db"})
+	if err != nil || c.StatusOfflineHours != 5 {
+		t.Fatalf("status_offline_hours = %d, %v; want 5", c.StatusOfflineHours, err)
+	}
+}

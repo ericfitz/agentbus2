@@ -77,6 +77,7 @@ Columns: setting, environment variable, type, default, bounds (inclusive; from `
 | `empty_channel_reap_hours` | `AGENTMESH_SERVER_EMPTY_CHANNEL_REAP_HOURS` | int | `24` | 1 to 8760. Age after which an ordinary channel with no messages and no subscriber that has a live or resumable session is deleted (the Slack bridge's subscription never counts). |
 | `scope_idle_hours` | `AGENTMESH_SERVER_SCOPE_IDLE_HOURS` | int | `336` | 1 to 8760. A scope with no message on any of its channels, in either direction, for this long is retired with everything in it (a bridged Slack channel is archived first). |
 | `status_history_count` | `AGENTMESH_SERVER_STATUS_HISTORY_COUNT` | int | `20` | 1 to 1000. How many statuses each agent keeps, its current one included; older ones are deleted at its next status. |
+| `status_offline_hours` | `AGENTMESH_SERVER_STATUS_OFFLINE_HOURS` | int | `24` | 0 to 720. How long an offline agent stays on the agent status list after its last status; 0 lists only agents with a live session. A live agent is always listed. |
 | `session_lease_seconds` | `AGENTMESH_SERVER_SESSION_LEASE_SECONDS` | int | `90` | 1 to 86400. A session's lease; open, receive and watch extend it. |
 | `lease_skew_seconds` | `AGENTMESH_SERVER_LEASE_SKEW_SECONDS` | int | `5` | 0 to 300. Grace added to a lease before the session counts as lapsed. |
 | `watch_max_seconds` | `AGENTMESH_SERVER_WATCH_MAX_SECONDS` | int | `50` | 1 to 240. Cap on a watch (long-poll) timeout; a proxy must allow at least this long. |

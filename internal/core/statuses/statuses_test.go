@@ -423,3 +423,92 @@ func TestIdentitiesCarryStatus(t *testing.T) {
 		t.Fatalf("identities = %+v", ids)
 	}
 }
+
+func listed(t *testing.T, f *fixture, who string) map[string]bus.AgentStatusEntry {
+	t.Helper()
+	es, err := f.svc.List(context.Background(), who)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	m := map[string]bus.AgentStatusEntry{}
+	for _, e := range es {
+		m[e.Identity] = e
+	}
+	return m
+}
+
+func TestListOfflineWindow(t *testing.T) {
+	f := newFixture(t, nil)
+	f.agent("pat")
+	f.agent("viewer")
+	f.human("hal")
+	ps := f.open("pat", "")
+	f.mustSet("pat", ps.ID, bus.StatusImplementing, "work")
+	// Close the session so pat is offline from here on.
+	if err := f.ses.Close(context.Background(), "pat", bus.CloseSessionInput{Session: ps.ID}); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	const day = 24 * time.Hour
+	f.advance(day - time.Millisecond)
+	if e, ok := listed(t, f, "viewer")["pat"]; !ok || e.Live || e.Status.Tag != bus.StatusOffline {
+		t.Fatalf("at 24h-1ms: %+v ok=%v", e, ok)
+	}
+	f.advance(time.Millisecond)
+	if _, ok := listed(t, f, "viewer")["pat"]; !ok {
+		t.Fatal("at exactly 24h: dropped, want kept")
+	}
+	f.advance(time.Millisecond)
+	if _, ok := listed(t, f, "viewer")["pat"]; ok {
+		t.Fatal("at 24h+1ms: kept, want dropped")
+	}
+}
+
+func TestListOfflineWindowZeroAndLive(t *testing.T) {
+	f := newFixture(t, func(c *core.Config) { c.StatusOfflineHours = 0 })
+	f.agent("pat")
+	f.agent("kim")
+	f.agent("viewer")
+	ps := f.open("pat", "")
+	f.mustSet("pat", ps.ID, bus.StatusIdle, "p")
+	ks := f.open("kim", "")
+	f.mustSet("kim", ks.ID, bus.StatusIdle, "k")
+	if err := f.ses.Close(context.Background(), "kim", bus.CloseSessionInput{Session: ks.ID}); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	f.advance(time.Millisecond)
+	m := listed(t, f, "viewer")
+	if _, ok := m["kim"]; ok {
+		t.Fatal("hours 0: offline kim listed")
+	}
+	if e, ok := m["pat"]; !ok || !e.Live {
+		t.Fatalf("hours 0: live pat = %+v ok=%v", e, ok)
+	}
+}
+
+func TestListLiveOldStatusKept(t *testing.T) {
+	f := newFixture(t, nil)
+	f.agent("pat")
+	f.agent("viewer")
+	ps := f.open("pat", "")
+	f.mustSet("pat", ps.ID, bus.StatusImplementing, "old")
+	// Keep the session live across 30 days by renewing its lease.
+	for i := 0; i < 30*24; i++ {
+		f.advance(time.Hour)
+		if _, err := f.ses.Open(context.Background(), "pat", bus.OpenSessionInput{ResumeToken: ps.ResumeToken}); err != nil {
+			t.Fatalf("renew: %v", err)
+		}
+	}
+	if e, ok := listed(t, f, "viewer")["pat"]; !ok || !e.Live {
+		t.Fatalf("live agent with a 30-day-old status: %+v ok=%v", e, ok)
+	}
+}
+
+func TestTagNotTrimmed(t *testing.T) {
+	f := newFixture(t, nil)
+	f.agent("pat")
+	s := f.open("pat", "")
+	for _, tag := range []bus.StatusTag{" idle", "idle "} {
+		_, err := f.set("pat", s.ID, tag, "x")
+		wantErr(t, err, bus.CodeValidation, "")
+	}
+}
