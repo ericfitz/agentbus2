@@ -1,6 +1,6 @@
 # ADR 0014: Agent status and history
 
-Status: Accepted (Eric, 2026-10-27, decisions 1 to 15 below). The "Settled open notes" are settled by the agents that wrote and implemented the plan and are not Eric's decisions; each carries an `open note: agent-status N` marker at its code site so Eric can reverse it with one findable edit (`rg -n 'open note: agent-status' .`).
+Status: Accepted (Eric, 2026-10-27, decisions 1 to 15 below; decisions 16 to 21 added by Eric on 2026-11-03 in the issue #27 addendum, decision 16 reversing decision 12). The "Settled open notes" are settled by the agents that wrote and implemented the plan and are not Eric's decisions; each carries an `open note: agent-status N` marker at its code site so Eric can reverse it with one findable edit (`rg -n 'open note: agent-status' .`).
 
 Covers issue #10 (ericfitz/agentbus2#10, aligned with ericfitz/agentbus#43). The design is `docs/superpowers/specs/2026-10-27-agent-status-design.md` (section 5 holds Eric's decisions); the plan is `docs/superpowers/plans/2026-10-27-agent-status.md`; the operator setting is in `docs/ops/configuration.md`; the agent-facing text is the "Status" section of `internal/cli/skills/using-agentbus2/SKILL.md`.
 
@@ -25,7 +25,7 @@ Each of these is Eric's decision. The text is the option chosen in section 5 of 
 9. **MCP: one `set_status` tool** (option A, 26 tools). Not chosen: `set_status` plus `get_status` (B).
 10. **CLI name: `agent-status set|list|history`** (option A). Not chosen: `report` and `statuses` (B), renaming the administrator's `status` (C).
 11. **Park and idle: the protocol text sets `idle` before `park`** (option A). Not chosen: `park` sends `idle` best effort (B, which would change Decision 18's local-only park), no mapping (C).
-12. **Stop hook: unchanged; the protocol text carries the task-boundary rule** (option A). Not chosen: the hook writes a status (B), the hook blocks with a reminder (C).
+12. **Stop hook: unchanged; the protocol text carries the task-boundary rule** (option A). Reversed by decision 16 (Eric, 2026-11-03). Not chosen: the hook writes a status (B), the hook blocks with a reminder (C).
 13. **Push: pull only now**, with wake-on-change a follow-up through issue #13 (options A, then C). Not chosen now: wake on change (B).
 14. **Repeated identical status: a new revision every time** (option A), so "every call is one revision". Not chosen: a no-op when nothing changed (B).
 15. **`problem` with `blocked` or `needs-human`: optional** (option A), as Eric said; the protocol text asks for one. Not chosen: required for those two tags (B).
@@ -132,3 +132,16 @@ Decisions 3 (offline derived at read), 6 (the tag set), 8 (retention, N default 
 > one included.
 
 The park rule, verbatim from the "Park" section of the same file: "Before ending a session with a handoff, set `idle` with `set_status` first, then run `agentbus2 park` as your last agentbus2 action" and "Set `idle` before `agentbus2 park`, never after, because `set_status` unparks."
+
+## Addendum: issue #27 (Eric, 2026-11-03)
+
+Eric's decisions, made in chat on 2026-11-03 when adopting agentbus v1's agent status design (ericfitz/agentbus#43) for issue #27. The design is `docs/superpowers/specs/2026-11-03-agent-board-and-status-nudge-design.md`.
+
+16. **Stop hook nudge; reverses decision 12.** The hook now takes option C: an unparked agent whose located session is primary (registered without a hint), that stops with `planning`, `implementing` or `reviewing` set strictly more than `status_stale_minutes` ago, or with no status, is blocked once with one line quoting its status (`Agentmesh: your status is "<tag>: <text>" (<age>); if that is no longer true, call set_status.`). It respects `stop_hook_active`, reads the status with the existing `listAgentStatuses` operation (no wire change) inside the 500 ms budget, and fails open on a read error.
+17. **`status_stale_minutes` is client configuration** (option A): the top-level `hooks` object of `config.json`, default 30, 0 to 1440, 0 off. Not chosen: a server setting sent over the wire (B), a fixed constant (C).
+18. **`status_offline_hours` is a server setting applied in the core** (option A): default 24, 0 to 720, 0 live only; `listAgentStatuses` drops an offline entry whose status was set before the window, so the board and `agent-status list` agree. History reads and `Identity.status` are unaffected. Not chosen: a TUI-only filter (B).
+19. **Board sort: v1's** (option A). `o` cycles time (newest first, never-set last), name and tag (the displayed tag); ties break by identity; no pinned attention group and no offline divider. This replaces settled note 6's group order on the board; the attention count (settled note 7) is unchanged. Not chosen: attention pinned (B), offline divider kept (C).
+20. **Board keys: v1's** (option A). The board shows while the `sessions` heading is selected (by the arrows, or `b` from anywhere); `enter` and the arrows on that heading collapse or expand it like any heading; `tab` focuses the board, `esc` returns focus to the rail; `→`/`←` expand and collapse a row; `enter` on a row opens its history, which closes when another rail row is selected and survives a `tab`. This replaces settled note 4. Not chosen: `enter` on the heading focuses the board (B).
+21. **Rail heading rule** (v1 ADR 0024 amendment). The headings that exist today (`channels`, `memories`, `tasks`, `tags`) keep showing the last selected content; a heading added or changed from now on shows a blank main pane or a board for its section. `sessions` is the first.
+
+Unchanged and confirmed: the tag is compared exactly and never trimmed (`" idle"` is `validation`).
