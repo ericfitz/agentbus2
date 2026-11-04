@@ -217,15 +217,26 @@ func TestServerFilteredWakeIsComplete(t *testing.T) {
 	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	var wo syncBuf
-	done := make(chan struct{})
+	done := make(chan error, 1)
 	go func() {
-		_, _ = watchLoop(wctx, pat.Bus, nil, sess.ID, "pat", 0, false, &wo)
-		close(done)
+		_, err := watchLoop(wctx, pat.Bus, nil, sess.ID, "pat", 0, false, &wo)
+		done <- err
 	}()
-	time.Sleep(300 * time.Millisecond)
+	// Wait for the line rather than a fixed window: a slow runner (Windows
+	// CI) can take longer than any short sleep for the first Watch.
+	const want = "agentmesh: 1 new message(s) for pat on general;"
+	deadline := time.Now().Add(10 * time.Second)
+	for !strings.Contains(wo.String(), want) {
+		select {
+		case err := <-done:
+			t.Fatalf("watch ended early: %v; watch line %q", err, wo.String())
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("watch line %q after 10s", wo.String())
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
 	cancel()
 	<-done
-	if out := wo.String(); !strings.Contains(out, "agentmesh: 1 new message(s) for pat on general;") {
-		t.Fatalf("watch line %q", out)
-	}
 }
