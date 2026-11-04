@@ -15,9 +15,6 @@ import (
 	"github.com/ericfitz/agentmesh/internal/store"
 )
 
-// memoryKind is the stored text of the memory channel kind.
-const memoryKind = "memory"
-
 // CanvasSnapshot is what the scope canvas shows at one instant: the task
 // lists and memory channels of a scope that every allowed human of the
 // bridge may read.
@@ -97,6 +94,9 @@ func (s *Service) CanvasSnapshot(ctx context.Context, b store.Bridge, scope stri
 		var taskChans []taskChan
 		assignees := map[string]bool{}
 		for _, ch := range chans {
+			if !store.ValidKind(ch.Kind) {
+				return core.E(bus.CodeInternal, "channel %q has unknown kind %q", ch.Name, string(ch.Kind))
+			}
 			if ch.Kind == store.KindOrdinary || len(humans) == 0 {
 				continue
 			}
@@ -111,10 +111,10 @@ func (s *Service) CanvasSnapshot(ctx context.Context, b store.Bridge, scope stri
 			if !allIn(humans, names) {
 				continue
 			}
-			// The memory kind is matched by its stored text, not store.KindMemory,
-			// which TestAccessRuleSites counts outside the allowlisted sites.
-			switch {
-			case ch.Kind == store.KindTasks:
+			// ValidKind above guards the else branch: a kind that is neither
+			// ordinary nor tasks is memory.
+			switch ch.Kind {
+			case store.KindTasks:
 				ts, err := svcTasks.Snapshot(ctx, tx, ch, nowMs)
 				if err != nil {
 					return err
@@ -125,14 +125,12 @@ func (s *Service) CanvasSnapshot(ctx context.Context, b store.Bridge, scope stri
 					}
 				}
 				taskChans = append(taskChans, taskChan{ch.Name, ts})
-			case string(ch.Kind) == memoryKind:
+			default:
 				ms, err := tx.LiveMemories(ctx, ch.ID)
 				if err != nil {
 					return core.FromStore(err)
 				}
 				out.MemoryChannels = append(out.MemoryChannels, memoryChannel(ch.Name, ms))
-			default:
-				return core.E(bus.CodeInternal, "channel %q has unknown kind %q", ch.Name, string(ch.Kind))
 			}
 		}
 		live, err := svcStatuses.LiveStatuses(ctx, tx, keys(assignees))
