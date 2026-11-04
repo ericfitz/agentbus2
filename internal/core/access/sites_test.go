@@ -124,6 +124,7 @@ var ruleAllowed = map[string]map[string]int{
 	"internal/core/tasks/doc.go loadTasks":        {"Owner": 1},  // parses the task's owner field
 	"internal/core/tasks/read.go summaries":       {"Owner": 4},  // in.Owner is a query filter; the summary copies the field
 	"internal/core/tasks/reclaim.go abandonedSet": {"Owner": 4},  // t.Owner == "" is state; the owner's sessions decide liveness
+	"internal/core/tasks/snapshot.go Snapshot":    {"Owner": 1},  // copies the task's owner into the snapshot's assignee: a converter (kind N)
 	"internal/core/tasks/update.go applyPatch":    {"Owner": 15}, // the patch's own fields: an in_progress task needs an owner, a new owner must be registered, release and completion set it
 	"internal/server/tasks.go taskToGen":          {"Owner": 1},  // wire copy of the task's owner (kind N)
 	"internal/server/tasks.go ListTasks":          {"Owner": 2},  // wire copy of the owner filter and the summaries' owner (kind N)
