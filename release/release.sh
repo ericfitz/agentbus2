@@ -27,7 +27,7 @@ SCOOP_DIR="${SCOOP_DIR:-$HOME/Projects/scoop-bucket}" # SSH clone of ericfitz/sc
 KOMAC_KEY_FILE="$HOME/.keys/KOMAC_GITHUB_KEY"           # `export KOMAC_GITHUB_KEY='<PAT with public_repo>'`
 SIGN_IDENTITY="Developer ID Application: Robert Fitzgerald (796T45968D)"
 NOTARY_PROFILE="sqdist-notary" # team-level credential, shared across projects
-SIGNING_KEY="${AGENTMESH_SIGNING_KEY:-$HOME/.keys/agentbus2-release-ed25519.pem}"
+SIGNING_KEY="${AGENTMESH_SIGNING_KEY:-$HOME/.keys/agentmesh-release-ed25519.pem}"
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PUBKEY="${REPO_ROOT}/release/agentmesh-release-ed25519.pub"
 DIST="${REPO_ROOT}/dist"

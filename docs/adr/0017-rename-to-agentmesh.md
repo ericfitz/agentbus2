@@ -19,6 +19,8 @@ No compatibility layer: there has been no release, so nothing reads the old name
 
 The private release signing key keeps its file name, `~/.keys/agentbus2-release-ed25519.pem`, because agents never rename or touch secret files. `release/release.sh` defaults to that path (`AGENTMESH_SIGNING_KEY` overrides it). Renaming the key file is Eric's call: rename the file, then change the default path in `release/release.sh`, `release/test-pipeline.sh` and `docs/release.md`. The public key in the repository is `release/agentmesh-release-ed25519.pub`; its contents did not change.
 
+Resolved (Eric, 2026-11-03): Eric renamed the file to `~/.keys/agentmesh-release-ed25519.pem`, and `release/release.sh`, `release/test-pipeline.sh` and `docs/release.md` now default to that path. The key pair is unchanged.
+
 ## Consequences
 
 - The Azure federated credential subject for Windows signing (`docs/release-signing.md`) names the repository, so it uses the new name. That credential has not been created yet.

@@ -26,8 +26,8 @@ The Docker image is separate: `.github/workflows/publish-image.yml` builds and p
 
    ```sh
    umask 077
-   "$(brew --prefix openssl@3)/bin/openssl" genpkey -algorithm ed25519 -out ~/.keys/agentbus2-release-ed25519.pem
-   "$(brew --prefix openssl@3)/bin/openssl" pkey -in ~/.keys/agentbus2-release-ed25519.pem -pubout -out release/agentmesh-release-ed25519.pub
+   "$(brew --prefix openssl@3)/bin/openssl" genpkey -algorithm ed25519 -out ~/.keys/agentmesh-release-ed25519.pem
+   "$(brew --prefix openssl@3)/bin/openssl" pkey -in ~/.keys/agentmesh-release-ed25519.pem -pubout -out release/agentmesh-release-ed25519.pub
    release/embed-key.sh release/agentmesh-release-ed25519.pub install.sh install.ps1
    ```
 
@@ -41,7 +41,7 @@ The Docker image is separate: `.github/workflows/publish-image.yml` builds and p
 
    Until this is done the installers hold a placeholder key and `release.sh` refuses to run (`install.sh has no embedded release key`).
 
-   Then copy `~/.keys/agentbus2-release-ed25519.pem` into your password manager; that copy is the only backup. The key's fingerprint, quoted in release notes and advisories, is `"$(brew --prefix openssl@3)/bin/openssl" pkey -pubin -in release/agentmesh-release-ed25519.pub -outform DER | shasum -a 256`.
+   Then copy `~/.keys/agentmesh-release-ed25519.pem` into your password manager; that copy is the only backup. The key's fingerprint, quoted in release notes and advisories, is `"$(brew --prefix openssl@3)/bin/openssl" pkey -pubin -in release/agentmesh-release-ed25519.pub -outform DER | shasum -a 256`.
 
    - **Rotation** (planned, or the key and its backup both lost): generate a new pair with the commands above, commit the new public key and installers, and give the new fingerprint in the next release's notes. There is no cross-signing; earlier releases stay verifiable with the key in their own `install.sh`.
    - **Compromise**: rotate as above, re-sign the `SHA256SUMS` of every release still supported with the new key (replacing each `SHA256SUMS.sig` asset), and publish a GitHub security advisory naming the old key's fingerprint.

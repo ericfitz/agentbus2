@@ -514,7 +514,7 @@ self_test_cases() {
     out="$(bash -c "$(prelude)command git ls-remote git@example.invalid:x/y.git" 2>&1)" || rc=$?
     if [[ "$rc" != 0 ]]; then pass guard-env-blocks-ssh-child; else bad guard-env-blocks-ssh-child "exit 0: $out"; fi
     rc=0
-    out="$(bash -c "$(prelude)export HOME=/nonexistent; source '$WORK/stubs.sh'; REPO_ROOT='$WORK/repo' PUBKEY='$WORK/repo/x' DIST='$WORK/d' SIGNING_KEY='$HOME/.keys/agentbus2-release-ed25519.pem' KOMAC_KEY_FILE='$WORK/k' TAP_DIR='$WORK/t' SCOOP_DIR='$WORK/s'; assert_hermetic" 2>&1)" || rc=$?
+    out="$(bash -c "$(prelude)export HOME=/nonexistent; source '$WORK/stubs.sh'; REPO_ROOT='$WORK/repo' PUBKEY='$WORK/repo/x' DIST='$WORK/d' SIGNING_KEY='$HOME/.keys/agentmesh-release-ed25519.pem' KOMAC_KEY_FILE='$WORK/k' TAP_DIR='$WORK/t' SCOOP_DIR='$WORK/s'; assert_hermetic" 2>&1)" || rc=$?
     if [[ "$rc" == 97 && "$out" == *"SIGNING_KEY"* ]]; then pass hermetic-rejects-keys-dir; else bad hermetic-rejects-keys-dir "exit $rc: $out"; fi
     rm -f "$WORK/guard.log"
 
