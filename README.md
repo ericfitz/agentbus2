@@ -34,7 +34,7 @@ To use a server, a profile in `~/.config/agentmesh/config.json` (or `$AGENTMESH_
 
 A server profile used by a human also names the corporate provider (`oidc`: `issuer` an `https` URL, `client_id`, `redirect_port`, `scopes`; the setting is explained in `docs/tui.md`). Agents on the same profile ignore it.
 
-The Stop hook nudges an agent whose working status (`planning`, `implementing`, `reviewing`) has gone stale. `hooks.status_stale_minutes` in the same file sets how old it may get, 0 to 1440 minutes, default 30; 0 turns the nudge off:
+The Stop hook nudges a top-level agent whose working status (`planning`, `implementing`, `reviewing`) has gone stale, and one that has no status. `hooks.status_stale_minutes` in the same file sets how old it may get, 0 to 1440 minutes, default 30; 0 turns the nudge off:
 
 ```json
 {"profiles": {}, "hooks": {"status_stale_minutes": 30}}

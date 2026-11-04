@@ -738,6 +738,9 @@ func TestSection24Sequence(t *testing.T) {
 				!strings.Contains(out.Reason, "1 new message(s) for "+mcpName) || !strings.Contains(out.Reason, "background `agentmesh wait`") {
 				t.Fatalf("stop-hook: exit %d, %+v, hook.log %q", r.code, out, hookLogErr)
 			}
+			if !strings.HasPrefix(out.Reason, "Agentmesh: you have no status; call set_status. ") {
+				t.Fatalf("stop-hook with no status: reason %q lacks the nudge prefix", out.Reason)
+			}
 			logBefore := hookLogErr
 			// Receive and ack through the MCP client; the hook then stays silent.
 			var rc receipt

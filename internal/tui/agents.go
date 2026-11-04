@@ -143,6 +143,7 @@ func (m Model) boardRows() []boardRow {
 		rows = append(rows, boardRow{identity: e.Identity, live: e.Live, tag: e.Status.Tag, st: &e.Status})
 	}
 	for _, id := range m.identities {
+		// open note: agent-status 6: a `-` row only for an identity with a session.
 		if id.Kind == bus.IdentityAgent && !have[id.Name] && len(id.Sessions) > 0 {
 			rows = append(rows, boardRow{identity: id.Name, live: true})
 		}

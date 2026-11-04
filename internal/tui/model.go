@@ -1315,7 +1315,7 @@ func (m *Model) onStatus(msg statusMsg) tea.Cmd {
 	m.reconcileSession()
 	cmd := m.setChannels(msg.channels, msg.tags, "oldest")
 	if m.boardShown() && m.board.hist != "" {
-		// An open history is refetched once per round (ADR 0014 decision 20).
+		// An open history is refetched once per round (ADR 0014 settled note 14).
 		return tea.Batch(cmd, m.agentHistoryCmd(m.board.hist))
 	}
 	return cmd

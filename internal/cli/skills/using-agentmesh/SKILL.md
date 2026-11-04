@@ -429,6 +429,7 @@ If new messages are waiting, the harness keeps you working with an
 instruction to `receive`: do that, handle what concerns you, make sure a
 background `agentmesh wait` is running (except on Codex), then stop. It fires
 at most once per turn, and it does not fire for a batch you already hold.
+It also nudges a top-level agent to call `set_status` (see Status).
 
 ## Park
 

@@ -108,8 +108,8 @@ The full map is the `?` overlay (`internal/tui/help.go`). The main keys:
 | `→` `←` | open / hide a message's body, then its replies; on a heading, expand / collapse; on the agents board, expand / collapse the selected row |
 | `b` | select the `sessions` heading, which shows the agents board (anywhere outside a modal or the composer) |
 | `o` | agents board: cycle the sort (time, name, tag) |
-| `pgup` `pgdn` | scroll (`pgup` at the top loads older history) |
-| `g` / `G` | oldest / newest |
+| `pgup` `pgdn` | scroll (`pgup` at the top loads older history); on an agent's history, one page toward older / newer rows |
+| `g` / `G` | oldest / newest (on an agent's history, the oldest / newest revision) |
 | `r` | reply to the cursor message |
 | `,` / `.` | newer / older version of the cursor memory |
 | `c` | new channel: `<name> [memory\|tasks]` |
@@ -148,7 +148,7 @@ The title line reads `agents (N) · sort: <mode>` followed by a short key hint. 
 
 The board reads the same status round as the rail (one `AgentStatuses` call every 5 seconds); an open history is fetched again once per round, and nothing is fetched for a closed one. The attention count is the number of live agents whose tag is `needs-human` or `blocked`: it shows as `N need you` in the status bar after `as <identity>` and in the `sessions` heading, and an agent that went offline while `needs-human` is not counted.
 
-Heading rule (ADR 0014 decision 21): only the `sessions` heading shows content of its own. The `channels`, `memories`, `tasks` and `tags` headings keep showing the last selected content when selected, and a future heading does the same unless its decision says otherwise.
+Heading rule (ADR 0014 decision 21): only the `sessions` heading shows content of its own. The `channels`, `memories`, `tasks` and `tags` headings keep showing the last selected content when selected, and a heading added or changed from now on shows a blank main pane or a board for its section; `sessions` is the first.
 
 ### Health
 
