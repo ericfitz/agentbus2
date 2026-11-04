@@ -89,6 +89,22 @@ func runHook(ctx context.Context, environ []string, stdout io.Writer, work func(
 	return 0
 }
 
+// statusRead reads the agent list for the nudge. A var so a test can stall or
+// fail it.
+var statusRead = func(ctx context.Context, b bus.Bus) ([]bus.AgentStatusEntry, error) {
+	return b.AgentStatuses(ctx)
+}
+
+type statusResult struct {
+	entries []bus.AgentStatusEntry
+	err     error
+}
+
+// statusMargin is the share of hookBudget kept back from the status wait, so
+// a status read that never answers is dropped before runHook's own deadline
+// and the message part still goes out.
+func statusMargin() time.Duration { return hookBudget / 5 }
+
 func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookResult {
 	var hi stopHookInput
 	if err := json.NewDecoder(stdin).Decode(&hi); err != nil {
@@ -124,6 +140,19 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 	}
 	defer func() { _ = conn.Close() }()
 
+	// The status read runs beside Peek, inside the same budget (decision 16).
+	statusCtx := ctx
+	if dl, ok := ctx.Deadline(); ok {
+		var cancel context.CancelFunc
+		statusCtx, cancel = context.WithDeadline(ctx, dl.Add(-statusMargin()))
+		defer cancel()
+	}
+	statusCh := make(chan statusResult, 1)
+	go func() {
+		e, serr := statusRead(statusCtx, conn.Bus)
+		statusCh <- statusResult{e, serr}
+	}()
+
 	r, err := conn.Bus.Peek(ctx, bus.PeekInput{Session: l.Session})
 	if bus.CodeOf(err) == bus.CodeSessionLapsed {
 		again, rerr := resumeIfLapsed(ctx, conn.Bus, l, err)
@@ -137,8 +166,12 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 	if err != nil {
 		return hookResult{stage: "peek", err: err}
 	}
+	nudge := stopNudgeFor(statusCtx, statusCh, environ, conn.Resolved.Identity, l.Primary, conn.Resolved.Hooks.StaleMinutes())
 	if r.Count == 0 {
-		return hookResult{}
+		if nudge == "" {
+			return hookResult{}
+		}
+		return blockResult(nudge)
 	}
 	display := l.DisplayName
 	if display == "" {
@@ -157,11 +190,49 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 			"(in a background shell; on Claude Code, Bash with run_in_background; start one if none is; it replaces any running wait or watch) " +
 			"so the next message wakes you, and stop. If it exits 2, read stderr; do not loop."
 	}
-	b, err := json.Marshal(map[string]string{"decision": "block", "reason": head + tail})
+	if nudge != "" {
+		nudge += " "
+	}
+	return blockResult(nudge + head + tail)
+}
+
+// blockResult is the Stop hook's one block decision.
+func blockResult(reason string) hookResult {
+	b, err := json.Marshal(map[string]string{"decision": "block", "reason": reason})
 	if err != nil {
 		return hookResult{stage: "peek", err: err}
 	}
 	return hookResult{out: append(b, '\n')}
+}
+
+// stopNudgeFor takes the status read's answer if it arrives before ctx ends
+// and builds the nudge from the bound identity's entry; a failed or late read
+// leaves one hook.log line (stage status) and no nudge. Nothing is read, and
+// nothing logged, when the nudge could not apply anyway.
+func stopNudgeFor(ctx context.Context, ch <-chan statusResult, environ []string, identity string, primary bool, staleMinutes int) string {
+	if !primary || staleMinutes <= 0 {
+		return ""
+	}
+	var res statusResult
+	select {
+	case res = <-ch:
+	case <-ctx.Done():
+		res.err = ctx.Err()
+	}
+	if res.err != nil {
+		if dataDir, err := profile.DataDir(environ); err == nil {
+			hookLog(dataDir, "status", res.err)
+		}
+		return ""
+	}
+	var entry *bus.AgentStatusEntry
+	for i := range res.entries {
+		if res.entries[i].Identity == identity {
+			entry = &res.entries[i]
+			break
+		}
+	}
+	return stopNudge(entry, primary, staleMinutes, time.Now())
 }
 
 // RunStopHook is the Stop hook (choice 8, Decision 41): when messages above

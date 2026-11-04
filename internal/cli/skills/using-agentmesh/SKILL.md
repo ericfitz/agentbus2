@@ -368,6 +368,10 @@ top-level session's status covers it. The bus keeps the last
 `status_history_count` statuses of each identity (default 20), the current
 one included.
 
+The Stop hook reminds a top-level agent whose `planning`, `implementing` or
+`reviewing` status is older than `hooks.status_stale_minutes` (default 30), or
+that has none, to call `set_status`.
+
 ## Waiting for messages
 
 Keep one background `agentmesh wait` running for the whole session, so a

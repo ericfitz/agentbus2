@@ -23,6 +23,15 @@ import (
 	"github.com/ericfitz/agentmesh/internal/store"
 )
 
+// setIdle gives the session's identity a fresh idle status, so the Stop hook's
+// no-status nudge stays out of a test about something else.
+func setIdle(t *testing.T, b bus.Bus, session string) {
+	t.Helper()
+	if _, err := b.SetAgentStatus(context.Background(), bus.SetAgentStatusInput{Session: session, Tag: bus.StatusIdle, Text: "waiting for work"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestStopHookBlocksWhenPending(t *testing.T) {
 	e := newTestEnv(t)
 	ctx := context.Background()
@@ -31,6 +40,7 @@ func TestStopHookBlocksWhenPending(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	setIdle(t, pat.Bus, sess.ID)
 	state := func(harnessClient string) {
 		e.writeState(t, sessionstate.File{Session: sess.ID, Identity: "pat", Profile: "default", DisplayName: sess.DisplayName, ResumeToken: sess.ResumeToken,
 			HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, HarnessClient: harnessClient, Primary: true, OpenedAt: 1})
@@ -92,6 +102,7 @@ func TestStopHookPeeksWithoutSideEffects(t *testing.T) {
 	}
 	e.writeState(t, sessionstate.File{Session: sess.ID, Identity: "pat", Profile: "default", DisplayName: sess.DisplayName, ResumeToken: sess.ResumeToken,
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
+	setIdle(t, pat.Bus, sess.ID)
 	lease := func(c *client.Conn, id string) int64 {
 		t.Helper()
 		var until int64
@@ -164,7 +175,7 @@ func TestStopHookPeeksWithoutSideEffects(t *testing.T) {
 		t.Fatal(err)
 	}
 	e2.writeState(t, sessionstate.File{Session: s2.ID, Identity: "pat", Profile: "default", DisplayName: s2.DisplayName, ResumeToken: s2.ResumeToken,
-		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
+		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: false, OpenedAt: 1})
 	for i := 0; i < 2; i++ {
 		if _, err := sam2.Bus.Send(ctx, bus.SendInput{Channel: "general", Content: "hi"}); err != nil {
 			t.Fatal(err)
@@ -190,6 +201,7 @@ func TestStopHookCountsUnackedBatch(t *testing.T) {
 	}
 	e.writeState(t, sessionstate.File{Session: sess.ID, Identity: "pat", Profile: "default", DisplayName: sess.DisplayName, ResumeToken: sess.ResumeToken,
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
+	setIdle(t, pat.Bus, sess.ID)
 	hook := func() string {
 		var so, se syncBuf
 		RunStopHook(ctx, nil, e.Environ, strings.NewReader(`{}`), &so, &se)
@@ -232,6 +244,7 @@ func TestStopHookSilentCases(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	setIdle(t, pat.Bus, sess.ID)
 	good := sessionstate.File{Session: sess.ID, Identity: "pat", Profile: "default", DisplayName: sess.DisplayName, ResumeToken: sess.ResumeToken,
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1}
 	logPath := filepath.Join(e.DataDir, "logs", "hook.log")
@@ -381,5 +394,236 @@ func TestRunHookBudgetCutsWorkThatIgnoresContext(t *testing.T) {
 	b, err := os.ReadFile(filepath.Join(e.DataDir, "logs", "hook.log"))
 	if err != nil || !strings.Contains(string(b), " budget: ") {
 		t.Fatalf("hook.log %q, %v", b, err)
+	}
+}
+
+// nudgeEnv is a pat session (primary unless noted) whose hook runs against
+// the test environment; hook returns the decoded block reason ("" for none).
+type nudgeEnv struct {
+	e    *testEnv
+	pat  *client.Conn
+	sam  *client.Conn
+	sess bus.Session
+}
+
+func newNudgeEnv(t *testing.T, primary bool) *nudgeEnv {
+	t.Helper()
+	e := newTestEnv(t)
+	pat, sam := e.conn(t, "pat"), e.conn(t, "sam")
+	sess, err := pat.Bus.Open(context.Background(), bus.OpenSessionInput{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.writeState(t, sessionstate.File{Session: sess.ID, Identity: "pat", Profile: "default", DisplayName: sess.DisplayName, ResumeToken: sess.ResumeToken,
+		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, HarnessClient: "claude-code", Primary: primary, OpenedAt: 1})
+	return &nudgeEnv{e, pat, sam, sess}
+}
+
+func (n *nudgeEnv) send(t *testing.T) {
+	t.Helper()
+	if _, err := n.sam.Bus.Send(context.Background(), bus.SendInput{Channel: "general", Content: "hi"}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (n *nudgeEnv) hook(t *testing.T) string {
+	t.Helper()
+	var so, se syncBuf
+	if code := RunStopHook(context.Background(), nil, n.e.Environ, strings.NewReader(`{}`), &so, &se); code != 0 || se.String() != "" {
+		t.Fatalf("exit %d stderr %q", code, se.String())
+	}
+	if so.String() == "" {
+		return ""
+	}
+	var out map[string]string
+	if err := json.Unmarshal([]byte(so.String()), &out); err != nil || out["decision"] != "block" {
+		t.Fatalf("stdout %q: %v", so.String(), err)
+	}
+	return out["reason"]
+}
+
+func (n *nudgeEnv) logLines(t *testing.T) []string {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(n.e.DataDir, "logs", "hook.log"))
+	if err != nil {
+		return nil
+	}
+	return strings.Split(strings.TrimSpace(string(b)), "\n")
+}
+
+func stubStatuses(t *testing.T, f func(context.Context, bus.Bus) ([]bus.AgentStatusEntry, error)) {
+	t.Helper()
+	prev := statusRead
+	statusRead = f
+	t.Cleanup(func() { statusRead = prev })
+}
+
+const noStatusNudge = "Agentmesh: you have no status; call set_status."
+
+func TestStopHookNudge(t *testing.T) {
+	t.Run("nudge only", func(t *testing.T) {
+		n := newNudgeEnv(t, true)
+		if got := n.hook(t); got != noStatusNudge {
+			t.Fatalf("reason %q", got)
+		}
+		if l := n.logLines(t); l != nil {
+			t.Fatalf("log %q", l)
+		}
+	})
+	t.Run("nudge then messages", func(t *testing.T) {
+		n := newNudgeEnv(t, true)
+		n.send(t)
+		got := n.hook(t)
+		if !strings.HasPrefix(got, noStatusNudge+" Agentmesh: 1 new message(s) for ") {
+			t.Fatalf("reason %q", got)
+		}
+	})
+	t.Run("stale status", func(t *testing.T) {
+		n := newNudgeEnv(t, true)
+		stubStatuses(t, func(context.Context, bus.Bus) ([]bus.AgentStatusEntry, error) {
+			return []bus.AgentStatusEntry{{Identity: "pat", Live: true, Status: bus.AgentStatus{Identity: "pat", Tag: bus.StatusImplementing, Text: "X", SetAt: time.Now().Add(-31 * time.Minute).UnixMilli()}}}, nil
+		})
+		want := `Agentmesh: your status is "implementing: X" (31m); if that is no longer true, call set_status.`
+		if got := n.hook(t); got != want {
+			t.Fatalf("reason %q", got)
+		}
+		// hooks.status_stale_minutes is honored, and 0 turns the nudge off.
+		for min, want := range map[int]string{60: "", 0: ""} {
+			n.e.writeHooksConfig(t, min)
+			if got := n.hook(t); got != want {
+				t.Fatalf("status_stale_minutes %d: reason %q", min, got)
+			}
+		}
+	})
+	t.Run("fresh status", func(t *testing.T) {
+		n := newNudgeEnv(t, true)
+		if _, err := n.pat.Bus.SetAgentStatus(context.Background(), bus.SetAgentStatusInput{Session: n.sess.ID, Tag: bus.StatusImplementing, Text: "X"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := n.hook(t); got != "" {
+			t.Fatalf("reason %q", got)
+		}
+	})
+	t.Run("not primary", func(t *testing.T) {
+		n := newNudgeEnv(t, false)
+		if got := n.hook(t); got != "" {
+			t.Fatalf("no messages: %q", got)
+		}
+		n.send(t)
+		got := n.hook(t)
+		if !strings.HasPrefix(got, "Agentmesh: 1 new message(s) for ") {
+			t.Fatalf("messages: %q", got)
+		}
+	})
+	t.Run("parked", func(t *testing.T) {
+		n := newNudgeEnv(t, true)
+		f, err := sessionstate.Read(n.e.DataDir, n.sess.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		f.Parked = true
+		n.e.writeState(t, f)
+		if got := n.hook(t); got != "" {
+			t.Fatalf("parked: %q", got)
+		}
+	})
+	t.Run("stop_hook_active", func(t *testing.T) {
+		n := newNudgeEnv(t, true)
+		var so, se syncBuf
+		RunStopHook(context.Background(), nil, n.e.Environ, strings.NewReader(`{"stop_hook_active":true}`), &so, &se)
+		if so.String() != "" {
+			t.Fatalf("stdout %q", so.String())
+		}
+	})
+	t.Run("no state file", func(t *testing.T) {
+		n := newNudgeEnv(t, true)
+		_ = sessionstate.Remove(n.e.DataDir, n.sess.ID)
+		if got := n.hook(t); got != "" {
+			t.Fatalf("reason %q", got)
+		}
+	})
+	t.Run("other identities only", func(t *testing.T) {
+		n := newNudgeEnv(t, true)
+		sess, err := n.sam.Bus.Open(context.Background(), bus.OpenSessionInput{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := n.sam.Bus.SetAgentStatus(context.Background(), bus.SetAgentStatusInput{Session: sess.ID, Tag: bus.StatusImplementing, Text: "X"}); err != nil {
+			t.Fatal(err)
+		}
+		if got := n.hook(t); got != noStatusNudge {
+			t.Fatalf("reason %q", got)
+		}
+	})
+	t.Run("status read fails", func(t *testing.T) {
+		n := newNudgeEnv(t, true)
+		n.send(t)
+		stubStatuses(t, func(context.Context, bus.Bus) ([]bus.AgentStatusEntry, error) {
+			return nil, bus.Errorf(bus.CodeUnavailable, true, "boom")
+		})
+		got := n.hook(t)
+		if !strings.HasPrefix(got, "Agentmesh: 1 new message(s) for ") || strings.Contains(got, "set_status") {
+			t.Fatalf("reason %q", got)
+		}
+		if l := n.logLines(t); len(l) != 1 || !strings.Contains(l[0], " status: ") {
+			t.Fatalf("log %q", l)
+		}
+	})
+	t.Run("status read blocks past the budget", func(t *testing.T) {
+		prev := hookBudget
+		hookBudget = 300 * time.Millisecond
+		t.Cleanup(func() { hookBudget = prev })
+		n := newNudgeEnv(t, true)
+		n.send(t)
+		stuck := make(chan struct{})
+		t.Cleanup(func() { close(stuck) })
+		stubStatuses(t, func(context.Context, bus.Bus) ([]bus.AgentStatusEntry, error) {
+			<-stuck // ignores its context
+			return nil, nil
+		})
+		start := time.Now()
+		got := n.hook(t)
+		if d := time.Since(start); d > hookBudget {
+			t.Fatalf("took %v, budget %v", d, hookBudget)
+		}
+		if !strings.HasPrefix(got, "Agentmesh: 1 new message(s) for ") || strings.Contains(got, "set_status") {
+			t.Fatalf("reason %q", got)
+		}
+		if l := n.logLines(t); len(l) != 1 || !strings.Contains(l[0], " status: ") {
+			t.Fatalf("log %q", l)
+		}
+	})
+	t.Run("bad hooks setting fails open", func(t *testing.T) {
+		n := newNudgeEnv(t, true)
+		n.send(t)
+		n.e.writeHooksConfig(t, 9999)
+		if got := n.hook(t); got != "" {
+			t.Fatalf("reason %q", got)
+		}
+		if l := n.logLines(t); len(l) != 1 || !strings.Contains(l[0], " open: ") {
+			t.Fatalf("log %q", l)
+		}
+	})
+}
+
+// writeHooksConfig sets hooks.status_stale_minutes in config.json by hand, so
+// an out-of-range value reaches the hook (Save refuses one).
+func (e *testEnv) writeHooksConfig(t *testing.T, minutes int) {
+	t.Helper()
+	b, err := os.ReadFile(e.Config.Path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	m["hooks"] = map[string]any{"status_stale_minutes": minutes}
+	b, err = json.Marshal(m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(e.Config.Path, b, 0o600); err != nil {
+		t.Fatal(err)
 	}
 }

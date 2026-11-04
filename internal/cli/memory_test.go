@@ -35,6 +35,7 @@ func memoryEnv(t *testing.T) (*testEnv, bus.Session, bus.Bus) {
 	}
 	e.writeState(t, sessionstate.File{Session: sess.ID, Identity: "pat", Profile: "default", DisplayName: sess.DisplayName, ResumeToken: sess.ResumeToken,
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
+	setIdle(t, pat.Bus, sess.ID)
 	return e, sess, e.conn(t, "sam").Bus
 }
 

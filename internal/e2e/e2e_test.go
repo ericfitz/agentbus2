@@ -750,6 +750,8 @@ func TestSection24Sequence(t *testing.T) {
 			if len(last.Messages) != 0 || last.AckIgnored {
 				t.Fatalf("mcp ack: %+v", last)
 			}
+			// With a fresh status the hook has nothing to nudge about.
+			mcp2.call(t, "set_status", map[string]any{"session": mcpSess, "tag": "idle", "text": "e2e stop-hook check"}, new(json.RawMessage))
 			silent := runIn(homeA, `{"stop_hook_active":false}`, "stop-hook")
 			if silent.code != 0 || silent.stdout != "" {
 				t.Fatalf("stop-hook after the ack: exit %d, stdout %q", silent.code, silent.stdout)
