@@ -111,6 +111,8 @@ Each of these is Eric's decision; they deliver decision 1's "memory and task cha
 9. Memories show in full.
 10. The canvas opens with a flat "Needs attention" section: Blocked, Needs human, Stalled and Problem reported; a task appears in every subsection it matches.
 11. The canvas tab is titled `Status`; Slack's own outline sidebar is the navigation, so there is no contents list.
+12. slack-go moves from v0.30.1 to v0.34.0, whose `Tab.Data.FileID` gives the canvas ID of a channel's tab (plan review, 2026-11-04).
+13. One `TestAccessRuleSites` allowlist entry is accepted: `internal/core/tasks/snapshot.go Snapshot` copies a task's `Owner` once into the canvas snapshot's assignee, a data copy and not an access decision (plan review, 2026-11-04).
 
 ## Consequences
 
