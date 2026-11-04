@@ -32,8 +32,11 @@ type agentBoard struct {
 	// their row; kept until the TUI quits.
 	expanded map[string]bool
 	hist     string // identity whose history is shown; "" on the board
-	rows     []bus.AgentStatus
-	err      error
+	// histOff is how many of the newest history rows are scrolled out of
+	// view: 0 shows the newest, the open default.
+	histOff int
+	rows    []bus.AgentStatus
+	err     error
 }
 
 // boardRow is one line of the board. st is nil for a live agent that never
@@ -200,7 +203,7 @@ func (m *Model) selectSessionsHeading() {
 func (m *Model) syncBoard() {
 	if !m.boardShown() {
 		m.board.focus = false
-		m.board.hist, m.board.rows, m.board.err = "", nil, nil
+		m.board.hist, m.board.rows, m.board.err, m.board.histOff = "", nil, nil, 0
 	}
 }
 
@@ -209,8 +212,18 @@ func (m *Model) onAgentHistory(msg agentHistoryMsg) {
 	if !m.boardShown() || m.board.hist != msg.identity {
 		return // stale: the history was closed or another one opened
 	}
+	if m.board.histOff > 0 && msg.err == nil {
+		m.board.histOff += max(len(msg.rows)-len(m.board.rows), 0) // stay on the same rows
+	}
 	m.board.rows, m.board.err = msg.rows, msg.err
 }
+
+// histRoom is the number of history rows the pane shows: its height less the
+// title line.
+func (m Model) histRoom() int { return max(m.stream.Height()-1, 1) }
+
+// histMaxOff is the largest histOff: the oldest row at the top of the pane.
+func (m Model) histMaxOff() int { return max(len(m.board.rows)-m.histRoom(), 0) }
 
 // updateBoard handles a key while the board has focus; every key it does not
 // name is ignored.
@@ -226,7 +239,7 @@ func (m *Model) updateBoard(msg tea.Msg) tea.Cmd {
 		m.board.focus = false // an open history stays
 	case "esc":
 		if m.board.hist != "" {
-			m.board.hist, m.board.rows, m.board.err = "", nil, nil
+			m.board.hist, m.board.rows, m.board.err, m.board.histOff = "", nil, nil, 0
 			return nil
 		}
 		m.board.focus = false
@@ -242,7 +255,24 @@ func (m *Model) updateBoard(msg tea.Msg) tea.Cmd {
 			i = min(i+1, len(rows)-1)
 		}
 		m.board.sel = rows[i].identity
+	case "pgup", "pgdown", "g", "G":
+		if m.board.hist == "" {
+			return nil
+		}
+		switch keyString(msg) {
+		case "pgup":
+			m.board.histOff = min(m.board.histOff+m.histRoom(), m.histMaxOff())
+		case "pgdown":
+			m.board.histOff = max(m.board.histOff-m.histRoom(), 0)
+		case "g":
+			m.board.histOff = m.histMaxOff()
+		default:
+			m.board.histOff = 0
+		}
 	case "o":
+		if m.board.hist != "" {
+			return nil
+		}
 		m.board.sort = m.board.sort.next() // sel is an identity: it follows its agent
 	case "right", "left":
 		if m.board.hist != "" || len(m.boardRows()) == 0 {
@@ -262,7 +292,7 @@ func (m *Model) updateBoard(msg tea.Msg) tea.Cmd {
 		if m.board.hist != "" || len(rows) == 0 {
 			return nil
 		}
-		m.board.hist, m.board.rows, m.board.err = rows[m.boardSel()].identity, nil, nil
+		m.board.hist, m.board.rows, m.board.err, m.board.histOff = rows[m.boardSel()].identity, nil, nil, 0
 		return m.agentHistoryCmd(m.board.hist)
 	}
 	return nil
@@ -403,12 +433,13 @@ func (m Model) renderHistoryFor(h int) string {
 		title := m.theme.Style(m.theme.Dim).Render(m.board.hist + " · history, oldest first · esc back")
 		return title + "\n" + m.theme.Style(m.theme.Error).Render(iconError+"history: "+errText(m.board.err))
 	}
-	return m.renderHistory(m.board.hist, m.board.rows, h)
+	return m.renderHistory(m.board.hist, m.board.rows, h, min(m.board.histOff, m.histMaxOff()))
 }
 
 // renderHistory is one agent's revisions, oldest first, one line each; when
-// they do not fit in h lines the newest are kept.
-func (m Model) renderHistory(identity string, rows []bus.AgentStatus, h int) string {
+// they do not fit in h lines the newest are kept, or, with off > 0, the page
+// that many rows older.
+func (m Model) renderHistory(identity string, rows []bus.AgentStatus, h, off int) string {
 	dim, warn := m.theme.Style(m.theme.Dim), m.theme.Style(m.theme.Warn)
 	title := dim.Render(identity + " · history, oldest first · esc back")
 	if len(rows) == 0 {
@@ -423,7 +454,8 @@ func (m Model) renderHistory(identity string, rows []bus.AgentStatus, h int) str
 		lines = append(lines, l+" by "+r.DisplayName)
 	}
 	if room := h - 1; room >= 1 && len(lines) > room {
-		lines = lines[len(lines)-room:]
+		end := len(lines) - min(off, len(lines)-room)
+		lines = lines[end-room : end]
 	}
 	return title + "\n" + strings.Join(lines, "\n")
 }

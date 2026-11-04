@@ -4,6 +4,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
@@ -335,6 +336,16 @@ func TestBoardRowColumns(t *testing.T) {
 	if lineWith(lines, "── offline ──") != "" {
 		t.Fatal("offline divider is gone")
 	}
+	// stream width 43 (terminal 60): the NOW column has almost no room
+	f.m.width = 60
+	f.m.layout()
+	if sw := f.m.stream.Width(); sw != 43 {
+		t.Fatalf("stream width = %d, want 43", sw)
+	}
+	l43 := lineWith(boardView(f), "amy")
+	if !strings.Contains(l43, "blocked") || !strings.Contains(l43, "5h") || strings.Contains(l43, "waiting on keys") {
+		t.Fatalf("at width 43 the row keeps tag and age and cuts the text: %q", l43)
+	}
 	// narrow: text and problem end with an ellipsis
 	f.m.width = 70
 	f.m.layout()
@@ -416,7 +427,7 @@ func TestOUnfocusedIsHarmless(t *testing.T) {
 func TestHelpListsBoardKeys(t *testing.T) {
 	f, _ := boardFixture(t)
 	help := stripANSI(strings.Join(f.m.helpLines(), "\n"))
-	for _, want := range []string{"agents board", "  b", "  o", "→ / ←", "enter", "esc", "sort"} {
+	for _, want := range []string{"agents board", "  b  ", "select the sessions heading", "  o  ", "cycle the sort", "  → / ←", "expand / collapse the selected agent", "  enter  ", "status history", "  esc  ", "board back to the rail", "pgup / pgdn", "g / G"} {
 		if !strings.Contains(help, want) {
 			t.Errorf("help lacks %q", want)
 		}
@@ -473,14 +484,14 @@ func TestAgentsBoardHistoryOldestFirst(t *testing.T) {
 
 func TestAgentsBoardHistoryEmptyAndTail(t *testing.T) {
 	m := Model{}
-	if got := m.renderHistory("x", nil, 5); !strings.Contains(got, "no status yet") {
+	if got := m.renderHistory("x", nil, 5, 0); !strings.Contains(got, "no status yet") {
 		t.Fatalf("empty history: %q", got)
 	}
 	var rows []bus.AgentStatus
 	for i := range 10 {
 		rows = append(rows, bus.AgentStatus{Revision: int64(i + 1), Tag: bus.StatusWaiting, Text: "rev" + string(rune('a'+i)), DisplayName: "x"})
 	}
-	got := stripANSI(m.renderHistory("x", rows, 4))
+	got := stripANSI(m.renderHistory("x", rows, 4, 0))
 	if strings.Contains(got, "reva") || !strings.Contains(got, "revj") {
 		t.Fatalf("a long history must keep the newest rows:\n%s", got)
 	}
@@ -637,5 +648,88 @@ func TestAgentsBoardFailedRefreshKeepsTitle(t *testing.T) {
 	out := stripANSI(f.m.renderBoard())
 	if !strings.Contains(out, id+" · history") || !strings.Contains(out, "esc back") || !strings.Contains(out, "boom") {
 		t.Fatalf("failed refresh lost the title or error:\n%s", out)
+	}
+}
+
+// histFixture opens bob's history with 12 revisions on a pane that shows 5.
+func histFixture(t *testing.T) *fixture {
+	t.Helper()
+	f, _ := boardFixture(t)
+	f.key("tab")
+	f.key("o") // name: amy, bob
+	f.key("down")
+	var sets []statusSet
+	for i := 1; i <= 12; i++ {
+		sets = append(sets, statusSet{bus.StatusImplementing, fmt.Sprintf("rev%02d", i), ""})
+	}
+	f.agentWithStatus(t, "hh", true, sets...)
+	f.run(f.m.statusCmd())
+	f.m.board.sel = "hh"
+	f.key("enter")
+	f.run(f.m.agentHistoryCmd("hh"))
+	f.m.stream.SetHeight(6) // title + 5 rows
+	return f
+}
+
+func TestBoardHistoryPaging(t *testing.T) {
+	f := histFixture(t)
+	if f.m.histRoom() != 5 || len(f.m.board.rows) < 12 {
+		t.Fatalf("room=%d rows=%d", f.m.histRoom(), len(f.m.board.rows))
+	}
+	has := func(sub string) bool { return strings.Contains(strings.Join(boardView(f), "\n"), sub) }
+	if !has("rev12") || has("rev07") {
+		t.Fatal("history must open on the newest rows")
+	}
+	f.key("pgup")
+	if !has("rev07") || has("rev12") {
+		t.Fatalf("pgup must show older rows:\n%s", strings.Join(boardView(f), "\n"))
+	}
+	f.key("pgdown")
+	if !has("rev12") {
+		t.Fatal("pgdown must return to the newest")
+	}
+	f.key("pgdown")
+	if f.m.board.histOff != 0 {
+		t.Fatal("pgdown past the newest must clamp")
+	}
+	f.key("g")
+	if !has("rev01") || has("rev12") {
+		t.Fatalf("g must show the first revision:\n%s", strings.Join(boardView(f), "\n"))
+	}
+	f.key("pgup")
+	f.key("pgup")
+	if f.m.board.histOff != f.m.histMaxOff() || !has("rev01") {
+		t.Fatalf("pgup past the oldest must clamp, off=%d max=%d", f.m.board.histOff, f.m.histMaxOff())
+	}
+	f.key("o")
+	if f.m.board.sort != sortName {
+		t.Fatal("o must do nothing while a history is open")
+	}
+	f.key("G")
+	if !has("rev12") || f.m.board.histOff != 0 {
+		t.Fatal("G must show the newest")
+	}
+	f.key("pgup")
+	f.key("esc")
+	f.key("enter")
+	if f.m.board.histOff != 0 {
+		t.Fatal("reopening a history must reset the offset")
+	}
+}
+
+func TestBoardHistoryRefetchKeepsPlace(t *testing.T) {
+	f := histFixture(t)
+	f.key("g")
+	rows := f.m.board.rows
+	off := f.m.board.histOff
+	more := append(slices.Clone(rows), bus.AgentStatus{Tag: bus.StatusIdle, Text: "new1"}, bus.AgentStatus{Tag: bus.StatusIdle, Text: "new2"})
+	f.m.onAgentHistory(agentHistoryMsg{identity: "hh", rows: more})
+	if f.m.board.histOff != off+2 {
+		t.Fatalf("off = %d, want %d (same rows in view)", f.m.board.histOff, off+2)
+	}
+	f.key("G")
+	f.m.onAgentHistory(agentHistoryMsg{identity: "hh", rows: append(more, bus.AgentStatus{Text: "new3"})})
+	if f.m.board.histOff != 0 {
+		t.Fatal("at the newest end the view follows new rows")
 	}
 }
