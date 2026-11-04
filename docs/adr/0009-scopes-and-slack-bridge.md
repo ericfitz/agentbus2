@@ -96,6 +96,22 @@ Recorded in ADR 0011; the changes to this record:
 
 - **Decision 12: no `everyone` or `humans` entry on a bridged channel.** Under the channel-visibility `List` rule any stored row lists a channel to its holders, and `admin` reads its ACL, so an `everyone` or `humans` row holding `admin` alone would show the bridged channel's name and named members to the whole group. `CheckBridgeACL` now refuses any entry for `everyone` or `humans` (`forbidden`, `a bridged channel's ACL may not name <group> (Decision 12)`), at bridge creation, at go-live and on every ACL change. `admins` may still hold `admin` alone: administrators hold it implicitly and list every channel, so that row exposes nothing.
 
+## Decisions of 2026-11-04 (Eric): the scope canvas
+
+Each of these is Eric's decision; they deliver decision 1's "memory and task channels later, one-way, informational". Design: `docs/superpowers/specs/2026-11-04-slack-scope-canvas-design.md`.
+
+1. Each live bridge's Slack channel carries a channel canvas showing the scope's task lists and memory channels, republished when a task or memory changes. One canvas per live bridge.
+2. A canvas shows only the task and memory channels every allowed human of that bridge may read.
+3. The canvas is read-only in Slack; changes go through agentmesh.
+4. Changes are coalesced (default 30 s) and an unchanged rendering is not sent.
+5. A server setting, on by default (`slack_canvas_enabled`), turns it on for every live bridge; no wire change.
+6. Tasks render as the whole hierarchy, each root task a foldable h3 with its subtasks as a nested checklist, with status and assigned agent; not sorted by status.
+7. Font glyphs, not emoji: `◌` pending, `▶` in progress, `✔` done, `⛔︎` blocked, `⚠︎` stalled or problem, `⚑` needs human.
+8. A task has a problem when blocked, stalled (abandoned), its owner's status carries a problem, or its owner's status tag is `needs-human`.
+9. Memories show in full.
+10. The canvas opens with a flat "Needs attention" section: Blocked, Needs human, Stalled and Problem reported; a task appears in every subsection it matches.
+11. The canvas tab is titled `Status`; Slack's own outline sidebar is the navigation, so there is no contents list.
+
 ## Consequences
 
 - A new reserved identity name and, originally, schema version 6; the pre-release versions were flattened to version 1 (ADR 0004 addendum "Migrations flattened to version 1"), so no upgrade step applies before the first release.
