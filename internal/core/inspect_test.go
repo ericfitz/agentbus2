@@ -894,6 +894,31 @@ func TestNoticeWriteThrottleSurvivesClear(t *testing.T) {
 	}
 }
 
+// TestNoticeWriteThrottleBoundary pins the edge of the write throttle: a
+// failure 1 ms short of noticeResetAge after the last write writes nothing, a
+// failure at exactly noticeResetAge writes again.
+func TestNoticeWriteThrottleBoundary(t *testing.T) {
+	in := &stubInspector{reply: replyWith(`{"verdict":"allow"}`)}
+	c, clk, _ := newInspectCore(t, nil, in)
+	hs := &hookStore{Store: c.Store}
+	c.Store = hs
+	ctx := context.Background()
+	c.noteFailure(ctx, FailTransport)
+	if hs.txs != 1 {
+		t.Fatalf("the first failure opened %d write Tx, want 1", hs.txs)
+	}
+	clk.advance(noticeResetAge - time.Millisecond)
+	c.noteFailure(ctx, FailTransport)
+	if hs.txs != 1 {
+		t.Fatalf("a failure 1 ms before the window ends opened %d write Tx in all, want 1", hs.txs)
+	}
+	clk.advance(time.Millisecond)
+	c.noteFailure(ctx, FailTransport)
+	if hs.txs != 2 {
+		t.Fatalf("a failure at exactly the window opened %d write Tx in all, want 2", hs.txs)
+	}
+}
+
 // TestNoteSuccessReadFailureDoesNotThrottle: a failed Read in state ok must
 // not delay the next look by the throttle window.
 func TestNoteSuccessReadFailureDoesNotThrottle(t *testing.T) {
