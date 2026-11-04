@@ -19,6 +19,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/go-jose/go-jose/v4"
 
 	"github.com/ericfitz/agentmesh/internal/auth/assertion"
@@ -33,31 +35,13 @@ import (
 	"github.com/ericfitz/agentmesh/internal/server/config"
 )
 
-// syncBuf is a bytes.Buffer safe for a writer goroutine and a polling reader.
-type syncBuf struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuf) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuf) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
-
 var listeningRE = regexp.MustCompile(`agentmesh server listening on (\S+) \((sqlite|postgres), registration (\S+), issuer (\S+), kid (\S+)\)`)
 
 // running is one `agentmesh server` started through Run in a goroutine.
 type running struct {
 	t                               *testing.T
 	addr, engine, mode, issuer, kid string
-	stdout, stderr                  *syncBuf
+	stdout, stderr                  *testkit.LockedBuffer
 	cancel                          context.CancelFunc
 	ch                              chan int
 	finished                        chan struct{}
@@ -71,7 +55,7 @@ type running struct {
 func launch(t *testing.T, environ []string, args ...string) *running {
 	t.Helper()
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &running{t: t, stdout: &syncBuf{}, stderr: &syncBuf{}, cancel: cancel, ch: make(chan int, 1), finished: make(chan struct{})}
+	r := &running{t: t, stdout: &testkit.LockedBuffer{}, stderr: &testkit.LockedBuffer{}, cancel: cancel, ch: make(chan int, 1), finished: make(chan struct{})}
 	go func() {
 		r.ch <- Run(ctx, args, environ, r.stdout, r.stderr)
 		close(r.finished)

@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/auth/keys"
 	"github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/client"
@@ -24,12 +26,12 @@ import (
 func TestWatchFlags(t *testing.T) {
 	e := newTestEnv(t)
 	for _, args := range [][]string{{"-channel", "x"}, {"-filter", "x"}, {"-timeout", "1s"}, {"extra"}} {
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		if code := RunWatch(context.Background(), args, e.Environ, strings.NewReader(""), &so, &se); code != 2 {
 			t.Errorf("%v: exit %d, want 2 (stderr %q)", args, code, se.String())
 		}
 	}
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	if code := RunWatch(context.Background(), []string{"-h"}, e.Environ, strings.NewReader(""), &so, &se); code != 0 {
 		t.Errorf("-h: exit %d, want 0", code)
 	}
@@ -62,7 +64,7 @@ func TestWatchPrintsOneLinePerWakeAndNeverExits(t *testing.T) {
 
 	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	done := make(chan int, 1)
 	go func() { done <- RunWatch(wctx, nil, e.Environ, strings.NewReader(""), &so, &se) }()
 
@@ -146,7 +148,7 @@ func TestWatchResumesLapsedSession(t *testing.T) {
 
 	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	done := make(chan int, 1)
 	go func() { done <- RunWatch(wctx, nil, e.Environ, strings.NewReader(""), &so, &se) }()
 	time.Sleep(300 * time.Millisecond)
@@ -177,7 +179,7 @@ func TestWatchResumesLapsedSession(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var so2, se2 syncBuf
+	var so2, se2 testkit.LockedBuffer
 	if code := RunWatch(ctx, []string{"-session", sess2.ID}, e2.Environ, strings.NewReader(""), &so2, &se2); code != 2 ||
 		!strings.Contains(se2.String(), "session_lapsed") {
 		t.Fatalf("exit %d, stderr %q", code, se2.String())
@@ -195,7 +197,7 @@ func TestWatchReplacedExits3Silent(t *testing.T) {
 	e.writeState(t, sessionstate.File{Session: sess.ID, Identity: "pat", Profile: "default", DisplayName: sess.DisplayName, ResumeToken: sess.ResumeToken,
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
 
-	var so1, se1, so2, se2 syncBuf
+	var so1, se1, so2, se2 testkit.LockedBuffer
 	c1, c2 := make(chan int, 1), make(chan int, 1)
 	ctx2, cancel2 := context.WithCancel(ctx)
 	defer cancel2()
@@ -232,7 +234,7 @@ func TestWatchHarnessGoneExits4(t *testing.T) {
 	e.writeState(t, sessionstate.File{Session: sess.ID, Identity: "pat", Profile: "default", DisplayName: sess.DisplayName, ResumeToken: sess.ResumeToken,
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
 
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	done := make(chan int, 1)
 	go func() { done <- RunWatch(ctx, nil, e.Environ, strings.NewReader(""), &so, &se) }()
 	time.Sleep(300 * time.Millisecond)
@@ -249,7 +251,7 @@ func TestWatchHarnessGoneExits4(t *testing.T) {
 
 	// -no-harness-watch: the lookup finds the harness gone only at the start;
 	// here the harness is already gone, so the start exits 4 at once.
-	var so2, se2 syncBuf
+	var so2, se2 testkit.LockedBuffer
 	if code := RunWatch(ctx, []string{"-no-harness-watch"}, e.Environ, strings.NewReader(""), &so2, &se2); code != 4 {
 		t.Fatalf("already-gone harness: exit %d", code)
 	}
@@ -267,7 +269,7 @@ func TestWatchNoHarnessWatchKeepsRunning(t *testing.T) {
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
 	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	done := make(chan int, 1)
 	go func() {
 		done <- RunWatch(wctx, []string{"-no-harness-watch"}, e.Environ, strings.NewReader(""), &so, &se)
@@ -297,20 +299,20 @@ func TestWatchErrorExits2(t *testing.T) {
 	if err := (credential.Store{Dir: profile.CredentialDir(e.ConfigDir, "lab")}).Save("pat", key); err != nil {
 		t.Fatal(err)
 	}
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	if code := RunWatch(ctx, []string{"-profile", "lab", "-session", "s9"}, e.Environ, strings.NewReader(""), &so, &se); code != 2 ||
 		!strings.HasPrefix(se.String(), "agentmesh:") || so.String() != "" {
 		t.Fatalf("exit %d stdout %q stderr %q", code, so.String(), se.String())
 	}
 
 	// No session for the harness and no -session.
-	var so2, se2 syncBuf
+	var so2, se2 testkit.LockedBuffer
 	if code := RunWatch(ctx, nil, e.Environ, strings.NewReader(""), &so2, &se2); code != 2 || !strings.Contains(se2.String(), "-session") {
 		t.Fatalf("exit %d stderr %q", code, se2.String())
 	}
 
 	// A malformed session id never reaches the bus.
-	var so3, se3 syncBuf
+	var so3, se3 testkit.LockedBuffer
 	if code := RunWatch(ctx, []string{"-session", "../x"}, e.Environ, strings.NewReader(""), &so3, &se3); code != 2 {
 		t.Fatalf("bad session id: exit %d", code)
 	}
@@ -337,7 +339,7 @@ func TestWatchUsesStateFileProfile(t *testing.T) {
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
 
 	run := func(env []string, args ...string) (int, string) {
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		code := RunWatch(ctx, args, env, strings.NewReader(""), &so, &se)
 		return code, se.String()
 	}
@@ -383,7 +385,7 @@ func TestWatchNeverExits0Or1(t *testing.T) {
 			return bus.WatchResult{Woke: true, Seq: n.Add(1), Count: 1, Channels: []string{"general"}}, nil
 		}}
 		ctx, cancel := context.WithCancel(context.Background())
-		var so syncBuf
+		var so testkit.LockedBuffer
 		type res struct {
 			floor int64
 			err   error
@@ -546,7 +548,7 @@ func TestWatchStartedInGapReplacesOlder(t *testing.T) {
 	}
 	e.writeState(t, sessionstate.File{Session: sess.ID, Identity: "pat", Profile: "default", DisplayName: sess.DisplayName, ResumeToken: sess.ResumeToken,
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
-	var so1, se1, so2, se2 syncBuf
+	var so1, se1, so2, se2 testkit.LockedBuffer
 	older, newer := make(chan int, 1), make(chan int, 1)
 	ctx2, cancel2 := context.WithCancel(ctx)
 	defer cancel2()

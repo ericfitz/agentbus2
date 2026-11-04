@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
@@ -19,7 +21,7 @@ func TestSubagentHookContext(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := func(stdin string) (int, string) {
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		code := RunSubagentHook(ctx, nil, e.Environ, strings.NewReader(stdin), &so, &se)
 		return code, so.String()
 	}

@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/core"
 	"github.com/ericfitz/agentmesh/internal/core/channels"
@@ -934,7 +936,7 @@ func TestMaintenanceLockExclusiveAcrossCores(t *testing.T) {
 // run changes nothing; a scoped agent is left alone (spec 4.3, 4.5).
 func TestMaintenanceInvalidScopes(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
-		buf := &syncBuffer{}
+		buf := &testkit.LockedBuffer{}
 		h := newHarness(t, e, harnessOptions{logger: slog.New(slog.NewTextHandler(buf, nil))})
 		h.rtScope("job1")
 		h.scopedIdentity("job1-coder", "job1")

@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/auth/keys"
 	"github.com/ericfitz/agentmesh/internal/core"
 	"github.com/ericfitz/agentmesh/internal/core/identities"
@@ -46,7 +48,7 @@ func TestRegisterCreatesServerProfile(t *testing.T) {
 		return identities.Service{Core: c}
 	}
 	register := func(args ...string) (int, string, string) {
-		var out, errb syncBuf
+		var out, errb testkit.LockedBuffer
 		code := RunRegister(ctx, args, e.Environ, nil, &out, &errb)
 		return code, out.String(), errb.String()
 	}
@@ -198,7 +200,7 @@ func startServer(t *testing.T, db string, extra ...string) string {
 	t.Helper()
 	ctx := context.Background()
 	sctx, cancel := context.WithCancel(ctx)
-	out, errb := &syncBuf{}, &syncBuf{}
+	out, errb := &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	done := make(chan int, 1)
 	args := append([]string{"-listen", "127.0.0.1:0", "-sqlite", db}, extra...)
 	go func() { done <- cmd.Run(sctx, args, nil, out, errb) }()
@@ -284,7 +286,7 @@ func TestRegisterPendingKeyReuse(t *testing.T) {
 	t.Cleanup(proxy.Close)
 
 	register := func(args ...string) (int, string, string) {
-		var out, errb syncBuf
+		var out, errb testkit.LockedBuffer
 		code := RunRegister(ctx, append([]string{"-profile", "lab", "-server", proxy.URL, "-identity", "pat", "-enrollment-token", tok}, args...), e.Environ, nil, &out, &errb)
 		return code, out.String(), errb.String()
 	}
@@ -346,7 +348,7 @@ func TestRegisterPendingConflictAndStale(t *testing.T) {
 	e := newTestEnv(t)
 	base := startServer(t, filepath.Join(t.TempDir(), "srv.sqlite"))
 	register := func() (int, string, string) {
-		var out, errb syncBuf
+		var out, errb testkit.LockedBuffer
 		code := RunRegister(ctx, []string{"-profile", "lab", "-server", base, "-identity", "pat"}, e.Environ, nil, &out, &errb)
 		return code, out.String(), errb.String()
 	}

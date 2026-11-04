@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/profile"
 	"github.com/ericfitz/agentmesh/internal/server/cmd"
 )
@@ -18,7 +20,7 @@ func TestLoginExchangesAndCaches(t *testing.T) {
 	e := newTestEnv(t)
 
 	sctx, cancel := context.WithCancel(ctx)
-	srvOut, srvErr := &syncBuf{}, &syncBuf{}
+	srvOut, srvErr := &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	done := make(chan int, 1)
 	// Made before the stop cleanup is registered, so its RemoveAll runs after
 	// the server has closed the database (Windows refuses to delete an open file).
@@ -45,7 +47,7 @@ func TestLoginExchangesAndCaches(t *testing.T) {
 		t.Fatalf("no listening line: %s %s", srvOut.String(), srvErr.String())
 	}
 
-	out, errb := &syncBuf{}, &syncBuf{}
+	out, errb := &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	if code := RunRegister(ctx, []string{"-profile", "lab", "-server", base, "-identity", "pat"}, e.Environ, nil, out, errb); code != 0 {
 		t.Fatalf("register: %d %s", code, errb.String())
 	}
@@ -54,7 +56,7 @@ func TestLoginExchangesAndCaches(t *testing.T) {
 		t.Fatalf("register must not mint a token: %v", err)
 	}
 
-	out, errb = &syncBuf{}, &syncBuf{}
+	out, errb = &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	if code := RunLogin(ctx, []string{"-profile", "lab"}, e.Environ, nil, out, errb); code != 0 {
 		t.Fatalf("login: %d %s", code, errb.String())
 	}
@@ -81,7 +83,7 @@ func TestLoginExchangesAndCaches(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	out, errb = &syncBuf{}, &syncBuf{}
+	out, errb = &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	if code := RunLogin(ctx, []string{"-profile", "lab"}, e.Environ, nil, out, errb); code != 0 {
 		t.Fatalf("second login: %d %s", code, errb.String())
 	}
@@ -94,18 +96,18 @@ func TestLoginExchangesAndCaches(t *testing.T) {
 
 	// A local profile: exit 2, with the mode message, even with no identity.
 	e.writeProfile(t, profile.Profile{Name: "loc", Mode: profile.ModeLocal})
-	out, errb = &syncBuf{}, &syncBuf{}
+	out, errb = &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	if code := RunLogin(ctx, []string{"-profile", "loc"}, e.Environ, nil, out, errb); code != 2 || !strings.Contains(errb.String(), "login applies to server profiles only") {
 		t.Fatalf("local: %d %q", code, errb.String())
 	}
-	out, errb = &syncBuf{}, &syncBuf{}
+	out, errb = &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	if code := RunLogin(ctx, []string{"-profile", "default"}, e.Environ, nil, out, errb); code != 2 {
 		t.Fatalf("default: %d %q", code, errb.String())
 	}
 
 	// A server profile with no credential: exit 2 naming register.
 	e.writeProfile(t, profile.Profile{Name: "bare", Mode: profile.ModeServer, Server: base, Identity: "kim"})
-	out, errb = &syncBuf{}, &syncBuf{}
+	out, errb = &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	if code := RunLogin(ctx, []string{"-profile", "bare"}, e.Environ, nil, out, errb); code != 2 || !strings.Contains(errb.String(), "agentmesh register") {
 		t.Fatalf("no credential: %d %q", code, errb.String())
 	}

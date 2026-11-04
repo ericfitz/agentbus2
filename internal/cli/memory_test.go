@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
@@ -63,7 +65,7 @@ func TestChannelsSubscribeRefusesMemory(t *testing.T) {
 func TestWaitIgnoresAMemoryOnlyWake(t *testing.T) {
 	e, _, sam := memoryEnv(t)
 	sendMemory(t, sam)
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	start := time.Now()
 	code := RunWait(context.Background(), []string{"-timeout", "700ms"}, e.Environ, strings.NewReader(""), &so, &se)
 	if code != 1 || so.String() != "" || se.String() != "" {
@@ -88,7 +90,7 @@ func TestStopHookIgnoresMemory(t *testing.T) {
 	e, _, sam := memoryEnv(t)
 	ctx := context.Background()
 	hook := func() string {
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		RunStopHook(ctx, nil, e.Environ, strings.NewReader(`{}`), &so, &se)
 		return so.String()
 	}
@@ -164,7 +166,7 @@ func TestWatchLoopIgnoresMemoryWakes(t *testing.T) {
 	pat := e.conn(t, "pat")
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	var so syncBuf
+	var so testkit.LockedBuffer
 	done := make(chan int64, 1)
 	go func() {
 		f, _ := watchLoop(ctx, pat.Bus, nil, sess.ID, "pat", 0, false, &so)
@@ -196,7 +198,7 @@ func TestServerFilteredWakeIsComplete(t *testing.T) {
 	if _, err := sam.Send(ctx, bus.SendInput{Channel: "general", Content: "hi"}); err != nil {
 		t.Fatal(err)
 	}
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	if code := RunWait(ctx, []string{"-timeout", "5s"}, e.Environ, strings.NewReader(""), &so, &se); code != 0 {
 		t.Fatalf("exit %d %q", code, se.String())
 	}
@@ -216,7 +218,7 @@ func TestServerFilteredWakeIsComplete(t *testing.T) {
 	pat := e.conn(t, "pat")
 	wctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	var wo syncBuf
+	var wo testkit.LockedBuffer
 	done := make(chan error, 1)
 	go func() {
 		_, err := watchLoop(wctx, pat.Bus, nil, sess.ID, "pat", 0, false, &wo)

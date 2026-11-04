@@ -196,6 +196,7 @@ func TestOpenLog(t *testing.T) {
 }
 
 // syncBuf is a bytes.Buffer safe for the exec copier goroutine and the test.
+// It stays local: testkit.LockedBuffer has no Len (one type needs it).
 type syncBuf struct {
 	mu sync.Mutex
 	b  bytes.Buffer

@@ -1,16 +1,16 @@
 package maintenance
 
 import (
-	"bytes"
 	"context"
 	"database/sql"
 	"log/slog"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
+
+	"github.com/ericfitz/agentmesh/internal/testkit"
 
 	"github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/core"
@@ -29,24 +29,7 @@ type bfx struct {
 	svc  Service
 	clk  *testClock
 	db   *sql.DB
-	logs *syncBuf
-}
-
-type syncBuf struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuf) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuf) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
+	logs *testkit.LockedBuffer
 }
 
 func newBfx(t *testing.T, mut func(*core.Config)) *bfx {
@@ -62,7 +45,7 @@ func newBfx(t *testing.T, mut func(*core.Config)) *bfx {
 	if mut != nil {
 		mut(&cfg)
 	}
-	logs := &syncBuf{}
+	logs := &testkit.LockedBuffer{}
 	c, err := core.New(st, cfg, core.Options{Now: clk.now, Logger: slog.New(slog.NewTextHandler(logs, nil))})
 	if err != nil {
 		t.Fatal(err)

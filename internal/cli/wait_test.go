@@ -8,6 +8,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/auth/keys"
 	"github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/client"
@@ -32,7 +34,7 @@ func TestWaitWokeExits0(t *testing.T) {
 	waitSessionFor(t, e)
 	sam := e.conn(t, "sam")
 
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	done := make(chan int, 1)
 	go func() { done <- RunWait(ctx, nil, e.Environ, strings.NewReader(""), &so, &se) }()
 	time.Sleep(300 * time.Millisecond)
@@ -78,7 +80,7 @@ func TestWaitTimeoutExits1(t *testing.T) {
 	}
 	e := newTestEnv(t)
 	waitSessionFor(t, e)
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	start := time.Now()
 	if code := RunWait(context.Background(), []string{"-timeout", "300ms"}, e.Environ, strings.NewReader(""), &so, &se); code != 1 {
 		t.Fatalf("exit %d stderr %q", code, se.String())
@@ -94,12 +96,12 @@ func TestWaitTimeoutExits1(t *testing.T) {
 func TestWaitFlags(t *testing.T) {
 	e := newTestEnv(t)
 	for _, args := range [][]string{{"-channel", "x"}, {"-filter", "x"}, {"-timeout", "-1s"}, {"-timeout", "soon"}, {"extra"}} {
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		if code := RunWait(context.Background(), args, e.Environ, strings.NewReader(""), &so, &se); code != 2 {
 			t.Errorf("%v: exit %d, want 2", args, code)
 		}
 	}
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	if code := RunWait(context.Background(), []string{"-h"}, e.Environ, strings.NewReader(""), &so, &se); code != 0 {
 		t.Errorf("-h: exit %d", code)
 	}
@@ -119,7 +121,7 @@ func TestWaitReplacedExits3(t *testing.T) {
 	e := newTestEnv(t)
 	ctx := context.Background()
 	waitSessionFor(t, e)
-	var so1, se1, so2, se2 syncBuf
+	var so1, se1, so2, se2 testkit.LockedBuffer
 	c1, c2 := make(chan int, 1), make(chan int, 1)
 	go func() { c1 <- RunWait(ctx, nil, e.Environ, strings.NewReader(""), &so1, &se1) }()
 	time.Sleep(400 * time.Millisecond)
@@ -154,7 +156,7 @@ func TestWaitHarnessGoneExits4(t *testing.T) {
 	}
 	e := newTestEnv(t)
 	waitSessionFor(t, e)
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	done := make(chan int, 1)
 	go func() { done <- RunWait(context.Background(), nil, e.Environ, strings.NewReader(""), &so, &se) }()
 	time.Sleep(300 * time.Millisecond)
@@ -179,18 +181,18 @@ func TestWaitErrorExits2(t *testing.T) {
 	if err := (credential.Store{Dir: profile.CredentialDir(e.ConfigDir, "lab")}).Save("pat", key); err != nil {
 		t.Fatal(err)
 	}
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	if code := RunWait(context.Background(), []string{"-profile", "lab", "-session", "s9"}, e.Environ, strings.NewReader(""), &so, &se); code != 2 ||
 		!strings.HasPrefix(se.String(), "agentmesh:") {
 		t.Fatalf("exit %d stderr %q", code, se.String())
 	}
 	// No session for the harness and no -session.
-	var so2, se2 syncBuf
+	var so2, se2 testkit.LockedBuffer
 	if code := RunWait(context.Background(), nil, e.Environ, strings.NewReader(""), &so2, &se2); code != 2 || !strings.Contains(se2.String(), "-session") {
 		t.Fatalf("exit %d stderr %q", code, se2.String())
 	}
 	// A session the bus does not know is a bus error: 2, not 1.
-	var so3, se3 syncBuf
+	var so3, se3 testkit.LockedBuffer
 	if code := RunWait(context.Background(), []string{"-session", "nosuch"}, e.Environ, strings.NewReader(""), &so3, &se3); code != 2 ||
 		!strings.Contains(se3.String(), "not_found") {
 		t.Fatalf("unknown session: exit %d stderr %q", code, se3.String())
@@ -207,7 +209,7 @@ func TestWaitSessionFromFlag(t *testing.T) {
 	sam := e.conn(t, "sam")
 	processTable.(*fakeTable).setError(42, errors.New("unsupported"))
 
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	done := make(chan int, 1)
 	go func() {
 		done <- RunWait(ctx, []string{"-session", sess.ID}, e.Environ, strings.NewReader(""), &so, &se)
@@ -228,7 +230,7 @@ func TestWaitSessionFromFlag(t *testing.T) {
 	// An orphan: ErrGone for the command's own pid is exit 4 at once.
 	processTable.(*fakeTable).setError(42, nil)
 	processTable.(*fakeTable).setGone(42)
-	var so2, se2 syncBuf
+	var so2, se2 testkit.LockedBuffer
 	if code := RunWait(ctx, []string{"-session", sess.ID}, e.Environ, strings.NewReader(""), &so2, &se2); code != 4 || so2.String() != "" || se2.String() != "" {
 		t.Fatalf("orphan: exit %d stdout %q stderr %q", code, so2.String(), se2.String())
 	}
@@ -251,7 +253,7 @@ func TestWaitResumesLapsedSession(t *testing.T) {
 	waitSessionFor(t, e, func(o *client.Options) { o.Now = tenMinutesAgo })
 	sam := e.conn(t, "sam")
 
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	done := make(chan int, 1)
 	go func() { done <- RunWait(ctx, nil, e.Environ, strings.NewReader(""), &so, &se) }()
 	time.Sleep(300 * time.Millisecond)
@@ -272,7 +274,7 @@ func TestWaitResumesLapsedSession(t *testing.T) {
 	sess := waitSessionFor(t, e2, func(o *client.Options) { o.Now = tenMinutesAgo })
 	e2.writeState(t, sessionstate.File{Session: sess.ID, Identity: "pat", Profile: "default", DisplayName: sess.DisplayName, ResumeToken: "bad",
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
-	var so2, se2 syncBuf
+	var so2, se2 testkit.LockedBuffer
 	if code := RunWait(ctx, nil, e2.Environ, strings.NewReader(""), &so2, &se2); code != 2 {
 		t.Fatalf("bad token: exit %d stderr %q", code, se2.String())
 	}

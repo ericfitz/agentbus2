@@ -8,7 +8,6 @@ package cli
 // test in package cli calls t.Parallel().
 
 import (
-	"bytes"
 	"context"
 	"os"
 	"sync"
@@ -111,24 +110,6 @@ func (e *testEnv) writeState(t *testing.T, f sessionstate.File) {
 	if err := sessionstate.Write(e.DataDir, f); err != nil {
 		t.Fatal(err)
 	}
-}
-
-// syncBuf is a bytes.Buffer safe for a writer goroutine and a polling reader.
-type syncBuf struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuf) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuf) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
 }
 
 type fakeProc struct {

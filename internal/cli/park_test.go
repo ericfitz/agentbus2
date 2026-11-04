@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/sessionstate"
 )
@@ -28,7 +30,7 @@ func parkSession(t *testing.T, e *testEnv) bus.Session {
 
 func runStop(t *testing.T, e *testEnv) string {
 	t.Helper()
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	if code := RunStopHook(context.Background(), nil, e.Environ, strings.NewReader(`{"cwd":""}`), &so, &se); code != 0 || se.String() != "" {
 		t.Fatalf("stop hook: exit %d stderr %q", code, se.String())
 	}
@@ -46,7 +48,7 @@ func TestParkSilencesStopHookAndUnparkRestores(t *testing.T) {
 		t.Fatalf("before park: %q", out)
 	}
 	for i := 0; i < 2; i++ { // twice: a no-op that succeeds
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		if code := RunPark(ctx, nil, e.Environ, strings.NewReader(""), &so, &se); code != 0 {
 			t.Fatalf("park: exit %d stderr %q", code, se.String())
 		}
@@ -58,7 +60,7 @@ func TestParkSilencesStopHookAndUnparkRestores(t *testing.T) {
 		t.Fatalf("parked, messages pending: stop hook printed %q", out)
 	}
 	for i := 0; i < 2; i++ {
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		if code := RunUnpark(ctx, nil, e.Environ, strings.NewReader(`{"prompt":"hi"}`), &so, &se); code != 0 || so.String() != "" || se.String() != "" {
 			t.Fatalf("unpark: exit %d stdout %q stderr %q", code, so.String(), se.String())
 		}
@@ -70,11 +72,11 @@ func TestParkSilencesStopHookAndUnparkRestores(t *testing.T) {
 
 func TestParkWithoutSessionExits2(t *testing.T) {
 	e := newTestEnv(t)
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	if code := RunPark(context.Background(), nil, e.Environ, strings.NewReader(""), &so, &se); code != 2 || se.String() == "" {
 		t.Fatalf("no state file: exit %d stderr %q", code, se.String())
 	}
-	var so2, se2 syncBuf
+	var so2, se2 testkit.LockedBuffer
 	if code := RunPark(context.Background(), []string{"-session", "nope"}, e.Environ, strings.NewReader(""), &so2, &se2); code != 2 || se2.String() == "" {
 		t.Fatalf("-session nope: exit %d stderr %q", code, se2.String())
 	}
@@ -87,7 +89,7 @@ func TestUnparkIsSilentAndExits0Always(t *testing.T) {
 	e := newTestEnv(t)
 	run := func(label string, args ...string) {
 		t.Helper()
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		if code := RunUnpark(context.Background(), args, e.Environ, strings.NewReader("not json"), &so, &se); code != 0 || so.String() != "" || se.String() != "" {
 			t.Fatalf("%s: exit %d stdout %q stderr %q", label, code, so.String(), se.String())
 		}
@@ -126,13 +128,13 @@ func TestWaitStartedBeforeParkDoesNotWake(t *testing.T) {
 	e := newTestEnv(t)
 	ctx := context.Background()
 	parkSession(t, e)
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	done := make(chan int, 1)
 	go func() {
 		done <- RunWait(ctx, []string{"-timeout", "3s"}, e.Environ, strings.NewReader(""), &so, &se)
 	}()
 	time.Sleep(300 * time.Millisecond)
-	var pso, pse syncBuf
+	var pso, pse testkit.LockedBuffer
 	if code := RunPark(ctx, nil, e.Environ, strings.NewReader(""), &pso, &pse); code != 0 {
 		t.Fatalf("park: %d %q", code, pse.String())
 	}
@@ -154,11 +156,11 @@ func TestWatchStartedBeforeParkPrintsNothing(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	parkSession(t, e)
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	done := make(chan int, 1)
 	go func() { done <- RunWatch(ctx, nil, e.Environ, strings.NewReader(""), &so, &se) }()
 	time.Sleep(300 * time.Millisecond)
-	var pso, pse syncBuf
+	var pso, pse testkit.LockedBuffer
 	if code := RunPark(context.Background(), nil, e.Environ, strings.NewReader(""), &pso, &pse); code != 0 {
 		t.Fatalf("park: %d %q", code, pse.String())
 	}
@@ -193,7 +195,7 @@ func TestUnparkDrainsLargeStdin(t *testing.T) {
 		t.Fatal(err)
 	}
 	r := &countReader{n: 200 << 10}
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	if code := RunUnpark(context.Background(), nil, e.Environ, r, &so, &se); code != 0 {
 		t.Fatalf("exit %d", code)
 	}
@@ -213,7 +215,7 @@ func TestUnparkHeldOpenStdinIsFastAndSilent(t *testing.T) {
 	}
 	pr, pw := io.Pipe() // never written, never closed: the harness holds stdin open
 	t.Cleanup(func() { _ = pw.Close() })
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	start := time.Now()
 	code := RunUnpark(context.Background(), nil, e.Environ, pr, &so, &se)
 	if d := time.Since(start); code != 0 || d > hookBudget/2 {

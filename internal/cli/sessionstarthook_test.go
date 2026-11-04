@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/mcpserver"
 	"github.com/ericfitz/agentmesh/internal/profile"
 )
@@ -19,7 +21,7 @@ func TestSessionStartHook(t *testing.T) {
 	e := newTestEnv(t)
 	ctx := context.Background()
 	run := func(environ []string, stdin string) (int, string) {
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		code := RunSessionStartHook(ctx, nil, environ, strings.NewReader(stdin), &so, &se)
 		return code, so.String()
 	}

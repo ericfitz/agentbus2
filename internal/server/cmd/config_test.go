@@ -14,6 +14,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
@@ -28,7 +30,7 @@ import (
 // adminOnce runs RunAdmin against a SQLite file with a nil environment.
 func adminOnce(t *testing.T, file string, args ...string) {
 	t.Helper()
-	var o, e syncBuf
+	var o, e testkit.LockedBuffer
 	if code := RunAdmin(context.Background(), append([]string{"-sqlite", file}, args...), nil, &o, &e); code != 0 {
 		t.Fatalf("RunAdmin %v: exit %d, stderr %q", args, code, e.String())
 	}
@@ -335,11 +337,11 @@ func TestServerRefusesReadableSQLite(t *testing.T) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	var o, e syncBuf
+	var o, e testkit.LockedBuffer
 	if code := Run(ctx, []string{"-listen", "127.0.0.1:0", "-sqlite", db}, nil, &o, &e); code == 0 || !strings.Contains(e.String(), db) {
 		t.Errorf("server: exit %d stderr %q, want non-zero naming %s", code, e.String(), db)
 	}
-	var ao, ae syncBuf
+	var ao, ae testkit.LockedBuffer
 	if code := RunAdmin(context.Background(), []string{"-sqlite", db, "create-identity", "kim"}, nil, &ao, &ae); code == 0 || !strings.Contains(ae.String(), db) {
 		t.Errorf("server admin: exit %d stderr %q, want non-zero naming %s", code, ae.String(), db)
 	}

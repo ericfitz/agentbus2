@@ -17,6 +17,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/auth/assertion"
 	"github.com/ericfitz/agentmesh/internal/auth/keys"
 	"github.com/ericfitz/agentmesh/internal/auth/token"
@@ -42,7 +44,7 @@ var replicaListeningRE = regexp.MustCompile(`listening on (\S+) \((\w+), registr
 // replica is one `agentmesh server` started through cmd.Run.
 type replica struct {
 	name           string
-	stdout, stderr syncBuffer
+	stdout, stderr testkit.LockedBuffer
 	done           chan int
 	base           string // http://127.0.0.1:port
 	mode, issuer   string

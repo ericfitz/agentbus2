@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/auth/assertion"
 	"github.com/ericfitz/agentmesh/internal/auth/keys"
 	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
@@ -58,7 +60,7 @@ func TestFederatedEndToEnd(t *testing.T) {
 		admin("admins", "add", "-issuer", "corp", "-group", "pai-admins")
 		admin("create-human", "kim@corp.example")
 
-		var stdout, stderr syncBuffer
+		var stdout, stderr testkit.LockedBuffer
 		done := make(chan int, 1)
 		go func() {
 			done <- cmd.Run(ctx, []string{"-listen", "127.0.0.1:0", storeFlag, dsn, "-set", setIssuers}, nil, &stdout, &stderr)

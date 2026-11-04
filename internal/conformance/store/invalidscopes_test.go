@@ -1,7 +1,6 @@
 package store
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -11,31 +10,15 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/dbtest"
 	ab2store "github.com/ericfitz/agentmesh/internal/store"
 	"github.com/ericfitz/agentmesh/internal/store/sqlstore"
 )
 
-// syncBuffer is a bytes.Buffer safe for the logger's concurrent writers.
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
-
-func capturedLogger() (*slog.Logger, *syncBuffer) {
-	buf := &syncBuffer{}
+func capturedLogger() (*slog.Logger, *testkit.LockedBuffer) {
+	buf := &testkit.LockedBuffer{}
 	return slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})), buf
 }
 

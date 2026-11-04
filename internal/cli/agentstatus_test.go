@@ -6,12 +6,14 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/bus"
 )
 
 func runAS(t *testing.T, e *testEnv, args ...string) (int, string, string) {
 	t.Helper()
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	code := RunAgentStatus(context.Background(), args, e.Environ, strings.NewReader(""), &so, &se)
 	return code, so.String(), se.String()
 }

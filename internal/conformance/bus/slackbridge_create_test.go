@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/core/identities"
 	"github.com/ericfitz/agentmesh/internal/dbtest"
@@ -30,27 +32,8 @@ const (
 	slNone      = "nobody@corp.example"
 )
 
-// slackFix is a harness with the Slack fake, the bridge Service over it, a
-// scope job1 with an agent and the humans of the bridge tests.
-type logBuf struct {
-	mu sync.Mutex
-	b  strings.Builder
-}
-
-func (l *logBuf) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.Write(p)
-}
-
-func (l *logBuf) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.b.String()
-}
-
 type slackFix struct {
-	logs *logBuf
+	logs *testkit.LockedBuffer
 	h    *harness
 	fake *slackfake.Fake
 	svc  *slackbridge.Service
@@ -83,7 +66,7 @@ func newSlackFixOpts(t *testing.T, e dbtest.Engine, o harnessOptions, mod func(*
 			t.Fatalf("CreateIdentityByEmail %s: %v", em, err)
 		}
 	}
-	logs := &logBuf{}
+	logs := &testkit.LockedBuffer{}
 	cfg := slackbridge.Config{
 		ArchiveAfterDone: time.Hour, MaxMessageChars: 3000, LockRenew: 10 * time.Millisecond,
 		Logger: slog.New(slog.NewTextHandler(logs, &slog.HandlerOptions{Level: slog.LevelDebug})),

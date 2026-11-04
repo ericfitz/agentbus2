@@ -11,6 +11,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/auth/keys"
 	"github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/client"
@@ -35,8 +37,8 @@ func pinTUI(t *testing.T, w, h int) {
 // runningTUI is a RunTUI in a goroutine fed through a pipe.
 type runningTUI struct {
 	in     *io.PipeWriter
-	out    *syncBuf
-	stderr *syncBuf
+	out    *testkit.LockedBuffer
+	stderr *testkit.LockedBuffer
 	done   chan int
 	cancel context.CancelFunc
 }
@@ -45,7 +47,7 @@ func startTUI(t *testing.T, e *testEnv, args ...string) *runningTUI {
 	t.Helper()
 	pr, pw := io.Pipe()
 	ctx, cancel := context.WithCancel(context.Background())
-	r := &runningTUI{in: pw, out: &syncBuf{}, stderr: &syncBuf{}, done: make(chan int, 1), cancel: cancel}
+	r := &runningTUI{in: pw, out: &testkit.LockedBuffer{}, stderr: &testkit.LockedBuffer{}, done: make(chan int, 1), cancel: cancel}
 	go func() { r.done <- RunTUI(ctx, args, e.Environ, pr, r.out, r.stderr) }()
 	t.Cleanup(func() {
 		cancel()
@@ -192,7 +194,7 @@ func TestRunTUINoIdentityNoUser(t *testing.T) {
 	t.Cleanup(func() { currentUser = prev })
 	e := newTestEnv(t)
 	e.writeProfile(t, profile.Profile{Name: "default", Mode: profile.ModeLocal}) // no identity
-	var out, errb syncBuf
+	var out, errb testkit.LockedBuffer
 	if code := RunTUI(context.Background(), nil, e.Environ, strings.NewReader(""), &out, &errb); code != 2 || !strings.Contains(errb.String(), "identity is required") {
 		t.Fatalf("code %d stderr %q, want 2 and the identity error", code, errb.String())
 	}
@@ -239,7 +241,7 @@ func TestRunTUIServerIdentityFlagRefused(t *testing.T) {
 	pinTUI(t, 80, 24)
 	e := newTestEnv(t)
 	e.writeProfile(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1", OIDC: &profile.OIDC{Issuer: "https://idp.example", ClientID: "cid", RedirectPort: 8765, Scopes: []string{"openid"}}})
-	var errb syncBuf
+	var errb testkit.LockedBuffer
 	code := RunTUI(context.Background(), []string{"-profile", "lab", "-identity", "eric"}, e.Environ, strings.NewReader(""), io.Discard, &errb)
 	if code != 2 || !strings.Contains(errb.String(), "-identity does not apply on a server profile") {
 		t.Fatalf("exit %d stderr %q", code, errb.String())
@@ -250,7 +252,7 @@ func TestRunTUIServerNoOIDC(t *testing.T) {
 	pinTUI(t, 80, 24)
 	e := newTestEnv(t)
 	e.writeProfile(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
-	var errb syncBuf
+	var errb testkit.LockedBuffer
 	code := RunTUI(context.Background(), []string{"-profile", "lab"}, e.Environ, strings.NewReader(""), io.Discard, &errb)
 	if code != 2 || !strings.Contains(errb.String(), "no oidc setting") || !strings.Contains(errb.String(), `"lab"`) {
 		t.Fatalf("exit %d stderr %q", code, errb.String())
@@ -273,7 +275,7 @@ func TestRunTUIUsageErrors(t *testing.T) {
 		{"positional", []string{"extra"}, 2, `"extra"`},
 	}
 	for _, c := range cases {
-		var stderr syncBuf
+		var stderr testkit.LockedBuffer
 		code := RunTUI(context.Background(), c.args, e.Environ, strings.NewReader(""), io.Discard, &stderr)
 		if code != c.code || !strings.Contains(stderr.String(), c.want) {
 			t.Errorf("%s: exit %d stderr %q, want exit %d naming %q", c.name, code, stderr.String(), c.code, c.want)
@@ -359,7 +361,7 @@ func TestRunTUIOSUserWithKeys(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	var out, errb syncBuf
+	var out, errb testkit.LockedBuffer
 	code := RunTUI(context.Background(), nil, e.Environ, strings.NewReader(""), &out, &errb)
 	if code != 2 || !strings.Contains(errb.String(), `identity "eric" holds keys`) || !strings.Contains(errb.String(), "pass -identity") {
 		t.Fatalf("code %d stderr %q, want 2 and the holds-keys error", code, errb.String())

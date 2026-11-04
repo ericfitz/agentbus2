@@ -13,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/auth/keys"
 	"github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/client"
@@ -52,7 +54,7 @@ func TestStopHookBlocksWhenPending(t *testing.T) {
 		}
 	}
 	run := func() (int, map[string]string, string) {
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		code := RunStopHook(ctx, nil, e.Environ, strings.NewReader(`{"cwd":"","stop_hook_active":false}`), &so, &se)
 		var out map[string]string
 		if so.String() != "" {
@@ -85,7 +87,7 @@ func TestStopHookBlocksWhenPending(t *testing.T) {
 		t.Fatalf("codex: exit %d %v", code, out)
 	}
 	// Grok's camelCase flag also ends the hook silently.
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	if code := RunStopHook(ctx, nil, e.Environ, strings.NewReader(`{"stopHookActive":true}`), &so, &se); code != 0 || so.String() != "" {
 		t.Fatalf("stopHookActive: exit %d stdout %q", code, so.String())
 	}
@@ -117,7 +119,7 @@ func TestStopHookPeeksWithoutSideEffects(t *testing.T) {
 		return until
 	}
 	hook := func() string {
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		if code := RunStopHook(ctx, nil, e.Environ, strings.NewReader(`{}`), &so, &se); code != 0 {
 			t.Fatalf("exit %d", code)
 		}
@@ -182,7 +184,7 @@ func TestStopHookPeeksWithoutSideEffects(t *testing.T) {
 		}
 	}
 	lapsedLease := lease(sam2, s2.ID)
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	if code := RunStopHook(ctx, nil, e2.Environ, strings.NewReader(`{}`), &so, &se); code != 0 || !strings.Contains(so.String(), "2 new message(s)") {
 		t.Fatalf("lapsed: exit %d stdout %q", code, so.String())
 	}
@@ -203,7 +205,7 @@ func TestStopHookCountsUnackedBatch(t *testing.T) {
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
 	setIdle(t, pat.Bus, sess.ID)
 	hook := func() string {
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		RunStopHook(ctx, nil, e.Environ, strings.NewReader(`{}`), &so, &se)
 		if se.String() != "" {
 			t.Fatalf("stderr %q: a hook never writes to stderr", se.String())
@@ -256,7 +258,7 @@ func TestStopHookSilentCases(t *testing.T) {
 		return strings.Split(strings.TrimSpace(string(b)), "\n")
 	}
 	run := func(stdin string) (int, string) {
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		code := RunStopHook(ctx, nil, e.Environ, strings.NewReader(stdin), &so, &se)
 		if se.String() != "" {
 			t.Fatalf("stdin %q: stderr %q: a hook never writes to stderr", stdin, se.String())
@@ -345,7 +347,7 @@ func TestStopHookFailsOpenWithinBudget(t *testing.T) {
 	e.writeState(t, sessionstate.File{Session: "s1", Identity: "pat", Profile: "lab", DisplayName: "pat", ResumeToken: "x",
 		HarnessPID: testHarness.Pid, HarnessStart: testHarness.Start, Primary: true, OpenedAt: 1})
 
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	start := time.Now()
 	code := RunStopHook(context.Background(), nil, e.Environ, strings.NewReader(`{}`), &so, &se)
 	if d := time.Since(start); code != 0 || so.String() != "" || se.String() != "" || d > hookBudget+300*time.Millisecond {
@@ -373,7 +375,7 @@ func TestRunHookBudgetCutsWorkThatIgnoresContext(t *testing.T) {
 	t.Cleanup(func() { hookBudget = prev })
 	stuck := make(chan struct{})
 	t.Cleanup(func() { close(stuck) })
-	var so syncBuf
+	var so testkit.LockedBuffer
 	start := time.Now()
 	res := make(chan int, 1)
 	go func() {
@@ -428,7 +430,7 @@ func (n *nudgeEnv) send(t *testing.T) {
 
 func (n *nudgeEnv) hook(t *testing.T) string {
 	t.Helper()
-	var so, se syncBuf
+	var so, se testkit.LockedBuffer
 	if code := RunStopHook(context.Background(), nil, n.e.Environ, strings.NewReader(`{}`), &so, &se); code != 0 || se.String() != "" {
 		t.Fatalf("exit %d stderr %q", code, se.String())
 	}
@@ -529,7 +531,7 @@ func TestStopHookNudge(t *testing.T) {
 	})
 	t.Run("stop_hook_active", func(t *testing.T) {
 		n := newNudgeEnv(t, true)
-		var so, se syncBuf
+		var so, se testkit.LockedBuffer
 		RunStopHook(context.Background(), nil, n.e.Environ, strings.NewReader(`{"stop_hook_active":true}`), &so, &se)
 		if so.String() != "" {
 			t.Fatalf("stdout %q", so.String())

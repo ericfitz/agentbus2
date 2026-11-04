@@ -13,9 +13,10 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 	"testing"
 	"time"
+
+	"github.com/ericfitz/agentmesh/internal/testkit"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
@@ -34,25 +35,6 @@ import (
 	"github.com/ericfitz/agentmesh/internal/server/cmd"
 	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
-
-// syncBuffer is a bytes.Buffer safe for the server goroutine to write while
-// the test reads.
-type syncBuffer struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuffer) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuffer) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
 
 // listeningRE captures the engine, mode, issuer URL, port and kid from the
 // line `agentmesh server listening on ADDR (ENGINE, registration MODE,
@@ -123,7 +105,7 @@ func TestAuthEndToEnd(t *testing.T) {
 		if e.Name == "postgres" {
 			storeFlag = "-postgres"
 		}
-		var stdout, stderr syncBuffer
+		var stdout, stderr testkit.LockedBuffer
 		done := make(chan int, 1)
 		go func() {
 			done <- cmd.Run(ctx, []string{"-listen", "0.0.0.0:0", storeFlag, dsn, "-set", "signing_key_rotation_cooldown_seconds=3"}, nil, &stdout, &stderr)

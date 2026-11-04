@@ -7,10 +7,11 @@ import (
 	"net/url"
 	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 	"unicode/utf8"
+
+	"github.com/ericfitz/agentmesh/internal/testkit"
 
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
@@ -30,30 +31,12 @@ const (
 	corpEric      = "eric@corp.example"
 )
 
-// logBuf is a goroutine-safe log sink.
-type logBuf struct {
-	mu sync.Mutex
-	sb strings.Builder
-}
-
-func (l *logBuf) Write(p []byte) (int, error) {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.sb.Write(p)
-}
-
-func (l *logBuf) String() string {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return l.sb.String()
-}
-
 // fedEnv is an env with a fake provider configured as the issuers entry
 // "corp" and users {email corp eric@corp.example}.
 type fedEnv struct {
 	*env
 	prov *oidctest.Provider
-	log  *logBuf
+	log  *testkit.LockedBuffer
 }
 
 func newFedEnv(t *testing.T, lifetime time.Duration, mutate func(*token.External)) *fedEnv {
@@ -67,7 +50,7 @@ func newFedEnv(t *testing.T, lifetime time.Duration, mutate func(*token.External
 		mutate(ext)
 	}
 	e := newEnv(t, envOptions{issuer: true, registration: identities.ModeEnrollment, external: []*token.External{ext}})
-	f := &fedEnv{env: e, prov: prov, log: &logBuf{}}
+	f := &fedEnv{env: e, prov: prov, log: &testkit.LockedBuffer{}}
 	e.opts.Logger = slog.New(slog.NewTextHandler(f.log, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	f.users(store.RefEmail, corpEric)
 	return f

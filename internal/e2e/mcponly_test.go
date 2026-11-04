@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/ericfitz/agentmesh/internal/auth/keys"
@@ -49,12 +51,12 @@ func newEnrollmentToken(t *testing.T) string {
 }
 
 // connectOnly starts `command args...` as an MCP server under home.
-func connectOnly(t *testing.T, home, command string, args ...string) (*mcp.ClientSession, *syncBuf) {
+func connectOnly(t *testing.T, home, command string, args ...string) (*mcp.ClientSession, *testkit.LockedBuffer) {
 	t.Helper()
 	cmd := exec.Command(command, args...)
 	cmd.Env = environFor(home)
 	cmd.Dir = home
-	stderr := &syncBuf{}
+	stderr := &testkit.LockedBuffer{}
 	cmd.Stderr = stderr
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

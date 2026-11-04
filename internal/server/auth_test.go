@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/go-jose/go-jose/v4"
 	"github.com/go-jose/go-jose/v4/jwt"
 
@@ -933,7 +935,7 @@ func TestSignerUnavailableIs503(t *testing.T) {
 // TestSignerUnavailableIsLogged: both grant paths answer the unchanged 503 and
 // leave the signer's error in the server log, once, never the bearer.
 func TestSignerUnavailableIsLogged(t *testing.T) {
-	break_ := func(e *env, lg *logBuf) {
+	break_ := func(e *env, lg *testkit.LockedBuffer) {
 		e.opts.Logger = slog.New(slog.NewTextHandler(lg, &slog.HandlerOptions{Level: slog.LevelDebug}))
 		broken, err := token.NewIssuer(context.Background(), "http://inproc",
 			failingKeys{key: genKey(t, keys.EdDSA)}, time.Hour, e.clock.Now)
@@ -944,7 +946,7 @@ func TestSignerUnavailableIsLogged(t *testing.T) {
 		e.once = sync.Once{}
 	}
 	t.Run("agent assertion", func(t *testing.T) {
-		lg := &logBuf{}
+		lg := &testkit.LockedBuffer{}
 		e := newEnv(t, envOptions{issuer: true, registration: identities.ModeOpen})
 		key := genKey(t, keys.EdDSA)
 		e.mustRegister("pat", key)

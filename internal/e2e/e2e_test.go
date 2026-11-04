@@ -24,10 +24,11 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/ericfitz/agentmesh/internal/testkit"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -42,24 +43,6 @@ var (
 	fx         *fixture
 )
 
-// syncBuf is a bytes.Buffer safe for a writer and a reader on two goroutines.
-type syncBuf struct {
-	mu sync.Mutex
-	b  bytes.Buffer
-}
-
-func (s *syncBuf) Write(p []byte) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.Write(p)
-}
-
-func (s *syncBuf) String() string {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.b.String()
-}
-
 // fixture is the server of step 0 and the registrations of step 1, started
 // once in TestMain and stopped after both tests.
 type fixture struct {
@@ -70,8 +53,8 @@ type fixture struct {
 	listening     string // the whole `listening on` line
 	tokens        [3]string
 	srv           *exec.Cmd
-	srvOut        *syncBuf
-	srvErr        *syncBuf
+	srvOut        *testkit.LockedBuffer
+	srvErr        *testkit.LockedBuffer
 	srvDone       chan struct{}
 	srvCode       int
 	regPat        result
@@ -185,7 +168,7 @@ var (
 func startFixture(root string) (*fixture, error) {
 	f := &fixture{root: root, sqlite: filepath.Join(root, "server.sqlite"),
 		homeA: filepath.Join(root, "home-a"), homeB: filepath.Join(root, "home-b"), homeC: filepath.Join(root, "home-c"),
-		srvOut: &syncBuf{}, srvErr: &syncBuf{}, srvDone: make(chan struct{})}
+		srvOut: &testkit.LockedBuffer{}, srvErr: &testkit.LockedBuffer{}, srvDone: make(chan struct{})}
 	for _, h := range []string{f.homeA, f.homeB, f.homeC, filepath.Join(root, "home-server")} {
 		if err := os.MkdirAll(h, 0o700); err != nil {
 			return nil, err
@@ -276,8 +259,8 @@ func (f *fixture) stopServer() int {
 // proc is an agentmesh command that is still running.
 type proc struct {
 	cmd  *exec.Cmd
-	out  *syncBuf
-	errb *syncBuf
+	out  *testkit.LockedBuffer
+	errb *testkit.LockedBuffer
 	done chan struct{}
 	code int
 }
@@ -286,7 +269,7 @@ type proc struct {
 // running process belongs to the t of the test that outlives its steps.
 func startProc(t *testing.T, home string, args ...string) *proc {
 	t.Helper()
-	p := &proc{out: &syncBuf{}, errb: &syncBuf{}, done: make(chan struct{})}
+	p := &proc{out: &testkit.LockedBuffer{}, errb: &testkit.LockedBuffer{}, done: make(chan struct{})}
 	p.cmd = exec.Command(binPath, args...)
 	p.cmd.Env = environFor(home)
 	p.cmd.Stdout, p.cmd.Stderr = p.out, p.errb
@@ -440,14 +423,14 @@ func configDir(home string) string {
 type mcpProc struct {
 	cs     *mcp.ClientSession
 	cmd    *exec.Cmd
-	stderr *syncBuf
+	stderr *testkit.LockedBuffer
 }
 
 func spawnMCP(t *testing.T, home string) *mcpProc {
 	t.Helper()
 	cmd := exec.Command(binPath, "mcp", "-profile", "lab", "-identity", "pat")
 	cmd.Env = environFor(home)
-	p := &mcpProc{cmd: cmd, stderr: &syncBuf{}}
+	p := &mcpProc{cmd: cmd, stderr: &testkit.LockedBuffer{}}
 	cmd.Stderr = p.stderr
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

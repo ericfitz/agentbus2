@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/server/config"
 	"github.com/ericfitz/agentmesh/internal/store"
 	"github.com/ericfitz/agentmesh/internal/storetest"
@@ -21,7 +23,7 @@ func TestStoreLogsToConfiguredLogger(t *testing.T) {
 		db := filepath.Join(t.TempDir(), "ab2.db")
 		storetest.ScopedAdminRaw(t, db, "rogue", "acme")
 		cfg := config.Config{SQLite: db}
-		var logs syncBuf
+		var logs testkit.LockedBuffer
 		st, err := openStore(ctx, cfg, newLogger(cfg, &logs))
 		if err != nil {
 			t.Fatal(err)
@@ -45,7 +47,7 @@ func TestStoreLogsToConfiguredLogger(t *testing.T) {
 	t.Run("admin", func(t *testing.T) {
 		db := filepath.Join(t.TempDir(), "ab2.db")
 		storetest.ScopedAdminRaw(t, db, "rogue", "acme")
-		var o, e syncBuf
+		var o, e testkit.LockedBuffer
 		RunAdmin(ctx, []string{"-sqlite", db, "reset-credential", "rogue"}, nil, &o, &e)
 		if s := e.String(); !strings.Contains(s, storetest.NormalizationError) || !strings.Contains(s, "identity=rogue") {
 			t.Fatalf("stderr %q (stdout %q), want the normalization error naming rogue", s, o.String())

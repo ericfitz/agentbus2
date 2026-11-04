@@ -15,6 +15,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	"github.com/ericfitz/agentmesh/internal/auth/keys"
 	"github.com/ericfitz/agentmesh/internal/bus/remote"
 	"github.com/ericfitz/agentmesh/internal/credential"
@@ -72,7 +74,7 @@ func startHumanServer(t *testing.T, e *testEnv, profileName string) *humanServer
 		t.Fatal(err)
 	}
 	set := "issuers=" + string(issuers)
-	srvOut, srvErr := &syncBuf{}, &syncBuf{}
+	srvOut, srvErr := &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	done := make(chan int, 1)
 	// Made before the stop cleanup is registered, so its RemoveAll runs after
 	// the server has closed the database (Windows refuses to delete an open file).
@@ -137,7 +139,7 @@ func TestLoginHuman(t *testing.T) {
 	ctx := context.Background()
 	e := newTestEnv(t)
 	hs := startHumanServer(t, e, "lab")
-	out, errb := &syncBuf{}, &syncBuf{}
+	out, errb := &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	if code := RunLogin(ctx, []string{"-profile", "lab", "-human"}, e.Environ, nil, out, errb); code != 0 {
 		t.Fatalf("login -human: %d %s", code, errb.String())
 	}
@@ -150,7 +152,7 @@ func TestLoginHuman(t *testing.T) {
 		t.Fatalf("stderr %q, want %q", errb.String(), want)
 	}
 	// login -human always uses the browser, even with a valid session.
-	out, errb = &syncBuf{}, &syncBuf{}
+	out, errb = &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	if code := RunLogin(ctx, []string{"-profile", "lab", "-human"}, e.Environ, nil, out, errb); code != 0 {
 		t.Fatalf("second login -human: %d %s", code, errb.String())
 	}
@@ -158,7 +160,7 @@ func TestLoginHuman(t *testing.T) {
 		t.Errorf("%d browser opens, want 2", n)
 	}
 	// An agent login on the same profile still works with sam's key.
-	out, errb = &syncBuf{}, &syncBuf{}
+	out, errb = &testkit.LockedBuffer{}, &testkit.LockedBuffer{}
 	if code := RunLogin(ctx, []string{"-profile", "lab", "-identity", "sam"}, e.Environ, nil, out, errb); code != 0 || !strings.Contains(out.String(), "logged in as sam") {
 		t.Fatalf("agent login: %d %q %q", code, out.String(), errb.String())
 	}
@@ -167,7 +169,7 @@ func TestLoginHuman(t *testing.T) {
 func TestLoginHumanNoOIDC(t *testing.T) {
 	e := newTestEnv(t)
 	e.writeProfile(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1"})
-	var out, errb syncBuf
+	var out, errb testkit.LockedBuffer
 	code := RunLogin(context.Background(), []string{"-profile", "lab", "-human"}, e.Environ, nil, &out, &errb)
 	if code != 2 || !strings.Contains(errb.String(), "oidc") || out.String() != "" {
 		t.Fatalf("exit %d stdout %q stderr %q", code, out.String(), errb.String())
@@ -178,13 +180,13 @@ func TestLoginHumanIdentityRefused(t *testing.T) {
 	e := newTestEnv(t)
 	e.writeProfile(t, profile.Profile{Name: "lab", Mode: profile.ModeServer, Server: "http://127.0.0.1:1",
 		OIDC: &profile.OIDC{Issuer: "https://idp.example", ClientID: "cid", RedirectPort: 8765, Scopes: []string{"openid"}}})
-	var out, errb syncBuf
+	var out, errb testkit.LockedBuffer
 	code := RunLogin(context.Background(), []string{"-profile", "lab", "-human", "-identity", "sam"}, e.Environ, nil, &out, &errb)
 	if code != 2 || !strings.Contains(errb.String(), "-identity does not apply") {
 		t.Fatalf("exit %d stderr %q", code, errb.String())
 	}
 	// A local profile is refused by the existing mode check.
-	errb = syncBuf{}
+	errb = testkit.LockedBuffer{}
 	if code := RunLogin(context.Background(), []string{"-human"}, e.Environ, nil, &out, &errb); code != 2 || !strings.Contains(errb.String(), "server profiles only") {
 		t.Fatalf("local: exit %d stderr %q", code, errb.String())
 	}

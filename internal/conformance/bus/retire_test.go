@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/testkit"
+
 	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/core"
 	"github.com/ericfitz/agentmesh/internal/core/identities"
@@ -260,7 +262,7 @@ func TestScopeRetirementRules(t *testing.T) {
 
 		t.Run("idle without an archiver holds the scope", func(t *testing.T) {
 			h := newHarness(t, e, harnessOptions{})
-			var logs syncBuffer
+			var logs testkit.LockedBuffer
 			c, err := core.New(h.raw, h.cfg, core.Options{Now: h.clock.Now, Notifier: h.notifier,
 				Logger: slog.New(slog.NewTextHandler(&logs, nil))})
 			if err != nil {

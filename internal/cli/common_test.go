@@ -9,7 +9,6 @@ import (
 	"os"
 	"runtime"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -223,24 +222,6 @@ func TestTestEnvFixture(t *testing.T) {
 	res, err := ss.Watch(ctx, bus.WatchInput{Session: "s1", After: 3})
 	if err != nil || res.Seq != 9 || got.Session != "s1" || got.After != 3 {
 		t.Fatalf("stubSessions.Watch: %+v %+v %v", got, res, err)
-	}
-
-	// syncBuf under two writers (run with -race).
-	var sb syncBuf
-	var wg sync.WaitGroup
-	for i := 0; i < 2; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			for j := 0; j < 200; j++ {
-				_, _ = sb.Write([]byte("x"))
-				_ = sb.String()
-			}
-		}()
-	}
-	wg.Wait()
-	if len(sb.String()) != 400 {
-		t.Fatalf("syncBuf holds %d bytes, want 400", len(sb.String()))
 	}
 }
 
