@@ -37,7 +37,7 @@ require (
 	github.com/sigstore/sigstore/pkg/signature/kms/azure v1.11.1
 	github.com/sigstore/sigstore/pkg/signature/kms/gcp v1.11.1
 	github.com/sigstore/sigstore/pkg/signature/kms/hashivault v1.11.1
-	github.com/slack-go/slack v0.30.1
+	github.com/slack-go/slack v0.34.0
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	golang.org/x/sys v0.49.0

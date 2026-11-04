@@ -7,6 +7,7 @@ package slackfake
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -19,6 +20,7 @@ import (
 var methods = []string{
 	"AuthTest", "CreatePrivateChannel", "FindPrivateChannel", "Invite", "Archive",
 	"Post", "History", "Replies", "Members", "UserInfo", "LookupByEmail", "RunSocket",
+	"CreateChannelCanvas", "ChannelCanvases", "CanvasContains", "ReplaceCanvas", "SetCanvasChannelAccess",
 }
 
 // FakeChannel is a snapshot of one channel.
@@ -71,6 +73,12 @@ type Fake struct {
 	echo      bool
 
 	historyDelay time.Duration // DelayHistory
+
+	canvases    map[string]*FakeCanvas
+	canvasOrder []string // creation order
+	nextCanvas  int
+	emptyTabs   int           // EmptyTabsNext
+	canvasDelay time.Duration // DelayCanvas
 }
 
 // DelayHistory makes every History call wait d before it runs (0 clears it),
@@ -93,6 +101,7 @@ func New(self slackapi.Self) *Fake {
 		calls:    map[string]int{},
 		fails:    map[string][]error{},
 		limits:   map[string]*rateLimit{},
+		canvases: map[string]*FakeCanvas{},
 		done:     make(chan struct{}),
 	}
 }
@@ -641,4 +650,208 @@ func (f *Fake) SocketDone() <-chan struct{} {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return f.done
+}
+
+// FakeCanvas is a snapshot of one canvas. Label is the title at creation and
+// never changes; Access maps a channel ID to its level.
+type FakeCanvas struct {
+	ID, ChannelID, Label, Markdown string
+	Access                         map[string]string
+}
+
+func (c *FakeCanvas) snapshot() FakeCanvas {
+	out := *c
+	out.Access = maps.Clone(c.Access)
+	if out.Access == nil {
+		out.Access = map[string]string{}
+	}
+	return out
+}
+
+// DelayCanvas makes every canvas method wait d before it runs (0 clears it).
+func (f *Fake) DelayCanvas(d time.Duration) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.canvasDelay = d
+}
+
+// EmptyTabsNext makes the next n ChannelCanvases calls answer an empty list
+// without touching the canvases (the lookup-then-create race).
+func (f *Fake) EmptyTabsNext(n int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.emptyTabs = n
+}
+
+// AddCanvas adds a canvas made outside the bridge (a foreign tab, or one whose
+// label differs from its title) and returns its ID. It counts no call.
+func (f *Fake) AddCanvas(channelID, label, markdown string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.addCanvas(channelID, label, markdown).ID
+}
+
+// Canvas returns a snapshot of the canvas.
+func (f *Fake) Canvas(id string) (FakeCanvas, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	c := f.canvases[id]
+	if c == nil {
+		return FakeCanvas{}, false
+	}
+	return c.snapshot(), true
+}
+
+// DeleteCanvasByHand removes the canvas as a Slack user would, without a call.
+func (f *Fake) DeleteCanvasByHand(id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.canvases, id)
+	for i, o := range f.canvasOrder {
+		if o == id {
+			f.canvasOrder = append(f.canvasOrder[:i], f.canvasOrder[i+1:]...)
+			break
+		}
+	}
+}
+
+// addCanvas creates the canvas. f.mu must be held.
+func (f *Fake) addCanvas(channelID, label, markdown string) *FakeCanvas {
+	f.nextCanvas++
+	c := &FakeCanvas{
+		ID: fmt.Sprintf("F%06d", f.nextCanvas), ChannelID: channelID, Label: label, Markdown: markdown,
+		Access: map[string]string{},
+	}
+	f.canvases[c.ID] = c
+	f.canvasOrder = append(f.canvasOrder, c.ID)
+	return c
+}
+
+// canvasWait applies DelayCanvas before a canvas method runs.
+func (f *Fake) canvasWait(ctx context.Context) error {
+	f.mu.Lock()
+	d := f.canvasDelay
+	f.mu.Unlock()
+	if d <= 0 {
+		return nil
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-time.After(d):
+		return nil
+	}
+}
+
+func canvasNotFound(method string) error {
+	return &slackapi.APIError{Method: method, Code: "canvas_not_found"}
+}
+
+// archived reports whether the channel exists and is archived. f.mu must be
+// held.
+func (f *Fake) archived(channelID string) bool {
+	c := f.channels[channelID]
+	return c != nil && c.Archived
+}
+
+func (f *Fake) CreateChannelCanvas(ctx context.Context, channelID, title, markdown string) (string, error) {
+	const m = "conversations.canvases.create"
+	if err := f.canvasWait(ctx); err != nil {
+		return "", err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.begin("CreateChannelCanvas"); err != nil {
+		return "", err
+	}
+	if f.archived(channelID) {
+		return "", &slackapi.APIError{Method: m, Code: "is_archived"}
+	}
+	for _, id := range f.canvasOrder {
+		if f.canvases[id].ChannelID == channelID {
+			return "", &slackapi.APIError{Method: m, Code: "free_team_canvas_tab_already_exists"}
+		}
+	}
+	return f.addCanvas(channelID, title, markdown).ID, nil
+}
+
+func (f *Fake) ChannelCanvases(ctx context.Context, channelID string) ([]slackapi.CanvasTab, error) {
+	if err := f.canvasWait(ctx); err != nil {
+		return nil, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.begin("ChannelCanvases"); err != nil {
+		return nil, err
+	}
+	if f.emptyTabs > 0 {
+		f.emptyTabs--
+		return []slackapi.CanvasTab{}, nil
+	}
+	tabs := []slackapi.CanvasTab{}
+	for _, id := range f.canvasOrder {
+		if c := f.canvases[id]; c.ChannelID == channelID {
+			tabs = append(tabs, slackapi.CanvasTab{ID: c.ID, Label: c.Label})
+		}
+	}
+	return tabs, nil
+}
+
+func (f *Fake) CanvasContains(ctx context.Context, canvasID, text string) (bool, error) {
+	if err := f.canvasWait(ctx); err != nil {
+		return false, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.begin("CanvasContains"); err != nil {
+		return false, err
+	}
+	c := f.canvases[canvasID]
+	if c == nil {
+		return false, canvasNotFound("canvases.sections.lookup")
+	}
+	return strings.Contains(c.Markdown, text), nil
+}
+
+func (f *Fake) ReplaceCanvas(ctx context.Context, canvasID, markdown string) error {
+	if err := f.canvasWait(ctx); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.begin("ReplaceCanvas"); err != nil {
+		return err
+	}
+	c := f.canvases[canvasID]
+	if c == nil {
+		return canvasNotFound("canvases.edit")
+	}
+	if f.archived(c.ChannelID) {
+		return &slackapi.APIError{Method: "canvases.edit", Code: "is_archived"}
+	}
+	c.Markdown = markdown
+	return nil
+}
+
+func (f *Fake) SetCanvasChannelAccess(ctx context.Context, canvasID, channelID, level string) error {
+	if level != "read" && level != "write" {
+		return slackapi.ErrCanvasAccessLevel
+	}
+	if err := f.canvasWait(ctx); err != nil {
+		return err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if err := f.begin("SetCanvasChannelAccess"); err != nil {
+		return err
+	}
+	c := f.canvases[canvasID]
+	if c == nil {
+		return canvasNotFound("canvases.access.set")
+	}
+	if f.archived(channelID) {
+		return &slackapi.APIError{Method: "canvases.access.set", Code: "is_archived"}
+	}
+	c.Access[channelID] = level
+	return nil
 }

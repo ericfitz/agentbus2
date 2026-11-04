@@ -25,6 +25,9 @@ var (
 	ErrChannelNotFound = errors.New("slack: no such private channel")
 	// ErrUserNotFound is users_not_found or user_not_found.
 	ErrUserNotFound = errors.New("slack: user not found")
+	// ErrCanvasAccessLevel is SetCanvasChannelAccess with a level other than
+	// "read" or "write"; no call is made.
+	ErrCanvasAccessLevel = errors.New("slack: canvas access level must be read or write")
 )
 
 // RateLimitedError is a 429 answer; RetryAfter is the Retry-After wait.
@@ -109,6 +112,10 @@ type Event struct {
 	Message       Message
 }
 
+// CanvasTab is one canvas tab of a channel; ID is the canvas file ID
+// (data.file_id), Label the tab's label.
+type CanvasTab struct{ ID, Label string }
+
 // Client is every Slack call the bridge makes.
 //
 // Invite invites one user per Web API call (no force) so each user's error
@@ -126,6 +133,14 @@ type Event struct {
 // History's per-page order is unspecified (real Slack returns newest first);
 // callers that need order read all pages and sort by ts.
 //
+// The canvas methods never return ErrChannelGone or another sentinel: every
+// Slack code is an *APIError{Method, Code} with the Web API method name
+// (conversations.canvases.create, conversations.info, canvases.sections.lookup,
+// canvases.edit, canvases.access.set), and a 429 is a *RateLimitedError.
+// SetCanvasChannelAccess accepts the levels "read" and "write" only
+// (ErrCanvasAccessLevel, before any call). ChannelCanvases lists the channel's
+// canvas tabs.
+//
 // RunSocket acks each envelope before calling handle, calls handle with
 // EventConnected after every (re)connect, and returns nil when ctx ends.
 type Client interface {
@@ -141,6 +156,11 @@ type Client interface {
 	UserInfo(ctx context.Context, userID string) (User, error)
 	LookupByEmail(ctx context.Context, email string) (User, error)
 	RunSocket(ctx context.Context, handle func(context.Context, Event)) error
+	CreateChannelCanvas(ctx context.Context, channelID, title, markdown string) (string, error)
+	ChannelCanvases(ctx context.Context, channelID string) ([]CanvasTab, error)
+	CanvasContains(ctx context.Context, canvasID, text string) (bool, error)
+	ReplaceCanvas(ctx context.Context, canvasID, markdown string) error
+	SetCanvasChannelAccess(ctx context.Context, canvasID, channelID, level string) error
 }
 
 // ValidTS reports whether ts is a Slack timestamp: ten digits, a dot, six

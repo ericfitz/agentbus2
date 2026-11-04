@@ -654,3 +654,126 @@ func TestFakePostThenFail(t *testing.T) {
 		f.PostThenFail(nil)
 	}()
 }
+
+func apiCode(t *testing.T, err error) string {
+	t.Helper()
+	var ae *slackapi.APIError
+	if !errors.As(err, &ae) {
+		t.Fatalf("not an APIError: %#v", err)
+	}
+	return ae.Code
+}
+
+func TestFakeCanvasLifecycle(t *testing.T) {
+	ctx := context.Background()
+	f := New(self)
+	id, err := f.CreateChannelCanvas(ctx, "C1", "Status", "# agentmesh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cv, ok := f.Canvas(id)
+	if !ok || cv.Label != "Status" || cv.Markdown != "# agentmesh" || len(cv.Access) != 0 || cv.ChannelID != "C1" {
+		t.Fatalf("canvas %+v %v", cv, ok)
+	}
+	tabs, _ := f.ChannelCanvases(ctx, "C1")
+	if len(tabs) != 1 || tabs[0] != (slackapi.CanvasTab{ID: id, Label: "Status"}) {
+		t.Fatalf("tabs %v", tabs)
+	}
+	if _, err := f.CreateChannelCanvas(ctx, "C1", "Again", "x"); apiCode(t, err) != "free_team_canvas_tab_already_exists" {
+		t.Fatalf("second create: %v", err)
+	}
+	if ok, _ := f.CanvasContains(ctx, id, "agentmesh"); !ok {
+		t.Error("contains agentmesh")
+	}
+	if ok, _ := f.CanvasContains(ctx, id, "zzz"); ok {
+		t.Error("contains zzz")
+	}
+	if err := f.ReplaceCanvas(ctx, id, "# new"); err != nil {
+		t.Fatal(err)
+	}
+	if cv, _ = f.Canvas(id); cv.Markdown != "# new" {
+		t.Errorf("markdown %q", cv.Markdown)
+	}
+	if err := f.SetCanvasChannelAccess(ctx, id, "C1", "read"); err != nil {
+		t.Fatal(err)
+	}
+	if cv, _ = f.Canvas(id); cv.Access["C1"] != "read" {
+		t.Errorf("access %v", cv.Access)
+	}
+	n := f.Calls("SetCanvasChannelAccess")
+	if err := f.SetCanvasChannelAccess(ctx, id, "C1", "owner"); !errors.Is(err, slackapi.ErrCanvasAccessLevel) {
+		t.Fatalf("owner: %v", err)
+	}
+	if f.Calls("SetCanvasChannelAccess") != n {
+		t.Error("a bad level must not count a call")
+	}
+	f.DeleteCanvasByHand(id)
+	if err := f.ReplaceCanvas(ctx, id, "x"); apiCode(t, err) != "canvas_not_found" {
+		t.Errorf("replace: %v", err)
+	}
+	if _, err := f.CanvasContains(ctx, id, "x"); apiCode(t, err) != "canvas_not_found" {
+		t.Errorf("contains: %v", err)
+	}
+	f.ArchiveByHand("C1")
+	if _, err := f.CreateChannelCanvas(ctx, "C1", "S", "x"); apiCode(t, err) != "is_archived" {
+		t.Errorf("create archived: %v", err)
+	}
+}
+
+func TestFakeCanvasArchivedAndHelpers(t *testing.T) {
+	ctx := context.Background()
+	f := New(self)
+	id, _ := f.CreateChannelCanvas(ctx, "C1", "S", "x")
+	f.ArchiveByHand("C1")
+	if err := f.ReplaceCanvas(ctx, id, "y"); apiCode(t, err) != "is_archived" {
+		t.Errorf("replace: %v", err)
+	}
+	if err := f.SetCanvasChannelAccess(ctx, id, "C1", "write"); apiCode(t, err) != "is_archived" {
+		t.Errorf("access: %v", err)
+	}
+	if err := f.SetCanvasChannelAccess(ctx, "Fnone", "C2", "read"); apiCode(t, err) != "canvas_not_found" {
+		t.Errorf("unknown: %v", err)
+	}
+	f2 := New(self)
+	a := f2.AddCanvas("C1", "Other", "m")
+	f2.EmptyTabsNext(1)
+	if tabs, _ := f2.ChannelCanvases(ctx, "C1"); len(tabs) != 0 {
+		t.Errorf("EmptyTabsNext: %v", tabs)
+	}
+	if tabs, _ := f2.ChannelCanvases(ctx, "C1"); len(tabs) != 1 || tabs[0].ID != a {
+		t.Errorf("after: %v", tabs)
+	}
+	f2.DelayCanvas(50 * time.Millisecond)
+	start := time.Now()
+	_, _ = f2.CanvasContains(ctx, a, "m")
+	if time.Since(start) < 50*time.Millisecond {
+		t.Error("DelayCanvas did not delay")
+	}
+	f2.DelayCanvas(0)
+}
+
+func TestFakeCanvasFailAndRateLimit(t *testing.T) {
+	ctx := context.Background()
+	f := New(self)
+	id := f.AddCanvas("C1", "Tab", "m")
+	if f.Calls("CreateChannelCanvas") != 0 {
+		t.Error("AddCanvas counted a call")
+	}
+	if tabs, _ := f.ChannelCanvases(ctx, "C1"); len(tabs) != 1 || tabs[0].Label != "Tab" {
+		t.Fatalf("tabs %v", tabs)
+	}
+	boom := errors.New("boom")
+	f.FailNext("ReplaceCanvas", boom)
+	if err := f.ReplaceCanvas(ctx, id, "x"); !errors.Is(err, boom) {
+		t.Fatalf("fail: %v", err)
+	}
+	if err := f.ReplaceCanvas(ctx, id, "x"); err != nil {
+		t.Fatal(err)
+	}
+	f.RateLimit("CreateChannelCanvas", 1, time.Second)
+	_, err := f.CreateChannelCanvas(ctx, "C2", "S", "x")
+	var rl *slackapi.RateLimitedError
+	if !errors.As(err, &rl) || rl.RetryAfter != time.Second {
+		t.Fatalf("rate limit: %v", err)
+	}
+}

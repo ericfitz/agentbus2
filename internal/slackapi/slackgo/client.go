@@ -72,9 +72,11 @@ func New(appToken, botToken string, opts Options) (*Client, error) {
 	return &Client{api: slack.New(botToken, so...), log: log}, nil
 }
 
-// mapErr maps a slack-go error to the slackapi errors. method names the Web API
-// method for the error text. nil maps to nil.
-func mapErr(method string, err error) error {
+// mapCode maps a slack-go error to a *slackapi.RateLimitedError, a
+// *slackapi.APIError carrying Slack's own code (or http_N), or a wrapped
+// error, without any sentinel. method names the Web API method for the error
+// text. nil maps to nil.
+func mapCode(method string, err error) error {
 	if err == nil {
 		return nil
 	}
@@ -84,7 +86,21 @@ func mapErr(method string, err error) error {
 	}
 	var se slack.SlackErrorResponse
 	if errors.As(err, &se) {
-		switch se.Err {
+		return &slackapi.APIError{Method: method, Code: se.Err}
+	}
+	var sc slack.StatusCodeError
+	if errors.As(err, &sc) {
+		return &slackapi.APIError{Method: method, Code: "http_" + strconv.Itoa(sc.Code)}
+	}
+	return fmt.Errorf("slack: %s: %w", method, err)
+}
+
+// mapErr is mapCode plus the sentinels the channel methods return.
+func mapErr(method string, err error) error {
+	err = mapCode(method, err)
+	var ae *slackapi.APIError
+	if errors.As(err, &ae) {
+		switch ae.Code {
 		case "name_taken":
 			return slackapi.ErrNameTaken
 		case "already_archived":
@@ -94,13 +110,8 @@ func mapErr(method string, err error) error {
 		case "users_not_found", "user_not_found":
 			return slackapi.ErrUserNotFound
 		}
-		return &slackapi.APIError{Method: method, Code: se.Err}
 	}
-	var sc slack.StatusCodeError
-	if errors.As(err, &sc) {
-		return &slackapi.APIError{Method: method, Code: "http_" + strconv.Itoa(sc.Code)}
-	}
-	return fmt.Errorf("slack: %s: %w", method, err)
+	return err
 }
 
 // AuthTest implements slackapi.Client.
