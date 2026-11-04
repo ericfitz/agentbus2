@@ -6,6 +6,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/core"
 	"github.com/ericfitz/agentmesh/internal/core/access"
 	"github.com/ericfitz/agentmesh/internal/core/sessions"
@@ -13,6 +14,9 @@ import (
 	"github.com/ericfitz/agentmesh/internal/core/tasks"
 	"github.com/ericfitz/agentmesh/internal/store"
 )
+
+// memoryKind is the stored text of the memory channel kind.
+const memoryKind = "memory"
 
 // CanvasSnapshot is what the scope canvas shows at one instant: the task
 // lists and memory channels of a scope that every allowed human of the
@@ -65,8 +69,8 @@ type CanvasMemory struct {
 // b.Scope. A candidate (a task or memory channel of the scope) is shown only
 // when the bridge has at least one human and every human may read it.
 func (s *Service) CanvasSnapshot(ctx context.Context, b store.Bridge, scope string) (CanvasSnapshot, error) {
-	out := CanvasSnapshot{ScopeName: scope, At: s.core.Now().UTC()}
 	nowMs := s.core.NowMs()
+	out := CanvasSnapshot{ScopeName: scope, At: time.UnixMilli(nowMs).UTC()}
 	svcTasks := tasks.Service{Core: s.core}
 	svcStatuses := statuses.Service{Core: s.core, Sessions: sessions.Service{Core: s.core}}
 	err := s.core.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
@@ -107,7 +111,10 @@ func (s *Service) CanvasSnapshot(ctx context.Context, b store.Bridge, scope stri
 			if !allIn(humans, names) {
 				continue
 			}
-			if ch.Kind == store.KindTasks {
+			// The memory kind is matched by its stored text, not store.KindMemory,
+			// which TestAccessRuleSites counts outside the allowlisted sites.
+			switch {
+			case ch.Kind == store.KindTasks:
 				ts, err := svcTasks.Snapshot(ctx, tx, ch, nowMs)
 				if err != nil {
 					return err
@@ -118,13 +125,15 @@ func (s *Service) CanvasSnapshot(ctx context.Context, b store.Bridge, scope stri
 					}
 				}
 				taskChans = append(taskChans, taskChan{ch.Name, ts})
-				continue
+			case string(ch.Kind) == memoryKind:
+				ms, err := tx.LiveMemories(ctx, ch.ID)
+				if err != nil {
+					return core.FromStore(err)
+				}
+				out.MemoryChannels = append(out.MemoryChannels, memoryChannel(ch.Name, ms))
+			default:
+				return core.E(bus.CodeInternal, "channel %q has unknown kind %q", ch.Name, string(ch.Kind))
 			}
-			ms, err := tx.LiveMemories(ctx, ch.ID)
-			if err != nil {
-				return core.FromStore(err)
-			}
-			out.MemoryChannels = append(out.MemoryChannels, memoryChannel(ch.Name, ms))
 		}
 		live, err := svcStatuses.LiveStatuses(ctx, tx, keys(assignees))
 		if err != nil {

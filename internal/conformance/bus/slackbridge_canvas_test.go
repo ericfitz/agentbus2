@@ -52,6 +52,20 @@ func TestCanvasSnapshotVisibility(t *testing.T) {
 		f.slKindChannel("job1-private", "job1", ab2store.KindTasks, []ab2store.ACLEntry{slEntry("job1-coder", R, W, A), slEntry(slAlice, R), slEntry(ab2store.Admins, A)})
 		f.slKindChannel("job1-other", "job1", ab2store.KindMemory, []ab2store.ACLEntry{slEntry("job1-coder", R, W, A), slEntry(ab2store.Admins, A)})
 
+		// Every human must read: dropping the first or the last human hides the list.
+		partial := func(drop int) []ab2store.ACLEntry {
+			acl := []ab2store.ACLEntry{slEntry("job1-coder", R, W, A), slEntry(ab2store.Admins, A)}
+			for i, n := range canvasHumans {
+				if i != drop {
+					acl = append(acl, slEntry(n, R))
+				}
+			}
+			return acl
+		}
+		f.slKindChannel("job1-nolast", "job1", ab2store.KindTasks, partial(len(canvasHumans)-1))
+		f.slKindChannel("job1-nofirst", "job1", ab2store.KindTasks, partial(0))
+		f.slKindChannel("job1-nomid", "job1", ab2store.KindMemory, partial(4))
+
 		s := f.mustSnap()
 		tl, mc := canvasListNames(s)
 		if s.ScopeName != "job1" || !slices.Equal(tl, []string{"job1-tasks"}) || !slices.Equal(mc, []string{"job1-notes"}) {
@@ -233,6 +247,29 @@ func TestCanvasSnapshotMemories(t *testing.T) {
 		if !m.EditedAt.Equal(editAt) || m.Sender != "job1-coder" || !slices.Equal(m.Tags, []string{"area:db"}) ||
 			m.Subject != "Postgres needs TCP keepalive" || m.Type != "fact" || m.Content != "c1 edited" {
 			t.Errorf("edited memory %+v", m)
+		}
+	})
+}
+
+// TestCanvasSnapshotUnknownKindUnreachable pins the invariant behind the
+// snapshot's error branch for an unknown kind: the Store refuses to hold a
+// channel of any kind but ordinary, memory and tasks, so the branch is
+// defensive and cannot be reached through it.
+func TestCanvasSnapshotUnknownKindUnreachable(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newInFixOpts(t, e, harnessOptions{}, nil)
+		err := f.h.raw.Tx(context.Background(), func(ctx context.Context, tx ab2store.Tx) error {
+			seq, err := tx.MaxSeq(ctx)
+			if err != nil {
+				return err
+			}
+			_, err = tx.CreateChannel(ctx, ab2store.ChannelCreate{
+				Name: "job1-odd", Kind: ab2store.Kind("bogus"), Creator: "job1-coder", Scope: "job1", CreatedSeq: seq, CreatedAt: f.h.core.NowMs(),
+			})
+			return err
+		})
+		if !errors.Is(err, ab2store.ErrInvalid) {
+			t.Fatalf("CreateChannel with an unknown kind: %v", err)
 		}
 	})
 }
