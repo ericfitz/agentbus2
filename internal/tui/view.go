@@ -193,7 +193,7 @@ func (m Model) render() string {
 	dim := m.theme.Style(m.theme.Dim)
 	header := m.renderHeader()
 	pane := m.stream.View()
-	if m.board.open {
+	if m.boardShown() {
 		pane = m.renderBoard()
 	} else if m.sessSel != "" {
 		pane = m.renderSession()

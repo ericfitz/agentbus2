@@ -14,19 +14,19 @@ import (
 )
 
 // The agents board (issue #10): one line per agent with its self-reported
-// status, opened with enter on the sessions heading, and one agent's status
-// history under it. The data is the status round's (AgentStatuses, every
+// status, shown whenever the sessions heading is selected (ADR 0014
+// decision 20), and one agent's status history under it. The data is the status round's (AgentStatuses, every
 // 5 seconds); the history is fetched only while it is open.
 
-// agentBoard is the board's state: open, the selected agent's identity (not
+// agentBoard is the board's state: focus, the selected agent's identity (not
 // a row index: the rows re-sort every status round, like sessSel) and, while
 // one agent's history is shown, its identity and rows.
 type agentBoard struct {
-	open bool
-	sel  string // selected identity; "" or one that left selects the first row
-	hist string // identity whose history is shown; "" on the board
-	rows []bus.AgentStatus
-	err  error
+	focus bool   // the board takes the keys; otherwise the rail does
+	sel   string // selected identity; "" or one that left selects the first row
+	hist  string // identity whose history is shown; "" on the board
+	rows  []bus.AgentStatus
+	err   error
 }
 
 // boardRow is one line of the board. st is nil for a live agent that never
@@ -137,26 +137,38 @@ func (m *Model) agentHistoryCmd(identity string) tea.Cmd {
 	}
 }
 
-// openBoard shows the board with the first row selected.
-func (m *Model) openBoard() {
-	m.board = agentBoard{open: true}
+// boardShown reports whether the board is the main pane: the rail selection
+// is the sessions heading, collapsed or not (ADR 0014 decision 20).
+func (m Model) boardShown() bool {
+	return m.headSel == secSessions && m.sessSel == ""
 }
 
-// closeBoard hides the board; the selection stays on the sessions heading.
-func (m *Model) closeBoard() {
-	m.board = agentBoard{}
+// selectSessionsHeading selects the sessions heading, which shows the board.
+// It expands and collapses nothing.
+func (m *Model) selectSessionsHeading() {
+	m.leaveSession()
+	m.cursor = -1
 	m.headSel = secSessions
+}
+
+// syncBoard drops the history and the focus once the board is no longer
+// shown, so any rail selection change closes them.
+func (m *Model) syncBoard() {
+	if !m.boardShown() {
+		m.board.focus = false
+		m.board.hist, m.board.rows, m.board.err = "", nil, nil
+	}
 }
 
 // onAgentHistory stores a history answer for the identity still shown.
 func (m *Model) onAgentHistory(msg agentHistoryMsg) {
-	if !m.board.open || m.board.hist != msg.identity {
+	if !m.boardShown() || m.board.hist != msg.identity {
 		return // stale: the history was closed or another one opened
 	}
 	m.board.rows, m.board.err = msg.rows, msg.err
 }
 
-// updateBoard handles a key while the board is open; every key it does not
+// updateBoard handles a key while the board has focus; every key it does not
 // name is ignored.
 func (m *Model) updateBoard(msg tea.Msg) tea.Cmd {
 	switch keyString(msg) {
@@ -166,12 +178,14 @@ func (m *Model) updateBoard(msg tea.Msg) tea.Cmd {
 		return m.openHelp()
 	case "h":
 		return m.openHealth()
+	case "tab", "shift+tab":
+		m.board.focus = false // an open history stays
 	case "esc":
 		if m.board.hist != "" {
 			m.board.hist, m.board.rows, m.board.err = "", nil, nil
 			return nil
 		}
-		m.closeBoard()
+		m.board.focus = false
 	case "up", "down":
 		rows := m.boardRows()
 		if m.board.hist != "" || len(rows) == 0 {
@@ -195,7 +209,7 @@ func (m *Model) updateBoard(msg tea.Msg) tea.Cmd {
 	return nil
 }
 
-// renderBoard is the main pane while the board is open.
+// renderBoard is the main pane while the board is shown.
 func (m Model) renderBoard() string {
 	w, h := m.stream.Width(), m.stream.Height()
 	var lines []string

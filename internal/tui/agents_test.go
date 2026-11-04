@@ -68,27 +68,141 @@ func rowNames(m Model, want ...string) []string {
 	return out
 }
 
-// open note: agent-status 4
-func TestAgentsBoardOpensFromSessionsHeading(t *testing.T) {
+// TestBoardShownOnHeadingByArrows: the board is the main pane exactly while
+// the sessions heading is selected.
+func TestBoardShownOnHeadingByArrows(t *testing.T) {
 	f, _ := boardFixture(t)
-	f.key("enter")
-	if !f.m.board.open {
-		t.Fatal("enter on the sessions heading did not open the board")
+	if !f.m.boardShown() {
+		t.Fatal("the sessions heading is selected, yet no board")
 	}
 	if v := stripANSI(f.m.View().Content); !strings.Contains(v, "agents (") {
 		t.Fatalf("the pane lacks the board title:\n%s", v)
 	}
+	f.key("up") // the memories heading or the last row above
+	if f.m.boardShown() {
+		t.Fatal("up off the heading still shows the board")
+	}
+	if v := stripANSI(f.m.View().Content); strings.Contains(v, "agents (") {
+		t.Fatalf("the board title shows off the heading:\n%s", v)
+	}
+	f.key("down")
+	if !f.m.boardShown() {
+		t.Fatal("down onto the heading did not show the board")
+	}
+}
+
+// TestBoardKeyB: b selects the sessions heading from a channel row and
+// shows the board; in compose and in a prompt it types a b.
+func TestBoardKeyB(t *testing.T) {
+	f, _ := boardFixture(t)
+	f.key("home")
+	f.key("down") // a channel row below the channels heading
+	if f.m.boardShown() {
+		t.Fatal("setup: the board still shows")
+	}
+	f.key("b")
+	if !f.m.boardShown() || f.m.collapsed[secSessions] {
+		t.Fatalf("b: shown=%v collapsed=%v, want the board with nothing collapsed", f.m.boardShown(), f.m.collapsed[secSessions])
+	}
+	f.key("tab")
+	f.key("b") // b works with focus on the board
+	if !f.m.boardShown() {
+		t.Fatal("b with the board focused lost the board")
+	}
 	f.key("esc")
-	if f.m.board.open || f.m.headSel != secSessions {
-		t.Fatalf("esc: open=%v headSel=%d, want closed with the sessions heading selected", f.m.board.open, f.m.headSel)
+	f.key("home")
+	f.key("down")
+	f.key("i")
+	f.key("b")
+	if f.m.mode != modeInsert || f.m.boardShown() || f.m.compose.Value() != "b" {
+		t.Fatalf("b in compose: mode=%v shown=%v draft=%q, want a typed b", f.m.mode, f.m.boardShown(), f.m.compose.Value())
 	}
-	f.key("left")
-	if !f.m.collapsed[secSessions] || f.m.board.open {
-		t.Fatalf("left on the heading: collapsed=%v open=%v, want collapsed and no board", f.m.collapsed[secSessions], f.m.board.open)
+	f.key("esc")
+	f.key("esc")
+	f.key("c") // the channel create prompt
+	if !f.m.prompt.active {
+		t.Fatal("setup: c did not open the prompt")
 	}
-	f.key("right")
-	if f.m.collapsed[secSessions] || f.m.board.open {
-		t.Fatalf("right on the heading: collapsed=%v open=%v, want expanded and no board", f.m.collapsed[secSessions], f.m.board.open)
+	f.key("b")
+	if f.m.boardShown() || !strings.Contains(f.m.prompt.input.Value(), "b") {
+		t.Fatalf("b in a prompt: shown=%v input=%q, want a typed b", f.m.boardShown(), f.m.prompt.input.Value())
+	}
+}
+
+// TestSessionsHeadingEnterCollapses: enter and the arrows on the sessions
+// heading collapse and expand it like any heading; the board still shows.
+func TestSessionsHeadingEnterCollapses(t *testing.T) {
+	f, _ := boardFixture(t)
+	for _, step := range []struct {
+		key       string
+		collapsed bool
+	}{{"enter", true}, {"enter", false}, {"left", true}, {"right", false}} {
+		f.key(step.key)
+		if f.m.collapsed[secSessions] != step.collapsed || !f.m.boardShown() {
+			t.Fatalf("%s: collapsed=%v shown=%v, want collapsed=%v and the board", step.key, f.m.collapsed[secSessions], f.m.boardShown(), step.collapsed)
+		}
+	}
+}
+
+// TestBoardFocus: tab focuses the board, up and down then move its row, esc
+// returns focus to the rail and the board stays.
+func TestBoardFocus(t *testing.T) {
+	f, _ := boardFixture(t)
+	f.key("down") // rail focus: off the heading
+	f.key("up")
+	if f.m.board.focus {
+		t.Fatal("the board has focus before tab")
+	}
+	f.key("tab")
+	if !f.m.board.focus {
+		t.Fatal("tab did not focus the board")
+	}
+	f.key("down")
+	if f.m.boardSel() != 1 || !f.m.boardShown() {
+		t.Fatalf("down with focus: sel=%d shown=%v, want row 1 on the board", f.m.boardSel(), f.m.boardShown())
+	}
+	f.key("esc")
+	if f.m.board.focus || !f.m.boardShown() {
+		t.Fatalf("esc: focus=%v shown=%v, want the rail focused and the board shown", f.m.board.focus, f.m.boardShown())
+	}
+	f.key("down") // rail again: leaves the heading
+	if f.m.boardShown() {
+		t.Fatal("down after esc did not move the rail")
+	}
+}
+
+// TestBoardHistoryLifetime: a history survives tab away and back, esc
+// returns to the board on the same row, and any other rail selection closes
+// it.
+func TestBoardHistoryLifetime(t *testing.T) {
+	f, _ := boardFixture(t)
+	f.key("tab")
+	f.key("down")
+	id := f.m.boardRows()[f.m.boardSel()].identity
+	f.key("enter")
+	if f.m.board.hist != id {
+		t.Fatalf("enter opened %q, want %q", f.m.board.hist, id)
+	}
+	f.key("tab") // focus back to the rail
+	f.key("tab") // and to the board
+	if f.m.board.hist != id || !f.m.board.focus {
+		t.Fatalf("tab away and back: hist=%q focus=%v, want %q focused", f.m.board.hist, f.m.board.focus, id)
+	}
+	f.key("esc")
+	if f.m.board.hist != "" || f.m.boardRows()[f.m.boardSel()].identity != id {
+		t.Fatalf("esc: hist=%q row=%q, want the board on %q", f.m.board.hist, f.m.boardRows()[f.m.boardSel()].identity, id)
+	}
+	f.key("enter")
+	f.key("esc") // history -> board
+	f.key("enter")
+	f.key("tab") // rail focus with the history open
+	f.key("up")  // another rail row
+	if f.m.boardShown() || f.m.board.hist != "" || f.m.board.focus {
+		t.Fatalf("selecting another row: shown=%v hist=%q focus=%v, want all closed", f.m.boardShown(), f.m.board.hist, f.m.board.focus)
+	}
+	f.key("down")
+	if f.m.board.hist != "" {
+		t.Fatalf("history came back: %q", f.m.board.hist)
 	}
 }
 
@@ -99,7 +213,6 @@ func TestAgentsBoardOrder(t *testing.T) {
 	if got := rowNames(f.m, want...); !slices.Equal(got, want) {
 		t.Fatalf("row order = %v, want %v", got, want)
 	}
-	f.key("enter")
 	lines := strings.Split(stripANSI(f.m.View().Content), "\n")
 	at := func(sub string) int {
 		return slices.IndexFunc(lines, func(l string) bool { return strings.Contains(l, sub) })
@@ -128,7 +241,7 @@ func TestAgentsBoardHistoryOldestFirst(t *testing.T) {
 		statusSet{bus.StatusImplementing, "second thought", ""},
 		statusSet{bus.StatusReviewing, "third thought", "tests red"})
 	f.run(f.m.statusCmd())
-	f.key("enter")
+	f.key("tab")
 	for i := 0; i < 20 && f.m.boardRows()[f.m.boardSel()].identity != "hal"; i++ {
 		f.key("down")
 	}
@@ -153,8 +266,8 @@ func TestAgentsBoardHistoryOldestFirst(t *testing.T) {
 		t.Fatalf("a status round while open made %d history calls in all, want 2", n)
 	}
 	f.key("esc")
-	if !f.m.board.open || f.m.board.hist != "" {
-		t.Fatalf("esc from history: open=%v hist=%q, want the board", f.m.board.open, f.m.board.hist)
+	if !f.m.boardShown() || !f.m.board.focus || f.m.board.hist != "" {
+		t.Fatalf("esc from history: shown=%v hist=%q, want the board", f.m.boardShown(), f.m.board.hist)
 	}
 	if n := cb.count("AgentStatusHistory") - before; n != 2 {
 		t.Fatalf("esc to the board made a call: %d", n)
@@ -209,11 +322,11 @@ func TestAttentionCountLiveOnly(t *testing.T) {
 
 func TestAgentsBoardKeys(t *testing.T) {
 	f, _ := boardFixture(t)
-	f.key("enter")
+	f.key("tab")
 	f.key("x") // ignored
 	f.key("i") // ignored: no compose
-	if !f.m.board.open || f.m.mode != modeNormal {
-		t.Fatalf("a stray key changed the state: open=%v mode=%v", f.m.board.open, f.m.mode)
+	if !f.m.boardShown() || f.m.mode != modeNormal {
+		t.Fatalf("a stray key changed the state: shown=%v mode=%v", f.m.boardShown(), f.m.mode)
 	}
 	f.key("down")
 	f.key("down")
@@ -237,8 +350,8 @@ func TestAgentsBoardKeys(t *testing.T) {
 		t.Fatalf("? did not open help, mode=%v", f.m.mode)
 	}
 	f.key("esc")
-	if !f.m.board.open {
-		t.Fatal("closing help closed the board")
+	if !f.m.boardShown() || !f.m.board.focus {
+		t.Fatal("closing help lost the board or its focus")
 	}
 	f.key("h")
 	if f.m.mode != modeHealth {
@@ -265,7 +378,7 @@ func TestStatusRoundCallsAgentStatuses(t *testing.T) {
 // Important 1).
 func TestAgentsBoardSelectionSurvivesResort(t *testing.T) {
 	f, _ := boardFixture(t)
-	f.key("enter")
+	f.key("tab")
 	f.key("down") // bob -> amy
 	if got := f.m.boardRows()[f.m.boardSel()].identity; got != "amy" {
 		t.Fatalf("selected %q, want amy", got)
@@ -299,7 +412,7 @@ func TestAgentsBoardScrolls(t *testing.T) {
 	if h >= len(f.m.boardRows())+2 {
 		t.Fatalf("pane (%d lines) is not smaller than the board (%d rows)", h, len(f.m.boardRows()))
 	}
-	f.key("enter")
+	f.key("tab")
 	for range len(f.m.boardRows()) {
 		f.key("down")
 		sel := f.m.boardRows()[f.m.boardSel()].identity
@@ -320,7 +433,7 @@ func TestAgentsBoardScrolls(t *testing.T) {
 // title and the esc hint (final review Minor 11).
 func TestAgentsBoardFailedRefreshKeepsTitle(t *testing.T) {
 	f, _ := boardFixture(t)
-	f.key("enter")
+	f.key("tab")
 	f.key("enter")
 	id := f.m.board.hist
 	if id == "" {

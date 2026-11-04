@@ -96,7 +96,7 @@ type Model struct {
 	collapsed    [railSections]bool // sections drawn as their heading alone; lives only in this running TUI
 	identities   []bus.IdentityInfo
 	agents       []bus.AgentStatusEntry // the last status round's agent statuses
-	board        agentBoard             // the agents board, opened with enter on the sessions heading
+	board        agentBoard             // the agents board, shown while the sessions heading is selected
 	sessionsSeen map[string]time.Time   // session display name -> last listed live
 	admin        bool
 	status       bus.Status
@@ -236,6 +236,7 @@ func keyString(msg tea.Msg) string {
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	next, cmd := m.update(msg)
 	if nm, ok := next.(Model); ok {
+		nm.syncBoard()
 		nm.scrollRail()
 		next = nm
 	}
@@ -517,10 +518,10 @@ func (m *Model) updateNormal(msg tea.Msg) tea.Cmd {
 	if m.prompt.active {
 		return m.updatePrompt(msg)
 	}
-	if m.board.open {
+	k := keyString(msg)
+	if m.boardShown() && m.board.focus && k != "b" {
 		return m.updateBoard(msg)
 	}
-	k := keyString(msg)
 	if k != "" && !isVersionKey(k) {
 		m.mem = memView{} // any other key shows the latest version again
 	}
@@ -543,10 +544,6 @@ func (m *Model) updateNormal(msg tea.Msg) tea.Cmd {
 	// reply to the cursor message in the stream, compose to the selected
 	// channel otherwise.
 	case "enter":
-		if m.headSel == secSessions && m.pane() == paneChannels {
-			m.openBoard() // open note: agent-status 4
-			return nil
-		}
 		if m.headSel >= 0 && m.pane() == paneChannels {
 			m.toggleSection(m.headSel, !m.collapsed[m.headSel])
 			return nil
@@ -614,7 +611,14 @@ func (m *Model) updateNormal(msg tea.Msg) tea.Cmd {
 		} else {
 			m.closeCursor()
 		}
+	case "b":
+		m.selectSessionsHeading() // ADR 0014 decision 20
+		return nil
 	case "tab", "shift+tab", "home":
+		if m.boardShown() && k != "home" {
+			m.board.focus = true
+			return nil
+		}
 		return m.paneKey(msg)
 	case "pgup", "pgdown":
 		return m.scrollStream(msg)
@@ -1310,8 +1314,8 @@ func (m *Model) onStatus(msg statusMsg) tea.Cmd {
 	}
 	m.reconcileSession()
 	cmd := m.setChannels(msg.channels, msg.tags, "oldest")
-	if m.board.open && m.board.hist != "" {
-		// An open history is refetched once per round (open note: agent-status 14).
+	if m.boardShown() && m.board.hist != "" {
+		// An open history is refetched once per round (ADR 0014 decision 20).
 		return tea.Batch(cmd, m.agentHistoryCmd(m.board.hist))
 	}
 	return cmd
