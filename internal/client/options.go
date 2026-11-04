@@ -106,6 +106,8 @@ type Resolved struct {
 	Identity, IdentitySource string
 	ConfigDir, DataDir       string
 	Credentials              credential.Store
+	// Hooks is config.json's "hooks" (the zero value when absent).
+	Hooks profile.HookSettings
 }
 
 // Resolve applies the directory rules, loads config.json and selects the
@@ -137,6 +139,9 @@ func Resolve(o Options) (Resolved, error) {
 	}
 	if r.Profile, err = resolveProfile(cfg, name, o.Server); err != nil {
 		return Resolved{}, err
+	}
+	if cfg.Hooks != nil {
+		r.Hooks = *cfg.Hooks
 	}
 	if err := checkCredentialFlag(o, r.Profile); err != nil {
 		return Resolved{}, err

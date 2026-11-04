@@ -163,6 +163,8 @@ type Config struct {
 	Profiles map[string]Profile `json:"profiles"`
 	// TUI holds the terminal UI's settings; nil when config.json has no "tui".
 	TUI *TUISettings `json:"tui,omitempty"` // pending Eric: Milestone 8 item 1
+	// Hooks holds the harness hooks' settings; nil when config.json has no "hooks".
+	Hooks *HookSettings `json:"hooks,omitempty"`
 }
 
 // Getenv looks name up in environ with os.Environ semantics (the last
@@ -183,6 +185,7 @@ func DefaultProfile() Profile { return Profile{Name: "default", Mode: ModeLocal}
 type configFile struct {
 	Profiles map[string]Profile `json:"profiles"`
 	TUI      *TUISettings       `json:"tui,omitempty"`
+	Hooks    *HookSettings      `json:"hooks,omitempty"`
 }
 
 // Load reads path strictly: unknown keys, null, trailing content and an empty
@@ -231,6 +234,15 @@ func Load(path string) (Config, error) {
 		}
 		c.TUI = f.TUI
 	}
+	if v, ok := raw["hooks"]; ok && bytes.Equal(bytes.TrimSpace(v), []byte("null")) {
+		return Config{}, fmt.Errorf(`%s: "hooks" must not be null`, path)
+	}
+	if f.Hooks != nil {
+		if err := f.Hooks.Validate(); err != nil {
+			return Config{}, fmt.Errorf("%s: %w", path, err)
+		}
+		c.Hooks = f.Hooks
+	}
 	for name, p := range f.Profiles {
 		if err := repoconfig.ValidProfileName(name); err != nil {
 			return Config{}, fmt.Errorf("%s: profile %q: %w", path, name, err)
@@ -252,9 +264,14 @@ func (c Config) Save() error {
 	if c.Path == "" {
 		return errors.New("config path is empty")
 	}
-	out := configFile{Profiles: make(map[string]Profile, len(c.Profiles)), TUI: c.TUI}
+	out := configFile{Profiles: make(map[string]Profile, len(c.Profiles)), TUI: c.TUI, Hooks: c.Hooks}
 	if c.TUI != nil {
 		if err := c.TUI.Validate(); err != nil {
+			return err
+		}
+	}
+	if c.Hooks != nil {
+		if err := c.Hooks.Validate(); err != nil {
 			return err
 		}
 	}
@@ -386,6 +403,33 @@ func (s TUISettings) Validate() error {
 		}
 	}
 	return nil
+}
+
+// DefaultStatusStaleMinutes is hooks.status_stale_minutes when it is unset.
+const DefaultStatusStaleMinutes = 30
+
+// HookSettings is the "hooks" object of config.json.
+type HookSettings struct {
+	// StatusStaleMinutes is how old a working status may get before the Stop
+	// hook nudges the agent: 0 to 1440, 0 off; nil is the default, 30.
+	StatusStaleMinutes *int `json:"status_stale_minutes,omitempty"`
+}
+
+// Validate checks the range of every set field.
+func (s HookSettings) Validate() error {
+	if m := s.StatusStaleMinutes; m != nil && (*m < 0 || *m > 1440) {
+		return fmt.Errorf("hooks.status_stale_minutes must be between 0 and 1440, got %d", *m)
+	}
+	return nil
+}
+
+// StaleMinutes is the stale threshold in minutes; a nil receiver or an unset
+// field answers the default.
+func (s *HookSettings) StaleMinutes() int {
+	if s == nil || s.StatusStaleMinutes == nil {
+		return DefaultStatusStaleMinutes
+	}
+	return *s.StatusStaleMinutes
 }
 
 // SetTUIRailWidth loads the config at path, sets tui.rail_width (creating

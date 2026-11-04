@@ -421,3 +421,67 @@ func TestSetTUIRailWidthKeepsProfiles(t *testing.T) {
 		}
 	}
 }
+
+func TestHookSettings(t *testing.T) {
+	cases := []struct {
+		name, body string
+		want       int
+		errPart    string
+	}{
+		{"absent", `{"profiles":{}}`, 30, ""},
+		{"empty hooks", `{"profiles":{},"hooks":{}}`, 30, ""},
+		{"zero", `{"profiles":{},"hooks":{"status_stale_minutes":0}}`, 0, ""},
+		{"max", `{"profiles":{},"hooks":{"status_stale_minutes":1440}}`, 1440, ""},
+		{"negative", `{"profiles":{},"hooks":{"status_stale_minutes":-1}}`, 0, "hooks.status_stale_minutes must be between 0 and 1440"},
+		{"too large", `{"profiles":{},"hooks":{"status_stale_minutes":1441}}`, 0, "hooks.status_stale_minutes must be between 0 and 1440"},
+		{"unknown key", `{"profiles":{},"hooks":{"bogus":1}}`, 0, "bogus"},
+		{"null", `{"profiles":{},"hooks":null}`, 0, `"hooks" must not be null`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := Load(writeCfg(t, tc.body))
+			if tc.errPart != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.errPart) {
+					t.Fatalf("Load = %v, want %q", err, tc.errPart)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := c.Hooks.StaleMinutes(); got != tc.want {
+				t.Fatalf("StaleMinutes = %d, want %d", got, tc.want)
+			}
+		})
+	}
+	var nilHooks *HookSettings
+	if nilHooks.StaleMinutes() != 30 {
+		t.Fatal("nil receiver is not 30")
+	}
+	bad := -1
+	c := Config{Path: filepath.Join(t.TempDir(), "config.json"), Profiles: map[string]Profile{}, Hooks: &HookSettings{StatusStaleMinutes: &bad}}
+	if err := c.Save(); err == nil || !strings.Contains(err.Error(), "hooks.status_stale_minutes") {
+		t.Fatalf("Save = %v", err)
+	}
+}
+
+func TestSavePreservesHooks(t *testing.T) {
+	p := writeCfg(t, `{"profiles":{"lab":{"mode":"server","server":"https://x.example"}},"hooks":{"status_stale_minutes":45}}`)
+	if err := SetTUIRailWidth(p, 30); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Hooks.StaleMinutes() != 45 {
+		t.Fatalf("after SetTUIRailWidth: %d", c.Hooks.StaleMinutes())
+	}
+	if err := c.Save(); err != nil {
+		t.Fatal(err)
+	}
+	c, err = Load(p)
+	if err != nil || c.Hooks.StaleMinutes() != 45 {
+		t.Fatalf("after Save: %v, %v", c.Hooks, err)
+	}
+}

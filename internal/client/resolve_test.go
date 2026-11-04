@@ -330,3 +330,22 @@ func TestResolveCredentialFlag(t *testing.T) {
 		}
 	})
 }
+
+func TestResolveCarriesHooks(t *testing.T) {
+	e := testkit.NewProfileEnv(t)
+	if err := os.WriteFile(filepath.Join(e.Config, "config.json"), []byte(`{"profiles":{},"hooks":{"status_stale_minutes":12}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	r, err := Resolve(Options{Environ: e.Environ, Cwd: t.TempDir(), FallbackIdentity: "pat"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.Hooks.StaleMinutes(); got != 12 {
+		t.Fatalf("StaleMinutes = %d, want 12", got)
+	}
+	e2 := testkit.NewProfileEnv(t)
+	r, err = Resolve(Options{Environ: e2.Environ, Cwd: t.TempDir(), FallbackIdentity: "pat"})
+	if err != nil || r.Hooks.StaleMinutes() != 30 {
+		t.Fatalf("absent: %d, %v", r.Hooks.StaleMinutes(), err)
+	}
+}
