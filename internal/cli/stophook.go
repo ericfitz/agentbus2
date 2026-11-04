@@ -148,10 +148,14 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 		defer cancel()
 	}
 	statusCh := make(chan statusResult, 1)
-	go func() {
-		e, serr := statusRead(statusCtx, conn.Bus)
-		statusCh <- statusResult{e, serr}
-	}()
+	wantNudge := l.Primary && conn.Resolved.Hooks.StaleMinutes() > 0
+	if wantNudge {
+		read, b := statusRead, conn.Bus
+		go func() {
+			e, serr := read(statusCtx, b)
+			statusCh <- statusResult{e, serr}
+		}()
+	}
 
 	r, err := conn.Bus.Peek(ctx, bus.PeekInput{Session: l.Session})
 	if bus.CodeOf(err) == bus.CodeSessionLapsed {
@@ -166,7 +170,10 @@ func stopHookWork(ctx context.Context, environ []string, stdin io.Reader) hookRe
 	if err != nil {
 		return hookResult{stage: "peek", err: err}
 	}
-	nudge := stopNudgeFor(statusCtx, statusCh, environ, conn.Resolved.Identity, l.Primary, conn.Resolved.Hooks.StaleMinutes())
+	nudge := ""
+	if wantNudge {
+		nudge = stopNudgeFor(statusCtx, statusCh, environ, conn.Resolved.Identity, conn.Resolved.Hooks.StaleMinutes())
+	}
 	if r.Count == 0 {
 		if nudge == "" {
 			return hookResult{}
@@ -209,15 +216,16 @@ func blockResult(reason string) hookResult {
 // and builds the nudge from the bound identity's entry; a failed or late read
 // leaves one hook.log line (stage status) and no nudge. Nothing is read, and
 // nothing logged, when the nudge could not apply anyway.
-func stopNudgeFor(ctx context.Context, ch <-chan statusResult, environ []string, identity string, primary bool, staleMinutes int) string {
-	if !primary || staleMinutes <= 0 {
-		return ""
-	}
+func stopNudgeFor(ctx context.Context, ch <-chan statusResult, environ []string, identity string, staleMinutes int) string {
 	var res statusResult
 	select {
-	case res = <-ch:
-	case <-ctx.Done():
-		res.err = ctx.Err()
+	case res = <-ch: // an answer that arrived is never dropped
+	default:
+		select {
+		case res = <-ch:
+		case <-ctx.Done():
+			res.err = ctx.Err()
+		}
 	}
 	if res.err != nil {
 		if dataDir, err := profile.DataDir(environ); err == nil {
@@ -232,7 +240,7 @@ func stopNudgeFor(ctx context.Context, ch <-chan statusResult, environ []string,
 			break
 		}
 	}
-	return stopNudge(entry, primary, staleMinutes, time.Now())
+	return stopNudge(entry, true, staleMinutes, time.Now())
 }
 
 // RunStopHook is the Stop hook (choice 8, Decision 41): when messages above
