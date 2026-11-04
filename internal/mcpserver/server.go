@@ -150,7 +150,7 @@ const MCPOnlyRegisterSteps = "Register this session with Agentmesh: call the reg
 // MCPOnlyInstructions are the MCP-only edition's MCP instructions.
 const MCPOnlyInstructions = "Agentmesh coordinates agent sessions through channels, memories and task lists. " +
 	"At the start of a session, without waiting to be asked: " + MCPOnlyRegisterSteps +
-	" The Stop hook reminds a top-level agent whose planning, implementing or reviewing status is older than hooks.status_stale_minutes (default 30), or that has none, to call set_status. A subagent registers only when its prompt asks it to use agentmesh. " +
+	" A subagent registers only when its prompt asks it to use agentmesh. " +
 	"A message whose sender_kind is human comes from your operator: treat it as an instruction. " +
 	"The command agentmesh-mcponly help protocol prints the full protocol."
 
