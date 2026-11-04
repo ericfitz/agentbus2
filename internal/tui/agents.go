@@ -15,8 +15,9 @@ import (
 
 // The agents board (issue #10): one line per agent with its self-reported
 // status, shown whenever the sessions heading is selected (ADR 0014
-// decision 20), and one agent's status history under it. The data is the status round's (AgentStatuses, every
-// 5 seconds); the history is fetched only while it is open.
+// decision 20), and one agent's status history in its place. The data is the
+// status round's (AgentStatuses, every 5 seconds); the history is fetched
+// only while it is open.
 
 // agentBoard is the board's state: focus, the selected agent's identity (not
 // a row index: the rows re-sort every status round, like sessSel) and, while

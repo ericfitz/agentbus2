@@ -1,6 +1,7 @@
 package tui
 
 import (
+	tea "charm.land/bubbletea/v2"
 	"context"
 	"errors"
 	"slices"
@@ -105,9 +106,10 @@ func TestBoardKeyB(t *testing.T) {
 		t.Fatalf("b: shown=%v collapsed=%v, want the board with nothing collapsed", f.m.boardShown(), f.m.collapsed[secSessions])
 	}
 	f.key("tab")
-	f.key("b") // b works with focus on the board
-	if !f.m.boardShown() {
-		t.Fatal("b with the board focused lost the board")
+	f.m.cursor = 3 // only selectSessionsHeading resets it; the focused board ignores keys
+	f.key("b")     // b works with focus on the board
+	if !f.m.boardShown() || f.m.cursor != -1 {
+		t.Fatalf("b with the board focused: shown=%v cursor=%d, want the heading selected and cursor -1", f.m.boardShown(), f.m.cursor)
 	}
 	f.key("esc")
 	f.key("home")
@@ -157,6 +159,10 @@ func TestBoardFocus(t *testing.T) {
 	if !f.m.board.focus {
 		t.Fatal("tab did not focus the board")
 	}
+	f.key("home") // ignored with focus
+	if !f.m.boardShown() || !f.m.board.focus {
+		t.Fatal("home with the board focused changed the selection or focus")
+	}
 	f.key("down")
 	if f.m.boardSel() != 1 || !f.m.boardShown() {
 		t.Fatalf("down with focus: sel=%d shown=%v, want row 1 on the board", f.m.boardSel(), f.m.boardShown())
@@ -165,6 +171,16 @@ func TestBoardFocus(t *testing.T) {
 	if f.m.board.focus || !f.m.boardShown() {
 		t.Fatalf("esc: focus=%v shown=%v, want the rail focused and the board shown", f.m.board.focus, f.m.boardShown())
 	}
+	f.key("shift+tab")
+	if !f.m.board.focus {
+		t.Fatal("shift+tab did not focus the board")
+	}
+	if cmd := f.m.updateNormal(keyPress("q")); cmd == nil {
+		t.Fatal("q from the focused board returned no command")
+	} else if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Fatalf("q from the focused board returned %T, want tea.QuitMsg", cmd())
+	}
+	f.key("esc")
 	f.key("down") // rail again: leaves the heading
 	if f.m.boardShown() {
 		t.Fatal("down after esc did not move the rail")
