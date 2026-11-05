@@ -642,3 +642,114 @@ func TestCanvasDisabledMakesNoCall(t *testing.T) {
 		f.noSecretsLogged(t)
 	})
 }
+
+func TestCanvasNotInChannelArchives(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.mustPub()
+		f.addCanvasTask("SECRET-SUBJECT second")
+		nic := func(m string) error { return &slackapi.APIError{Method: m, Code: "not_in_channel"} }
+		f.fake.FailNext("ReplaceCanvas", nic("canvases.edit"))
+		f.fake.FailNext("Post", nic("chat.postMessage"))
+		f.fake.FailNext("Archive", nic("conversations.archive"))
+		if at, err := f.pub(); err != nil || !at.IsZero() {
+			t.Fatalf("pub = %v, %v", at, err)
+		}
+		if f.bridge().State != ab2store.BridgeArchived {
+			t.Fatalf("bridge state %v", f.bridge().State)
+		}
+		before := f.canvasCalls()
+		f.mustPub()
+		if got := f.canvasCalls(); !maps.Equal(before, got) {
+			t.Errorf("an archived bridge called Slack: %v -> %v", before, got)
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+// A create that says a canvas exists is followed by one more lookup, never by
+// a second create.
+func TestCanvasSecondLookupEmptyNeverCreatesTwice(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.fake.AddCanvas(f.sl, "Status", "# x\n_changes go through agentmesh_\n")
+		f.fake.EmptyTabsNext(2)
+		at, err := f.pub()
+		if err == nil || at.IsZero() {
+			t.Fatalf("pub = %v, %v", at, err)
+		}
+		inWindow(t, at, 30*time.Second)
+		if f.fake.Calls("CreateChannelCanvas") != 1 || f.fake.Calls("ChannelCanvases") != 2 {
+			t.Errorf("calls %v", f.canvasCalls())
+		}
+		f.mustPub() // the next window adopts
+		if f.fake.Calls("CreateChannelCanvas") != 1 || f.fake.Calls("ReplaceCanvas") != 1 {
+			t.Errorf("calls %v", f.canvasCalls())
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasCredentialCodeWarnsOnce(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.mustPub()
+		f.addCanvasTask("SECRET-SUBJECT second")
+		for i := 0; i < 2; i++ {
+			f.fake.FailNext("ReplaceCanvas", &slackapi.APIError{Method: "canvases.edit", Code: "invalid_auth"})
+			at, err := f.pub()
+			if apiCode(err) != "invalid_auth" {
+				t.Fatalf("pass %d: %v", i, err)
+			}
+			inWindow(t, at, 30*time.Second)
+		}
+		if n := strings.Count(f.logs.String(), "credential error"); n != 1 {
+			t.Errorf("warnings %d:\n%s", n, f.logs.String())
+		}
+		f.mustPub()
+		if !strings.Contains(canvasOf(f).Markdown, "SECRET-SUBJECT second") {
+			t.Errorf("canvas not replaced")
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasChannelNotFoundOnEditRecreates(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.mustPub()
+		f.addCanvasTask("SECRET-SUBJECT second")
+		f.fake.FailNext("ReplaceCanvas", &slackapi.APIError{Method: "canvases.edit", Code: "channel_not_found"})
+		at, err := f.pub()
+		if apiCode(err) != "channel_not_found" || at.IsZero() {
+			t.Fatalf("pub = %v, %v", at, err)
+		}
+		inWindow(t, at, 30*time.Second)
+		if f.bridge().State != ab2store.BridgeLive {
+			t.Fatalf("bridge state %v", f.bridge().State)
+		}
+		before := f.fake.Calls("ChannelCanvases")
+		f.mustPub()
+		if f.fake.Calls("ChannelCanvases") != before+1 || !strings.Contains(canvasOf(f).Markdown, "SECRET-SUBJECT second") {
+			t.Errorf("calls %v", f.canvasCalls())
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasTransportErrorRetries(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.fake.FailNext("CreateChannelCanvas", errors.New("connection reset"))
+		at, err := f.pub()
+		if err == nil || at.IsZero() {
+			t.Fatalf("pub = %v, %v", at, err)
+		}
+		inWindow(t, at, 30*time.Second)
+		f.mustPub()
+		if f.fake.Calls("CreateChannelCanvas") != 2 {
+			t.Errorf("calls %v", f.canvasCalls())
+		}
+		f.noSecretsLogged(t)
+	})
+}

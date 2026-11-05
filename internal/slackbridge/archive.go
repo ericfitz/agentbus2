@@ -50,11 +50,11 @@ func (s *Service) ArchiveBridge(ctx context.Context, b store.Bridge, reason stri
 		return nil
 	}
 	if cur.SlackChannelID != "" {
-		if _, err := s.sc.Post(ctx, slackapi.PostInput{Channel: cur.SlackChannelID, Fallback: FinalLine, Section: FinalLine}); err != nil && !errors.Is(err, slackapi.ErrChannelGone) {
+		if _, err := s.sc.Post(ctx, slackapi.PostInput{Channel: cur.SlackChannelID, Fallback: FinalLine, Section: FinalLine}); err != nil && !errors.Is(err, slackapi.ErrChannelGone) && !notInChannel(err) {
 			return slackErr(err)
 		}
 		if err := s.sc.Archive(ctx, cur.SlackChannelID); err != nil &&
-			!errors.Is(err, slackapi.ErrAlreadyArchived) && !errors.Is(err, slackapi.ErrChannelGone) {
+			!errors.Is(err, slackapi.ErrAlreadyArchived) && !errors.Is(err, slackapi.ErrChannelGone) && !notInChannel(err) {
 			return slackErr(err)
 		}
 	}
@@ -73,6 +73,13 @@ func (s *Service) ArchiveBridge(ctx context.Context, b store.Bridge, reason stri
 	s.clearBridgePosted(cur.ID)
 	s.log.Info("slack bridge: archived", "channel", cur.ChannelName, "slack_channel", cur.SlackChannelID, "reason", reason)
 	return nil
+}
+
+// notInChannel reports Slack's not_in_channel answer: the bot was removed from
+// the channel, so there is nothing left to post to or archive.
+func notInChannel(err error) bool {
+	var ae *slackapi.APIError
+	return errors.As(err, &ae) && ae.Code == "not_in_channel"
 }
 
 // Remove archives the Slack channel of the channel's bridge, then deletes the

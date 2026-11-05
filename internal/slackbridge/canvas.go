@@ -116,19 +116,22 @@ func (s *Service) PublishCanvas(ctx context.Context, b store.Bridge, scope strin
 		return p.window(), err
 	}
 	r := RenderCanvas(snap)
-	if r.TasksTooLarge {
-		s.log.Warn("slack bridge: task lists too large for a canvas", "scope", scope)
-	}
 	hash := CanvasHash(r.Markdown)
 
 	w := p.begin(b.ID, scope)
 	if hash == w.hash && w.accessSet && w.canvasID != "" {
 		return time.Time{}, nil
 	}
+	if r.TasksTooLarge {
+		s.log.Warn("slack bridge: task lists too large for a canvas", "scope", scope)
+	}
 	retryAt, archive, err := p.publish(ctx, b, &w, r.Markdown, hash)
 	if archive {
 		p.drop(b.ID)
-		if aerr := s.ArchiveBridge(ctx, b, reasonSlackGone); aerr != nil {
+		actx, cancel := context.WithTimeout(ctx, canvasCallTimeout)
+		aerr := s.ArchiveBridge(actx, b, reasonSlackGone)
+		cancel()
+		if aerr != nil {
 			return p.window(), aerr
 		}
 		return time.Time{}, nil
@@ -200,6 +203,11 @@ func (p *canvasPublisher) ensure(ctx context.Context, b store.Bridge, w *canvasS
 					"scope", w.scope, "channel", b.ChannelName, "slack_channel", b.SlackChannelID)
 			}
 			return "", true, nil
+		}
+		if attempt > 0 {
+			// The create said a canvas exists but the lookup after it found
+			// none: look again next window, never create twice.
+			return methodCanvasTabs, false, errCanvasLookup
 		}
 		cctx, cancel := context.WithTimeout(ctx, canvasCallTimeout)
 		id, err = p.s.sc.CreateChannelCanvas(cctx, b.SlackChannelID, CanvasTitle, markdown)
