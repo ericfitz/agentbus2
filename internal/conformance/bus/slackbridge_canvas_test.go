@@ -845,12 +845,19 @@ func TestSlackBridgeCanvasRunner(t *testing.T) {
 			ctx := context.Background()
 			coder := f.h.localAs("job1-coder")
 			f.h.session("job1-coder", "")
-			task, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "job1-tasks", Subject: "leased"})
+			task, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "job1-tasks", Subject: "LEASE-TASK-X"})
 			if err != nil {
 				t.Fatal(err)
 			}
 			if _, err := coder.Claim(ctx, ab2bus.TaskClaimInput{ID: task.ID, LeasedUntil: f.h.taskLeaseIn(time.Second)}); err != nil {
 				t.Fatal(err)
+			}
+			// The claim's own hints publish the task unstalled first; only
+			// then does the clock pass the lease, with no hint.
+			waitFor(t, 10*time.Second, "the claimed task", canvasMarkdownHas(f, "LEASE-TASK-X"))
+			time.Sleep(300 * time.Millisecond)
+			if canvasMarkdownHas(f, "stalled: lease expired")() {
+				t.Fatal("stalled before the lease expired")
 			}
 			f.h.clock.Advance(2 * time.Second)
 			waitFor(t, 10*time.Second, "the stalled mark", canvasMarkdownHas(f, "stalled: lease expired"))
@@ -895,6 +902,40 @@ func TestSlackBridgeCanvasRunner(t *testing.T) {
 			f.fake.DelayCanvas(0)
 		})
 
+		t.Run("hint-during-hung-call-is-published", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, true, 20*time.Millisecond)
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			f.fake.DelayCanvas(1500 * time.Millisecond)
+			t.Cleanup(func() { f.fake.DelayCanvas(0) })
+			f.addCanvasTask("SECRET-SUBJECT hung first")
+			waitFor(t, 5*time.Second, "the hung replace", func() bool { return f.fake.Calls("ReplaceCanvas") == 1 })
+			f.fake.DelayCanvas(0)
+			f.addCanvasTask("SECRET-SUBJECT during the hang")
+			waitFor(t, 10*time.Second, "the task added during the hang", canvasMarkdownHas(f, "during the hang"))
+		})
+
+		t.Run("credential-code-warned-once", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, true, 20*time.Millisecond)
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			for i := 0; i < 3; i++ {
+				f.fake.FailNext("ReplaceCanvas", &slackapi.APIError{Method: "canvases.edit", Code: "invalid_auth"})
+			}
+			f.addCanvasTask("SECRET-SUBJECT after auth failures")
+			waitFor(t, 10*time.Second, "the replace after three windows", canvasMarkdownHas(f, "after auth failures"))
+			if n := f.fake.Calls("ReplaceCanvas"); n < 4 {
+				t.Fatalf("ReplaceCanvas = %d, want at least 4", n)
+			}
+			log := f.logs.String()
+			if n := strings.Count(log, "refused the canvas call with a credential error"); n != 1 {
+				t.Errorf("credential warning logged %d times:\n%s", n, log)
+			}
+			if n := strings.Count(log, "canvas publish failed"); n != 0 {
+				t.Errorf("the loop re-logged the error %d times:\n%s", n, log)
+			}
+		})
+
 		t.Run("only-lock-holder-publishes", func(t *testing.T) {
 			f, _ := canvasRunFix(t, e, false, 20*time.Millisecond)
 			h2 := f.h.sibling(harnessOptions{})
@@ -903,8 +944,11 @@ func TestSlackBridgeCanvasRunner(t *testing.T) {
 			runBridge(t, svc2)
 			f.awaitCanvas(t)
 			time.Sleep(time.Second)
-			if n := f.fake.Calls("CreateChannelCanvas"); n != 1 {
-				t.Errorf("CreateChannelCanvas = %d", n)
+			// A second publisher would find the first's canvas by its marker
+			// and create nothing, so count the lookups: one find (no tab
+			// yet) by the holder, none by the other replica.
+			if got := f.canvasCalls(); got["CreateChannelCanvas"] != 1 || got["ChannelCanvases"] != 1 || got["CanvasContains"] != 0 {
+				t.Errorf("calls %v: more than the lock holder published", got)
 			}
 			canvasOf(f)
 		})
@@ -916,8 +960,8 @@ func TestSlackBridgeCanvasRunner(t *testing.T) {
 			stop1()
 			h2 := f.h.sibling(harnessOptions{})
 			svc2 := f.newService(h2, canvasCfg)
-			stop2 := runBridge(t, svc2)
 			f.addCanvasTask("SECRET-SUBJECT while two holds")
+			stop2 := runBridge(t, svc2)
 			waitFor(t, 10*time.Second, "the second holder's replace", func() bool { return f.fake.Calls("ReplaceCanvas") == 1 })
 			stop2()
 			runBridge(t, f.svc)

@@ -244,6 +244,25 @@ func (p *canvasPublisher) liveBridge(ctx context.Context, id int64, scope string
 // deadline, refreshes when asked, and publishes each due scope's bridges. Its
 // Slack calls carry their own timeouts and never hold up the other goroutines.
 func (p *canvasPublisher) run(ctx context.Context, hints <-chan notify.Hint) {
+	// The hint pump only reads hints and marks (a lock and a non-blocking
+	// wake, no I/O): the subscription holds one hint, so a reader busy in a
+	// Slack call would lose the hints that arrive meanwhile.
+	pumped := make(chan struct{})
+	go func() {
+		defer close(pumped)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case h, ok := <-hints:
+				if !ok {
+					return
+				}
+				p.markHint(h)
+			}
+		}
+	}()
+	defer func() { <-pumped }()
 	for {
 		p.mu.Lock()
 		at, due := p.dirty.next()
@@ -260,12 +279,6 @@ func (p *canvasPublisher) run(ctx context.Context, hints <-chan notify.Hint) {
 				timer.Stop()
 			}
 			return
-		case h, ok := <-hints:
-			if !ok {
-				hints = nil
-			} else {
-				p.markHint(h)
-			}
 		case <-p.wake:
 		case <-fire:
 			p.pass(ctx)
@@ -321,14 +334,26 @@ func (p *canvasPublisher) pass(ctx context.Context) {
 				if errors.As(err, &ae) {
 					code = ae.Code
 				}
-				p.s.log.Warn("slack bridge: canvas publish failed",
-					"scope", scope, "channel", cur.ChannelName, "slack_channel", cur.SlackChannelID, "code", code)
+				// handle warned once for a credential code on this bridge.
+				if code == "" || !p.warnedCred(cur.ID, code) {
+					p.s.log.Warn("slack bridge: canvas publish failed",
+						"scope", scope, "channel", cur.ChannelName, "slack_channel", cur.SlackChannelID, "code", code)
+				}
 			}
 			if !retryAt.IsZero() {
 				p.remark(scope, retryAt)
 			}
 		}
 	}
+}
+
+// warnedCred reports whether handle has already warned about the credential
+// code for the bridge.
+func (p *canvasPublisher) warnedCred(id int64, code string) bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	st := p.state[id]
+	return st != nil && st.warned["cred:"+code]
 }
 
 func (p *canvasPublisher) remark(scope string, at time.Time) {
