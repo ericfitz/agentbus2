@@ -331,12 +331,11 @@ func memoryBlocks(ci int, mc CanvasMemoryChannel, dropped map[memRef]bool) []str
 }
 
 func memoryBlock(m CanvasMemory) string {
-	head := m.Subject
-	if head == "" {
-		head, _, _ = strings.Cut(m.Content, "\n")
-		head = strings.TrimRight(head, "\r")
+	head := escapeCanvas(m.Subject)
+	if m.Subject == "" {
+		first, _, _ := strings.Cut(m.Content, "\n")
+		head = cutEscape(strings.TrimRight(first, "\r"), headMaxRunes)
 	}
-	head = cutEscape(head, headMaxRunes)
 	if strings.TrimSpace(head) == "" {
 		head = "Memory \\#" + strconv.FormatInt(m.ID, 10)
 	}

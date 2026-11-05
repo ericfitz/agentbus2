@@ -26,6 +26,13 @@ _edited 2026-11-03 by claude-a_
 0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789
 second line
 
+## Memory: job1-memory-a
+
+### long subject long subject long subject long subject long subject long subject long subject long subject long subject long subject long subject long su
+_fact · edited 2026-11-02 by claude-a_
+
+kept whole
+
 ## Memory: job1-memory-b
 
 _No memories._

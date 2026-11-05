@@ -74,6 +74,7 @@ func canvasCases() map[string]CanvasSnapshot {
 	}
 	memories := snap(nil, []CanvasMemoryChannel{
 		{Channel: "job1-memory-b", Memories: nil},
+		{Channel: "job1-memory-a", Memories: []CanvasMemory{mem(3, strings.Repeat("long subject ", 12)[:150], "fact", "kept whole", nil, 2)}},
 		{Channel: "job1-memory", Memories: []CanvasMemory{
 			mem(1, "Postgres needs TCP keepalive", "fact", "Set it.\n# not a heading\n---\nlast\n#tail", []string{"area:db", "ops"}, 4),
 			mem(2, "", "", strings.Repeat("0123456789", 10)+"\nsecond line", nil, 3),
