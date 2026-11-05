@@ -8,3 +8,4 @@ release/testdata/** text eol=lf
 *.py text eol=lf
 Dockerfile* text eol=lf
 release/*.tmpl text eol=lf
+internal/slackbridge/testdata/** text eol=lf
