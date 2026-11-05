@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/ericfitz/agentmesh/internal/core/notify"
 	"github.com/ericfitz/agentmesh/internal/slackapi"
 	"github.com/ericfitz/agentmesh/internal/store"
 )
@@ -36,16 +37,304 @@ type canvasState struct {
 }
 
 // canvasPublisher publishes the scope canvas of each live bridge. mu guards
-// the state map and the warned sets only; it is never held across a Slack call
-// or a Store read.
+// the maps, the dirty set and the flags only; it is never held across a Slack
+// call or a Store read, so the marks (called from the socket, lifecycle and
+// hint paths) never wait on Slack.
 type canvasPublisher struct {
 	s     *Service
 	mu    sync.Mutex
 	state map[int64]*canvasState
+
+	dirty        canvasDirty
+	pendingAll   bool
+	pendingAt    time.Time                 // the deadline markAll recorded
+	known        map[int64]string          // every channel refresh listed: its scope name or ""
+	chanScope    map[int64]string          // task and memory channels of scopes with a live bridge
+	unknown      map[int64]bool            // channels hinted since the last refresh that known lacks
+	scopeBridges map[string][]store.Bridge // live bridges with a Slack channel, by scope name
+	wake         chan struct{}
 }
 
 func newCanvasPublisher(s *Service) *canvasPublisher {
-	return &canvasPublisher{s: s, state: map[int64]*canvasState{}}
+	return &canvasPublisher{
+		s: s, state: map[int64]*canvasState{},
+		known: map[int64]string{}, chanScope: map[int64]string{}, unknown: map[int64]bool{},
+		scopeBridges: map[string][]store.Bridge{}, wake: make(chan struct{}, 1),
+	}
+}
+
+// reset forgets everything: a lock tenure starts with no remembered canvas ID
+// or hash, so another replica's edits during the gap are never masked by an
+// equal hash.
+func (p *canvasPublisher) reset() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.state = map[int64]*canvasState{}
+	p.known = map[int64]string{}
+	p.chanScope = map[int64]string{}
+	p.unknown = map[int64]bool{}
+	p.scopeBridges = map[string][]store.Bridge{}
+	p.dirty = canvasDirty{}
+	p.pendingAll = false
+	select {
+	case <-p.wake:
+	default:
+	}
+}
+
+// markAll asks for a refresh and a rebuild of every live scope, one window from
+// now. It never blocks.
+func (p *canvasPublisher) markAll() {
+	if !p.s.cfg.CanvasEnabled {
+		return
+	}
+	at := p.window()
+	p.mu.Lock()
+	p.pendingAll = true
+	p.pendingAt = at
+	p.dirty.mark("", at)
+	p.mu.Unlock()
+	p.poke()
+}
+
+func (p *canvasPublisher) poke() {
+	select {
+	case p.wake <- struct{}{}:
+	default:
+	}
+}
+
+// markHint turns a bus hint into a mark: a channel of a scope with a live
+// bridge marks its scope; chat traffic marks nothing; a channel the last
+// refresh did not know marks a refresh.
+func (p *canvasPublisher) markHint(h notify.Hint) {
+	if !p.s.cfg.CanvasEnabled {
+		return
+	}
+	if h.ChannelID == 0 {
+		p.markAll()
+		return
+	}
+	at := p.window()
+	p.mu.Lock()
+	if scope, ok := p.chanScope[h.ChannelID]; ok {
+		p.dirty.mark(scope, at)
+	} else if _, ok := p.known[h.ChannelID]; !ok {
+		p.unknown[h.ChannelID] = true
+		p.dirty.mark("", at)
+	}
+	p.mu.Unlock()
+	p.poke()
+}
+
+// refresh reloads the channel, scope and bridge facts in one Store.Read and
+// installs them. The scope of a bridge is the scope whose members include its
+// channel.
+func (p *canvasPublisher) refresh(ctx context.Context) error {
+	known := map[int64]string{}
+	kinds := map[int64]store.Kind{}
+	live := map[string][]store.Bridge{}
+	err := p.s.core.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+		chans, err := tx.ListChannels(ctx)
+		if err != nil {
+			return err
+		}
+		for _, ch := range chans {
+			known[ch.ID] = ""
+			kinds[ch.ID] = ch.Kind
+		}
+		scs, err := tx.ListScopes(ctx)
+		if err != nil {
+			return err
+		}
+		for _, sc := range scs {
+			if sc.State == store.ScopeRetired {
+				continue
+			}
+			members, _, err := tx.ScopeMembers(ctx, sc.Name)
+			if err != nil {
+				return err
+			}
+			for _, ch := range members {
+				known[ch.ID] = sc.Name
+				kinds[ch.ID] = ch.Kind
+			}
+		}
+		bridges, err := tx.ListBridges(ctx)
+		if err != nil {
+			return err
+		}
+		for _, b := range bridges {
+			if b.State != store.BridgeLive || b.SlackChannelID == "" {
+				continue
+			}
+			if scope := known[b.ChannelID]; scope != "" {
+				live[scope] = append(live[scope], b)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	chanScope := map[int64]string{}
+	for id, scope := range known {
+		if scope != "" && kinds[id] != store.KindOrdinary && len(live[scope]) > 0 {
+			chanScope[id] = scope
+		}
+	}
+	liveIDs := map[int64]bool{}
+	for _, bs := range live {
+		for _, b := range bs {
+			liveIDs[b.ID] = true
+		}
+	}
+	now := time.Now()
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.known, p.chanScope, p.scopeBridges = known, chanScope, live
+	for id := range p.state {
+		if !liveIDs[id] {
+			delete(p.state, id)
+		}
+	}
+	if p.pendingAll {
+		for scope := range live {
+			p.dirty.mark(scope, p.pendingAt)
+		}
+		p.pendingAll = false
+	}
+	for id := range p.unknown {
+		if _, ok := known[id]; !ok {
+			continue // created after the read: its own refresh mark follows
+		}
+		if scope, ok := chanScope[id]; ok {
+			p.dirty.mark(scope, now)
+		}
+		delete(p.unknown, id)
+	}
+	return nil
+}
+
+// liveBridge re-reads the bridge and its scope: false when the bridge is gone
+// or no longer live, or the scope is gone or retired (a removal, an archive or
+// a retirement between the refresh and the publish).
+func (p *canvasPublisher) liveBridge(ctx context.Context, id int64, scope string) (store.Bridge, bool, error) {
+	var b store.Bridge
+	live := false
+	err := p.s.core.Store.Read(ctx, func(ctx context.Context, tx store.Tx) error {
+		var err error
+		if b, err = tx.Bridge(ctx, id); err != nil {
+			return err
+		}
+		sc, err := tx.Scope(ctx, scope)
+		if err != nil {
+			return err
+		}
+		live = b.State == store.BridgeLive && b.SlackChannelID != "" && sc.State != store.ScopeRetired
+		return nil
+	})
+	if errors.Is(err, store.ErrNotFound) {
+		return b, false, nil
+	}
+	return b, live, err
+}
+
+// run is the publisher goroutine of one lock tenure: it waits for the earliest
+// deadline, refreshes when asked, and publishes each due scope's bridges. Its
+// Slack calls carry their own timeouts and never hold up the other goroutines.
+func (p *canvasPublisher) run(ctx context.Context, hints <-chan notify.Hint) {
+	for {
+		p.mu.Lock()
+		at, due := p.dirty.next()
+		p.mu.Unlock()
+		var timer *time.Timer
+		var fire <-chan time.Time
+		if due {
+			timer = time.NewTimer(max(0, time.Until(at)))
+			fire = timer.C
+		}
+		select {
+		case <-ctx.Done():
+			if timer != nil {
+				timer.Stop()
+			}
+			return
+		case h, ok := <-hints:
+			if !ok {
+				hints = nil
+			} else {
+				p.markHint(h)
+			}
+		case <-p.wake:
+		case <-fire:
+			p.pass(ctx)
+		}
+		if timer != nil {
+			timer.Stop()
+		}
+	}
+}
+
+// pass publishes the scopes that are due now.
+func (p *canvasPublisher) pass(ctx context.Context) {
+	p.mu.Lock()
+	taken := p.dirty.take(time.Now())
+	p.mu.Unlock()
+	if len(taken) > 0 && taken[0] == "" {
+		taken = taken[1:]
+		if err := p.refresh(ctx); err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			p.s.log.Warn("slack bridge: canvas refresh failed", "err", err)
+			p.mu.Lock()
+			p.dirty.mark("", time.Now().Add(p.s.cfg.CanvasCoalesce))
+			p.mu.Unlock()
+		}
+	}
+	for _, scope := range taken {
+		p.mu.Lock()
+		bridges := append([]store.Bridge(nil), p.scopeBridges[scope]...)
+		p.mu.Unlock()
+		for _, b := range bridges {
+			if ctx.Err() != nil {
+				return
+			}
+			cur, ok, err := p.liveBridge(ctx, b.ID, scope)
+			if err != nil {
+				if ctx.Err() != nil {
+					return
+				}
+				p.s.log.Warn("slack bridge: canvas bridge check failed", "scope", scope, "channel", b.ChannelName)
+				p.remark(scope, p.window())
+				continue
+			}
+			if !ok {
+				p.drop(b.ID)
+				continue
+			}
+			retryAt, err := p.s.PublishCanvas(ctx, cur, scope)
+			if err != nil && ctx.Err() == nil {
+				code := ""
+				var ae *slackapi.APIError
+				if errors.As(err, &ae) {
+					code = ae.Code
+				}
+				p.s.log.Warn("slack bridge: canvas publish failed",
+					"scope", scope, "channel", cur.ChannelName, "slack_channel", cur.SlackChannelID, "code", code)
+			}
+			if !retryAt.IsZero() {
+				p.remark(scope, retryAt)
+			}
+		}
+	}
+}
+
+func (p *canvasPublisher) remark(scope string, at time.Time) {
+	p.mu.Lock()
+	p.dirty.mark(scope, at)
+	p.mu.Unlock()
 }
 
 // begin returns a working copy of the bridge's state.
@@ -105,7 +394,8 @@ func (p *canvasPublisher) window() time.Time { return time.Now().Add(p.s.cfg.Can
 // the channel's access read-only. A zero retryAt means nothing is left to
 // retry; otherwise the caller marks the scope dirty again at retryAt. The
 // error is the failure that caused the retry; a disabled canvas and an
-// archived bridge return (zero, nil).
+// archived bridge return (zero, nil). The publisher loop (run) is the only
+// caller for a bridge, so the calls for one bridge never overlap.
 func (s *Service) PublishCanvas(ctx context.Context, b store.Bridge, scope string) (time.Time, error) {
 	p := s.canvas
 	if !s.cfg.CanvasEnabled || b.State != store.BridgeLive || b.SlackChannelID == "" || p.isDisabled(b.ID) {

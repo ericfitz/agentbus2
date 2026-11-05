@@ -20,6 +20,7 @@ func (s *Service) markConnected() {
 	s.mu.Lock()
 	s.connGen++
 	s.mu.Unlock()
+	s.canvas.markAll() // a canvas edited while the socket was down is rebuilt
 }
 
 // needsCheck reports whether the bridge's membership has not been checked

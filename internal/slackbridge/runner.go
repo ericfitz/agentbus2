@@ -133,8 +133,10 @@ func (s *Service) startSession(parent context.Context) *runSession {
 		}
 	}
 	hints, cancelHints := s.core.Notifier().Subscribe()
+	canvasHints, cancelCanvasHints := s.core.Notifier().Subscribe()
+	s.canvas.reset()
 
-	rs.wg.Add(4)
+	rs.wg.Add(5)
 	go func() { // the socket: hands events to the worker, never blocks on them
 		defer rs.wg.Done()
 		for ctx.Err() == nil {
@@ -195,13 +197,22 @@ func (s *Service) startSession(parent context.Context) *runSession {
 			if err := s.Lifecycle(ctx); err != nil && ctx.Err() == nil {
 				s.log.Warn("slack bridge: lifecycle failed", "err", err)
 			}
-			request() // a message whose retries ran out waits for no reconnect
+			s.canvas.markAll() // the lease and status clocks have no hint
+			request()          // a message whose retries ran out waits for no reconnect
 			select {
 			case <-ctx.Done():
 				return
 			case <-t.C:
 			}
 		}
+	}()
+	go func() { // the scope canvas: its own timeouts, never blocks bridging
+		defer rs.wg.Done()
+		defer cancelCanvasHints()
+		if !s.cfg.CanvasEnabled {
+			return
+		}
+		s.canvas.run(ctx, canvasHints)
 	}()
 	return rs
 }

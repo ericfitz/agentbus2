@@ -285,15 +285,23 @@ func TestCanvasSnapshotUnknownKindUnreachable(t *testing.T) {
 func newCanvasFix(t *testing.T, e dbtest.Engine, enabled bool) *inFix {
 	t.Helper()
 	f := newInFixOpts(t, e, harnessOptions{}, func(c *slackbridge.Config) { c.CanvasEnabled = enabled })
+	f.canvasSetup()
+	return f
+}
+
+// canvasSetup adds job1-b, a visible tasks channel with one task and a visible
+// memory channel with one memory; it answers the tasks channel.
+func (f *inFix) canvasSetup() ab2store.Channel {
+	f.h.t.Helper()
 	R, W, A := ab2store.PermRead, ab2store.PermWrite, ab2store.PermAdmin
 	f.h.scopedIdentity("job1-b", "job1")
-	f.slKindChannel("job1-tasks", "job1", ab2store.KindTasks, canvasTasksACL())
+	tasks := f.slKindChannel("job1-tasks", "job1", ab2store.KindTasks, canvasTasksACL())
 	f.slKindChannel("job1-notes", "job1", ab2store.KindMemory, []ab2store.ACLEntry{slEntry("job1-coder", R, W, A), slEntry(ab2store.Everyone, R), slEntry(ab2store.Admins, A)})
 	f.addCanvasTask("SECRET-SUBJECT first")
 	if _, err := f.h.localAs("job1-coder").Send(context.Background(), ab2bus.SendInput{Channel: "job1-notes", Subject: "note", Content: "SECRET-CONTENT"}); err != nil {
-		t.Fatalf("memory: %v", err)
+		f.h.t.Fatalf("memory: %v", err)
 	}
-	return f
+	return tasks
 }
 
 func (f *inFix) addCanvasTask(subject string) {
@@ -751,5 +759,260 @@ func TestCanvasTransportErrorRetries(t *testing.T) {
 			t.Errorf("calls %v", f.canvasCalls())
 		}
 		f.noSecretsLogged(t)
+	})
+}
+
+// canvasRunFix is a bridged job1 with the canvas on, a 20 ms window and the
+// canvas setup; hourly true leaves only the path under test to mark (the
+// session-start pass still runs once).
+func canvasRunFix(t *testing.T, e dbtest.Engine, hourly bool, coalesce time.Duration) (*inFix, ab2store.Channel) {
+	t.Helper()
+	f := newOutFix(t, e, func(c *slackbridge.Config) {
+		c.CanvasEnabled = true
+		c.CanvasCoalesce = coalesce
+		if hourly {
+			c.LifecycleInterval = time.Hour
+		}
+	})
+	return f, f.canvasSetup()
+}
+
+func (f *inFix) awaitCanvas(t *testing.T) {
+	t.Helper()
+	waitFor(t, 10*time.Second, "the canvas", func() bool {
+		return f.fake.Calls("CreateChannelCanvas") == 1 && f.fake.Calls("SetCanvasChannelAccess") >= 1
+	})
+}
+
+func canvasMarkdownHas(f *inFix, sub string) func() bool {
+	return func() bool {
+		for i := 1; i < 40; i++ {
+			if c, ok := f.fake.Canvas(fmt.Sprintf("F%06d", i)); ok && c.ChannelID == f.sl {
+				return strings.Contains(c.Markdown, sub)
+			}
+		}
+		return false
+	}
+}
+
+func canvasCfg(c *slackbridge.Config) {
+	c.CanvasEnabled = true
+	c.CanvasCoalesce = 20 * time.Millisecond
+}
+
+func TestSlackBridgeCanvasRunner(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		t.Run("publishes-after-start", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, false, 20*time.Millisecond)
+			runBridge(t, f.svc)
+			waitFor(t, 10*time.Second, "the canvas", func() bool { return f.fake.Calls("CreateChannelCanvas") == 1 })
+			waitFor(t, 10*time.Second, "the label", func() bool { return f.fake.Calls("SetCanvasChannelAccess") >= 1 })
+			if c := canvasOf(f); c.Label != "Status" {
+				t.Errorf("label %q", c.Label)
+			}
+		})
+
+		t.Run("hint-rebuilds-within-window", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, true, 300*time.Millisecond)
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			f.addCanvasTask("SECRET-SUBJECT second")
+			time.Sleep(10 * time.Millisecond)
+			f.addCanvasTask("SECRET-SUBJECT third")
+			waitFor(t, 10*time.Second, "the replace", func() bool { return f.fake.Calls("ReplaceCanvas") == 1 })
+			time.Sleep(700 * time.Millisecond)
+			md := canvasOf(f).Markdown
+			if f.fake.Calls("ReplaceCanvas") != 1 || !strings.Contains(md, "second") || !strings.Contains(md, "third") {
+				t.Errorf("replace calls %d, markdown %q", f.fake.Calls("ReplaceCanvas"), md)
+			}
+		})
+
+		t.Run("unknown-channel-hint", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, true, 20*time.Millisecond)
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			f.slKindChannel("job1-fresh", "job1", ab2store.KindTasks, canvasTasksACL())
+			if _, err := f.h.localAs("job1-coder").Create(context.Background(), ab2bus.TaskCreateInput{Channel: "job1-fresh", Subject: "in the fresh list"}); err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, 10*time.Second, "the new channel", canvasMarkdownHas(f, "job1-fresh"))
+		})
+
+		t.Run("lifecycle-catches-lease-expiry", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, false, 20*time.Millisecond)
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			ctx := context.Background()
+			coder := f.h.localAs("job1-coder")
+			f.h.session("job1-coder", "")
+			task, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "job1-tasks", Subject: "leased"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := coder.Claim(ctx, ab2bus.TaskClaimInput{ID: task.ID, LeasedUntil: f.h.taskLeaseIn(time.Second)}); err != nil {
+				t.Fatal(err)
+			}
+			f.h.clock.Advance(2 * time.Second)
+			waitFor(t, 10*time.Second, "the stalled mark", canvasMarkdownHas(f, "stalled: lease expired"))
+		})
+
+		t.Run("reconnect-marks-all", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, true, 20*time.Millisecond)
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			before := canvasOf(f).Markdown
+			var notes ab2store.Channel
+			f.h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+				var err error
+				notes, err = tx.ChannelByName(ctx, "job1-notes")
+				return err
+			})
+			f.h.append(notes, "job1-coder", "", "SECRET-CONTENT unhinted")
+			time.Sleep(200 * time.Millisecond)
+			if canvasOf(f).Markdown != before {
+				t.Fatal("the canvas changed with no hint and no mark")
+			}
+			f.fake.Disconnect()
+			waitFor(t, 10*time.Second, "the rebuild", func() bool { return canvasOf(f).Markdown != before })
+		})
+
+		t.Run("hung-call-does-not-stall-bridging", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, true, 20*time.Millisecond)
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			f.fake.DelayCanvas(2 * time.Second)
+			t.Cleanup(func() { f.fake.DelayCanvas(0) })
+			f.addCanvasTask("SECRET-SUBJECT slow")
+			waitFor(t, 5*time.Second, "the hung replace", func() bool { return f.fake.Calls("ReplaceCanvas") == 1 })
+			f.send("job1-coder", ab2bus.SendInput{Content: "still flowing"})
+			waitFor(t, time.Second, "the bridged message", func() bool { return len(f.bridged()) == 1 })
+			f.fake.Disconnect()
+			f.fake.Say(f.sl, "U1", "from slack during the delay", "")
+			waitFor(t, time.Second, "the inbound message", func() bool { return len(f.human()) == 1 })
+			if n := f.fake.MaxConcurrentSockets(); n != 1 {
+				t.Errorf("MaxConcurrentSockets = %d", n)
+			}
+			f.fake.DelayCanvas(0)
+		})
+
+		t.Run("only-lock-holder-publishes", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, false, 20*time.Millisecond)
+			h2 := f.h.sibling(harnessOptions{})
+			svc2 := f.newService(h2, canvasCfg)
+			runBridge(t, f.svc)
+			runBridge(t, svc2)
+			f.awaitCanvas(t)
+			time.Sleep(time.Second)
+			if n := f.fake.Calls("CreateChannelCanvas"); n != 1 {
+				t.Errorf("CreateChannelCanvas = %d", n)
+			}
+			canvasOf(f)
+		})
+
+		t.Run("relock-republishes", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, false, 20*time.Millisecond)
+			stop1 := runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			stop1()
+			h2 := f.h.sibling(harnessOptions{})
+			svc2 := f.newService(h2, canvasCfg)
+			stop2 := runBridge(t, svc2)
+			f.addCanvasTask("SECRET-SUBJECT while two holds")
+			waitFor(t, 10*time.Second, "the second holder's replace", func() bool { return f.fake.Calls("ReplaceCanvas") == 1 })
+			stop2()
+			runBridge(t, f.svc)
+			waitFor(t, 10*time.Second, "the republish", func() bool { return f.fake.Calls("ReplaceCanvas") == 2 })
+			if n := f.fake.Calls("CreateChannelCanvas"); n != 1 {
+				t.Errorf("CreateChannelCanvas = %d", n)
+			}
+			canvasOf(f)
+		})
+
+		t.Run("archived-bridge-skipped", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, false, 20*time.Millisecond)
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			f.fake.ArchiveByHand(f.sl)
+			f.send("job1-coder", ab2bus.SendInput{Content: "into the void"})
+			waitFor(t, 10*time.Second, "the archive", func() bool { return f.bridge().State == ab2store.BridgeArchived })
+			time.Sleep(200 * time.Millisecond)
+			before := f.canvasCalls()
+			f.addCanvasTask("SECRET-SUBJECT after archive")
+			time.Sleep(500 * time.Millisecond)
+			if got := f.canvasCalls(); !maps.Equal(before, got) {
+				t.Errorf("canvas calls after the archive: %v -> %v", before, got)
+			}
+		})
+
+		t.Run("creating-bridge-skipped", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, true, 20*time.Millisecond)
+			other := f.slChannel("job1-more", "job1", nil)
+			f.h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+				_, err := tx.CreateBridge(ctx, ab2store.Bridge{ChannelID: other.ID, ChannelName: other.Name, Scope: "job1", SlackName: "ab-job1-more", CreatedAt: 9})
+				return err
+			})
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			f.addCanvasTask("SECRET-SUBJECT with a creating bridge")
+			waitFor(t, 10*time.Second, "the replace", func() bool { return f.fake.Calls("ReplaceCanvas") == 1 })
+			time.Sleep(300 * time.Millisecond)
+			if n := f.fake.Calls("CreateChannelCanvas"); n != 1 {
+				t.Errorf("CreateChannelCanvas = %d", n)
+			}
+			canvasOf(f)
+			if strings.Contains(f.logs.String(), "slack bridge: canvas") {
+				t.Errorf("a canvas warning was logged:\n%s", f.logs.String())
+			}
+		})
+
+		t.Run("removed-between-snapshot-and-publish", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, true, 20*time.Millisecond)
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			time.Sleep(200 * time.Millisecond)
+			before := f.canvasCalls()
+			if err := f.svc.Remove(context.Background(), f.adm, ab2bus.RemoveBridgeInput{Channel: "job1-chat"}); err != nil {
+				t.Fatal(err)
+			}
+			mark := len(f.logs.String())
+			f.addCanvasTask("SECRET-SUBJECT after remove")
+			time.Sleep(500 * time.Millisecond)
+			if got := f.canvasCalls(); !maps.Equal(before, got) {
+				t.Errorf("canvas calls after the removal: %v -> %v", before, got)
+			}
+			if strings.Contains(f.logs.String()[mark:], "slack bridge: canvas") {
+				t.Errorf("a canvas line was logged after the removal:\n%s", f.logs.String()[mark:])
+			}
+		})
+
+		t.Run("retired-scope-skipped", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, true, 20*time.Millisecond)
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			time.Sleep(200 * time.Millisecond)
+			before := f.canvasCalls()
+			f.h.tx(func(ctx context.Context, tx ab2store.Tx) error {
+				return tx.MarkScopeRetired(ctx, "job1", f.h.core.NowMs())
+			})
+			f.addCanvasTask("SECRET-SUBJECT after retire")
+			time.Sleep(500 * time.Millisecond)
+			if got := f.canvasCalls(); !maps.Equal(before, got) {
+				t.Errorf("canvas calls after the retirement: %v -> %v", before, got)
+			}
+		})
+
+		t.Run("disabled-setting", func(t *testing.T) {
+			f := newOutFix(t, e, nil)
+			f.canvasSetup()
+			runBridge(t, f.svc)
+			f.send("job1-coder", ab2bus.SendInput{Content: "hello"})
+			waitFor(t, 10*time.Second, "the bridged message", func() bool { return len(f.bridged()) == 1 })
+			time.Sleep(time.Second)
+			for m, n := range f.canvasCalls() {
+				if n != 0 {
+					t.Errorf("%s called %d times", m, n)
+				}
+			}
+		})
 	})
 }
