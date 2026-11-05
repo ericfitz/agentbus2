@@ -20,7 +20,7 @@
 - Inspection (ADR 0013) is untouched: `taskPrepared` and `contentChanged` cover subject, description and metadata only; the probe path (`planUpdate(probe=true)`) skips the reclaim as it does today. Do not widen the digest.
 - The reclaim stays a system write: type `reclaimed`, no sender, `store.IdentityAgent`, not rate-charged, outside inspection (`docs/superpowers/specs/2026-10-27-write-inspection-design.md`).
 - Import rules unchanged: `internal/tui` imports only `internal/bus` and `internal/version` of this module (`scripts/m8-exit-checks.sh --deps-only`); `internal/bus/remote` never imports `internal/gen/spec`; the m4, m6 and m10 rules hold.
-- Glyphs. Canvas (unchanged): `⚠︎` U+26A0 U+FE0E. TUI emoji set: `⬜` U+2B1C (Emoji_Presentation=Yes, no Terminal.app variant), `⏱️` U+23F1 U+FE0F (kept, with its variant), `✅` U+2705 (kept), `⛔` U+26D4 U+FE0F (Emoji_Presentation=Yes), `⚠️` U+26A0 U+FE0F (Emoji_Presentation=No: Terminal.app variant with `narrowVS16Pad`), `🙋` U+1F64B U+FE0F. Every TUI icon string ends with one space, as today.
+- Glyphs. Canvas (unchanged): `⚠︎` U+26A0 U+FE0E. TUI emoji set: `📥` U+1F4E5 inbox tray (Eric's change of 2026-11-05 from `⬜`; Emoji_Presentation=Yes, no Terminal.app variant), `⏱️` U+23F1 U+FE0F (kept, with its variant), `✅` U+2705 (kept), `⛔` U+26D4 U+FE0F (Emoji_Presentation=Yes), `⚠️` U+26A0 U+FE0F (Emoji_Presentation=No: Terminal.app variant with `narrowVS16Pad`), `🙋` U+1F64B U+FE0F. Every TUI icon string ends with one space, as today.
 - Times on the canvas are `HH:MM UTC` from `time.UnixMilli(ms).UTC().Format("15:04")`, as `stalledText` does today.
 - Never log a task subject or owner from the reclaim beyond what `reclaim.go` logs today (nothing).
 
@@ -77,7 +77,7 @@ Expected: the unit tests fail to compile (unknown fields); `TestTaskReclaimWrite
 
 - [ ] **Step 3: Implement**
 
-`bus/tasks.go`: the two fields on `Task` (after `Metadata`) and on `TaskSummary` (after `LeasedUntil`). `doc.go`: the two fields on `taskDoc`, copied in `taskContent` and `loadTasks`. `reclaim.go`: in the reclaim loop `t.ReclaimedFrom, t.ReclaimedAt = t.Owner, now` before `t.Status, t.Owner, t.LeasedUntil = "pending", "", 0`. `update.go`: after Rule 7's `patched.Status = ns` block (and before the in_progress owner check), `if patched.Status != "pending" { patched.ReclaimedFrom, patched.ReclaimedAt = "", 0 }`. `read.go summaries`: copy both. `snapshot.go`: the two `SnapshotTask` fields, copied from `t`. `sites_test.go:111`: `{"IdentityKind": 1, "Owner": 2}` with the comment extended: "and the owner it copies into ReclaimedFrom".
+`bus/tasks.go`: the two fields on `Task` (after `Metadata`) and on `TaskSummary` (after `LeasedUntil`). `doc.go`: the two fields on `taskDoc`, copied in `taskContent` and `loadTasks`. `reclaim.go`: in the reclaim loop `t.ReclaimedFrom, t.ReclaimedAt = t.Owner, now` before `t.Status, t.Owner, t.LeasedUntil = "pending", "", 0`. `update.go`: outside the `if p.Status != nil` block, immediately before the "An in_progress task always needs an owner" check, `if patched.Status != "pending" { patched.ReclaimedFrom, patched.ReclaimedAt = "", 0 }`, so a marked document that is not pending (hand-edited) clears on any write. `read.go summaries`: copy both. `snapshot.go`: the two `SnapshotTask` fields, copied from `t`. `sites_test.go:111`: `{"IdentityKind": 1, "Owner": 2}` with the comment extended: "and the owner it copies into ReclaimedFrom".
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -184,11 +184,11 @@ git commit -m "fix(slackbridge): show a reclaimed task as stalled on the canvas 
 - Test: `internal/tui/icons_test.go:163-203` (`TestLoadIconsForAppleTerminal`), `:147` (`TestIconSetsCoverTheSameNames`, which already requires every name in both sets), `internal/tui/tasks_test.go:531-556` (`TestTaskChannelNeverShowsMessageHeaders`, the task-row prefix set at `:548`)
 
 **Interfaces:**
-- Produces: package vars `taskPending = "⬜️ "`, `taskBlocked = "⛔️ "`, `taskStalled = warningIcon` with `const warningIcon = "⚠️ "`, `taskNeedsHuman = "\U0001F64B️ "`; `taskInProgress` and `taskCompleted` unchanged. `iconVars` keys `task_blocked`, `task_stalled`, `task_needs_human`. `appleTerminalIcons["task_stalled"] = "⚠️" + narrowVS16Pad + " "`. `nerdIcons`: `task_blocked` ``, `task_stalled` ``, `task_needs_human` ``.
+- Produces: package vars `taskPending = "\U0001F4E5️ "` (inbox tray), `taskBlocked = "⛔️ "`, `taskStalled = warningIcon` with `const warningIcon = "⚠️ "`, `taskNeedsHuman = "\U0001F64B️ "`; `taskInProgress` and `taskCompleted` unchanged. `iconVars` keys `task_blocked`, `task_stalled`, `task_needs_human`. `appleTerminalIcons["task_stalled"] = "⚠️" + narrowVS16Pad + " "`. `nerdIcons`: `task_blocked` `""`, `task_stalled` `""`, `task_needs_human` `""`. (Escapes are Go source escapes; write them as such.)
 
 - [ ] **Step 1: Write the failing tests**
 
-`icons_test.go`: the Terminal.app assertion at `:170` also requires `taskStalled == "⚠️​ "`; the plain-env assertion at `:189` also requires `taskStalled == warningIcon`; the icon_map-wins assertion maps `task_stalled` to `"S"` and expects `taskStalled == "S  "`; the nerdfont assertion requires `!strings.Contains(taskStalled, "​")` and `taskBlocked == padIcon("task_blocked", "")`. A new `TestTaskIconKeysKnown`: every key `task_pending`, `task_in_progress`, `task_completed`, `task_blocked`, `task_stalled`, `task_needs_human` is in `emojiIcons` and `nerdIcons`, and `emojiIcons["task_pending"] == "⬜️ "`. `tasks_test.go:548`: the allowed prefixes become the six marks (a helper `taskMarks() []string` in the test file).
+`icons_test.go`: the Terminal.app assertion at `:170` also requires `taskStalled == "⚠️​ "`; the plain-env assertion at `:189` also requires `taskStalled == warningIcon`; the icon_map-wins assertion maps `task_stalled` to `"S"` and expects `taskStalled == "S  "`; the nerdfont assertion requires `!strings.Contains(taskStalled, "​")` and `taskBlocked == padIcon("task_blocked", "")`. A new `TestTaskIconKeysKnown`: every key `task_pending`, `task_in_progress`, `task_completed`, `task_blocked`, `task_stalled`, `task_needs_human` is in `emojiIcons` and `nerdIcons`, and `emojiIcons["task_pending"] == "\U0001F4E5️ "`. `tasks_test.go:548`: the allowed prefixes become the six marks (a helper `taskMarks() []string` in the test file).
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -197,7 +197,7 @@ Expected: compile failure on the new vars.
 
 - [ ] **Step 3: Implement**
 
-As the Interfaces block says; update the comment above the task marks (U+2B1C and U+26D4 are Emoji_Presentation=Yes, U+26A0 is No and takes the Terminal.app variant). `termapp_test.go:45-50` comment: replace `❎` with `⬜` and add `⚠️` to the one-column list. `docs/tui.md:58`: add `task_stalled` (`"⚠️​"`) to the icon_map hint for a remote TUI viewed in Terminal.app; `:231-233` table: `task_pending` row text "a pending task (emoji U+2B1C)", add rows `task_blocked` "a task with an open blocker (emoji U+26D4) | U+F05E", `task_stalled` "a stalled task, or one whose owner reports a problem (emoji U+26A0) | U+F071", `task_needs_human` "a task whose owner's status tag is `needs-human` (emoji U+1F64B) | U+F256".
+As the Interfaces block says; update the comment above the task marks (U+1F4E5 and U+26D4 are Emoji_Presentation=Yes, U+26A0 is No and takes the Terminal.app variant). `termapp_test.go:45-50` comment only (`appleTerminalWidth` is `WcWidth` per rune, not a rune table): replace `❎` with `📥` and add `⚠️` to the one-column list. `docs/tui.md:58`: add `task_stalled` (`"⚠️​"`) to the icon_map hint for a remote TUI viewed in Terminal.app; `:231-233` table: `task_pending` row text "a pending task (emoji U+1F4E5)", add rows `task_blocked` "a task with an open blocker (emoji U+26D4) | U+F05E", `task_stalled` "a stalled task, or one whose owner reports a problem (emoji U+26A0) | U+F071", `task_needs_human` "a task whose owner\'s status tag is `needs-human` (emoji U+1F64B) | U+F256".
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -232,7 +232,7 @@ git commit -m "feat(tui): add the blocked, stalled and needs-human task marks to
 
 `taskmark_test.go`, `TestTaskStatePrecedence` (table, `now` fixed, `agents` holding `sam` live with tag `implementing`, `pat` live with tag `needs-human`, `ann` live with `Problem: "disk full"`, `bob` offline (`Live: false`)): completed with every other condition → `stateDone`; pending with `OpenBlockers` and `ReclaimedFrom` → `stateBlocked`; in_progress owner `pat` with an expired lease → `stateNeedsHuman`; in_progress owner `sam` lease expired → `stateStalled`, suffix `""`; in_progress owner `bob` → `stateStalled`, suffix `" offline"`; in_progress owner `nobody` (no entry) → `stateStalled`; pending `ReclaimedFrom: "sam"` → `stateStalled`, suffix `" reclaimed from sam"`; in_progress owner `ann` live lease → `stateProblem`; in_progress owner `sam` live lease → `stateInProgress`; pending assigned to `bob` (offline, no mark) → `statePending`. `TestTaskMarkGlyphs`: each state maps to its var.
 
-`tasks_test.go`: a new `TestTaskRowMarksFollowStates` in the style of `TestTaskChannelRendersTree` (`:20-67`) and `TestTaskRowSuffixes` (`:474`): with `f.agentWithStatus(t, "pat", true, statusSet{tag: "needs-human", text: "which?"})` and a task claimed by pat, the row starts with `taskNeedsHuman`; after `f.h`-equivalent reclaim (call the core's maintenance `RunJob("abandoned tasks")` through the fixture's core after closing pat's session, or set the summary in `f.m.tasks[ch]` directly, as `agents_test.go:232` patches `m.agents`), the row starts with `taskStalled` and contains `reclaimed from pat`; a blocked pending row starts with `taskBlocked` and still contains `blocked by #`. Detail block: with `f.m.taskDetail[id]` holding `ReclaimedFrom: "pat", ReclaimedAt: ms`, the rendered block contains `reclaimed from pat · ` + `stamp(ms)`.
+`tasks_test.go`: a new `TestTaskRowMarksFollowStates` in the style of `TestTaskChannelRendersTree` (`:20-67`) and `TestTaskRowSuffixes` (`:474`): with `f.agentWithStatus(t, "pat", true, statusSet{tag: "needs-human", text: "which?"})` and a task claimed by pat, the row starts with `taskNeedsHuman`; with the summary in `f.m.tasks[ch]` patched to `Status: "pending", Owner: "", ReclaimedFrom: "pat", ReclaimedAt: ms` (as `agents_test.go:232` patches `m.agents`; no maintenance plumbing in a TUI test), the row starts with `taskStalled` and contains `reclaimed from pat`; a blocked pending row starts with `taskBlocked` and still contains `blocked by #`. Detail block: with `f.m.taskDetail[id]` holding `ReclaimedFrom: "pat", ReclaimedAt: ms`, the rendered block contains `reclaimed from pat · ` + `stamp(ms)`.
 
 - [ ] **Step 2: Run the tests to verify they fail**
 
@@ -241,7 +241,7 @@ Expected: compile failure (`taskStateOf` undefined), row tests fail on `taskPend
 
 - [ ] **Step 3: Implement**
 
-`taskmark.go` as the Interfaces block; `time.Now()` is passed by the caller, never read inside. `renderTasks`: replace the `switch t.Status` mark block with `st, extra := taskStateOf(t, m.agents, time.Now()); mark := taskMark(st)`; append `extra` to `suffix` before the blockers text; keep the owner rendering, the `lease`/`lease expired` and `blocked by` suffixes as they are. `renderTaskBlock`: after the metadata lines and before the `updated by` line, `if detail.ReclaimedFrom != "" { lines = append(lines, dim.Render("reclaimed from "+detail.ReclaimedFrom+" · "+stamp(detail.ReclaimedAt))) }` (omit the ` · stamp` when `ReclaimedAt` is 0). `docs/tui.md` Task lists section: a sentence and a table: "Each row's mark follows the Slack canvas states with the same precedence: `⬜` pending, `⏱️` in progress, `✅` done, `⛔` an open blocker, `🙋` the owner's status tag is `needs-human`, `⚠️` stalled (the lease has passed, the owner has no live session, or the server reclaimed the task and no one has claimed it since: the row reads `reclaimed from <owner>`) or the owner's status reports a problem. The TUI judges stalls by its own clock and the last agent-status round (5 s)."
+`taskmark.go` as the Interfaces block; `time.Now()` is passed by the caller, never read inside. `renderTasks`: replace the `switch t.Status` mark block with `st, extra := taskStateOf(t, m.agents, time.Now()); mark := taskMark(st)`; append `extra` to `suffix` before the blockers text; keep the owner rendering, the `lease`/`lease expired` and `blocked by` suffixes as they are. `renderTaskBlock`: after the metadata lines and before the `updated by` line, `if detail.ReclaimedFrom != "" { lines = append(lines, dim.Render("reclaimed from "+detail.ReclaimedFrom+" · "+stamp(detail.ReclaimedAt))) }` (omit the ` · stamp` when `ReclaimedAt` is 0). `docs/tui.md` Task lists section: a sentence and a table: "Each row's mark follows the Slack canvas states with the same precedence: `📥` pending, `⏱️` in progress, `✅` done, `⛔` an open blocker, `🙋` the owner's status tag is `needs-human`, `⚠️` stalled (the lease has passed, the owner has no live session, or the server reclaimed the task and no one has claimed it since: the row reads `reclaimed from <owner>`) or the owner's status reports a problem. The TUI judges stalls by its own clock and the last agent-status round (5 s)."
 
 - [ ] **Step 4: Run the tests to verify they pass**
 
@@ -261,7 +261,7 @@ git commit -m "feat(tui): task marks mirror the canvas states (blocked, stalled,
 
 **Files:**
 - Test: everything (`make verify`)
-- Modify: `CLAUDE.md` (the `tasks` bullet under Design, one clause: "a reclaimed task carries `reclaimed_from`/`reclaimed_at` until it leaves `pending`, ADR 0009 decisions of 2026-11-05") only if the implementer finds the rule is not already discoverable from the ADR line there; otherwise no change.
+- Modify: `CLAUDE.md` Design section, a new bullet after the "Agent status (ADR 0014 ...)" bullet: "- Reclaimed tasks (ADR 0009, decisions of 2026-11-05): the abandoned-task reclaim writes `reclaimed_from` and `reclaimed_at` into the task document (`internal/core/tasks/reclaim.go`); they stay until the status leaves `pending` (`applyPatch`); `bus.Task`, `bus.TaskSummary` and the wire carry them; the canvas and the TUI show such a task as stalled."
 
 - [ ] **Step 1: Sweep the other readers of task documents and record the result in the commit message**
 
@@ -272,11 +272,12 @@ git commit -m "feat(tui): task marks mirror the canvas states (blocked, stalled,
 Run: `make verify`
 Expected: PASS, with the Postgres suites run (not skipped) and `check-gates` green; `TestAccessRuleSites` passes with the one count change of Task 1.
 
-- [ ] **Step 3: Commit anything the sweep changed, then report**
+- [ ] **Step 3: Commit the CLAUDE.md line and anything the sweep changed, then report**
 
 ```bash
+git add CLAUDE.md
 git add -p
-git commit -m "chore(tasks): definition-of-done sweep for the reclaimed mark"
+git commit -m "docs: note the reclaimed-task mark in CLAUDE.md; definition-of-done sweep"
 ```
 
 Report to Eric: the `make verify` output tail, the commit list, and the open questions from the plan's "Design decisions" section. The push and the `ci.yml`/`windows.yml` check wait for his word.
