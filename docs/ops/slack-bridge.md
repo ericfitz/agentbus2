@@ -8,13 +8,13 @@ The app is internal to one workspace and is never distributed publicly (a Socket
 
 1. Create an app in your workspace and enable **Socket Mode**.
 2. Create an **app-level token** (`xapp-...`) with the scope `connections:write`.
-3. Add these **bot token scopes**: `groups:write`, `groups:write.invites`, `groups:history`, `groups:read`, `users:read`, `users:read.email`, `chat:write` and `chat:write.customize`.
+3. Add these **bot token scopes**: `groups:write`, `groups:write.invites`, `groups:history`, `groups:read`, `users:read`, `users:read.email`, `chat:write`, `chat:write.customize`, `canvases:read` and `canvases:write` (the last two for the scope canvas below).
 4. Subscribe to these **bot events**: `message.groups` and `member_left_channel`.
 5. Install the app to the workspace and copy the **bot token** (`xoxb-...`).
 6. Write each token to its own file readable only by the server user (mode 0600), for example `/etc/agentmesh/slack-app-token` and `/etc/agentmesh/slack-bot-token`. The files hold the token alone; leading and trailing whitespace is trimmed.
 7. Set `slack_app_token_file` and `slack_bot_token_file` (see [configuration.md](configuration.md)); both or neither. The server reads the files once at start. A missing file, an app token that does not start with `xapp-` or a bot token that does not start with `xoxb-` stops the start with exit 2, naming the setting and never the token. Slack answering `invalid_auth` to the bot token also stops the start. Any other failure to reach Slack at start (network, a 5xx, a rate limit) does not: the server starts, bridge calls answer `unavailable` ("the Slack bridge is not connected to Slack yet; retry", retryable) and the bridge retries `auth.test` until Slack answers.
 
-Two more settings tune it: `slack_archive_after_done_hours` (default 168) and `slack_max_message_chars` (default 3000; a longer message is cut by characters and ends with a note pointing to agentmesh; a very long channel name makes the note shorter, so some of the message still shows). The bridge keeps Slack user lookups (`users.info`) in a cache of at most 1000 entries that expire after 10 minutes. Every replica needs both token files to serve bridge calls, and the same settings.
+Four more settings tune it: `slack_canvas_enabled` and `slack_canvas_coalesce_seconds` (the scope canvas below), `slack_archive_after_done_hours` (default 168) and `slack_max_message_chars` (default 3000; a longer message is cut by characters and ends with a note pointing to agentmesh; a very long channel name makes the note shorter, so some of the message still shows). The bridge keeps Slack user lookups (`users.info`) in a cache of at most 1000 entries that expire after 10 minutes. Every replica needs both token files to serve bridge calls, and the same settings.
 
 ## What a job looks like
 
@@ -54,6 +54,38 @@ The Slack channel is also archived, and the bridge stops in both directions, at 
 The runner applies these rules every minute (it also reads Slack's history for messages it missed, see below). The Slack channel gets the final line before it is archived. A bridge whose bus channel has disappeared is archived in Slack and its row deleted.
 
 A channel someone archived by hand in Slack is treated the same way: the bridge is marked `archived` as soon as the runner next posts to it or checks its members (a channel nobody posts to and that is not done stays marked `live` until then). Archiving is idempotent: a second run, or an overlapping replica, finds the channel already archived and succeeds. Retiring a scope deletes its bridge rows. A scope that is idle or done but whose Slack settings were removed is held, not retired, until the settings return or the bridge is removed; the server logs a warning on every maintenance tick naming it, so a Slack channel with people in it is never orphaned.
+
+## The scope canvas
+
+Each live bridge's Slack channel carries one **channel canvas**, a tab titled `Status`, that shows the scope's task lists and memory channels. It is on by default (`slack_canvas_enabled`, see [configuration.md](configuration.md)), needs the `canvases:read` and `canvases:write` bot scopes, and is ignored without the Slack token files. A scope with two bridges has two canvases. The design is `docs/superpowers/specs/2026-11-04-slack-scope-canvas-design.md` and the 2026-11-04 decisions of ADR 0009.
+
+**What it shows.** Only the scope's task channels and memory channels that every human who may post to the bridged channel may read; a channel that one of them cannot read is left out entirely, and a bridge with no such human shows none. Each task list is a heading with a count line and the whole task tree: a root task is a foldable heading, its subtasks a nested checklist, completed tasks stay in place checked, and each task shows its owner. Each memory channel lists its live memories in full, newest edit first. If the rendering would pass 1 MiB (less a 4 KiB margin), the oldest memories are dropped one at a time and the channel says how many older ones are not shown; tasks are never dropped, and if the tasks alone are too large the canvas says so and the server logs a warning naming the scope.
+
+**Glyphs.** `◌` pending, `▶` in progress, `✔` done, `⛔︎` blocked (an open blocker), `⚠︎` stalled (an in-progress task whose lease expired or whose owner has no live session) or a problem reported by its owner's agent status, `⚑` needs human (the owner's status tag is `needs-human`). The canvas opens with a **Needs attention** section of up to four subsections (Blocked, Needs human, Stalled, Problem reported); a task appears in every subsection it matches. The canvas read never reclaims a stalled task or records a read, so it keeps no task list alive.
+
+**Read-only.** The bridge sets the canvas's channel access to `read` (`canvases.access.set`) after every create and every adoption, so a canvas someone made editable returns to read-only at the next restart or new lock tenure. Changes go through agentmesh; a human's edit in Slack is overwritten by the next rebuild.
+
+**When it updates.** A change to a task or memory channel of the scope marks it dirty, and the canvas is rebuilt `slack_canvas_coalesce_seconds` later (default 30; changes in the window join one rebuild). The 60-second lifecycle pass and every Socket Mode reconnect mark every live bridge, because a lease expiring, a session ending, an ACL change or a status change makes no hint. A new bridge's canvas therefore appears within one lifecycle interval plus the window, 90 seconds at the defaults. A rendering that did not change (the "Updated" line excluded) is not sent.
+
+**Finding the canvas.** Every canvas carries the marker text `changes go through agentmesh`. The publisher keeps the canvas ID in memory only: on first use for a bridge (after a restart, or on a replica that takes over the lock) it reads the channel's canvas tabs and adopts the first one in which Slack finds the marker; when there is no canvas tab it creates one. A restart or a lock change therefore costs one rebuild and never a second canvas. The tab label is not used, so renaming the tab changes nothing. If a create answers that the channel already has a canvas, the publisher looks again and never creates twice; if it still finds none it retries at the next window. Limitation: a canvas a human wrote that quotes the marker text is adopted and overwritten.
+
+**Second runs and replicas.** Only the replica holding the `slack-bridge` lock publishes (the publisher stops with the lock). A replica that takes the lock forgets any state, finds the canvas by its marker and republishes once. Two replicas never publish at the same time; a replica that lost the lock mid-call stops before its next call. Running the server again is the same as a restart.
+
+**Failures.** Each Slack canvas call has a 30-second timeout and the publisher runs in its own goroutine, so a canvas failure never delays bridging.
+
+| Slack answer | Effect |
+|---|---|
+| the plan does not allow channel canvases (`team_tier_cannot_create_channel_canvases`, `canvas_disabled_user_team`) | one warning per bridge; the bridge's canvas is disabled until the server restarts or the replica takes the lock again |
+| `missing_scope` | one warning naming `canvases:read` and `canvases:write`; disabled likewise |
+| a canvas tab without the marker (someone else's canvas) | one warning; disabled likewise; the tab is never overwritten |
+| any other unrecognized code | one warning with the code; disabled likewise |
+| `canvas_not_found`, or `channel_not_found` on an edit | the canvas is forgotten and found or created again at the next window (a deleted canvas is recreated) |
+| `is_archived`, `not_in_channel`, or `channel_not_found` on any other canvas call | the Slack channel is gone: the bridge is marked `archived` as for a channel archived by hand. When the bot was removed from the channel it cannot post the final line or archive it, so the row is marked `archived` and the Slack channel stays as it is |
+| a rate limit | the rebuild waits the delay Slack asked for, at most one minute, without blocking |
+| `canvas_editing_locked`, a Slack server error, a transport error or timeout | retried at the next window |
+| a credential error (`invalid_auth`, `not_authed`, `account_inactive`, `token_revoked`, `token_expired`, `access_denied`) | one warning per bridge and code until the lock changes hands; retried at the next window |
+
+Nothing deletes a canvas: removing or archiving a bridge, or turning `slack_canvas_enabled` off, leaves the canvas in the Slack channel as it was, and turning it off stops updates.
 
 ## Running it
 

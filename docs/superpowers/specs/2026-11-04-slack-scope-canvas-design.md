@@ -147,7 +147,7 @@ For one live bridge, in one `Store.Read`:
 
 1. The allowed humans: `Access.Holders(Channel{bridged channel}, Post)`, the set `create.go` and the inbound trust check already use.
 2. The candidate channels: the scope's channels of kind tasks or memory.
-3. The visible channels: a candidate is kept when every allowed human is in `Access.Holders(Channel{candidate}, Read)`. Zero allowed humans keeps nothing. The decision stays in `internal/core/access` (ADR 0011): the bridge compares holder sets and reads no `Admin`, `Creator`, `Owner`, `Scope` or `Kind` selector of an identity or memory, and adds no entry to the `TestAccessRuleSites` allowlist.
+3. The visible channels: a candidate is kept when every allowed human is in `Access.Holders(Channel{candidate}, Read)`. Zero allowed humans keeps nothing. The decision stays in `internal/core/access` (ADR 0011): the bridge compares holder sets and reads no `Admin`, `Creator`, `Owner`, `Scope` or `Kind` selector of an identity or memory, and adds no entry to the `TestAccessRuleSites` allowlist. The tasks core adds exactly one (`internal/core/tasks/snapshot.go Snapshot {"Owner": 1}`: a data copy of the owner into the snapshot's assignee, Eric's decision 2026-11-04, ADR 0009 addendum item 13), and the scope name is passed to the snapshot as a parameter.
 4. For each visible task channel, the live tasks in tree order with `OpenBlockers` and the abandoned set at the snapshot time, read without reclaiming and without recording a read mark: the canvas is not a reader and must not keep a list alive (`channels.last_read_at`) or write to it. The tasks core gains a read-only snapshot function for this, sharing `loadTasks` and `abandonedSet` with `List`.
 5. For each visible memory channel, its live memories.
 6. The agent statuses of the owners of the non-completed tasks (`internal/core/statuses`, offline derived at read).
@@ -201,7 +201,7 @@ A canvas failure never delays or blocks message bridging: the publisher has its 
 - `ReplaceCanvas(ctx, canvasID, markdown string) error`
 - `SetCanvasChannelAccess(ctx, canvasID, channelID, level string) error`: `level` is `read` or `write`; any other value is an error before a call is made
 
-`slackgo` implements them with slack-go v0.30.1 (`CreateChannelCanvas`, `GetConversationInfo`, `LookupCanvasSections`, `EditCanvas`, `SetCanvasAccess`); `slackfake` implements them in memory, including the free-tier second-create code, a foreign tab without the marker, and a tab label that a rename does not change. The Slack import rules are unchanged.
+`slackgo` implements them with slack-go v0.34.0 (Eric's decision 2026-11-04, ADR 0009 addendum item 12: `CreateChannelCanvas`, `GetConversationInfoContext` with `Tab.Data.FileID` as the canvas ID of a channel's tab, `LookupCanvasSections`, `EditCanvas`, `SetCanvasAccess`); `slackfake` implements them in memory, including the free-tier second-create code, a foreign tab without the marker, and a tab label that a rename does not change. The Slack import rules are unchanged.
 
 ## 7. Settings (`internal/server/config`)
 
