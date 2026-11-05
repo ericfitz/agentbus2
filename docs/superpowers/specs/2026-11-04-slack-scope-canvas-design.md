@@ -1,6 +1,6 @@
 # Slack scope canvas: design
 
-Status: approved by Eric in chat, 2026-11-04 (decisions, architecture and glyphs); this written spec awaits his review. The decisions are recorded in ADR 0009's addendum "Decisions of 2026-11-04 (Eric): the scope canvas".
+Status: approved by Eric in chat, 2026-11-04 (decisions, architecture and glyphs); this written spec awaits his review. The decisions are recorded in ADR 0009's addendum "Decisions of 2026-11-04 (Eric): the scope canvas". Amended 2026-11-05 (section 2.1, "Decisions of 2026-11-05 (Eric)" in ADR 0009): the stalled state gained the reclaimed mark, after the implementation showed that section 4.3 as first written never held in practice.
 
 ## 1. Goal
 
@@ -19,6 +19,14 @@ ADR 0009 decision 1 deferred "memory and task channels later, one-way, informati
 9. **Memories.** Full content of each live memory.
 10. **Needs attention.** The canvas opens with a flat "Needs attention" section with four subsections, Blocked, Needs human, Stalled and Problem reported; a task appears in every subsection whose condition it matches.
 11. **Title and navigation.** The canvas (its tab) is titled `Status`. No contents list: Slack builds the canvas's sidebar outline from its headings (verified 2026-11-04), so every list, memory channel and attention subsection is a heading.
+
+### 2.1 Decisions (Eric, 2026-11-05): the reclaimed mark
+
+Recorded in ADR 0009, "Decisions of 2026-11-05 (Eric)". Section 4.3 as first written said a stalled task "stays `⚠︎` until an agent's read or claim reclaims it". In practice it never did: the maintenance job `abandoned tasks` (`internal/core/maintenance/jobs.go`, every `maintenance_interval_seconds`, default 60) returns every abandoned task to `pending` with its owner and lease cleared (`internal/core/tasks/reclaim.go`, a revision of type `reclaimed` with no sender), and `tasks.List` and `tasks.Get` reclaim before they serve, so the TUI's own read reset the stall. A stalled task was `⚠︎` for at most one maintenance interval, then an unremarkable `◌`.
+
+1. **A reclaimed task stays stalled until it is claimed.** The reclaim records who held the task and when: `reclaimAbandoned` writes `reclaimed_from` (the previous owner) and `reclaimed_at` (Unix ms) into the task document. Every later write copies the document forward, so the mark survives edits (subject, description, metadata, links, order, an owner assignment that keeps `pending`). The mark clears when the task's status leaves `pending`: a claim, or an update to `in_progress` or `completed`; a delete removes the task. A release (`task_release` by the owner, or an update to `pending` by anyone) is not a reclaim and sets no mark. `bus.Task` and `bus.TaskSummary` carry the two fields (`ReclaimedFrom`, `ReclaimedAt`, JSON `reclaimed_from` and `reclaimed_at`, omitted when unset), and the `Task` and `TaskSummary` schemas of `api/openapi.yaml` gain them (the protocol stays `1.0.0` before the first release). Pre-release rule: the document format changes in place, no migration; a document without the fields parses as unmarked.
+2. **The canvas shows a reclaimed task as stalled.** Glyph `⚠︎`, tree suffix `stalled: reclaimed from <owner> HH:MM UTC`, Needs attention → Stalled line `⚠︎ #id subject · reclaimed from <owner> HH:MM UTC · <list>`. The precedence of 4.2 is unchanged: blocked first, then needs human (which cannot hold, as a reclaimed task has no owner), then stalled.
+3. **The TUI mirrors the canvas states** (ADR 0009, decision 2 of 2026-11-05; `docs/tui.md`): the task marks become `⬜` pending, `⏱️` in progress, `✅` done, `⛔` blocked, `⚠️` stalled or problem, `🙋` needs human, with the canvas precedence. Decision 7 (font glyphs) stays a canvas rule; the TUI keeps emoji.
 
 ## 3. Verified Slack behavior (spike, 2026-11-04, workspace `efitz`, free plan)
 
@@ -58,6 +66,7 @@ _Updated <YYYY-MM-DD HH:MM> UTC · read-only; changes go through agentmesh_
 
 ### ⚠︎ Stalled
 - ⚠︎ #9 Fuzz the tokenizer · claude-b · lease expired 20:41 UTC · <task channel>
+- ⚠︎ #12 Write docs · reclaimed from claude-d 19:02 UTC · <task channel>
 
 ### ⚠︎ Problem reported
 - ⚠︎ #15 Run e2e · claude-c · docker daemon down · <task channel>
@@ -65,7 +74,7 @@ _Updated <YYYY-MM-DD HH:MM> UTC · read-only; changes go through agentmesh_
 ---
 
 ## Tasks: <task channel>
-▶ 2 · ◌ 4 · ⛔︎ 1 · ⚠︎ 1 · ⚑ 1 · ✔ 12
+▶ 2 · ◌ 3 · ⛔︎ 1 · ⚠︎ 2 · ⚑ 1 · ✔ 12
 
 ### ▶ #7 Wire the parser · claude-a
 - [x] ✔ #8 Define grammar · claude-a
@@ -75,7 +84,7 @@ _Updated <YYYY-MM-DD HH:MM> UTC · read-only; changes go through agentmesh_
 - [ ] ⚑ #10 Pick the error format · claude-a · needs human: which style?
 
 ### ⛔︎ #11 Ship release · blocked by #7
-- [ ] ◌ #12 Write docs
+- [ ] ⚠︎ #12 Write docs · stalled: reclaimed from claude-d 19:02 UTC
 
 ---
 
@@ -103,7 +112,7 @@ _fact · area:db · edited 2026-11-04 by claude-a_
 |---|---|---|
 | open blockers (`OpenBlockers` non-empty) | `⛔︎` | `blocked by #a, #b` |
 | owner's status tag is exactly `needs-human` | `⚑` | `needs human: <status text>` |
-| abandoned (section 4.3) | `⚠︎` | `stalled: lease expired HH:MM UTC` or `stalled: owner offline` |
+| stalled (section 4.3) | `⚠︎` | `stalled: lease expired HH:MM UTC`, `stalled: owner offline` or `stalled: reclaimed from <owner> HH:MM UTC` |
 | owner's status has a problem | `⚠︎` | `<problem>` |
 | `in_progress` | `▶` | none |
 | `pending` | `◌` | none |
@@ -114,7 +123,12 @@ _fact · area:db · edited 2026-11-04 by claude-a_
 
 ### 4.3 Stalled
 
-A task is stalled when the tasks core's `abandonedSet` rule holds at the snapshot time: `in_progress` with an expired lease, or with an owner that has no live session. The suffix says `lease expired HH:MM UTC` when the lease has expired, otherwise `owner offline`. The canvas read never reclaims (section 5), so a stalled task stays `⚠︎` until an agent's read or claim reclaims it, which is itself a change that republishes the canvas.
+A task is stalled in either of two states (Eric, 2026-11-05, section 2.1):
+
+- **Abandoned at the snapshot time:** the tasks core's `abandonedSet` rule holds: `in_progress` with an expired lease, or with an owner that has no live session. The suffix says `lease expired HH:MM UTC` when the lease has expired, otherwise `owner offline`. The canvas read never reclaims (section 5), so this state shows until something reclaims the task: the maintenance job `abandoned tasks` (every `maintenance_interval_seconds`, default 60), a `tasks.List` or `tasks.Get` by any reader, or an update of the task. In practice this state lasts at most about one maintenance interval.
+- **Reclaimed:** the task is `pending` and carries the reclaimed mark (`reclaimed_from`, `reclaimed_at`) the reclaim wrote. The suffix says `reclaimed from <owner> HH:MM UTC` (the hour of `reclaimed_at`). The mark stays until the task's status leaves `pending` (a claim, or an update to `in_progress` or `completed`), so the task stays `⚠︎` for every reader until an agent takes it. A reclaimed task has no owner, so the needs-human and problem rows of 4.2 cannot apply to it; an open blocker still wins (`⛔︎`), and the Stalled subsection of 4.5 lists it all the same.
+
+A release (`task_release` by the owner, or an update to `pending`) is not a reclaim: the task becomes an ordinary `◌` with no mark. The snapshot (section 5) reports both states; the renderer's `Stalled` is their union.
 
 ### 4.4 Memories
 
@@ -129,7 +143,7 @@ A task is stalled when the tasks core's `abandonedSet` rule holds at the snapsho
 |---|---|---|
 | `⛔︎ Blocked` | open blockers | `⛔︎ #id subject · blocked by #a, #b · <list>` |
 | `⚑ Needs human` | owner's status tag is exactly `needs-human` | `⚑ #id subject · owner · <status text> · <list>` |
-| `⚠︎ Stalled` | abandoned (section 4.3) | `⚠︎ #id subject · owner · lease expired HH:MM UTC` or `owner offline` ` · <list>` |
+| `⚠︎ Stalled` | stalled (section 4.3) | abandoned: `⚠︎ #id subject · owner · lease expired HH:MM UTC` or `owner offline` ` · <list>`; reclaimed: `⚠︎ #id subject · reclaimed from <owner> HH:MM UTC · <list>` (no owner segment: the task has none) |
 | `⚠︎ Problem reported` | owner's status has a problem | `⚠︎ #id subject · owner · <problem> · <list>` |
 
 - A task appears in every subsection whose condition it matches; the tree (4.2) still shows one glyph by precedence.
@@ -148,7 +162,7 @@ For one live bridge, in one `Store.Read`:
 1. The allowed humans: `Access.Holders(Channel{bridged channel}, Post)`, the set `create.go` and the inbound trust check already use.
 2. The candidate channels: the scope's channels of kind tasks or memory.
 3. The visible channels: a candidate is kept when every allowed human is in `Access.Holders(Channel{candidate}, Read)`. Zero allowed humans keeps nothing. The decision stays in `internal/core/access` (ADR 0011): the bridge compares holder sets and reads no `Admin`, `Creator`, `Owner`, `Scope` or `Kind` selector of an identity or memory, and adds no entry to the `TestAccessRuleSites` allowlist. The tasks core adds exactly one (`internal/core/tasks/snapshot.go Snapshot {"Owner": 1}`: a data copy of the owner into the snapshot's assignee, Eric's decision 2026-11-04, ADR 0009 addendum item 13), and the scope name is passed to the snapshot as a parameter.
-4. For each visible task channel, the live tasks in tree order with `OpenBlockers` and the abandoned set at the snapshot time, read without reclaiming and without recording a read mark: the canvas is not a reader and must not keep a list alive (`channels.last_read_at`) or write to it. The tasks core gains a read-only snapshot function for this, sharing `loadTasks` and `abandonedSet` with `List`.
+4. For each visible task channel, the live tasks in tree order with `OpenBlockers`, the abandoned set at the snapshot time and each task's reclaimed mark (`ReclaimedFrom`, `ReclaimedAt`, as stored), read without reclaiming and without recording a read mark: the canvas is not a reader and must not keep a list alive (`channels.last_read_at`) or write to it. The tasks core gains a read-only snapshot function for this, sharing `loadTasks` and `abandonedSet` with `List`.
 5. For each visible memory channel, its live memories.
 6. The agent statuses of the owners of the non-completed tasks (`internal/core/statuses`, offline derived at read).
 
@@ -224,6 +238,7 @@ Both apply only when the Slack bridge is configured; set without the token files
 
 - **Rendering:** golden files under `internal/slackbridge/testdata/canvas/` for: Needs attention with all four subsections, a task in two of them, two lists, and the empty case; a tree four levels deep with every glyph and suffix; completed subtrees; a root whose parent was deleted; empty list; no visible channels; memories with and without a subject, with a `#` line in the content; escaping of every listed character; the size cap dropping memories; the tasks-too-large case.
 - **Snapshot:** on both engines (the Bus suite's store fixtures): the visibility rule (a channel readable by one of two humans is left out; `everyone` read counts; zero humans keeps nothing); a stalled task is reported and **not** reclaimed, and `last_read_at` is unchanged after the snapshot; owner status and `needs-human` mapping; offline owners contribute nothing.
+- **Reclaimed mark (2026-11-05):** on both engines: the `abandoned tasks` job writes `reclaimed_from` and `reclaimed_at` and a second run writes nothing more; `Snapshot`, `Get` and `List` report the mark; an edit that keeps `pending` carries it forward, a claim or a status change clears it, a release sets none; the bridge's canvas, with the maintenance job run against a lease-expired task, shows `stalled: reclaimed from <owner>` (the reproduction of the bug section 2.1 describes: it fails before the change, because the job's reclaim left an unmarked `◌`). Goldens: a reclaimed task in the tree and in Needs attention → Stalled, and a reclaimed task with an open blocker (`⛔︎` in the tree, listed under both Blocked and Stalled).
 - **Publisher (slackfake):** first publish creates a canvas titled `Status`, sets access and stores the hash; an unchanged rendering makes no call; a change within the window makes one call; a restart adopts the tab holding the marker even when its label differs; the free-tier second-create code adopts the marked tab; a foreign tab (no marker) disables and never edits; `canvas_not_found` recreates; rate limit waits; `missing_scope` warns once; disabled setting makes no canvas call; only the lock holder publishes (`TestReplicas*` style); an archived bridge is skipped.
 - **Config:** defaults, ranges, an unknown boolean value refused, environment and flag precedence.
 - **Gates:** `make verify` (both engines), `TestAccessRuleSites` unchanged, the Slack import rules unchanged, `ci.yml` and `windows.yml` green.
