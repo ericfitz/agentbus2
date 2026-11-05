@@ -3,12 +3,17 @@ package bus
 import (
 	"context"
 	"errors"
+	"fmt"
+	"maps"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
 	ab2bus "github.com/ericfitz/agentmesh/internal/bus"
 	"github.com/ericfitz/agentmesh/internal/dbtest"
+	"github.com/ericfitz/agentmesh/internal/slackapi"
+	"github.com/ericfitz/agentmesh/internal/slackapi/slackfake"
 	"github.com/ericfitz/agentmesh/internal/slackbridge"
 	ab2store "github.com/ericfitz/agentmesh/internal/store"
 )
@@ -271,5 +276,369 @@ func TestCanvasSnapshotUnknownKindUnreachable(t *testing.T) {
 		if !errors.Is(err, ab2store.ErrInvalid) {
 			t.Fatalf("CreateChannel with an unknown kind: %v", err)
 		}
+	})
+}
+
+// canvasFix is a bridged job1 with a visible task list (one task whose
+// subject is a sentinel) and a visible memory channel (one memory whose
+// content is a sentinel); the publisher must publish both and log neither.
+func newCanvasFix(t *testing.T, e dbtest.Engine, enabled bool) *inFix {
+	t.Helper()
+	f := newInFixOpts(t, e, harnessOptions{}, func(c *slackbridge.Config) { c.CanvasEnabled = enabled })
+	R, W, A := ab2store.PermRead, ab2store.PermWrite, ab2store.PermAdmin
+	f.h.scopedIdentity("job1-b", "job1")
+	f.slKindChannel("job1-tasks", "job1", ab2store.KindTasks, canvasTasksACL())
+	f.slKindChannel("job1-notes", "job1", ab2store.KindMemory, []ab2store.ACLEntry{slEntry("job1-coder", R, W, A), slEntry(ab2store.Everyone, R), slEntry(ab2store.Admins, A)})
+	f.addCanvasTask("SECRET-SUBJECT first")
+	if _, err := f.h.localAs("job1-coder").Send(context.Background(), ab2bus.SendInput{Channel: "job1-notes", Subject: "note", Content: "SECRET-CONTENT"}); err != nil {
+		t.Fatalf("memory: %v", err)
+	}
+	return f
+}
+
+func (f *inFix) addCanvasTask(subject string) {
+	f.h.t.Helper()
+	if _, err := f.h.localAs("job1-coder").Create(context.Background(), ab2bus.TaskCreateInput{Channel: "job1-tasks", Subject: subject}); err != nil {
+		f.h.t.Fatalf("task: %v", err)
+	}
+}
+
+func (f *inFix) pub() (time.Time, error) {
+	f.h.t.Helper()
+	return f.svc.PublishCanvas(context.Background(), f.bridge(), "job1")
+}
+
+func (f *inFix) mustPub() {
+	f.h.t.Helper()
+	if at, err := f.pub(); err != nil || !at.IsZero() {
+		f.h.t.Fatalf("PublishCanvas = %v, %v", at, err)
+	}
+}
+
+// canvasOf is the one canvas of the bridged Slack channel (read without
+// counting a call).
+func canvasOf(f *inFix) slackfake.FakeCanvas {
+	f.h.t.Helper()
+	var found []slackfake.FakeCanvas
+	for i := 1; i < 40; i++ {
+		if c, ok := f.fake.Canvas(fmt.Sprintf("F%06d", i)); ok && c.ChannelID == f.sl {
+			found = append(found, c)
+		}
+	}
+	if len(found) != 1 {
+		f.h.t.Fatalf("the Slack channel has %d canvases", len(found))
+	}
+	return found[0]
+}
+
+func (f *inFix) canvasCalls() map[string]int {
+	out := map[string]int{}
+	for _, m := range []string{"CreateChannelCanvas", "ChannelCanvases", "CanvasContains", "ReplaceCanvas", "SetCanvasChannelAccess"} {
+		out[m] = f.fake.Calls(m)
+	}
+	return out
+}
+
+func inWindow(t *testing.T, at time.Time, d time.Duration) {
+	t.Helper()
+	want := time.Now().Add(d)
+	if at.Before(want.Add(-time.Second)) || at.After(want.Add(time.Second)) {
+		t.Errorf("retryAt = %v, want about %v", at, want)
+	}
+}
+
+func apiCode(err error) string {
+	var ae *slackapi.APIError
+	if errors.As(err, &ae) {
+		return ae.Code
+	}
+	return ""
+}
+
+func TestCanvasPublishCreatesAndReplaces(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.mustPub()
+		if f.fake.Calls("CreateChannelCanvas") != 1 || f.fake.Calls("SetCanvasChannelAccess") != 1 {
+			t.Fatalf("calls %v", f.canvasCalls())
+		}
+		c := canvasOf(f)
+		if c.Label != "Status" || c.Access[f.sl] != "read" ||
+			!strings.Contains(c.Markdown, "# job1 · tasks and memory") || !strings.Contains(c.Markdown, "changes go through agentmesh") ||
+			!strings.Contains(c.Markdown, "SECRET-SUBJECT first") || !strings.Contains(c.Markdown, "SECRET-CONTENT") {
+			t.Fatalf("canvas %+v", c)
+		}
+		before := f.canvasCalls()
+		f.h.clock.Advance(time.Hour)
+		f.mustPub()
+		if got := f.canvasCalls(); !maps.Equal(before, got) {
+			t.Errorf("an unchanged rebuild called Slack: %v -> %v", before, got)
+		}
+		f.addCanvasTask("SECRET-SUBJECT second")
+		f.mustPub()
+		if f.fake.Calls("ReplaceCanvas") != 1 || !strings.Contains(canvasOf(f).Markdown, "SECRET-SUBJECT second") {
+			t.Errorf("calls %v, canvas %q", f.canvasCalls(), canvasOf(f).Markdown)
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasAccessFailureRetried(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.fake.FailNext("SetCanvasChannelAccess", &slackapi.APIError{Method: "canvases.access.set", Code: "internal_error"})
+		at, err := f.pub()
+		if apiCode(err) != "internal_error" {
+			t.Fatalf("first pub: %v", err)
+		}
+		inWindow(t, at, 30*time.Second)
+		if f.fake.Calls("CreateChannelCanvas") != 1 || len(canvasOf(f).Access) != 0 {
+			t.Fatalf("calls %v, access %v", f.canvasCalls(), canvasOf(f).Access)
+		}
+		before := f.canvasCalls()
+		f.mustPub()
+		after := f.canvasCalls()
+		if after["SetCanvasChannelAccess"] != before["SetCanvasChannelAccess"]+1 {
+			t.Errorf("access calls %v -> %v", before, after)
+		}
+		for _, m := range []string{"CreateChannelCanvas", "ChannelCanvases", "CanvasContains", "ReplaceCanvas"} {
+			if after[m] != before[m] {
+				t.Errorf("%s called again: %v -> %v", m, before, after)
+			}
+		}
+		if canvasOf(f).Access[f.sl] != "read" {
+			t.Errorf("access %v", canvasOf(f).Access)
+		}
+		f.mustPub()
+		if got := f.canvasCalls(); !maps.Equal(after, got) {
+			t.Errorf("third pub called Slack: %v -> %v", after, got)
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasAdoptsByMarker(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		id := f.fake.AddCanvas(f.sl, "Old title", "# x\n_Updated ... changes go through agentmesh_\n")
+		f.mustPub()
+		c, _ := f.fake.Canvas(id)
+		if f.fake.Calls("CreateChannelCanvas") != 0 || f.fake.Calls("CanvasContains") == 0 || f.fake.Calls("ReplaceCanvas") != 1 ||
+			c.Access[f.sl] != "read" || !strings.Contains(c.Markdown, "# job1 · tasks and memory") {
+			t.Errorf("calls %v, canvas %+v", f.canvasCalls(), c)
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasFreeTierSecondCreateAdopts(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.fake.AddCanvas(f.sl, "Status", "# x\n_changes go through agentmesh_\n")
+		f.fake.EmptyTabsNext(1)
+		f.mustPub()
+		if f.fake.Calls("CreateChannelCanvas") != 1 || f.fake.Calls("ChannelCanvases") != 2 || f.fake.Calls("ReplaceCanvas") != 1 {
+			t.Errorf("calls %v", f.canvasCalls())
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasRestartAdopts(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.mustPub()
+		svc := f.newService(f.h, func(c *slackbridge.Config) { c.CanvasEnabled = true })
+		if at, err := svc.PublishCanvas(context.Background(), f.bridge(), "job1"); err != nil || !at.IsZero() {
+			t.Fatalf("PublishCanvas = %v, %v", at, err)
+		}
+		if f.fake.Calls("CreateChannelCanvas") != 1 || f.fake.Calls("SetCanvasChannelAccess") != 2 || canvasOf(f).Access[f.sl] != "read" {
+			t.Errorf("calls %v", f.canvasCalls())
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasLookupFailureRetries(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.fake.FailNext("ChannelCanvases", &slackapi.APIError{Method: "conversations.info", Code: "internal_error"})
+		at, err := f.pub()
+		if apiCode(err) != "internal_error" || f.fake.Calls("CreateChannelCanvas") != 0 {
+			t.Fatalf("pub: %v, calls %v", err, f.canvasCalls())
+		}
+		inWindow(t, at, 30*time.Second)
+		f.mustPub()
+		if f.fake.Calls("CreateChannelCanvas") != 1 {
+			t.Errorf("calls %v", f.canvasCalls())
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasForeignTabDisables(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.fake.AddCanvas(f.sl, "Notes", "# a human's canvas")
+		for range 3 {
+			f.mustPub()
+		}
+		if f.fake.Calls("ReplaceCanvas") != 0 || f.fake.Calls("CreateChannelCanvas") != 0 || f.fake.Calls("ChannelCanvases") != 1 {
+			t.Errorf("calls %v", f.canvasCalls())
+		}
+		if n := strings.Count(f.logs.String(), "belongs to someone else"); n != 1 || !strings.Contains(f.logs.String(), f.sl) {
+			t.Errorf("warnings %d:\n%s", n, f.logs.String())
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasRecreatesAfterNotFound(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.mustPub()
+		f.fake.DeleteCanvasByHand(canvasOf(f).ID)
+		f.addCanvasTask("SECRET-SUBJECT second")
+		at, err := f.pub()
+		if apiCode(err) != "canvas_not_found" {
+			t.Fatalf("pub: %v", err)
+		}
+		inWindow(t, at, 30*time.Second)
+		f.mustPub()
+		if f.fake.Calls("CreateChannelCanvas") != 2 || !strings.Contains(canvasOf(f).Markdown, "SECRET-SUBJECT second") {
+			t.Errorf("calls %v", f.canvasCalls())
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasRateLimitWaits(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.mustPub()
+		f.addCanvasTask("SECRET-SUBJECT second")
+		f.fake.RateLimit("ReplaceCanvas", 1, 3*time.Second)
+		at, err := f.pub()
+		var rl *slackapi.RateLimitedError
+		if !errors.As(err, &rl) {
+			t.Fatalf("pub: %v", err)
+		}
+		inWindow(t, at, 3*time.Second)
+		f.mustPub()
+		if !strings.Contains(canvasOf(f).Markdown, "SECRET-SUBJECT second") {
+			t.Errorf("canvas %q", canvasOf(f).Markdown)
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasMissingScopeWarnsOnce(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.fake.FailNext("CreateChannelCanvas", &slackapi.APIError{Method: "conversations.canvases.create", Code: "missing_scope"})
+		for range 3 {
+			f.mustPub()
+		}
+		log := f.logs.String()
+		if strings.Count(log, "canvases:read") != 1 || !strings.Contains(log, "canvases:write") || f.fake.Calls("CreateChannelCanvas") != 1 {
+			t.Errorf("calls %v, log:\n%s", f.canvasCalls(), log)
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasPlanUnavailableWarnsOnce(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.fake.FailNext("CreateChannelCanvas", &slackapi.APIError{Method: "conversations.canvases.create", Code: "team_tier_cannot_create_channel_canvases"})
+		for range 3 {
+			f.mustPub()
+		}
+		if n := strings.Count(f.logs.String(), "canvas unavailable on this Slack plan"); n != 1 || f.fake.Calls("CreateChannelCanvas") != 1 {
+			t.Errorf("warnings %d, calls %v", n, f.canvasCalls())
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasArchivedInSlack(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.mustPub()
+		f.addCanvasTask("SECRET-SUBJECT second")
+		f.fake.FailNext("ReplaceCanvas", &slackapi.APIError{Method: "canvases.edit", Code: "is_archived"})
+		if at, err := f.pub(); err != nil || !at.IsZero() {
+			t.Fatalf("pub = %v, %v", at, err)
+		}
+		if f.bridge().State != ab2store.BridgeArchived {
+			t.Fatalf("bridge state %v", f.bridge().State)
+		}
+		before := f.canvasCalls()
+		f.mustPub()
+		if got := f.canvasCalls(); !maps.Equal(before, got) {
+			t.Errorf("an archived bridge called Slack: %v -> %v", before, got)
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasChannelGoneOnCreateArchives(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.fake.FailNext("ChannelCanvases", &slackapi.APIError{Method: "conversations.info", Code: "channel_not_found"})
+		if at, err := f.pub(); err != nil || !at.IsZero() {
+			t.Fatalf("pub = %v, %v", at, err)
+		}
+		if f.bridge().State != ab2store.BridgeArchived {
+			t.Errorf("bridge state %v", f.bridge().State)
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasUnknownCodeDisables(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.mustPub()
+		f.addCanvasTask("SECRET-SUBJECT second")
+		f.fake.FailNext("ReplaceCanvas", &slackapi.APIError{Method: "canvases.edit", Code: "invalid_arguments"})
+		f.mustPub()
+		before := f.canvasCalls()
+		f.addCanvasTask("SECRET-SUBJECT third")
+		f.mustPub()
+		if got := f.canvasCalls(); !maps.Equal(before, got) {
+			t.Errorf("a disabled bridge called Slack: %v -> %v", before, got)
+		}
+		if n := strings.Count(f.logs.String(), "invalid_arguments"); n != 1 {
+			t.Errorf("warnings %d:\n%s", n, f.logs.String())
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+// TestCanvasMarkerInMemoryIsAdopted: a canvas of someone else that quotes the
+// marker is adopted (the marker is the only test: spec 6.3).
+func TestCanvasMarkerInMemoryIsAdopted(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, true)
+		f.fake.AddCanvas(f.sl, "Notes", "# notes\nsomeone wrote: changes go through agentmesh\n")
+		f.mustPub()
+		if f.fake.Calls("CreateChannelCanvas") != 0 || f.fake.Calls("ReplaceCanvas") != 1 {
+			t.Errorf("calls %v", f.canvasCalls())
+		}
+		f.noSecretsLogged(t)
+	})
+}
+
+func TestCanvasDisabledMakesNoCall(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		f := newCanvasFix(t, e, false)
+		f.mustPub()
+		for m, n := range f.canvasCalls() {
+			if n != 0 {
+				t.Errorf("%s called %d times", m, n)
+			}
+		}
+		f.noSecretsLogged(t)
 	})
 }

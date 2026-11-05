@@ -106,6 +106,8 @@ type Service struct {
 	// the time of the first such attempt (searched for before posting again).
 	uncertain map[postedKey]time.Time
 	retired   map[int64]bool // archived or removed bridges: nothing is remembered for them
+
+	canvas *canvasPublisher // the scope canvas publisher
 }
 
 var _ scopes.Archiver = (*Service)(nil)
@@ -124,6 +126,7 @@ func New(ctx context.Context, c *core.Core, sc slackapi.Client, cfg Config) (*Se
 		return nil, err
 	}
 	s := &Service{core: c, sc: sc, cfg: cfg, log: cfg.Logger}
+	s.canvas = newCanvasPublisher(s)
 	if err := s.authenticate(ctx); err != nil {
 		var ae *slackapi.APIError
 		if errors.As(err, &ae) && ae.Code == "invalid_auth" {

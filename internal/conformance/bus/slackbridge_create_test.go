@@ -86,7 +86,7 @@ func newSlackFixOpts(t *testing.T, e dbtest.Engine, o harnessOptions, mod func(*
 func (x *slackFix) noSecretsLogged(t *testing.T) {
 	t.Helper()
 	log := x.logs.String()
-	for _, bad := range []string{"xoxb", "xapp", "Not invited", "This channel is archived", slGina, slAlice, slXav} {
+	for _, bad := range []string{"xoxb", "xapp", "Not invited", "This channel is archived", slGina, slAlice, slXav, "SECRET-SUBJECT", "SECRET-CONTENT"} {
 		if strings.Contains(log, bad) {
 			t.Errorf("the log contains %q:\n%s", bad, log)
 		}
