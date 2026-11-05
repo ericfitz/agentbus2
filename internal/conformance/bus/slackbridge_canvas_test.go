@@ -666,6 +666,9 @@ func TestCanvasNotInChannelArchives(t *testing.T) {
 		if f.bridge().State != ab2store.BridgeArchived {
 			t.Fatalf("bridge state %v", f.bridge().State)
 		}
+		if n := strings.Count(f.logs.String(), "not in the Slack channel; marking the bridge archived"); n == 0 {
+			t.Errorf("no not-in-channel warning:\n%s", f.logs.String())
+		}
 		before := f.canvasCalls()
 		f.mustPub()
 		if got := f.canvasCalls(); !maps.Equal(before, got) {

@@ -90,8 +90,10 @@ func (p *canvasPublisher) markAll() {
 	}
 	at := p.window()
 	p.mu.Lock()
+	if !p.pendingAll || at.Before(p.pendingAt) {
+		p.pendingAt = at
+	}
 	p.pendingAll = true
-	p.pendingAt = at
 	p.dirty.mark("", at)
 	p.mu.Unlock()
 	p.poke()
@@ -335,7 +337,11 @@ func (p *canvasPublisher) pass(ctx context.Context) {
 					code = ae.Code
 				}
 				// handle warned once for a credential code on this bridge.
-				if code == "" || !p.warnedCred(cur.ID, code) {
+				if code == "" {
+					// Not an API answer (transport or context): the error text names no content.
+					p.s.log.Warn("slack bridge: canvas publish failed",
+						"scope", scope, "channel", cur.ChannelName, "slack_channel", cur.SlackChannelID, "err", err)
+				} else if !p.warnedCred(cur.ID, code) {
 					p.s.log.Warn("slack bridge: canvas publish failed",
 						"scope", scope, "channel", cur.ChannelName, "slack_channel", cur.SlackChannelID, "code", code)
 				}

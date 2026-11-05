@@ -750,6 +750,17 @@ func TestRunSlackTokenFiles(t *testing.T) {
 			t.Errorf("Config = %+v", got)
 		}
 	})
+	t.Run("canvas default", func(t *testing.T) {
+		var got Config
+		var out, errb bytes.Buffer
+		if code := run(context.Background(), set("slack_app_token_file="+app, "slack_bot_token_file="+bot),
+			nil, &out, &errb, func(_ context.Context, c Config) error { got = c; return nil }); code != 0 {
+			t.Fatalf("exit %d, stderr %q", code, errb.String())
+		}
+		if !got.SlackCfg.CanvasEnabled {
+			t.Errorf("CanvasEnabled = false on a default start: %+v", got.SlackCfg)
+		}
+	})
 	t.Run("no Slack settings", func(t *testing.T) {
 		var got Config
 		var out, errb bytes.Buffer

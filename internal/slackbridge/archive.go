@@ -50,12 +50,23 @@ func (s *Service) ArchiveBridge(ctx context.Context, b store.Bridge, reason stri
 		return nil
 	}
 	if cur.SlackChannelID != "" {
-		if _, err := s.sc.Post(ctx, slackapi.PostInput{Channel: cur.SlackChannelID, Fallback: FinalLine, Section: FinalLine}); err != nil && !errors.Is(err, slackapi.ErrChannelGone) && !notInChannel(err) {
-			return slackErr(err)
+		warnedNIC := func(err error) {
+			if notInChannel(err) {
+				s.log.Warn("slack bridge: not in the Slack channel; marking the bridge archived without archiving it in Slack",
+					"channel", cur.ChannelName, "slack_channel", cur.SlackChannelID)
+			}
 		}
-		if err := s.sc.Archive(ctx, cur.SlackChannelID); err != nil &&
-			!errors.Is(err, slackapi.ErrAlreadyArchived) && !errors.Is(err, slackapi.ErrChannelGone) && !notInChannel(err) {
-			return slackErr(err)
+		if _, err := s.sc.Post(ctx, slackapi.PostInput{Channel: cur.SlackChannelID, Fallback: FinalLine, Section: FinalLine}); err != nil {
+			if !errors.Is(err, slackapi.ErrChannelGone) && !notInChannel(err) {
+				return slackErr(err)
+			}
+			warnedNIC(err)
+		}
+		if err := s.sc.Archive(ctx, cur.SlackChannelID); err != nil {
+			if !errors.Is(err, slackapi.ErrAlreadyArchived) && !errors.Is(err, slackapi.ErrChannelGone) && !notInChannel(err) {
+				return slackErr(err)
+			}
+			warnedNIC(err)
 		}
 	}
 	err = s.core.Store.Tx(ctx, func(ctx context.Context, tx store.Tx) error {
