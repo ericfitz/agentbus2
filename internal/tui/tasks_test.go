@@ -815,12 +815,17 @@ func TestTaskRowMarksFollowStates(t *testing.T) {
 	if l := byID(back.ID); !strings.HasPrefix(l, taskStalled) || !strings.Contains(l, "reclaimed from pat") {
 		t.Fatalf("reclaimed row = %q", l)
 	}
+	foundWaits := false
 	for _, l := range rows() {
 		if strings.Contains(l, "waits") {
+			foundWaits = true
 			if !strings.HasPrefix(l, taskBlocked) || !strings.Contains(l, "blocked by #") {
 				t.Fatalf("blocked row = %q", l)
 			}
 		}
+	}
+	if !foundWaits {
+		t.Fatalf("no row for the blocked task: %q", rows())
 	}
 
 	f.m.taskDetail[back.ID] = bus.Task{ID: back.ID, ReclaimedFrom: "pat", ReclaimedAt: ms}
@@ -833,5 +838,38 @@ func TestTaskRowMarksFollowStates(t *testing.T) {
 	block := ansi.Strip(f.m.renderTaskBlock(sum, nil, 0, 120))
 	if !strings.Contains(block, "reclaimed from pat · "+stamp(ms)) {
 		t.Fatalf("detail block = %q", block)
+	}
+}
+
+// The " offline" suffix reaches the row for a saved in-progress task whose
+// owner has no live session.
+func TestTaskRowShowsOfflineSuffix(t *testing.T) {
+	f := newFixture(t)
+	f.key("esc")
+	if _, err := f.sam.CreateChannel(taskCtx, bus.CreateChannelInput{Name: "todo", Kind: bus.KindTasks}); err != nil {
+		t.Fatal(err)
+	}
+	tk, err := f.sam.Create(taskCtx, bus.TaskCreateInput{Channel: "todo", Subject: "w"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.sam.Claim(taskCtx, bus.TaskClaimInput{ID: tk.ID}); err != nil {
+		t.Fatal(err)
+	}
+	f.run(f.m.statusCmd())
+	f.selectTaskChannel(t, "todo")
+	l := strings.TrimLeft(ansi.Strip(f.m.renderStream()), " ")
+	if !strings.HasPrefix(l, taskStalled) || !strings.Contains(l, " offline") {
+		t.Fatalf("row = %q", l)
+	}
+}
+
+// The detail line omits the stamp when ReclaimedAt is 0.
+func TestTaskBlockReclaimedWithoutStamp(t *testing.T) {
+	f := newFixture(t)
+	f.m.taskDetail = map[int64]bus.Task{7: {ID: 7, ReclaimedFrom: "pat"}}
+	block := ansi.Strip(f.m.renderTaskBlock(bus.TaskSummary{ID: 7}, nil, 0, 120))
+	if !strings.Contains(block, "reclaimed from pat") || strings.Contains(block, "reclaimed from pat ·") {
+		t.Fatalf("block = %q", block)
 	}
 }

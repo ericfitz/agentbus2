@@ -57,8 +57,8 @@ func TestSpaceCyclesADraftAndAssignsAnUnassignedTask(t *testing.T) {
 		t.Fatalf("toast = %q hint=%v", f.m.toast, f.m.toastHint)
 	}
 	raw := f.m.renderStream()
-	if !strings.Contains(raw, unsaved+taskStalled) || !strings.Contains(ansi.Strip(raw), f.c.identity) {
-		t.Fatalf("drafted row must show in progress with the TUI's name in the unsaved color (no live agent entry for a human owner, so the mark reads stalled): %q", raw)
+	if !strings.Contains(raw, unsaved+taskInProgress) || !strings.Contains(ansi.Strip(raw), f.c.identity) {
+		t.Fatalf("drafted row must show in progress with the TUI's name in the unsaved color: %q", raw)
 	}
 	if got := f.task(t, a.ID); got.Status != "pending" || got.Owner != "" {
 		t.Fatalf("a draft must not touch the bus: %+v", got)

@@ -27,6 +27,21 @@ const (
 // stalls by it and by the last agent-status round. The suffix is the dim
 // text the state adds to the row ("" for none).
 func taskStateOf(t bus.TaskSummary, agents []bus.AgentStatusEntry, now time.Time) (st taskState, suffix string) {
+	return judgeTask(t, agents, now, false)
+}
+
+// draftTaskStateOf is taskStateOf for a drafted (unsaved) row, which previews
+// the state a save will produce: it does not judge the owner's liveness, and
+// a draft that leaves pending or gains an owner shows no reclaimed mark,
+// because the server clears the mark on that write.
+func draftTaskStateOf(t bus.TaskSummary, agents []bus.AgentStatusEntry, now time.Time) (st taskState, suffix string) {
+	if t.Status != "pending" || t.Owner != "" {
+		t.ReclaimedFrom, t.ReclaimedAt = "", 0
+	}
+	return judgeTask(t, agents, now, true)
+}
+
+func judgeTask(t bus.TaskSummary, agents []bus.AgentStatusEntry, now time.Time, drafted bool) (st taskState, suffix string) {
 	if t.Status == "completed" {
 		return stateDone, ""
 	}
@@ -51,7 +66,7 @@ func taskStateOf(t bus.TaskSummary, agents []bus.AgentStatusEntry, now time.Time
 		return stateStalled, " reclaimed from " + t.ReclaimedFrom
 	case inProgress && t.LeasedUntil != 0 && t.LeasedUntil <= now.UnixMilli():
 		return stateStalled, ""
-	case inProgress && owner == nil:
+	case inProgress && owner == nil && !drafted:
 		return stateStalled, " offline"
 	}
 	if owner != nil && owner.Status.Problem != "" {

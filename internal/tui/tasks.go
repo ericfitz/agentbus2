@@ -457,12 +457,17 @@ func (m *Model) renderTasks(ch string) string {
 	var b strings.Builder
 	lineNum := 0
 	cursorDepth := -1 // the cursor task's depth while its shown subtasks follow
+	now := time.Now()
 	for i, r := range rs {
 		t, drafted := m.shownTask(ch, r.t)
 		if cursorDepth >= 0 && t.Depth <= cursorDepth {
 			cursorDepth = -1
 		}
-		st, extra := taskStateOf(t, m.agents, time.Now())
+		stateOf := taskStateOf
+		if drafted {
+			stateOf = draftTaskStateOf
+		}
+		st, extra := stateOf(t, m.agents, now)
 		mark := taskMark(st)
 		selected := i == m.cursor && m.mode == modeNormal
 		rowDim := dim

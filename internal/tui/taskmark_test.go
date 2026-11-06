@@ -39,6 +39,8 @@ func TestTaskStatePrecedence(t *testing.T) {
 		{"in progress", bus.TaskSummary{Status: "in_progress", Owner: "sam", LeasedUntil: future}, stateInProgress, ""},
 		{"pending offline assignee", bus.TaskSummary{Status: "pending", Owner: "bob"}, statePending, ""},
 		{"pending", bus.TaskSummary{Status: "pending"}, statePending, ""},
+		{"lease exactly now is expired", bus.TaskSummary{Status: "in_progress", Owner: "sam", LeasedUntil: now.UnixMilli()}, stateStalled, ""},
+		{"lease one ms ahead is live", bus.TaskSummary{Status: "in_progress", Owner: "sam", LeasedUntil: now.UnixMilli() + 1}, stateInProgress, ""},
 	}
 	for _, c := range cases {
 		got, suffix := taskStateOf(c.t, markAgents(), now)
@@ -56,6 +58,35 @@ func TestTaskMarkGlyphs(t *testing.T) {
 	for st, g := range want {
 		if got := taskMark(st); got != g {
 			t.Errorf("taskMark(%d) = %q, want %q", st, got, g)
+		}
+	}
+}
+
+// Blocked wins over the reclaimed mark and carries no reclaimed suffix.
+func TestBlockedTaskWithMarkShowsBlocked(t *testing.T) {
+	st, suffix := taskStateOf(bus.TaskSummary{Status: "pending", OpenBlockers: []int64{2}, ReclaimedFrom: "sam"}, markAgents(), time.UnixMilli(1))
+	if st != stateBlocked || suffix != "" {
+		t.Fatalf("got (%d, %q)", st, suffix)
+	}
+}
+
+func TestDraftTaskStateOf(t *testing.T) {
+	now := time.UnixMilli(1_000_000)
+	cases := []struct {
+		name string
+		t    bus.TaskSummary
+		want taskState
+		sfx  string
+	}{
+		{"in progress, owner not in agents", bus.TaskSummary{Status: "in_progress", Owner: "eric", ReclaimedFrom: "pat"}, stateInProgress, ""},
+		{"pending with owner drops mark", bus.TaskSummary{Status: "pending", Owner: "sam", ReclaimedFrom: "pat"}, statePending, ""},
+		{"pending unowned keeps mark", bus.TaskSummary{Status: "pending", ReclaimedFrom: "pat"}, stateStalled, " reclaimed from pat"},
+		{"completed", bus.TaskSummary{Status: "completed", Owner: "eric"}, stateDone, ""},
+	}
+	for _, c := range cases {
+		got, sfx := draftTaskStateOf(c.t, markAgents(), now)
+		if got != c.want || sfx != c.sfx {
+			t.Errorf("%s: got (%d, %q), want (%d, %q)", c.name, got, sfx, c.want, c.sfx)
 		}
 	}
 }
