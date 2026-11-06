@@ -545,10 +545,19 @@ func TestTaskChannelNeverShowsMessageHeaders(t *testing.T) {
 	}
 	for _, l := range strings.Split(ansi.Strip(f.m.renderStream()), "\n") {
 		l = strings.TrimLeft(l, " ")
-		if !strings.HasPrefix(l, taskPending) && !strings.HasPrefix(l, taskInProgress) && !strings.HasPrefix(l, taskCompleted) {
+		ok := false
+		for _, mk := range taskMarks() {
+			ok = ok || strings.HasPrefix(l, mk)
+		}
+		if !ok {
 			t.Fatalf("non-task row in task pane: %q", l)
 		}
 	}
+}
+
+// taskMarks lists the six task row marks.
+func taskMarks() []string {
+	return []string{taskPending, taskInProgress, taskCompleted, taskBlocked, taskStalled, taskNeedsHuman}
 }
 
 // Fix round 1 (#9): the dim "→ owner" arrow is a pending-only suffix. An

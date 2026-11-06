@@ -158,6 +158,22 @@ func TestIconSetsCoverTheSameNames(t *testing.T) {
 	}
 }
 
+// The six task marks are icon names in both sets, and the pending mark is the
+// inbox tray.
+func TestTaskIconKeysKnown(t *testing.T) {
+	for _, k := range []string{"task_pending", "task_in_progress", "task_completed", "task_blocked", "task_stalled", "task_needs_human"} {
+		if _, ok := emojiIcons[k]; !ok {
+			t.Errorf("emojiIcons lacks %q", k)
+		}
+		if _, ok := nerdIcons[k]; !ok {
+			t.Errorf("nerdIcons lacks %q", k)
+		}
+	}
+	if emojiIcons["task_pending"] != "\U0001F4E5\uFE0F " {
+		t.Errorf("task_pending = %q", emojiIcons["task_pending"])
+	}
+}
+
 // LoadIconsFor pads the gear and the stopwatch only for Terminal.app, before
 // icon_map applies, and leaves every other icon and the nerdfont set alone.
 func TestLoadIconsForAppleTerminal(t *testing.T) {
@@ -167,11 +183,11 @@ func TestLoadIconsForAppleTerminal(t *testing.T) {
 	if got := LoadIconsFor(Settings{}, apple, &warn); got != "emoji" || warn.Len() != 0 {
 		t.Fatalf("name = %q, warn = %q", got, warn.String())
 	}
-	if iconAgent != "⚙️\u200b " || taskInProgress != "⏱️\u200b " {
-		t.Fatalf("Terminal.app icons: agent %q, task_in_progress %q", iconAgent, taskInProgress)
+	if iconAgent != "⚙️\u200b " || taskInProgress != "⏱️\u200b " || taskStalled != "\u26A0\uFE0F\u200b " {
+		t.Fatalf("Terminal.app icons: agent %q, task_in_progress %q, task_stalled %q", iconAgent, taskInProgress, taskStalled)
 	}
 	for name, p := range iconVars {
-		if name == "agent" || name == "task_in_progress" {
+		if name == "agent" || name == "task_in_progress" || name == "task_stalled" {
 			continue
 		}
 		if *p != emojiIcons[name] {
@@ -186,16 +202,17 @@ func TestLoadIconsForAppleTerminal(t *testing.T) {
 		{"XTERM_PROGRAM=Apple_Terminal"},
 	} {
 		LoadIconsFor(Settings{}, env, &warn)
-		if iconAgent != gearIcon || taskInProgress != stopwatchIcon || warn.Len() != 0 {
+		if iconAgent != gearIcon || taskInProgress != stopwatchIcon || taskStalled != warningIcon || warn.Len() != 0 {
 			t.Fatalf("env %v: agent %q, task_in_progress %q, warn %q", env, iconAgent, taskInProgress, warn.String())
 		}
 	}
-	LoadIconsFor(Settings{IconMap: map[string]string{"agent": "A"}}, apple, &warn)
-	if iconAgent != "A  " || taskInProgress != "⏱️\u200b " {
+	LoadIconsFor(Settings{IconMap: map[string]string{"agent": "A", "task_stalled": "S"}}, apple, &warn)
+	if iconAgent != "A  " || taskInProgress != "⏱️\u200b " || taskStalled != "S  " {
 		t.Fatalf("icon_map must win over the Terminal.app variant: agent %q, task_in_progress %q", iconAgent, taskInProgress)
 	}
 	LoadIconsFor(Settings{Icons: "nerdfont"}, apple, &warn)
-	if strings.Contains(iconAgent, "\u200b") || strings.Contains(taskInProgress, "\u200b") || warn.Len() != 0 {
+	if strings.Contains(iconAgent, "\u200b") || strings.Contains(taskInProgress, "\u200b") || strings.Contains(taskStalled, "\u200b") ||
+		taskBlocked != padIcon("task_blocked", "\uf05e") || warn.Len() != 0 {
 		t.Fatalf("nerdfont must not take the pad: agent %q, task_in_progress %q, warn %q", iconAgent, taskInProgress, warn.String())
 	}
 }

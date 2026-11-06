@@ -55,7 +55,7 @@ The TUI is built on Bubble Tea v2 (`charm.land/bubbletea/v2` v2.0.10, Bubbles v2
 
 Colors follow the terminal's color profile: on a terminal without color (`NO_COLOR`, `TERM=dumb`, or output that is not a terminal) tag chips fall back to dim `#tag` words. The TUI turns on Unicode core mode 2027 so Bubble Tea measures emoji the way the layout does; a terminal without that mode ignores it.
 
-Terminal.app draws the `emoji` set's agent gear (`⚙️`) and the in-progress stopwatch (`⏱️`) two cells wide but advances the cursor one, while Lip Gloss and the renderer count two, so every cell after the glyph would land one column left (the rail border broke on gear rows). Bubble Tea v1 covered the gap with a cursor-forward escape inside the string; Bubble Tea v2's renderer drops every escape but SGR and OSC 8, so when `TERM_PROGRAM` is `Apple_Terminal` the TUI pads the two icons with U+200B (zero width space) instead: Terminal.app advances one column for it, Lip Gloss and the renderer count it zero. Other terminals get the plain emoji. `TERM_PROGRAM` does not cross ssh: for a TUI on a remote host viewed in Terminal.app set `icon_map` `agent` to `"\u2699\ufe0f\u200b"` and `task_in_progress` to `"\u23f1\ufe0f\u200b"` (`padIcon` adds the space), or use `nerdfont`.
+Terminal.app draws the `emoji` set's agent gear (`⚙️`), the in-progress stopwatch (`⏱️`) and the stalled warning sign (`⚠️`) two cells wide but advances the cursor one, while Lip Gloss and the renderer count two, so every cell after the glyph would land one column left (the rail border broke on gear rows). Bubble Tea v1 covered the gap with a cursor-forward escape inside the string; Bubble Tea v2's renderer drops every escape but SGR and OSC 8, so when `TERM_PROGRAM` is `Apple_Terminal` the TUI pads the three icons with U+200B (zero width space) instead: Terminal.app advances one column for it, Lip Gloss and the renderer count it zero. Other terminals get the plain emoji. `TERM_PROGRAM` does not cross ssh: for a TUI on a remote host viewed in Terminal.app set `icon_map` `agent` to `"\u2699\ufe0f\u200b"` `task_in_progress` to `"\u23f1\ufe0f\u200b"` and `task_stalled` to `"\u26a0\ufe0f\u200b"` (`padIcon` adds the space), or use `nerdfont`.
 
 ### Identity
 
@@ -228,9 +228,12 @@ A value is one of the sixteen ANSI color names (`black`, `red`, `green`, `yellow
 | `status_blocked` | status tag `blocked` (emoji U+26D4) | U+F05E |
 | `status_needs_human` | status tag `needs-human` (emoji U+1F64B) | U+F256 |
 | `status_offline` | status tag `offline` (emoji U+26AB) | U+F111 |
-| `task_pending` | a pending task | U+F096 |
+| `task_pending` | a pending task (emoji U+1F4E5) | U+F096 |
 | `task_in_progress` | an in-progress task | U+F152 |
 | `task_completed` | a completed task | U+F14A |
+| `task_blocked` | a task with an open blocker (emoji U+26D4) | U+F05E |
+| `task_stalled` | a stalled task, or one whose owner reports a problem (emoji U+26A0) | U+F071 |
+| `task_needs_human` | a task whose owner's status tag is `needs-human` (emoji U+1F64B) | U+F256 |
 | `collapsed` | selected list item; a message with something hidden | U+F0DA |
 | `expanded` | an open body or replies | U+F0D7 |
 | `error` | toast and overlay error prefix | U+F06A |

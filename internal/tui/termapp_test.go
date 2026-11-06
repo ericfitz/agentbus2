@@ -45,8 +45,8 @@ func newFakeTerm(t *testing.T, w, h int, width func(string) int) *fakeTerm {
 // appleTerminalWidth is Terminal.app's advance for the clusters the TUI
 // draws, measured with CPR (CSI 6n) on 2026-10-25 (macOS 27, Terminal.app,
 // TERM_PROGRAM=Apple_Terminal; the same with mode 2027 set, which it
-// ignores): a rune with U+FE0F advances like the rune alone (⚙️ and ⏱️ one
-// column, 💬️ two), Emoji_Presentation emoji two (🧑, ✅, ❎), a combining
+// ignores): a rune with U+FE0F advances like the rune alone (⚙️, ⏱️ and ⚠️ one
+// column, 💬️ two), Emoji_Presentation emoji two (🧑, ✅, 📥), a combining
 // mark zero, and the format characters U+200B and U+200D one each.
 func appleTerminalWidth(cluster string) int {
 	w := 0

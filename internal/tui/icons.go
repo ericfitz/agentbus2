@@ -39,13 +39,18 @@ var (
 	iconStatusOffline      = "\u26AB\uFE0F "     // black circle
 )
 
-// Task status marks. The stopwatch U+23F1 is text-presentation by default
-// (like the gear) and carries U+FE0F for the color glyph; Terminal.app gets
-// appleTerminalIcons' variant for the same reason as the gear.
+// Task status marks. The stopwatch U+23F1 and the warning sign U+26A0 are
+// text-presentation by default (Emoji_Presentation=No, like the gear) and
+// carry U+FE0F for the color glyph; Terminal.app gets appleTerminalIcons'
+// variant for the same reason as the gear. The inbox tray U+1F4E5, the no
+// entry sign U+26D4 and the raised hand U+1F64B are Emoji_Presentation=Yes.
 var (
-	taskPending    = "❎ "          // negative squared cross mark
-	taskInProgress = stopwatchIcon // stopwatch
-	taskCompleted  = "✅ "          // white heavy check mark
+	taskPending    = "\U0001F4E5\uFE0F " // inbox tray
+	taskInProgress = stopwatchIcon       // stopwatch
+	taskCompleted  = "✅ "                // white heavy check mark
+	taskBlocked    = "\u26D4\uFE0F "     // no entry
+	taskStalled    = warningIcon         // warning sign
+	taskNeedsHuman = "\U0001F64B\uFE0F " // person raising hand
 )
 
 // The gear and the stopwatch are Emoji_Presentation=No with U+FE0F: lipgloss
@@ -66,14 +71,16 @@ var (
 const (
 	gearIcon      = "\u2699\uFE0F "
 	stopwatchIcon = "\u23F1\uFE0F "
+	warningIcon   = "\u26A0\uFE0F "
 	narrowVS16Pad = "\u200B"
 )
 
-// appleTerminalIcons is the emoji set's Terminal.app variant: the two icons
+// appleTerminalIcons is the emoji set's Terminal.app variant: the three icons
 // Terminal.app advances one column for, padded to the three it counts.
 var appleTerminalIcons = map[string]string{
 	"agent":            "\u2699\uFE0F" + narrowVS16Pad + " ",
 	"task_in_progress": "\u23F1\uFE0F" + narrowVS16Pad + " ",
+	"task_stalled":     "\u26A0\uFE0F" + narrowVS16Pad + " ",
 }
 
 // isAppleTerminal reports whether env (KEY=VALUE pairs, os.Environ's form)
@@ -101,6 +108,7 @@ var iconVars = map[string]*string{
 	"chat": &iconChat, "memory": &iconMem, "agent": &iconAgent, "user": &iconUser,
 	"idle": &iconIdle, "bridged": &iconBridged, "tasks": &iconTasks, "arrow": &iconArrow, "error": &iconError,
 	"task_pending": &taskPending, "task_in_progress": &taskInProgress, "task_completed": &taskCompleted,
+	"task_blocked": &taskBlocked, "task_stalled": &taskStalled, "task_needs_human": &taskNeedsHuman,
 	"collapsed": &markSel, "expanded": &markOpen,
 	"status_planning": &iconStatusPlanning, "status_implementing": &iconStatusImplementing,
 	"status_reviewing": &iconStatusReviewing, "status_waiting": &iconStatusWaiting,
@@ -132,6 +140,9 @@ var nerdIcons = map[string]string{
 	"task_pending":     "\uf096",     // fa-square regular (nf fa-square_o)
 	"task_in_progress": "\uf152",     // fa-square-caret-right regular (nf fa-toggle_right)
 	"task_completed":   "\uf14a",     // fa-square-check solid (nf fa-square_check); FA4's check_square_o U+F046 is drawn 20% smaller in Mono patches
+	"task_blocked":     "\uf05e",     // fa-ban (nf fa-ban)
+	"task_stalled":     "\uf071",     // fa-triangle-exclamation (nf fa-warning)
+	"task_needs_human": "\uf256",     // fa-hand
 	"collapsed":        "\uf0da",     // fa-caret-right
 	"expanded":         "\uf0d7",     // fa-caret-down
 	"error":            "\uf06a",     // fa-circle-exclamation (nf fa-exclamation_circle)
