@@ -42,10 +42,10 @@ var (
 // Task status marks. The stopwatch U+23F1 and the warning sign U+26A0 are
 // text-presentation by default (Emoji_Presentation=No, like the gear) and
 // carry U+FE0F for the color glyph; Terminal.app gets appleTerminalIcons'
-// variant for the same reason as the gear. The inbox tray U+1F4E5, the no
+// variant for the same reason as the gear. The tray U+1F4E5, the no
 // entry sign U+26D4 and the raised hand U+1F64B are Emoji_Presentation=Yes.
 var (
-	taskPending    = "\U0001F4E5\uFE0F " // inbox tray
+	taskPending    = "\U0001F4E5\uFE0F " // tray (U+1F4E5)
 	taskInProgress = stopwatchIcon       // stopwatch
 	taskCompleted  = "✅ "                // white heavy check mark
 	taskBlocked    = "\u26D4\uFE0F "     // no entry
