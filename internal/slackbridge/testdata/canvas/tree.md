@@ -14,6 +14,7 @@ _Updated 2026-11-04 20:45 UTC · read-only; changes go through agentmesh_
 ### ⚠︎ Stalled
 - ⚠︎ #3 Fuzz the tokenizer · claude-b · lease expired 20:41 UTC · job1-tasks
 - ⚠︎ #4 Seed corpus · owner offline · job1-tasks
+- ⚠︎ #10 Reclaimed leaf · reclaimed from claude-g 19:02 UTC · job1-tasks
 
 ### ⚠︎ Problem reported
 - ⚠︎ #8 Long problem · claude-e · pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp… · job1-tasks
@@ -21,7 +22,7 @@ _Updated 2026-11-04 20:45 UTC · read-only; changes go through agentmesh_
 ---
 
 ## Tasks: job1-tasks
-▶ 1 · ◌ 1 · ⛔︎ 1 · ⚠︎ 3 · ⚑ 1 · ✔ 2
+▶ 1 · ◌ 1 · ⛔︎ 1 · ⚠︎ 4 · ⚑ 1 · ✔ 2
 
 ### ▶ #1 Wire the parser · claude-a
 - [x] ✔ #2 Define grammar · claude-a
@@ -34,3 +35,4 @@ _Updated 2026-11-04 20:45 UTC · read-only; changes go through agentmesh_
 - [ ] ◌ #7 Write docs
 
 ### ⚠︎ #8 Long problem · claude-e · pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp…
+- [ ] ⚠︎ #10 Reclaimed leaf · stalled: reclaimed from claude-g 19:02 UTC

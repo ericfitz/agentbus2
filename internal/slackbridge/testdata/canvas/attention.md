@@ -14,6 +14,7 @@ _Updated 2026-11-04 20:45 UTC · read-only; changes go through agentmesh_
 ### ⚠︎ Stalled
 - ⚠︎ #2 Fuzz the tokenizer · claude-b · lease expired 20:41 UTC · job1-tasks
 - ⚠︎ #4 Index · claude-d · owner offline · job1-tasks-2
+- ⚠︎ #6 Reclaimed docs · reclaimed from claude-g 19:02 UTC · job1-tasks-2
 
 ### ⚠︎ Problem reported
 - ⚠︎ #3 Run e2e · claude-c · docker daemon down · job1-tasks
@@ -30,8 +31,10 @@ _Updated 2026-11-04 20:45 UTC · read-only; changes go through agentmesh_
 ### ⚠︎ #3 Run e2e · claude-c · docker daemon down
 
 ## Tasks: job1-tasks-2
-◌ 1 · ⚠︎ 1
+◌ 1 · ⚠︎ 2
 
 ### ⚠︎ #4 Index · claude-d · stalled: owner offline
 
 ### ◌ #5 Docs
+
+### ⚠︎ #6 Reclaimed docs · stalled: reclaimed from claude-g 19:02 UTC

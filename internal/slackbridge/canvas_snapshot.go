@@ -31,7 +31,8 @@ type CanvasTaskList struct {
 	Tasks   []CanvasTask
 }
 
-// CanvasTask is one task. Stalled is the abandonment flag; LeaseExpiredAt is
+// CanvasTask is one task. Stalled is the abandonment flag; ReclaimedFrom and
+// ReclaimedAt are the mark a reclaim leaves (ReclaimedAt is zero when unset); LeaseExpiredAt is
 // zero unless the lease lapsed; OwnerStatus is nil for a completed task, a
 // task with no assignee and an assignee with no live status.
 type CanvasTask struct {
@@ -41,6 +42,8 @@ type CanvasTask struct {
 	OpenBlockers              []int64
 	Stalled                   bool
 	LeaseExpiredAt            time.Time
+	ReclaimedFrom             string
+	ReclaimedAt               time.Time
 	OwnerStatus               *CanvasOwnerStatus
 }
 
@@ -143,6 +146,10 @@ func (s *Service) CanvasSnapshot(ctx context.Context, b store.Bridge, scope stri
 				ct := CanvasTask{
 					ID: t.ID, Subject: t.Subject, Status: t.Status, Assignee: t.Assignee,
 					Depth: t.Depth, OpenBlockers: t.OpenBlockers, Stalled: t.Abandoned,
+					ReclaimedFrom: t.ReclaimedFrom,
+				}
+				if t.ReclaimedAt != 0 {
+					ct.ReclaimedAt = time.UnixMilli(t.ReclaimedAt).UTC()
 				}
 				if t.LeaseExpired {
 					ct.LeaseExpiredAt = time.UnixMilli(t.LeasedUntil).UTC()

@@ -206,6 +206,15 @@ func TestCanvasSnapshotTasksAndStatuses(t *testing.T) {
 		if lastRead != 0 || lastRead2 != 0 || rev2 != rev1 || rev1 < rev0 {
 			t.Errorf("snapshot wrote: revision %d -> %d -> %d, last read %d/%d", rev0, rev1, rev2, lastRead, lastRead2)
 		}
+
+		// The reclaim leaves its mark, and the task is no longer abandoned.
+		jobNow := h.clock.Now().UnixMilli()
+		if n := h.runJob("abandoned tasks"); n < 1 {
+			t.Fatalf("abandoned tasks job reclaimed %d, want at least 1", n)
+		}
+		if c := tasksOf()[id3]; c.ReclaimedFrom != "job1-b" || !c.ReclaimedAt.Equal(time.UnixMilli(jobNow).UTC()) || c.Stalled || c.Assignee != "" {
+			t.Errorf("task 3 after the reclaim %+v (job at %d)", c, jobNow)
+		}
 	})
 }
 
@@ -864,6 +873,46 @@ func TestSlackBridgeCanvasRunner(t *testing.T) {
 			}
 			f.h.clock.Advance(2 * time.Second)
 			waitFor(t, 10*time.Second, "the stalled mark", canvasMarkdownHas(f, "stalled: lease expired"))
+		})
+
+		t.Run("maintenance-reclaim-shows-stalled", func(t *testing.T) {
+			f, _ := canvasRunFix(t, e, false, 20*time.Millisecond)
+			runBridge(t, f.svc)
+			f.awaitCanvas(t)
+			ctx := context.Background()
+			coder := f.h.localAs("job1-coder")
+			f.h.session("job1-coder", "")
+			task, err := coder.Create(ctx, ab2bus.TaskCreateInput{Channel: "job1-tasks", Subject: "RECLAIM-TASK-X"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := coder.Claim(ctx, ab2bus.TaskClaimInput{ID: task.ID, LeasedUntil: f.h.taskLeaseIn(time.Second)}); err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, 10*time.Second, "the claimed task", canvasMarkdownHas(f, "RECLAIM-TASK-X"))
+			f.h.clock.Advance(2 * time.Second)
+			// The production sequence: maintenance reclaims before any
+			// canvas pass sees the expired lease.
+			if n := f.h.runJob("abandoned tasks"); n != 1 {
+				t.Fatalf("abandoned tasks job reclaimed %d, want 1", n)
+			}
+			waitFor(t, 10*time.Second, "the reclaimed mark", canvasMarkdownHas(f, "stalled: reclaimed from job1-coder"))
+			md := canvasOf(f).Markdown
+			if !strings.Contains(md, "### \u26a0\ufe0e Stalled") {
+				t.Errorf("no Stalled subsection: %q", md)
+			}
+			found := false
+			for _, line := range strings.Split(md, "\n") {
+				if strings.HasPrefix(line, "- \u26a0\ufe0e #") && strings.Contains(line, "reclaimed from job1-coder") && strings.Contains(line, " \u00b7 job1-tasks") {
+					found = true
+				}
+			}
+			if !found {
+				t.Errorf("no reclaimed Stalled line: %q", md)
+			}
+			if strings.Contains(md, "owner offline") {
+				t.Errorf("owner offline shown: %q", md)
+			}
 		})
 
 		t.Run("reconnect-marks-all", func(t *testing.T) {

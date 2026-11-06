@@ -38,10 +38,26 @@ func canvasCases() map[string]CanvasSnapshot {
 	problem.OwnerStatus = ostat("working", "running", "docker daemon down")
 	offline := tsk(4, "Index", "in_progress", "claude-d", 0)
 	offline.Stalled = true
+	attMarked := tsk(6, "Reclaimed docs", "pending", "", 0)
+	attMarked.ReclaimedFrom, attMarked.ReclaimedAt = "claude-g", time.Date(2026, 11, 4, 19, 2, 0, 0, time.UTC)
 	attention := snap([]CanvasTaskList{
-		{Channel: "job1-tasks-2", Tasks: []CanvasTask{offline, tsk(5, "Docs", "pending", "", 0)}},
+		{Channel: "job1-tasks-2", Tasks: []CanvasTask{offline, tsk(5, "Docs", "pending", "", 0), attMarked}},
 		{Channel: "job1-tasks", Tasks: []CanvasTask{bothBlockedHuman, stalled, problem}},
 	}, nil)
+
+	reclaimedAt := time.Date(2026, 11, 4, 19, 2, 0, 0, time.UTC)
+	marked := func(id int64, subject, from string, at time.Time, depth int) CanvasTask {
+		t := tsk(id, subject, "pending", "", depth)
+		t.ReclaimedFrom, t.ReclaimedAt = from, at
+		return t
+	}
+	reclaimedBlocked := marked(2, "Blocked and reclaimed", "claude-e", reclaimedAt, 1)
+	reclaimedBlocked.OpenBlockers = []int64{3}
+	reclaimedCase := snap([]CanvasTaskList{{Channel: "work", Tasks: []CanvasTask{
+		marked(1, "Reclaimed root", "claude-d", reclaimedAt, 0), reclaimedBlocked,
+		tsk(3, "Blocker", "in_progress", "claude-a", 1),
+		marked(4, "No time", "claude-f", time.Time{}, 0),
+	}}}, nil)
 
 	root := tsk(1, "Wire the parser", "in_progress", "claude-a", 0)
 	root.OwnerStatus = ostat("working", "parsing", "")
@@ -59,6 +75,7 @@ func canvasCases() map[string]CanvasSnapshot {
 		root, tsk(2, "Define grammar", "completed", "claude-a", 1), st, gst,
 		tsk(9, "Minimizer", "completed", "claude-b", 2), nh,
 		blocked, tsk(7, "Write docs", "pending", "", 1), long,
+		marked(10, "Reclaimed leaf", "claude-g", reclaimedAt, 1),
 	}}}, nil)
 
 	doneHuman := tsk(3, "Done anyway", "completed", "claude-a", 0)
@@ -105,6 +122,7 @@ func canvasCases() map[string]CanvasSnapshot {
 		"attention-empty": snap([]CanvasTaskList{{Channel: "job1-tasks", Tasks: []CanvasTask{
 			tsk(1, "One", "pending", "", 0), tsk(2, "Two", "pending", "", 0)}}}, nil),
 		"tree":               tree,
+		"reclaimed":          reclaimedCase,
 		"completed-subtrees": completed,
 		"parent-gone": snap([]CanvasTaskList{{Channel: "job1-tasks", Tasks: []CanvasTask{
 			tsk(1, "A", "pending", "", 0), tsk(2, "B", "pending", "", 0), tsk(3, "Orphaned child", "pending", "", 0)}}}, nil),

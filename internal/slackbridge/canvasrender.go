@@ -171,7 +171,7 @@ func viewOf(t CanvasTask) taskView {
 	v := taskView{
 		blocked: len(t.OpenBlockers) > 0,
 		human:   t.OwnerStatus != nil && t.OwnerStatus.Tag == "needs-human",
-		stalled: t.Stalled,
+		stalled: t.Stalled || t.ReclaimedFrom != "",
 		problem: t.OwnerStatus != nil && t.OwnerStatus.Problem != "",
 	}
 	switch {
@@ -205,6 +205,13 @@ func blockerList(ids []int64) string {
 func stalledText(t CanvasTask) string {
 	if !t.LeaseExpiredAt.IsZero() {
 		return "lease expired " + t.LeaseExpiredAt.UTC().Format("15:04") + " UTC"
+	}
+	if t.ReclaimedFrom != "" {
+		text := "reclaimed from " + escapeCanvas(t.ReclaimedFrom)
+		if !t.ReclaimedAt.IsZero() {
+			text += " " + t.ReclaimedAt.UTC().Format("15:04") + " UTC"
+		}
+		return text
 	}
 	return "owner offline"
 }
