@@ -132,6 +132,19 @@ The channel create prompt takes a kind (`memory` or `tasks`) as its second word;
 
 A channel of kind `tasks` shows the task tree. `space` cycles the draft state (not started, in progress, completed) and `enter` saves it; `esc` cancels. `t` takes the cursor task (claim: it becomes yours and in progress), `u` releases it, and `a` assigns it to an identity chosen from the list of identities. The TUI decides nothing about who may change a task: it sends the change and shows the server's answer, and a refusal is a toast.
 
+Each row's mark follows the Slack canvas states with the same precedence:
+
+| Mark | State |
+|---|---|
+| `📥` | pending |
+| `⏱️` | in progress |
+| `✅` | done |
+| `⛔` | an open blocker |
+| `🙋` | the owner's status tag is `needs-human` |
+| `⚠️` | stalled (the lease has passed, the owner has no live session, or the server reclaimed the task and no one has claimed it since: the row reads `reclaimed from <owner>`), or the owner's status reports a problem |
+
+The TUI judges stalls by its own clock and the last agent-status round (5 s).
+
 ### Search
 
 `/` opens search. `tab` cycles the mode: text, semantic, both. When the semantic search is unavailable the results are text only and say so.

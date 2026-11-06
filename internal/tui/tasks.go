@@ -462,13 +462,8 @@ func (m *Model) renderTasks(ch string) string {
 		if cursorDepth >= 0 && t.Depth <= cursorDepth {
 			cursorDepth = -1
 		}
-		mark := taskPending
-		switch t.Status {
-		case "in_progress":
-			mark = taskInProgress
-		case "completed":
-			mark = taskCompleted
-		}
+		st, extra := taskStateOf(t, m.agents, time.Now())
+		mark := taskMark(st)
 		selected := i == m.cursor && m.mode == modeNormal
 		rowDim := dim
 		if selected {
@@ -498,6 +493,7 @@ func (m *Model) renderTasks(ch string) string {
 		case t.Status == "pending" && t.Owner != "":
 			suffix += iconArrow + t.Owner
 		}
+		suffix += extra
 		if len(t.OpenBlockers) > 0 {
 			ids := make([]string, len(t.OpenBlockers))
 			for j, id := range t.OpenBlockers {
@@ -594,6 +590,13 @@ func (m *Model) renderTaskBlock(t bus.TaskSummary, byID map[int64]bus.TaskSummar
 		sort.Strings(keys)
 		for _, k := range keys {
 			lines = append(lines, dim.Render(k+": "+detail.Metadata[k]))
+		}
+		if detail.ReclaimedFrom != "" {
+			note := "reclaimed from " + detail.ReclaimedFrom
+			if detail.ReclaimedAt != 0 {
+				note += " · " + stamp(detail.ReclaimedAt)
+			}
+			lines = append(lines, dim.Render(note))
 		}
 		lines = append(lines, dim.Render("updated by "+detail.UpdatedBy+" · "+stamp(detail.UpdatedAt)))
 		content = strings.Join(lines, "\n")

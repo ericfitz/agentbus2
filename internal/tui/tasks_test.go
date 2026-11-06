@@ -38,6 +38,7 @@ func TestTaskChannelRendersTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.run(f.m.statusCmd())
+	f.m.agents = append(f.m.agents, bus.AgentStatusEntry{Identity: "sam", Live: true})
 	f.selectTaskChannel(t, "todo")
 
 	// Children start collapsed: a's row (▶, its child hidden), the hidden
@@ -61,7 +62,7 @@ func TestTaskChannelRendersTree(t *testing.T) {
 		t.Fatalf("line1 = %q", lines[1])
 	}
 	// "b" is blocked, so it has details and shows the collapsed triangle.
-	if !strings.HasPrefix(lines[2], markSel+" "+taskPending+"#") || !strings.Contains(lines[2], "blocked by #"+itoa(a.ID)) {
+	if !strings.HasPrefix(lines[2], markSel+" "+taskBlocked+"#") || !strings.Contains(lines[2], "blocked by #"+itoa(a.ID)) {
 		t.Fatalf("line2 = %q", lines[2])
 	}
 }
@@ -755,5 +756,82 @@ func TestNerdfontTaskRowWidthParity(t *testing.T) {
 	}
 	if !slices.Equal(emojiRail, nerdRail) {
 		t.Fatalf("rail line widths: emoji %v, nerdfont %v", emojiRail, nerdRail)
+	}
+}
+
+// The row mark follows the canvas states (precedence in taskStateOf): an
+// owner asking for a human, a reclaimed task and an open blocker.
+func TestTaskRowMarksFollowStates(t *testing.T) {
+	f := newFixture(t)
+	f.key("esc")
+	if _, err := f.sam.CreateChannel(taskCtx, bus.CreateChannelInput{Name: "todo", Kind: bus.KindTasks}); err != nil {
+		t.Fatal(err)
+	}
+	f.agentWithStatus(t, "pat", true, statusSet{tag: "needs-human", text: "which?"})
+	asked, err := f.sam.Create(taskCtx, bus.TaskCreateInput{Channel: "todo", Subject: "asked"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	owner := "pat"
+	st := "in_progress"
+	if _, err := f.sam.Update(taskCtx, bus.TaskPatch{ID: asked.ID, Owner: &owner, Status: &st}); err != nil {
+		t.Fatal(err)
+	}
+	back, err := f.sam.Create(taskCtx, bus.TaskCreateInput{Channel: "todo", Subject: "back"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.sam.Create(taskCtx, bus.TaskCreateInput{Channel: "todo", Subject: "waits", BlockedBy: []int64{back.ID}}); err != nil {
+		t.Fatal(err)
+	}
+	f.run(f.m.statusCmd())
+	f.selectTaskChannel(t, "todo")
+	rows := func() []string {
+		var out []string
+		for _, l := range strings.Split(ansi.Strip(f.m.renderStream()), "\n") {
+			out = append(out, strings.TrimLeft(strings.TrimLeft(l, markSel+markOpen+" "), " "))
+		}
+		return out
+	}
+	byID := func(id int64) string {
+		for _, l := range rows() {
+			if strings.Contains(l, "#"+itoa(id)+" ") {
+				return l
+			}
+		}
+		t.Fatalf("no row for #%d: %q", id, rows())
+		return ""
+	}
+	if l := byID(asked.ID); !strings.HasPrefix(l, taskNeedsHuman) {
+		t.Fatalf("needs-human row = %q", l)
+	}
+	ms := time.Now().UnixMilli()
+	ts := f.m.tasks["todo"]
+	for i := range ts {
+		if ts[i].ID == back.ID {
+			ts[i].Status, ts[i].Owner, ts[i].ReclaimedFrom, ts[i].ReclaimedAt = "pending", "", "pat", ms
+		}
+	}
+	if l := byID(back.ID); !strings.HasPrefix(l, taskStalled) || !strings.Contains(l, "reclaimed from pat") {
+		t.Fatalf("reclaimed row = %q", l)
+	}
+	for _, l := range rows() {
+		if strings.Contains(l, "waits") {
+			if !strings.HasPrefix(l, taskBlocked) || !strings.Contains(l, "blocked by #") {
+				t.Fatalf("blocked row = %q", l)
+			}
+		}
+	}
+
+	f.m.taskDetail[back.ID] = bus.Task{ID: back.ID, ReclaimedFrom: "pat", ReclaimedAt: ms}
+	var sum bus.TaskSummary
+	for _, x := range f.m.tasks["todo"] {
+		if x.ID == back.ID {
+			sum = x
+		}
+	}
+	block := ansi.Strip(f.m.renderTaskBlock(sum, nil, 0, 120))
+	if !strings.Contains(block, "reclaimed from pat · "+stamp(ms)) {
+		t.Fatalf("detail block = %q", block)
 	}
 }
