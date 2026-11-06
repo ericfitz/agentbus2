@@ -38,7 +38,6 @@ func TestTaskChannelRendersTree(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.run(f.m.statusCmd())
-	f.m.agents = append(f.m.agents, bus.AgentStatusEntry{Identity: "sam", Live: true})
 	f.selectTaskChannel(t, "todo")
 
 	// Children start collapsed: a's row (▶, its child hidden), the hidden
@@ -841,9 +840,10 @@ func TestTaskRowMarksFollowStates(t *testing.T) {
 	}
 }
 
-// The " offline" suffix reaches the row for a saved in-progress task whose
-// owner has no live session.
-func TestTaskRowShowsOfflineSuffix(t *testing.T) {
+// claimedTaskRow is the first row of a task channel holding one task that sam
+// claimed, after a status round; edit runs between the round and the render.
+func claimedTaskRow(t *testing.T, edit func(m *Model)) string {
+	t.Helper()
 	f := newFixture(t)
 	f.key("esc")
 	if _, err := f.sam.CreateChannel(taskCtx, bus.CreateChannelInput{Name: "todo", Kind: bus.KindTasks}); err != nil {
@@ -857,9 +857,50 @@ func TestTaskRowShowsOfflineSuffix(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.run(f.m.statusCmd())
+	if edit != nil {
+		edit(&f.m)
+	}
+	f.selectTaskChannel(t, "todo")
+	return strings.TrimLeft(ansi.Strip(f.m.renderStream()), " ")
+}
+
+// The " offline" suffix reaches the row for a saved in-progress task whose
+// owner has no live session and no live status entry.
+func TestTaskRowShowsOfflineSuffix(t *testing.T) {
+	l := claimedTaskRow(t, func(m *Model) { m.identities, m.agents = nil, nil })
+	if !strings.HasPrefix(l, taskStalled) || !strings.Contains(l, " offline") {
+		t.Fatalf("row = %q", l)
+	}
+}
+
+// An owner with a live session and no agent-status row (a human, or an agent
+// before its first set_status) reads in progress, not offline.
+func TestTaskRowLiveSessionWithoutStatus(t *testing.T) {
+	l := claimedTaskRow(t, func(m *Model) { m.agents = nil })
+	if !strings.HasPrefix(l, taskInProgress) || strings.Contains(l, "offline") {
+		t.Fatalf("row = %q", l)
+	}
+}
+
+// The TUI user's own claim reads in progress while their session is open.
+func TestTaskRowOwnHumanClaim(t *testing.T) {
+	f := newFixture(t)
+	f.key("esc")
+	if _, err := f.sam.CreateChannel(taskCtx, bus.CreateChannelInput{Name: "todo", Kind: bus.KindTasks}); err != nil {
+		t.Fatal(err)
+	}
+	tk, err := f.sam.Create(taskCtx, bus.TaskCreateInput{Channel: "todo", Subject: "w"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.c.b.Claim(taskCtx, bus.TaskClaimInput{ID: tk.ID}); err != nil {
+		t.Fatal(err)
+	}
+	f.run(f.m.statusCmd())
+	f.m.agents = nil // a human has no status row
 	f.selectTaskChannel(t, "todo")
 	l := strings.TrimLeft(ansi.Strip(f.m.renderStream()), " ")
-	if !strings.HasPrefix(l, taskStalled) || !strings.Contains(l, " offline") {
+	if !strings.HasPrefix(l, taskInProgress) || strings.Contains(l, "offline") {
 		t.Fatalf("row = %q", l)
 	}
 }

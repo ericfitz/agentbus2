@@ -839,11 +839,11 @@ func (s *server) addTools(srv *mcp.Server) {
 				})
 			})
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "task_get", Description: "Agentmesh: get one task in full, with blocked and open_blockers derived from its blocked_by tasks. reclaimed_from and reclaimed_at mark a task the server took back from a vanished owner; a claim or an assignment clears them."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "task_get", Description: "Agentmesh: get one task in full, with blocked and open_blockers derived from its blocked_by tasks. reclaimed_from and reclaimed_at mark a task the server took back from a vanished owner; a claim, an assignment or a status change out of pending clears them."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in taskGetIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) { return b.GetTask(ctx, in.TaskID) })
 		})
-	mcp.AddTool(srv, &mcp.Tool{Name: "task_list", Description: "Agentmesh: list a task list's tasks in order (each task followed by its subtasks; depth gives the nesting), without descriptions. Optional status and owner filters. Check it before starting work to see what is claimed or blocked. reclaimed_from and reclaimed_at mark a task the server took back from a vanished owner; a claim or an assignment clears them."},
+	mcp.AddTool(srv, &mcp.Tool{Name: "task_list", Description: "Agentmesh: list a task list's tasks in order (each task followed by its subtasks; depth gives the nesting), without descriptions. Optional status and owner filters. Check it before starting work to see what is claimed or blocked. reclaimed_from and reclaimed_at mark a task the server took back from a vanished owner; a claim, an assignment or a status change out of pending clears them."},
 		func(ctx context.Context, req *mcp.CallToolRequest, in taskListIn) (*mcp.CallToolResult, any, error) {
 			return s.do(func(b bus.Bus) (any, error) {
 				ts, err := b.List(ctx, bus.TaskListInput{Channel: in.Channel, Status: in.Status, Owner: in.Owner})

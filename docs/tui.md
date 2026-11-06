@@ -55,7 +55,7 @@ The TUI is built on Bubble Tea v2 (`charm.land/bubbletea/v2` v2.0.10, Bubbles v2
 
 Colors follow the terminal's color profile: on a terminal without color (`NO_COLOR`, `TERM=dumb`, or output that is not a terminal) tag chips fall back to dim `#tag` words. The TUI turns on Unicode core mode 2027 so Bubble Tea measures emoji the way the layout does; a terminal without that mode ignores it.
 
-Terminal.app draws the `emoji` set's agent gear (`⚙️`), the in-progress stopwatch (`⏱️`) and the stalled warning sign (`⚠️`) two cells wide but advances the cursor one, while Lip Gloss and the renderer count two, so every cell after the glyph would land one column left (the rail border broke on gear rows). Bubble Tea v1 covered the gap with a cursor-forward escape inside the string; Bubble Tea v2's renderer drops every escape but SGR and OSC 8, so when `TERM_PROGRAM` is `Apple_Terminal` the TUI pads the three icons with U+200B (zero width space) instead: Terminal.app advances one column for it, Lip Gloss and the renderer count it zero. Other terminals get the plain emoji. `TERM_PROGRAM` does not cross ssh: for a TUI on a remote host viewed in Terminal.app set `icon_map` `agent` to `"\u2699\ufe0f\u200b"` `task_in_progress` to `"\u23f1\ufe0f\u200b"` and `task_stalled` to `"\u26a0\ufe0f\u200b"` (`padIcon` adds the space), or use `nerdfont`.
+Terminal.app draws the `emoji` set's agent gear (`⚙️`), the in-progress stopwatch (`⏱️`) and the stalled warning sign (`⚠️`) two cells wide but advances the cursor one, while Lip Gloss and the renderer count two, so every cell after the glyph would land one column left (the rail border broke on gear rows). Bubble Tea v1 covered the gap with a cursor-forward escape inside the string; Bubble Tea v2's renderer drops every escape but SGR and OSC 8, so when `TERM_PROGRAM` is `Apple_Terminal` the TUI pads the three icons with U+200B (zero width space) instead: Terminal.app advances one column for it, Lip Gloss and the renderer count it zero. Other terminals get the plain emoji. `TERM_PROGRAM` does not cross ssh: for a TUI on a remote host viewed in Terminal.app set `icon_map` `agent` to `"\u2699\ufe0f\u200b"`, `task_in_progress` to `"\u23f1\ufe0f\u200b"` and `task_stalled` to `"\u26a0\ufe0f\u200b"` (`padIcon` adds the space), or use `nerdfont`.
 
 ### Identity
 
@@ -141,7 +141,7 @@ Each row's mark follows the Slack canvas states with the same precedence:
 | `✅` | done |
 | `⛔` | an open blocker |
 | `🙋` | the owner's status tag is `needs-human` |
-| `⚠️` | stalled (the lease has passed, the owner has no live session, or the server reclaimed the task and no one has claimed it since: the row reads `reclaimed from <owner>`), or the owner's status reports a problem |
+| `⚠️` | stalled (the lease has passed, the owner of an in-progress task has no live session (judged by the identities round, not by a status row, so a human or an agent that never set a status counts as live), or the server reclaimed the task and no one has claimed it since: the row reads `reclaimed from <owner>`), or the owner's status reports a problem |
 
 The TUI judges stalls by its own clock and the last agent-status round (5 s).
 

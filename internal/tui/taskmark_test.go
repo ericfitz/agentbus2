@@ -19,6 +19,11 @@ func markAgents() []bus.AgentStatusEntry {
 	}
 }
 
+// markSessions: identities with a live session but no status row.
+func markSessions() map[string]bool {
+	return map[string]bool{"eric": true, "newbie": true}
+}
+
 func TestTaskStatePrecedence(t *testing.T) {
 	now := time.UnixMilli(1_000_000)
 	past, future := now.UnixMilli()-1000, now.UnixMilli()+60_000
@@ -34,6 +39,8 @@ func TestTaskStatePrecedence(t *testing.T) {
 		{"expired lease", bus.TaskSummary{Status: "in_progress", Owner: "sam", LeasedUntil: past}, stateStalled, ""},
 		{"offline owner", bus.TaskSummary{Status: "in_progress", Owner: "bob", LeasedUntil: future}, stateStalled, " offline"},
 		{"absent owner", bus.TaskSummary{Status: "in_progress", Owner: "nobody"}, stateStalled, " offline"},
+		{"live session, no status row", bus.TaskSummary{Status: "in_progress", Owner: "newbie", LeasedUntil: future}, stateInProgress, ""},
+		{"human with a session", bus.TaskSummary{Status: "in_progress", Owner: "eric", LeasedUntil: future}, stateInProgress, ""},
 		{"reclaimed", bus.TaskSummary{Status: "pending", ReclaimedFrom: "sam"}, stateStalled, " reclaimed from sam"},
 		{"problem", bus.TaskSummary{Status: "in_progress", Owner: "ann", LeasedUntil: future}, stateProblem, ""},
 		{"in progress", bus.TaskSummary{Status: "in_progress", Owner: "sam", LeasedUntil: future}, stateInProgress, ""},
@@ -43,7 +50,7 @@ func TestTaskStatePrecedence(t *testing.T) {
 		{"lease one ms ahead is live", bus.TaskSummary{Status: "in_progress", Owner: "sam", LeasedUntil: now.UnixMilli() + 1}, stateInProgress, ""},
 	}
 	for _, c := range cases {
-		got, suffix := taskStateOf(c.t, markAgents(), now)
+		got, suffix := taskStateOf(c.t, markAgents(), markSessions(), now)
 		if got != c.want || suffix != c.suffix {
 			t.Errorf("%s: got (%d, %q), want (%d, %q)", c.name, got, suffix, c.want, c.suffix)
 		}
@@ -64,7 +71,7 @@ func TestTaskMarkGlyphs(t *testing.T) {
 
 // Blocked wins over the reclaimed mark and carries no reclaimed suffix.
 func TestBlockedTaskWithMarkShowsBlocked(t *testing.T) {
-	st, suffix := taskStateOf(bus.TaskSummary{Status: "pending", OpenBlockers: []int64{2}, ReclaimedFrom: "sam"}, markAgents(), time.UnixMilli(1))
+	st, suffix := taskStateOf(bus.TaskSummary{Status: "pending", OpenBlockers: []int64{2}, ReclaimedFrom: "sam"}, markAgents(), markSessions(), time.UnixMilli(1))
 	if st != stateBlocked || suffix != "" {
 		t.Fatalf("got (%d, %q)", st, suffix)
 	}
@@ -84,7 +91,7 @@ func TestDraftTaskStateOf(t *testing.T) {
 		{"completed", bus.TaskSummary{Status: "completed", Owner: "eric"}, stateDone, ""},
 	}
 	for _, c := range cases {
-		got, sfx := draftTaskStateOf(c.t, markAgents(), now)
+		got, sfx := draftTaskStateOf(c.t, markAgents(), markSessions(), now)
 		if got != c.want || sfx != c.sfx {
 			t.Errorf("%s: got (%d, %q), want (%d, %q)", c.name, got, sfx, c.want, c.sfx)
 		}
