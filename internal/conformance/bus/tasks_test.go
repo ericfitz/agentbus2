@@ -683,9 +683,34 @@ func (h *harness) reclaimedTask(subject string) int64 {
 func TestTaskReclaimWritesMark(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
-		h.taskList("work", "pat")
+		h.taskList("work", "pat", "alice", "sam")
+		ctx := context.Background()
 		id := h.reclaimedTask("first")
 		now := h.core.NowMs()
+		alice := h.as("alice")
+		listed := func() ab2bus.TaskSummary {
+			ts, err := alice.List(ctx, ab2bus.TaskListInput{Channel: "work"})
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, s := range ts {
+				if s.ID == id {
+					return s
+				}
+			}
+			t.Fatalf("task %d is not listed", id)
+			return ab2bus.TaskSummary{}
+		}
+		got1, err := alice.GetTask(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got1.ReclaimedFrom != "pat" || got1.ReclaimedAt != now {
+			t.Fatalf("GetTask mark = %q, %d; want pat, %d", got1.ReclaimedFrom, got1.ReclaimedAt, now)
+		}
+		if s := listed(); s.ReclaimedFrom != "pat" || s.ReclaimedAt != now {
+			t.Fatalf("List mark = %q, %d; want pat, %d", s.ReclaimedFrom, s.ReclaimedAt, now)
+		}
 		got := h.liveTaskContent(id)
 		for _, want := range []string{`"reclaimed_from":"pat"`, fmt.Sprintf(`"reclaimed_at":%d`, now)} {
 			if !strings.Contains(got, want) {
@@ -699,6 +724,19 @@ func TestTaskReclaimWritesMark(t *testing.T) {
 		}
 		if after := h.liveTaskContent(id); after != got || len(h.taskRevisions(id)) != revs {
 			t.Fatalf("second run changed the task: %s", after)
+		}
+		if _, err := h.as("sam").Claim(ctx, ab2bus.TaskClaimInput{ID: id}); err != nil {
+			t.Fatal(err)
+		}
+		got2, err := alice.GetTask(ctx, id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got2.ReclaimedFrom != "" || got2.ReclaimedAt != 0 {
+			t.Fatalf("GetTask after claim still marks %q, %d", got2.ReclaimedFrom, got2.ReclaimedAt)
+		}
+		if s := listed(); s.ReclaimedFrom != "" || s.ReclaimedAt != 0 {
+			t.Fatalf("List after claim still marks %q, %d", s.ReclaimedFrom, s.ReclaimedAt)
 		}
 	})
 }

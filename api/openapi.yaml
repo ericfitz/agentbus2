@@ -1849,6 +1849,13 @@ components:
         leased_until:
           type: integer
           format: int64
+        reclaimed_from:
+          type: string
+          description: "the owner the abandoned-task reclaim took the task from; present until the task is claimed, assigned or leaves pending"
+        reclaimed_at:
+          type: integer
+          format: int64
+          description: "when the reclaim happened, unix ms"
         metadata:
           type: object
           additionalProperties:
@@ -1891,6 +1898,13 @@ components:
         leased_until:
           type: integer
           format: int64
+        reclaimed_from:
+          type: string
+          description: "the owner the abandoned-task reclaim took the task from; present until the task is claimed, assigned or leaves pending"
+        reclaimed_at:
+          type: integer
+          format: int64
+          description: "when the reclaim happened, unix ms"
         has_details:
           type: boolean
     TaskCreateRequest:

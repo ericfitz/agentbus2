@@ -27,6 +27,7 @@ func taskToGen(t ab2bus.Task) gen.Task {
 		Description: optStr(t.Description), Status: t.Status, Owner: optStr(t.Owner),
 		Parent: optInt64(t.Parent), Rank: t.Rank, BlockedBy: optInts(t.BlockedBy),
 		LeasedUntil: optInt64(t.LeasedUntil), Blocked: t.Blocked,
+		ReclaimedFrom: optStr(t.ReclaimedFrom), ReclaimedAt: optInt64(t.ReclaimedAt),
 		OpenBlockers: optInts(t.OpenBlockers), UpdatedAt: t.UpdatedAt, UpdatedBy: t.UpdatedBy,
 	}
 	if t.Metadata != nil {
@@ -75,7 +76,8 @@ func (a *api) ListTasks(ctx context.Context, r gen.ListTasksRequestObject) (gen.
 		g := gen.TaskSummary{
 			Id: s.ID, Subject: s.Subject, Status: s.Status, Owner: optStr(s.Owner),
 			Parent: optInt64(s.Parent), Depth: s.Depth, OpenBlockers: optInts(s.OpenBlockers),
-			LeasedUntil: optInt64(s.LeasedUntil),
+			LeasedUntil: optInt64(s.LeasedUntil), ReclaimedFrom: optStr(s.ReclaimedFrom),
+			ReclaimedAt: optInt64(s.ReclaimedAt),
 		}
 		if s.HasDetails {
 			h := true

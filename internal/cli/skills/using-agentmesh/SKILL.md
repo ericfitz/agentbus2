@@ -163,7 +163,10 @@ unit of handoff: if you would otherwise write "remaining: X, Y, Z" in
    a task claimed that you are not working on.
 4. Long-running work: claim with `leased_until` and renew it with
    `task_claim` again before it passes; an expired lease hands the task to
-   the next claimer, and a `task_update` after expiry changes nothing.
+   the next claimer, and a `task_update` after expiry changes nothing. A task
+   the server took back carries `reclaimed_from` and `reclaimed_at` and shows
+   as stalled to humans until it is claimed or assigned again; claim it or
+   hand it on.
 5. A task is owned by an identity, and your session's lease is what keeps
    the claim live: when your session lapses, tasks you own return to
    `pending` on their own (about a minute and a half after the last

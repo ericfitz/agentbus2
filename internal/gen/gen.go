@@ -1192,11 +1192,17 @@ type Task struct {
 	Owner        *string            `json:"owner,omitempty"`
 	Parent       *int64             `json:"parent,omitempty"`
 	Rank         string             `json:"rank"`
-	Revision     int64              `json:"revision"`
-	Status       string             `json:"status"`
-	Subject      string             `json:"subject"`
-	UpdatedAt    int64              `json:"updated_at"`
-	UpdatedBy    string             `json:"updated_by"`
+
+	// ReclaimedAt when the reclaim happened, unix ms
+	ReclaimedAt *int64 `json:"reclaimed_at,omitempty"`
+
+	// ReclaimedFrom the owner the abandoned-task reclaim took the task from; present until the task is claimed, assigned or leaves pending
+	ReclaimedFrom *string `json:"reclaimed_from,omitempty"`
+	Revision      int64   `json:"revision"`
+	Status        string  `json:"status"`
+	Subject       string  `json:"subject"`
+	UpdatedAt     int64   `json:"updated_at"`
+	UpdatedBy     string  `json:"updated_by"`
 }
 
 // TaskCreateRequest defines model for TaskCreateRequest.
@@ -1235,8 +1241,14 @@ type TaskSummary struct {
 	OpenBlockers *[]int64 `json:"open_blockers,omitempty"`
 	Owner        *string  `json:"owner,omitempty"`
 	Parent       *int64   `json:"parent,omitempty"`
-	Status       string   `json:"status"`
-	Subject      string   `json:"subject"`
+
+	// ReclaimedAt when the reclaim happened, unix ms
+	ReclaimedAt *int64 `json:"reclaimed_at,omitempty"`
+
+	// ReclaimedFrom the owner the abandoned-task reclaim took the task from; present until the task is claimed, assigned or leaves pending
+	ReclaimedFrom *string `json:"reclaimed_from,omitempty"`
+	Status        string  `json:"status"`
+	Subject       string  `json:"subject"`
 }
 
 // TaskUpdateResult defines model for TaskUpdateResult.

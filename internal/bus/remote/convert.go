@@ -111,6 +111,7 @@ func fromGenTask(t gen.Task) ab2bus.Task {
 		Description: deref(t.Description), Status: t.Status, Owner: deref(t.Owner),
 		Parent: deref(t.Parent), Rank: t.Rank, BlockedBy: deref(t.BlockedBy),
 		LeasedUntil: deref(t.LeasedUntil), Metadata: deref(t.Metadata), Blocked: t.Blocked,
+		ReclaimedFrom: deref(t.ReclaimedFrom), ReclaimedAt: deref(t.ReclaimedAt),
 		OpenBlockers: deref(t.OpenBlockers), UpdatedAt: t.UpdatedAt, UpdatedBy: t.UpdatedBy,
 	}
 }
@@ -121,6 +122,7 @@ func toGenTask(t ab2bus.Task) gen.Task {
 		Description: strPtr(t.Description), Status: t.Status, Owner: strPtr(t.Owner),
 		Parent: int64Ptr(t.Parent), Rank: t.Rank, BlockedBy: slicePtr(t.BlockedBy),
 		LeasedUntil: int64Ptr(t.LeasedUntil), Metadata: mapPtr(t.Metadata), Blocked: t.Blocked,
+		ReclaimedFrom: strPtr(t.ReclaimedFrom), ReclaimedAt: int64Ptr(t.ReclaimedAt),
 		OpenBlockers: slicePtr(t.OpenBlockers), UpdatedAt: t.UpdatedAt, UpdatedBy: t.UpdatedBy,
 	}
 }
@@ -130,6 +132,7 @@ func fromGenTaskSummary(s gen.TaskSummary) ab2bus.TaskSummary {
 		ID: s.Id, Subject: s.Subject, Status: s.Status, Owner: deref(s.Owner),
 		Parent: deref(s.Parent), Depth: s.Depth, OpenBlockers: deref(s.OpenBlockers),
 		LeasedUntil: deref(s.LeasedUntil), HasDetails: deref(s.HasDetails),
+		ReclaimedFrom: deref(s.ReclaimedFrom), ReclaimedAt: deref(s.ReclaimedAt),
 	}
 }
 
@@ -137,7 +140,8 @@ func toGenTaskSummary(s ab2bus.TaskSummary) gen.TaskSummary {
 	out := gen.TaskSummary{
 		Id: s.ID, Subject: s.Subject, Status: s.Status, Owner: strPtr(s.Owner),
 		Parent: int64Ptr(s.Parent), Depth: s.Depth, OpenBlockers: slicePtr(s.OpenBlockers),
-		LeasedUntil: int64Ptr(s.LeasedUntil),
+		LeasedUntil: int64Ptr(s.LeasedUntil), ReclaimedFrom: strPtr(s.ReclaimedFrom),
+		ReclaimedAt: int64Ptr(s.ReclaimedAt),
 	}
 	if s.HasDetails {
 		out.HasDetails = ptr(true)
