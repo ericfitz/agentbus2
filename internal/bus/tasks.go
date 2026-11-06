@@ -5,22 +5,27 @@ import "context"
 // Task is a task as returned to callers (ported from v1 tasks.go). Channel is
 // the task list's name.
 type Task struct {
-	ID           int64             `json:"id"`
-	Channel      string            `json:"channel"`
-	Revision     int64             `json:"revision"`
-	Subject      string            `json:"subject"`
-	Description  string            `json:"description,omitempty"`
-	Status       string            `json:"status"`
-	Owner        string            `json:"owner,omitempty"`
-	Parent       int64             `json:"parent,omitempty"`
-	Rank         string            `json:"rank"`
-	BlockedBy    []int64           `json:"blocked_by,omitempty"`
-	LeasedUntil  int64             `json:"leased_until,omitempty"`
-	Metadata     map[string]string `json:"metadata,omitempty"`
-	Blocked      bool              `json:"blocked"`
-	OpenBlockers []int64           `json:"open_blockers,omitempty"`
-	UpdatedAt    int64             `json:"updated_at"`
-	UpdatedBy    string            `json:"updated_by"`
+	ID          int64             `json:"id"`
+	Channel     string            `json:"channel"`
+	Revision    int64             `json:"revision"`
+	Subject     string            `json:"subject"`
+	Description string            `json:"description,omitempty"`
+	Status      string            `json:"status"`
+	Owner       string            `json:"owner,omitempty"`
+	Parent      int64             `json:"parent,omitempty"`
+	Rank        string            `json:"rank"`
+	BlockedBy   []int64           `json:"blocked_by,omitempty"`
+	LeasedUntil int64             `json:"leased_until,omitempty"`
+	Metadata    map[string]string `json:"metadata,omitempty"`
+	// ReclaimedFrom and ReclaimedAt (Unix ms) mark a task the abandoned-task
+	// reclaim returned to pending: the owner it was taken from and when. A
+	// claim, a status change out of pending or an owner assignment clears them.
+	ReclaimedFrom string  `json:"reclaimed_from,omitempty"`
+	ReclaimedAt   int64   `json:"reclaimed_at,omitempty"`
+	Blocked       bool    `json:"blocked"`
+	OpenBlockers  []int64 `json:"open_blockers,omitempty"`
+	UpdatedAt     int64   `json:"updated_at"`
+	UpdatedBy     string  `json:"updated_by"`
 }
 
 // TaskSummary is one row of a task list result.
@@ -33,7 +38,10 @@ type TaskSummary struct {
 	Depth        int     `json:"depth"`
 	OpenBlockers []int64 `json:"open_blockers,omitempty"`
 	LeasedUntil  int64   `json:"leased_until,omitempty"`
-	HasDetails   bool    `json:"has_details,omitempty"`
+	// ReclaimedFrom and ReclaimedAt: see Task.
+	ReclaimedFrom string `json:"reclaimed_from,omitempty"`
+	ReclaimedAt   int64  `json:"reclaimed_at,omitempty"`
+	HasDetails    bool   `json:"has_details,omitempty"`
 }
 
 // TaskCreateInput creates a task. Before and After are mutually exclusive

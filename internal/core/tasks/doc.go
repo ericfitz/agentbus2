@@ -37,6 +37,9 @@ type taskDoc struct {
 	BlockedBy   []int64           `json:"blocked_by,omitempty"`
 	LeasedUntil int64             `json:"leased_until,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
+
+	ReclaimedFrom string `json:"reclaimed_from,omitempty"`
+	ReclaimedAt   int64  `json:"reclaimed_at,omitempty"`
 }
 
 // taskContent returns the JSON document stored as t's memory content.
@@ -45,6 +48,7 @@ func taskContent(t bus.Task) (string, error) {
 		Subject: t.Subject, Description: t.Description, Status: t.Status,
 		Owner: t.Owner, Parent: t.Parent, Rank: t.Rank, BlockedBy: t.BlockedBy,
 		LeasedUntil: t.LeasedUntil, Metadata: t.Metadata,
+		ReclaimedFrom: t.ReclaimedFrom, ReclaimedAt: t.ReclaimedAt,
 	})
 	if err != nil {
 		return "", bus.Internal(err)
@@ -111,6 +115,7 @@ func loadTasks(ctx context.Context, tx store.Tx, ch store.Channel) ([]task, erro
 				Subject: d.Subject, Description: d.Description, Status: d.Status,
 				Owner: d.Owner, Parent: d.Parent, Rank: d.Rank, BlockedBy: d.BlockedBy,
 				LeasedUntil: d.LeasedUntil, Metadata: d.Metadata,
+				ReclaimedFrom: d.ReclaimedFrom, ReclaimedAt: d.ReclaimedAt,
 				UpdatedAt: m.CreatedAt, UpdatedBy: m.Sender,
 			},
 			seq: m.Seq,

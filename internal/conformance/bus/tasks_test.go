@@ -2,6 +2,8 @@ package bus
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -634,6 +636,169 @@ func TestAnyWriterChangesAnyTask(t *testing.T) {
 					t.Fatalf("task %d: a forced revision was written: %+v", id, r)
 				}
 			}
+		}
+	})
+}
+
+// liveTaskContent returns the content of a task's live (highest, non-tombstone)
+// revision.
+func (h *harness) liveTaskContent(id int64) string {
+	h.t.Helper()
+	var best *ab2store.Message
+	revs := h.taskRevisions(id)
+	for i := range revs {
+		if revs[i].Tombstone || revs[i].Revision == nil {
+			continue
+		}
+		if best == nil || *revs[i].Revision > *best.Revision {
+			best = &revs[i]
+		}
+	}
+	if best == nil {
+		h.t.Fatalf("task %d has no live revision", id)
+	}
+	return best.Content
+}
+
+// reclaimedTask creates a task in list "work", has pat claim it with a 1 s
+// lease and runs the abandoned-task job after the lease lapses.
+func (h *harness) reclaimedTask(subject string) int64 {
+	h.t.Helper()
+	ctx := context.Background()
+	pat := h.as("pat")
+	made, err := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: subject})
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	if _, err := pat.Claim(ctx, ab2bus.TaskClaimInput{ID: made.ID, LeasedUntil: h.taskLeaseIn(time.Second)}); err != nil {
+		h.t.Fatal(err)
+	}
+	h.clock.Advance(2 * time.Second)
+	if n := h.runJob("abandoned tasks"); n != 1 {
+		h.t.Fatalf("abandoned tasks reclaimed %d, want 1", n)
+	}
+	return made.ID
+}
+
+func TestTaskReclaimWritesMark(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		h.taskList("work", "pat")
+		id := h.reclaimedTask("first")
+		now := h.core.NowMs()
+		got := h.liveTaskContent(id)
+		for _, want := range []string{`"reclaimed_from":"pat"`, fmt.Sprintf(`"reclaimed_at":%d`, now)} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("live content %s lacks %s", got, want)
+			}
+		}
+		revs := len(h.taskRevisions(id))
+		h.clock.Advance(time.Second)
+		if n := h.runJob("abandoned tasks"); n != 0 {
+			t.Fatalf("second run reclaimed %d, want 0", n)
+		}
+		if after := h.liveTaskContent(id); after != got || len(h.taskRevisions(id)) != revs {
+			t.Fatalf("second run changed the task: %s", after)
+		}
+	})
+}
+
+func TestTaskReclaimedMarkPersists(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		ch := h.taskList("work", "pat", "alice", "sam")
+		alice, sam := h.as("alice"), h.as("sam")
+		has := func(id int64) bool { return strings.Contains(h.liveTaskContent(id), `"reclaimed_from":"pat"`) }
+		root, err := alice.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "root"})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		id := h.reclaimedTask("kept")
+		if _, err := alice.Update(ctx, ab2bus.TaskPatch{ID: id, Subject: taskPtr("renamed")}); err != nil {
+			t.Fatal(err)
+		}
+		if !has(id) {
+			t.Fatal("a rename cleared the mark")
+		}
+		if _, err := alice.Update(ctx, ab2bus.TaskPatch{ID: id, Parent: taskPtr(root.ID)}); err != nil {
+			t.Fatal(err)
+		}
+		if !has(id) {
+			t.Fatal("a move cleared the mark")
+		}
+		if _, err := alice.Release(ctx, ab2bus.TaskReleaseInput{ID: id}); err != nil {
+			t.Fatal(err)
+		}
+		if !has(id) {
+			t.Fatal("a release cleared the mark")
+		}
+		if _, err := sam.Claim(ctx, ab2bus.TaskClaimInput{ID: id}); err != nil {
+			t.Fatal(err)
+		}
+		if got := h.liveTaskContent(id); strings.Contains(got, "reclaimed_from") || strings.Contains(got, "reclaimed_at") {
+			t.Fatalf("a claim left the mark: %s", got)
+		}
+		var snap []tasks.SnapshotTask
+		if err := h.raw.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+			var err error
+			snap, err = (tasks.Service{Core: h.core}).Snapshot(ctx, tx, ch, h.core.NowMs())
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range snap {
+			if s.ID == id && (s.ReclaimedFrom != "" || s.ReclaimedAt != 0) {
+				t.Fatalf("snapshot still marks %+v", s)
+			}
+		}
+
+		done := h.reclaimedTask("completed")
+		if _, err := alice.Update(ctx, ab2bus.TaskPatch{ID: done, Status: taskPtr("completed")}); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(h.liveTaskContent(done), "reclaimed_from") {
+			t.Fatal("completing left the mark")
+		}
+
+		assigned := h.reclaimedTask("assigned")
+		if _, err := alice.Update(ctx, ab2bus.TaskPatch{ID: assigned, Owner: taskPtr("sam")}); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(h.liveTaskContent(assigned), "reclaimed_from") {
+			t.Fatal("an assignment left the mark")
+		}
+		sums, err := alice.List(ctx, ab2bus.TaskListInput{Channel: "work"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, s := range sums {
+			if s.ID == assigned && (s.Owner != "sam" || s.ReclaimedFrom != "" || s.ReclaimedAt != 0) {
+				t.Fatalf("list row %+v", s)
+			}
+		}
+	})
+}
+
+func TestTaskReleaseSetsNoMark(t *testing.T) {
+	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
+		h := newHarness(t, e, harnessOptions{})
+		ctx := context.Background()
+		h.taskList("work", "pat")
+		pat := h.as("pat")
+		made, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "x"})
+		if _, err := pat.Claim(ctx, ab2bus.TaskClaimInput{ID: made.ID}); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := pat.Release(ctx, ab2bus.TaskReleaseInput{ID: made.ID}); err != nil {
+			t.Fatal(err)
+		}
+		if got := h.liveTaskContent(made.ID); strings.Contains(got, "reclaimed") {
+			t.Fatalf("release left a mark: %s", got)
+		}
+		if n := countTaskRevs(h.taskRevisions(made.ID), "reclaimed"); n != 0 {
+			t.Fatalf("%d reclaimed revisions after a release", n)
 		}
 	})
 }

@@ -147,8 +147,15 @@ func applyPatch(ts []task, cur task, p bus.TaskPatch, as string, now int64, owne
 		patched.Status = ns
 	}
 
+	// The reclaimed mark clears on a claim, a status change out of pending or
+	// an owner assignment (Eric, 2026-11-05); a release sets none.
+	owned := patched.Owner != ""
+	if patched.Status != "pending" || owned {
+		patched.ReclaimedFrom, patched.ReclaimedAt = "", 0
+	}
+
 	// An in_progress task always needs an owner, whatever the patch touched.
-	if patched.Status == "in_progress" && patched.Owner == "" {
+	if patched.Status == "in_progress" && !owned {
 		return task{}, core.E(bus.CodeValidation, "an in_progress task needs an owner")
 	}
 

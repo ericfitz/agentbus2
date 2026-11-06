@@ -123,6 +123,29 @@ func TestTaskSnapshotReadsWithoutWriting(t *testing.T) {
 		if _, rev2, _ := h.liveStats(ch); rev2 <= rev1 {
 			t.Fatalf("List did not reclaim: revision %d -> %d", rev1, rev2)
 		}
+		// The List above reclaimed both abandoned tasks (the job would find
+		// none left): the snapshot carries the reclaimed mark.
+		if n := h.runJob("abandoned tasks"); n != 0 {
+			t.Fatalf("abandoned tasks job reclaimed %d after the List, want 0", n)
+		}
+		var after []tasks.SnapshotTask
+		if err := h.raw.Read(ctx, func(ctx context.Context, tx ab2store.Tx) error {
+			var err error
+			after, err = (tasks.Service{Core: h.core}).Snapshot(ctx, tx, ch, h.core.NowMs())
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+		by = map[int64]tasks.SnapshotTask{}
+		for _, s := range after {
+			by[s.ID] = s
+		}
+		if s := by[id2]; s.ReclaimedFrom != "bob" || s.ReclaimedAt != h.core.NowMs() || s.Abandoned || s.Status != "pending" || s.Assignee != "" {
+			t.Fatalf("bob's reclaimed task %+v", s)
+		}
+		if s := by[id3]; s.ReclaimedFrom != "carl" {
+			t.Fatalf("carl's reclaimed task %+v", s)
+		}
 	})
 }
 

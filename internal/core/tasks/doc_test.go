@@ -259,6 +259,58 @@ func TestApplyPatch(t *testing.T) {
 	}
 }
 
+func TestTaskDocReclaimedRoundTrip(t *testing.T) {
+	got, err := taskContent(bus.Task{Subject: "s", Status: "pending", Rank: "m", ReclaimedFrom: "pat", ReclaimedAt: 1_700_000_000_000})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`"reclaimed_from":"pat"`, `"reclaimed_at":1700000000000`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("content %s lacks %s", got, want)
+		}
+	}
+	got, err = taskContent(bus.Task{Subject: "s", Status: "pending", Rank: "m"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(got, "reclaimed") {
+		t.Errorf("unmarked content %s carries a reclaimed key", got)
+	}
+}
+
+func TestApplyPatchReclaimedMark(t *testing.T) {
+	marked := func() []task {
+		m := mk(1, 0, "V", "pending", "")
+		m.ReclaimedFrom, m.ReclaimedAt = "pat", 5
+		return []task{m}
+	}
+	cases := []struct {
+		name string
+		p    bus.TaskPatch
+		keep bool
+	}{
+		{"subject keeps", bus.TaskPatch{Subject: str("new")}, true},
+		{"empty owner keeps", bus.TaskPatch{Owner: str("")}, true},
+		{"owner assignment clears", bus.TaskPatch{Owner: str("kim")}, false},
+		{"claim clears", bus.TaskPatch{Status: str("in_progress"), Owner: str("kim")}, false},
+		{"completed clears", bus.TaskPatch{Status: str("completed")}, false},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			ts := marked()
+			fillDerived(ts)
+			got, err := applyPatch(ts, ts[0], c.p, "pat", 1_000_000, owners("pat", "kim"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			has := got.ReclaimedFrom == "pat" && got.ReclaimedAt == 5
+			if has != c.keep || (!c.keep && (got.ReclaimedFrom != "" || got.ReclaimedAt != 0)) {
+				t.Errorf("mark = %q/%d, keep want %v", got.ReclaimedFrom, got.ReclaimedAt, c.keep)
+			}
+		})
+	}
+}
+
 func TestApplyPatchBlockedTask(t *testing.T) {
 	ts := []task{mk(1, 0, "V", "pending", ""), mk(2, 0, "W", "pending", "")}
 	ts[1].BlockedBy = []int64{1}

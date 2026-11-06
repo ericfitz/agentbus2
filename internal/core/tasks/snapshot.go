@@ -22,6 +22,10 @@ type SnapshotTask struct {
 	LeasedUntil  int64
 	Abandoned    bool
 	LeaseExpired bool
+	// ReclaimedFrom and ReclaimedAt (Unix ms): the reclaimed mark, empty once
+	// the task is claimed, changed or assigned.
+	ReclaimedFrom string
+	ReclaimedAt   int64
 }
 
 // Snapshot reads the live tasks of the list in tree order (loadTasks) at now
@@ -49,6 +53,7 @@ func (s Service) Snapshot(ctx context.Context, tx store.Tx, ch store.Channel, no
 			Parent: effectiveParent(ts, t.Parent), Depth: depth[t.ID],
 			OpenBlockers: t.OpenBlockers, LeasedUntil: t.LeasedUntil,
 			Abandoned: abandoned[t.ID], LeaseExpired: leaseExpired(t, now),
+			ReclaimedFrom: t.ReclaimedFrom, ReclaimedAt: t.ReclaimedAt,
 		})
 	}
 	return out, nil

@@ -142,8 +142,9 @@ func (s Service) summaries(ts []task, in bus.TaskListInput) []bus.TaskSummary {
 		sums = append(sums, bus.TaskSummary{
 			ID: t.ID, Subject: t.Subject, Status: t.Status, Owner: t.Owner,
 			Parent: t.Parent, Depth: depth[t.ID], OpenBlockers: t.OpenBlockers,
-			LeasedUntil: t.LeasedUntil,
-			HasDetails:  t.Description != "" || len(t.Metadata) > 0 || len(t.BlockedBy) > 0,
+			LeasedUntil:   t.LeasedUntil,
+			ReclaimedFrom: t.ReclaimedFrom, ReclaimedAt: t.ReclaimedAt,
+			HasDetails: t.Description != "" || len(t.Metadata) > 0 || len(t.BlockedBy) > 0,
 		})
 	}
 	limit := min(s.Cfg.ResultDefaultKiB*1024, rules.TrimHardCeilingBytes)
