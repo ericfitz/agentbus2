@@ -38,6 +38,10 @@ type taskDoc struct {
 	LeasedUntil int64             `json:"leased_until,omitempty"`
 	Metadata    map[string]string `json:"metadata,omitempty"`
 
+	// ReclaimedFrom and ReclaimedAt are the reclaimed mark (ADR 0009): the
+	// owner the abandoned-task reclaim took the task from and when, in Unix
+	// milliseconds. reclaimAbandoned sets them; applyPatch clears them when
+	// the task is claimed, assigned or leaves pending.
 	ReclaimedFrom string `json:"reclaimed_from,omitempty"`
 	ReclaimedAt   int64  `json:"reclaimed_at,omitempty"`
 }

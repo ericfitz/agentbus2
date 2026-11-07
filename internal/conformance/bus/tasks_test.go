@@ -42,6 +42,18 @@ func (h *harness) taskList(name string, live ...string) ab2store.Channel {
 
 func (h *harness) taskLeaseIn(d time.Duration) int64 { return h.clock.Now().Add(d).UnixMilli() }
 
+// mustTask returns a check of a Create, Update or Get result that fails the
+// test on an error: mustTask(t)(b.Create(ctx, in)).
+func mustTask(t *testing.T) func(ab2bus.Task, error) ab2bus.Task {
+	return func(task ab2bus.Task, err error) ab2bus.Task {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return task
+	}
+}
+
 func TestTaskCreateNeedsWriteAndKind(t *testing.T) {
 	dbtest.ForEachEngine(t, func(t *testing.T, e dbtest.Engine) {
 		h := newHarness(t, e, harnessOptions{})
@@ -206,9 +218,9 @@ func TestTaskListRejectsUnknownStatus(t *testing.T) {
 		ctx := context.Background()
 		h.taskList("work", "pat")
 		pat := h.as("pat")
-		a, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "a"})
-		b, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "b"})
-		c, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "c", Parent: a.ID})
+		a := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "a"}))
+		b := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "b"}))
+		c := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "c", Parent: a.ID}))
 		if _, err := pat.Claim(ctx, ab2bus.TaskClaimInput{ID: b.ID}); err != nil {
 			t.Fatal(err)
 		}
@@ -266,7 +278,7 @@ func TestTaskAbandonedByLease(t *testing.T) {
 		ctx := context.Background()
 		h.taskList("work", "pat") // pat holds a live session, so only the lease can abandon
 		pat := h.as("pat")
-		made, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "first"})
+		made := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "first"}))
 		if _, err := pat.Claim(ctx, ab2bus.TaskClaimInput{ID: made.ID, LeasedUntil: h.taskLeaseIn(10 * time.Second)}); err != nil {
 			t.Fatal(err)
 		}
@@ -301,7 +313,7 @@ func TestTaskAbandonedByDeadOwner(t *testing.T) {
 		h.channel("work", ab2store.KindTasks, "pat", nil)
 		pat, kim := h.as("pat"), h.as("kim")
 		h.session("kim", "kim")
-		made, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "first"})
+		made := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "first"}))
 		if _, err := kim.Claim(ctx, ab2bus.TaskClaimInput{ID: made.ID}); err != nil {
 			t.Fatal(err)
 		}
@@ -330,7 +342,7 @@ func TestTaskAbandonedByDeadOwner(t *testing.T) {
 		}
 
 		// A live row that is closed reclaims at once.
-		second, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "second"})
+		second := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "second"}))
 		live := h.session("kim", "kim")
 		if _, err := kim.Claim(ctx, ab2bus.TaskClaimInput{ID: second.ID}); err != nil {
 			t.Fatal(err)
@@ -363,7 +375,7 @@ func TestTaskRefusedUpdateRollsBackReclaim(t *testing.T) {
 		ctx := context.Background()
 		h.channel("work", ab2store.KindTasks, "pat", nil)
 		pat, kim := h.as("pat"), h.as("kim")
-		made, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "first"})
+		made := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "first"}))
 		if _, err := pat.Claim(ctx, ab2bus.TaskClaimInput{ID: made.ID}); err != nil { // pat has no session: abandoned at once
 			t.Fatal(err)
 		}
@@ -390,8 +402,8 @@ func TestTaskReclaimChannelIdempotent(t *testing.T) {
 		ctx := context.Background()
 		ch := h.taskList("work")
 		pat := h.as("pat")
-		a, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "a"})
-		b, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "b"})
+		a := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "a"}))
+		b := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "b"}))
 		for _, id := range []int64{a.ID, b.ID} {
 			if _, err := pat.Claim(ctx, ab2bus.TaskClaimInput{ID: id}); err != nil {
 				t.Fatal(err)
@@ -419,8 +431,8 @@ func TestTaskDelete(t *testing.T) {
 		ctx := context.Background()
 		h.taskList("work", "pat", "kim")
 		pat, kim := h.as("pat"), h.as("kim")
-		parent, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "parent"})
-		child, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "child", Parent: parent.ID})
+		parent := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "parent"}))
+		child := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "child", Parent: parent.ID}))
 		_, err := pat.Update(ctx, ab2bus.TaskPatch{ID: parent.ID, Delete: true})
 		codeOf(t, err, ab2bus.CodeConflict)
 		res, err := pat.Update(ctx, ab2bus.TaskPatch{ID: child.ID, Delete: true})
@@ -786,10 +798,18 @@ func TestTaskReclaimedMarkPersists(t *testing.T) {
 		}); err != nil {
 			t.Fatal(err)
 		}
+		found := false
 		for _, s := range snap {
-			if s.ID == id && (s.ReclaimedFrom != "" || s.ReclaimedAt != 0) {
+			if s.ID != id {
+				continue
+			}
+			found = true
+			if s.ReclaimedFrom != "" || s.ReclaimedAt != 0 {
 				t.Fatalf("snapshot still marks %+v", s)
 			}
+		}
+		if !found {
+			t.Fatalf("task %d is not in the snapshot %+v", id, snap)
 		}
 
 		done := h.reclaimedTask("completed")
@@ -811,10 +831,18 @@ func TestTaskReclaimedMarkPersists(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
+		found = false
 		for _, s := range sums {
-			if s.ID == assigned && (s.Owner != "sam" || s.ReclaimedFrom != "" || s.ReclaimedAt != 0) {
+			if s.ID != assigned {
+				continue
+			}
+			found = true
+			if s.Owner != "sam" || s.ReclaimedFrom != "" || s.ReclaimedAt != 0 {
 				t.Fatalf("list row %+v", s)
 			}
+		}
+		if !found {
+			t.Fatalf("task %d is not listed: %+v", assigned, sums)
 		}
 	})
 }
@@ -825,7 +853,7 @@ func TestTaskReleaseSetsNoMark(t *testing.T) {
 		ctx := context.Background()
 		h.taskList("work", "pat")
 		pat := h.as("pat")
-		made, _ := pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "x"})
+		made := mustTask(t)(pat.Create(ctx, ab2bus.TaskCreateInput{Channel: "work", Subject: "x"}))
 		if _, err := pat.Claim(ctx, ab2bus.TaskClaimInput{ID: made.ID}); err != nil {
 			t.Fatal(err)
 		}

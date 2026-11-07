@@ -209,8 +209,8 @@ func TestCanvasSnapshotTasksAndStatuses(t *testing.T) {
 
 		// The reclaim leaves its mark, and the task is no longer abandoned.
 		jobNow := h.clock.Now().UnixMilli()
-		if n := h.runJob("abandoned tasks"); n < 1 {
-			t.Fatalf("abandoned tasks job reclaimed %d, want at least 1", n)
+		if n := h.runJob("abandoned tasks"); n != 1 { // task 3 only: task 2 is completed
+			t.Fatalf("abandoned tasks job reclaimed %d, want 1", n)
 		}
 		if c := tasksOf()[id3]; c.ReclaimedFrom != "job1-b" || !c.ReclaimedAt.Equal(time.UnixMilli(jobNow).UTC()) || c.Stalled || c.Assignee != "" {
 			t.Errorf("task 3 after the reclaim %+v (job at %d)", c, jobNow)

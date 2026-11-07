@@ -174,8 +174,9 @@ func TestTaskIconKeysKnown(t *testing.T) {
 	}
 }
 
-// LoadIconsFor pads the gear and the stopwatch only for Terminal.app, before
-// icon_map applies, and leaves every other icon and the nerdfont set alone.
+// LoadIconsFor pads the gear, the stopwatch and the stalled warning sign
+// only for Terminal.app, before icon_map applies, and leaves every other icon
+// and the nerdfont set alone.
 func TestLoadIconsForAppleTerminal(t *testing.T) {
 	t.Cleanup(func() { setIcons(emojiIcons) })
 	apple := []string{"TERM=xterm-256color", "TERM_PROGRAM=Apple_Terminal"}
@@ -203,17 +204,17 @@ func TestLoadIconsForAppleTerminal(t *testing.T) {
 	} {
 		LoadIconsFor(Settings{}, env, &warn)
 		if iconAgent != gearIcon || taskInProgress != stopwatchIcon || taskStalled != warningIcon || warn.Len() != 0 {
-			t.Fatalf("env %v: agent %q, task_in_progress %q, warn %q", env, iconAgent, taskInProgress, warn.String())
+			t.Fatalf("env %v: agent %q, task_in_progress %q, task_stalled %q, warn %q", env, iconAgent, taskInProgress, taskStalled, warn.String())
 		}
 	}
 	LoadIconsFor(Settings{IconMap: map[string]string{"agent": "A", "task_stalled": "S"}}, apple, &warn)
 	if iconAgent != "A  " || taskInProgress != "⏱️\u200b " || taskStalled != "S  " {
-		t.Fatalf("icon_map must win over the Terminal.app variant: agent %q, task_in_progress %q", iconAgent, taskInProgress)
+		t.Fatalf("icon_map must win over the Terminal.app variant: agent %q, task_in_progress %q, task_stalled %q", iconAgent, taskInProgress, taskStalled)
 	}
 	LoadIconsFor(Settings{Icons: "nerdfont"}, apple, &warn)
 	if strings.Contains(iconAgent, "\u200b") || strings.Contains(taskInProgress, "\u200b") || strings.Contains(taskStalled, "\u200b") ||
 		taskBlocked != padIcon("task_blocked", "\uf05e") || warn.Len() != 0 {
-		t.Fatalf("nerdfont must not take the pad: agent %q, task_in_progress %q, warn %q", iconAgent, taskInProgress, warn.String())
+		t.Fatalf("nerdfont must not take the pad: agent %q, task_in_progress %q, task_stalled %q, task_blocked %q, warn %q", iconAgent, taskInProgress, taskStalled, taskBlocked, warn.String())
 	}
 }
 

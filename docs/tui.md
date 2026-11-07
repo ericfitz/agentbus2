@@ -143,7 +143,7 @@ Each row's mark follows the Slack canvas states with the same precedence:
 | `🙋` | the owner's status tag is `needs-human` |
 | `⚠️` | stalled (the lease has passed, the owner of an in-progress task has no live session (judged by the identities round, not by a status row, so a human or an agent that never set a status counts as live), or the server reclaimed the task and no one has claimed it since: the row reads `reclaimed from <owner>`), or the owner's status reports a problem |
 
-The TUI judges stalls by its own clock and the last agent-status round (5 s).
+The TUI judges stalls by its own clock and the last status round (every 5 s), which reads both the identities (for live sessions) and the agent statuses (for `needs-human` and problems).
 
 ### Search
 

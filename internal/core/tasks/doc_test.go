@@ -311,6 +311,36 @@ func TestApplyPatchReclaimedMark(t *testing.T) {
 	}
 }
 
+// TestApplyPatchReclaimedMarkNoOp: Rule 11 runs after the mark rule. A
+// hand-edited document that carries the mark on an owned in_progress task
+// is changed by a patch that otherwise changes nothing (the mark clears); a
+// marked pending task patched to its own values stays a no-op with the mark.
+func TestApplyPatchReclaimedMarkNoOp(t *testing.T) {
+	edited := mk(1, 0, "V", "in_progress", "pat")
+	edited.ReclaimedFrom, edited.ReclaimedAt = "kim", 5
+	ts := []task{edited}
+	fillDerived(ts)
+	got, err := applyPatch(ts, ts[0], bus.TaskPatch{Subject: str("t")}, "pat", 1_000_000, owners("pat", "kim"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if reflect.DeepEqual(got, ts[0]) || got.ReclaimedFrom != "" || got.ReclaimedAt != 0 {
+		t.Fatalf("hand-edited mark: got %+v, want a write that clears the mark", got.Task)
+	}
+
+	pending := mk(1, 0, "V", "pending", "")
+	pending.ReclaimedFrom, pending.ReclaimedAt = "pat", 5
+	ts = []task{pending}
+	fillDerived(ts)
+	got, err = applyPatch(ts, ts[0], bus.TaskPatch{Subject: str("t")}, "pat", 1_000_000, owners("pat", "kim"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, ts[0]) {
+		t.Fatalf("same-value patch of a marked pending task: got %+v, want the stored task (no-op)", got.Task)
+	}
+}
+
 func TestApplyPatchBlockedTask(t *testing.T) {
 	ts := []task{mk(1, 0, "V", "pending", ""), mk(2, 0, "W", "pending", "")}
 	ts[1].BlockedBy = []int64{1}

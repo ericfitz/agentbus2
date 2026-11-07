@@ -31,10 +31,11 @@ type CanvasTaskList struct {
 	Tasks   []CanvasTask
 }
 
-// CanvasTask is one task. Stalled is the abandonment flag; ReclaimedFrom and
-// ReclaimedAt are the mark a reclaim leaves (ReclaimedAt is zero when unset); LeaseExpiredAt is
-// zero unless the lease lapsed; OwnerStatus is nil for a completed task, a
-// task with no assignee and an assignee with no live status.
+// CanvasTask is one task. Stalled is the abandonment flag; ReclaimedFrom
+// and ReclaimedAt are the mark a reclaim leaves (ReclaimedAt is zero when
+// unset); LeaseExpiredAt is zero unless the lease lapsed; OwnerStatus is nil
+// for a completed task, a task with no assignee and an assignee with no live
+// status.
 type CanvasTask struct {
 	ID                        int64
 	Subject, Status, Assignee string
