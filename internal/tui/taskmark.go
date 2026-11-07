@@ -33,12 +33,17 @@ func taskStateOf(t bus.TaskSummary, agents []bus.AgentStatusEntry, sessions map[
 }
 
 // draftTaskStateOf is taskStateOf for a drafted (unsaved) row, which previews
-// the state a save will produce: it does not judge the owner's liveness, and
-// a draft that leaves pending or gains an owner shows no reclaimed mark,
-// because the server clears the mark on that write.
+// the state a save will produce: it does not judge the owner's liveness; a
+// draft that leaves pending or gains an owner shows no reclaimed mark,
+// because the server clears the mark on that write; and an expired saved
+// lease is ignored, because the save reclaims such a task before it applies
+// the draft (the claim sets no lease), so the result never carries it.
 func draftTaskStateOf(t bus.TaskSummary, agents []bus.AgentStatusEntry, sessions map[string]bool, now time.Time) (st taskState, suffix string) {
 	if t.Status != "pending" || t.Owner != "" {
 		t.ReclaimedFrom, t.ReclaimedAt = "", 0
+	}
+	if t.LeasedUntil != 0 && t.LeasedUntil <= now.UnixMilli() {
+		t.LeasedUntil = 0
 	}
 	return judgeTask(t, agents, sessions, now, true)
 }

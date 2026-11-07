@@ -89,6 +89,9 @@ func TestDraftTaskStateOf(t *testing.T) {
 		{"pending with owner drops mark", bus.TaskSummary{Status: "pending", Owner: "sam", ReclaimedFrom: "pat"}, statePending, ""},
 		{"pending unowned keeps mark", bus.TaskSummary{Status: "pending", ReclaimedFrom: "pat"}, stateStalled, " reclaimed from pat"},
 		{"completed", bus.TaskSummary{Status: "completed", Owner: "eric"}, stateDone, ""},
+		{"in progress, expired saved lease", bus.TaskSummary{Status: "in_progress", Owner: "eric", LeasedUntil: 999_999}, stateInProgress, ""},
+		{"in progress, lease at now", bus.TaskSummary{Status: "in_progress", Owner: "eric", LeasedUntil: 1_000_000}, stateInProgress, ""},
+		{"in progress, future lease", bus.TaskSummary{Status: "in_progress", Owner: "eric", LeasedUntil: 1_000_001}, stateInProgress, ""},
 	}
 	for _, c := range cases {
 		got, sfx := draftTaskStateOf(c.t, markAgents(), markSessions(), now)
