@@ -87,14 +87,27 @@ func TestSocketLoopBackoff(t *testing.T) {
 func TestSocketLoopCancelledWait(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	runs := 0
-	run := func(context.Context, func()) error { runs++; return errors.New("down") }
+	started := make(chan struct{})
+	run := func(context.Context, func()) error {
+		runs++
+		if runs == 1 {
+			close(started)
+		}
+		return errors.New("down")
+	}
+	waiting := make(chan struct{})
+	wait := func(ctx context.Context, d time.Duration) error {
+		close(waiting) // only one wait may start: the loop must not run again
+		return sleep(ctx, d)
+	}
 	start := time.Now()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		socketLoop(ctx, time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)), run, sleep)
+		socketLoop(ctx, time.Hour, slog.New(slog.NewTextHandler(io.Discard, nil)), run, wait)
 	}()
-	time.Sleep(20 * time.Millisecond) // the loop is in its one-hour wait
+	<-started
+	<-waiting // the loop is in its one-hour wait
 	cancel()
 	select {
 	case <-done:

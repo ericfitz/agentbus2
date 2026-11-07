@@ -73,23 +73,19 @@ func (a *api) ListTasks(ctx context.Context, r gen.ListTasksRequestObject) (gen.
 	}
 	out := make(gen.ListTasks200JSONResponse, len(ts))
 	for i, s := range ts {
-		out[i] = taskSummaryToGen(s)
+		g := gen.TaskSummary{
+			Id: s.ID, Subject: s.Subject, Status: s.Status, Owner: optStr(s.Owner),
+			Parent: optInt64(s.Parent), Depth: s.Depth, OpenBlockers: optInts(s.OpenBlockers),
+			LeasedUntil: optInt64(s.LeasedUntil), ReclaimedFrom: optStr(s.ReclaimedFrom),
+			ReclaimedAt: optInt64(s.ReclaimedAt),
+		}
+		if s.HasDetails {
+			h := true
+			g.HasDetails = &h
+		}
+		out[i] = g
 	}
 	return out, nil
-}
-
-func taskSummaryToGen(s ab2bus.TaskSummary) gen.TaskSummary {
-	g := gen.TaskSummary{
-		Id: s.ID, Subject: s.Subject, Status: s.Status, Owner: optStr(s.Owner),
-		Parent: optInt64(s.Parent), Depth: s.Depth, OpenBlockers: optInts(s.OpenBlockers),
-		LeasedUntil: optInt64(s.LeasedUntil), ReclaimedFrom: optStr(s.ReclaimedFrom),
-		ReclaimedAt: optInt64(s.ReclaimedAt),
-	}
-	if s.HasDetails {
-		h := true
-		g.HasDetails = &h
-	}
-	return g
 }
 
 func (a *api) GetTask(ctx context.Context, r gen.GetTaskRequestObject) (gen.GetTaskResponseObject, error) {
