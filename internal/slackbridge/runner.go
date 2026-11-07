@@ -2,8 +2,10 @@ package slackbridge
 
 import (
 	"context"
+	"log/slog"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ericfitz/agentmesh/internal/slackapi"
@@ -23,17 +25,57 @@ const (
 	eventQueue = 1024
 )
 
+// socketRetryMax caps the wait between Socket Mode connection attempts.
+const socketRetryMax = 15 * time.Minute
+
 // retryDelay is the requeue delay before attempt (1-based): base doubling,
 // capped at requeueMax without ever shifting past it.
 func retryDelay(base time.Duration, attempt int) time.Duration {
+	return backoff(base, attempt, requeueMax)
+}
+
+// backoff is base doubling per attempt (1-based), capped at limit without
+// ever shifting past it.
+func backoff(base time.Duration, attempt int, limit time.Duration) time.Duration {
 	d := base
 	for i := 1; i < attempt; i++ {
-		if d >= requeueMax/2 {
-			return requeueMax
+		if d >= limit/2 {
+			return limit
 		}
 		d *= 2
 	}
-	return min(d, requeueMax)
+	return min(d, limit)
+}
+
+// socketLoop runs the Socket Mode connection until ctx ends. After each
+// return of run it waits base * 2^(n-1), capped at socketRetryMax, where n
+// counts the consecutive attempts that never connected; an attempt that
+// reached EventConnected (run calls connected) resets n, so the first wait
+// after a dropped connection is base. A failure is logged once per attempt.
+// wait is sleep outside tests.
+func socketLoop(ctx context.Context, base time.Duration, log *slog.Logger,
+	run func(ctx context.Context, connected func()) error,
+	wait func(context.Context, time.Duration) error,
+) {
+	failures := 0
+	for ctx.Err() == nil {
+		var ok atomic.Bool
+		err := run(ctx, func() { ok.Store(true) })
+		if ctx.Err() != nil {
+			return
+		}
+		if ok.Load() {
+			failures = 0
+		}
+		failures++
+		d := backoff(base, failures, socketRetryMax)
+		if err != nil {
+			log.Warn("slack bridge: socket failed", "err", err, "retry_in", d)
+		}
+		if wait(ctx, d) != nil {
+			return
+		}
+	}
 }
 
 // Run is the bridge runner (spec 5.2). It first retries AuthTest every
@@ -139,9 +181,10 @@ func (s *Service) startSession(parent context.Context) *runSession {
 	rs.wg.Add(5)
 	go func() { // the socket: hands events to the worker, never blocks on them
 		defer rs.wg.Done()
-		for ctx.Err() == nil {
-			err := s.sc.RunSocket(ctx, func(_ context.Context, ev slackapi.Event) {
+		socketLoop(ctx, s.cfg.RetryBase, s.log, func(ctx context.Context, connected func()) error {
+			return s.sc.RunSocket(ctx, func(_ context.Context, ev slackapi.Event) {
 				if ev.Kind == slackapi.EventConnected {
+					connected()
 					s.markConnected()
 				}
 				select {
@@ -154,13 +197,7 @@ func (s *Service) startSession(parent context.Context) *runSession {
 					request()
 				}
 			})
-			if err != nil && ctx.Err() == nil {
-				s.log.Warn("slack bridge: socket failed", "err", err)
-			}
-			if sleep(ctx, s.cfg.RetryBase) != nil {
-				return
-			}
-		}
+		}, sleep)
 	}()
 	go func() { defer rs.wg.Done(); s.worker(ctx, events, catchup) }()
 	go func() { // bus to Slack

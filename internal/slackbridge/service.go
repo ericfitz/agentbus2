@@ -27,7 +27,9 @@ type Config struct {
 	MaxMessageChars                            int
 	PostInterval, LockRenew, LifecycleInterval time.Duration
 	// RetryBase is the first requeue delay of an inbound Slack message that hit
-	// a transient failure; it doubles to 30 s. Zero takes 1 s.
+	// a transient failure (it doubles to 30 s) and the first wait before a
+	// Socket Mode reconnect (it doubles to 15 minutes while no attempt
+	// connects). Zero takes 1 s.
 	RetryBase time.Duration
 	// CanvasEnabled turns the scope canvas on; CanvasCoalesce is the rebuild
 	// window (zero takes 30 s).
